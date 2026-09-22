@@ -37,7 +37,7 @@ stages:
 # Global configuration
 # ---------------------------------------------------------------------------
 default:
-  image: python:3.12-slim
+  image: python:3.14-slim
 
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"

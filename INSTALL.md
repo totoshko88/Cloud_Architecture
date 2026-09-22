@@ -5,7 +5,8 @@ Diagram & Inventory Rule Engine in a Kiro workspace.
 
 ## Prerequisites
 
-- **Python 3.10 or newer** — the core components and CLIs target `python_requires >= 3.10`.
+- **Python 3.14 or newer** — the core components and CLIs target `python_requires >= 3.14`.
+  (Python 3.10 reaches end-of-life in October 2026; the engine targets a supported runtime.)
 - **pip** — used to install the project and its dependencies (a virtual environment such
   as `venv` is recommended so the console scripts land on your `PATH` cleanly).
 - **Kiro** — the workspace host that reads the always-on steering documents and runs the
