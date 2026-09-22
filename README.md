@@ -41,6 +41,52 @@ changing core code.
 - `examples/` — one golden example per provider (`aws`, `azure`, `gcp`, `oci`, `generic`)
 - `src/rule_engine/` — the provider-neutral core components and CLI entry points
 
+## Example diagrams
+
+One golden example per provider ships under `examples/`, each as the full artifact triple
+(`.drawio`/`.puml` source, exported `.png`, and a `.diagram.md` companion). All follow the
+same layout standard: uniform 78×78 icons, fixed lane order, a dashed-green stack boundary
+and dashed-blue Network Boundary, numbered flow markers with a right-side Flow legend, and
+the standard Legend block.
+
+### AWS — agent platform
+
+Built-in `mxgraph.aws4.*` icons; EKS → SQS → Lambda → Bedrock/RDS/S3/Secrets Manager.
+
+![AWS agent-platform golden example: EKS enqueues to SQS, Lambda invokes Bedrock and persists to RDS/S3/Secrets Manager inside a VPC within an Account boundary](examples/aws/01-aws-agent-platform.drawio.png)
+
+### Azure — OpenAI RAG
+
+![Azure OpenAI RAG golden example: App Gateway to Functions, Service Bus to ingest Function, Azure OpenAI with Key Vault, Blob Storage, and Azure SQL DB inside a VNet](examples/azure/01-azure-openai-rag.drawio.png)
+
+### GCP — Vertex pipeline
+
+Built-in `mxgraph.gcp2.*` icons; API Gateway → Load Balancer → Vertex AI with Pub/Sub,
+GKE, Cloud SQL, Cloud Storage, and Secret Manager inside a VPC.
+
+![GCP Vertex pipeline golden example: API Gateway to Load Balancer to Vertex AI, Pub/Sub to ingest Function, GKE training, Cloud SQL and Cloud Storage, Secret Manager inside a VPC within a Project](examples/gcp/01-gcp-vertex-pipeline.drawio.png)
+
+### OCI — Generative AI stack
+
+OCI ships no built-in draw.io library, so each node embeds the official OCI stencil glyph
+(caption stripped, scaled square) from the OCI draw.io pack.
+
+![OCI Generative AI stack golden example: Functions to Load Balancer to Generative AI, Streaming to ingest Functions, OKE training, Autonomous DB and Object Storage, Vault inside a VCN within a Compartment](examples/oci/01-oci-genai-stack.drawio.png)
+
+### Generic — vendor-neutral reference (PlantUML)
+
+Grayscale, no vendor icons — the fallback profile and the reference used when adding a new
+provider.
+
+![Generic vendor-neutral reference architecture rendered in grayscale with no vendor icons](examples/generic/generic-reference-architecture.png)
+
+### Cross-cloud composition (PlantUML C4)
+
+A C4 container diagram spanning more than one provider, with every cross-provider edge
+labeled by the data flow it represents.
+
+![Cross-cloud C4 container composition spanning multiple providers with labeled cross-provider data-flow edges](examples/cross-cloud/cross-cloud-composition.png)
+
 ## Quick start
 
 Install the engine (editable) into your environment:
