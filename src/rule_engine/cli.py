@@ -49,6 +49,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from . import linter as _linter
+from .constants import ROOT_LAYER_ID as _ROOT_LAYER_ID
+from .constants import is_boundary_container_style as _is_boundary_container_style
+from .constants import is_text_cell_style as _is_text_cell_style
 from .linter import (
     Artifact,
     Edge,
@@ -82,11 +85,9 @@ _ID_ATTR_RE = re.compile(r'\bid="([^"]*)"', re.IGNORECASE)
 _PARENT_ATTR_RE = re.compile(r'\bparent="([^"]*)"', re.IGNORECASE)
 _FONT_SIZE_RE = re.compile(r"fontSize=([0-9]+)", re.IGNORECASE)
 
-# The draw.io root layer cell id. Vertices parented here (or to a boundary
-# container) are top-level diagram nodes; vertices parented to another node
-# (e.g. the sub-cells of an embedded icon/stencil group) are that node's
-# internal glyph geometry and are NOT counted as separate diagram nodes.
-_ROOT_LAYER_ID = "1"
+# The draw.io root-layer id and the boundary/text cell classifiers come from
+# rule_engine.constants (shared with geometry.build_geometry), so the C4
+# container-detection rule cannot drift. _ROOT_LAYER_ID is imported above.
 
 # Style tokens that mark an UNRESOLVED / placeholder icon (REVIEW.md C2). A node
 # is resolved when it carries a concrete, non-empty style — whether that is a
@@ -218,46 +219,29 @@ def _parse_drawio(path: str, text: str) -> Artifact:
         m = _PARENT_ATTR_RE.search(cell)
         return m.group(1) if m else ""
 
-    def _is_text_cell(value: str, style_low: str) -> bool:
+    def _is_text_cell(value: str, style: str) -> bool:
+        # Style-based text detection is shared with geometry via constants; the
+        # value-based checks (title cell, a "Legend" block) are cli-specific.
         return (
-            "text" in style_low
-            or style_low.startswith("text;")
+            _is_text_cell_style(style)
             or value == title_cell
             or value.lower().startswith("legend")
         )
 
     # Boundary/Network-Boundary containers hold nodes but are themselves the
     # stack/network frame. A vertex whose parent is the root layer or one of
-    # these containers is a top-level node. Container detection is robust
-    # (REVIEW.md C4): a vertex is a container when ANY of the following hold —
-    #   * its id starts with the conventional ``boundary`` prefix;
-    #   * it uses a group/container style (``group``/``;group``/``shape=*group``/
-    #     ``container=1``) — this catches the AWS profile group shape
-    #     ``shape=mxgraph.aws4.group;...;dashed=0`` which the old dashed-only test
-    #     missed, wrongly counting it as a node and inflating ``node-count``;
-    #   * it is a dashed borderless boundary rectangle (generic/oci/gcp style).
+    # these containers is a top-level node. Container detection (REVIEW.md C4)
+    # is the shared rule in constants.is_boundary_container_style, so node
+    # counting here and the geometry-aware layout checks cannot drift.
     boundary_ids: set[str] = set()
     for cell in cells:
         if not _VERTEX_RE.search(cell):
             continue
         cid = _cell_id(cell)
         m = _STYLE_ATTR_RE.search(cell)
-        style_low = m.group(1).lower() if m else ""
-        is_group_style = (
-            "group" in style_low  # group / ;group / shape=...group / grIcon=
-            or "container=1" in style_low
-        )
-        is_dashed_boundary = "dashed=1" in style_low and "fillcolor=none" in style_low
-        # An AWS-style boundary group names ``group`` in its shape and a
-        # ``group_*``/``grIcon=`` container icon (e.g. mxgraph.aws4.group with
-        # grIcon=mxgraph.aws4.group_account). A group-styled cell that merely
-        # hosts embedded glyph geometry (an OCI node container) is NOT a boundary
-        # — its children are stencil cells, and it is handled as a normal
-        # top-level node by the parent rule below.
-        is_boundary_group = is_group_style and ("group_" in style_low or "gricon=" in style_low)
-        if cid.startswith("boundary") or is_dashed_boundary or is_boundary_group:
+        style = m.group(1) if m else ""
+        if _is_boundary_container_style(cid, style):
             boundary_ids.add(cid)
-
     node_container_parents = {_ROOT_LAYER_ID} | boundary_ids
 
     node_names: List[str] = []

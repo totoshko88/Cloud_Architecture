@@ -1,0 +1,45 @@
+# Pre-commit hooks for the Diagram & Inventory Rule Engine.
+#
+# Install once:   pip install -e ".[dev]" && pip install pre-commit && pre-commit install
+# Run manually:   pre-commit run --all-files
+#
+# These local hooks run the same gates as CI so a bad diagram/document/mapping
+# never reaches a commit. They use the console scripts from the editable install
+# (system language: the hooks call the tools already on PATH).
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=1024"]
+
+  - repo: local
+    hooks:
+      - id: rule-engine-lint
+        name: rule-engine-lint (diagrams + documents)
+        entry: rule-engine-lint --all --fail-on error,critical
+        language: system
+        pass_filenames: false
+        # Re-run when any diagram, generated doc, mapping, schema, or the ruleset
+        # changes.
+        files: '\.(drawio|md|markdown|json|yaml)$'
+
+      - id: rule-engine-validate-schema
+        name: rule-engine-validate-schema (examples)
+        entry: rule-engine-validate-schema --schema schemas/inventory.schema.json --targets 'examples/**/*.json'
+        language: system
+        pass_filenames: false
+        files: '^(examples/.*\.json|schemas/inventory\.schema\.json)$'
+
+      - id: pytest
+        name: pytest (unit + property-based)
+        entry: pytest -q
+        language: system
+        pass_filenames: false
+        # Only when Python source or tests change (keeps doc-only commits fast).
+        files: '\.py$'

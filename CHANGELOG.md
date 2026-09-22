@@ -1,8 +1,9 @@
 # Changelog
+# Changelog
 
 All notable changes to the Rule Engine are recorded here, per released version, in reverse chronological order.
 
-## [1.1.0] - 2026-09-22
+## [1.1.0] - 2026-09-23
 
 Diagram routing quality, an official-asset icon fallback, the steering rules that codify both, and a diagram-rules review pass (REVIEW.md findings D1–D7): accessibility, a real geometry model, and layout-quality lint enforcement.
 
@@ -11,6 +12,7 @@ Diagram routing quality, an official-asset icon fallback, the steering rules tha
 - **Asset Index & Icon Fallback** (`src/rule_engine/asset_index.py`, CLI `rule-engine-index-assets`): indexes the official provider icon packs (AWS, Azure, GCP SVG/PNG; OCI draw.io library) and resolves a specific service name to a built-in stencil, else an official SVG/PNG, else a fail-honest `unresolved`. This covers services with no built-in stencil yet — for example AWS DevOps / FinOps / Security agents — which now resolve to their official SVGs.
 - New steering document `.kiro/steering/asset-packs.md`: official pack sources, per-provider layouts, and the built-in → official-asset → unresolved order.
 - Diagram-standards additions: **Edge Routing** now requires grid-step-separated parallel runs (no shared corridors), no edge–node / edge–label crossings, and a **Container Padding** rule (≥ 1 grid step around child nodes).
+- **Developer tooling & CI**: a GitHub Actions workflow (`.github/workflows/ci.yml`) running lint + validate + the full pytest suite (including the property-based tests) on a Python version matrix; a `.pre-commit-config.yaml` wiring `rule-engine-lint`, schema validation, and pytest; and a `CONTRIBUTING.md` with the dev setup, checks, and raster-regeneration steps. Runtime dependency floors are pinned in `pyproject.toml` and test tools moved to the `dev` extra.
 - Edge Routing additions distilled from the AWS golden example: a **shared trunk with branches in opposite directions** for fan-out from one node (fewer crossings and corners than several near-parallel detours), and a **clean arrow start** convention (`exitPerimeter=0`, exit just past the source perimeter) so arrow stubs do not bite into the icon glyph.
 - **Diagram geometry model** (`src/rule_engine/geometry.py`, REVIEW.md D3/D6): the CLI `.drawio` parser now builds absolute-coordinate node/container boxes and edge contact points/waypoints and attaches them to the linted artifact, so layout rules evaluate the real file instead of being prose-only.
 - **Geometry-enforced lint rules** (all WARNING): `grid-alignment` (node origins are grid multiples, D2), `node-overlap` (no overlapping icon boxes), `arrow-style` (D5: flags filled/heavy arrowheads, unspecified heads that default to filled, and sub-1pt strokes), plus real implementations of `container-padding` and `edge-routing` — previously documented but never evaluated on a file. `edge-routing` is deliberately conservative (flags non-orthogonal edges and waypoint-free edges that run straight through an unrelated node; edges with explicit waypoints are treated as deliberately routed) to avoid false positives on validly routed diagrams. Regression tests in `tests/test_review_fixes.py` cover both the clean golden examples and firing cases.

@@ -12,18 +12,19 @@ readme = "README.md"
 # python:3.14-slim). See INSTALL.md.
 requires-python = ">=3.14"
 license = { file = "LICENSE" }
-# Runtime dependencies only. Test/dev tools live in the `dev` extra below so
-# downstream consumers of the engine do not install them (REVIEW.md G3).
+# Runtime dependencies only, with version floors for reproducible builds. Test/
+# dev tools live in the `dev` extra below so downstream consumers of the engine
+# do not install them (REVIEW.md G3).
 dependencies = [
-    "jsonschema",
-    "PyYAML",
+    "jsonschema>=4.18",  # Draft 2020-12 validator (Draft202012Validator)
+    "PyYAML>=6.0",
 ]
 
 [project.optional-dependencies]
 # Install with:  pip install -e ".[dev]"
 dev = [
-    "pytest",
-    "hypothesis",
+    "pytest>=8.0",
+    "hypothesis>=6.100",
 ]
 
 [project.scripts]

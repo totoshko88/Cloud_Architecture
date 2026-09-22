@@ -40,6 +40,13 @@ import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Tuple
 
+# Container / text classification and the root-layer id are shared with
+# cli._parse_drawio via rule_engine.constants so the C4 boundary-detection rule
+# cannot drift between node counting and the geometry-aware layout checks.
+from rule_engine.constants import ROOT_LAYER_ID as _ROOT_LAYER_ID
+from rule_engine.constants import is_boundary_container_style as _is_boundary_style
+from rule_engine.constants import is_text_cell_style as _is_text_style
+
 # The model grid step (draw.io ``gridSize`` default). Spacings and node origins
 # are expected to be whole multiples of it (diagram-standards Layout Geometry).
 GRID = 10
@@ -47,7 +54,6 @@ GRID = 10
 _CELL_RE = re.compile(r"<mxCell\b[^>]*?(?:/>|>.*?</mxCell>)", re.S)
 _GEOM_RE = re.compile(r"<mxGeometry\b[^>]*?(?:/>|>.*?</mxGeometry>)", re.S)
 _POINT_RE = re.compile(r'<mxPoint x="([-0-9.]+)" y="([-0-9.]+)"')
-_ROOT_LAYER_ID = "1"
 
 
 def _attr(cell: str, name: str) -> Optional[str]:
@@ -128,18 +134,6 @@ class DiagramGeometry:
     nodes: Dict[str, Box] = field(default_factory=dict)
     containers: Dict[str, Box] = field(default_factory=dict)
     edges: List[EdgeGeom] = field(default_factory=list)
-
-
-def _is_boundary_style(cid: str, style_low: str) -> bool:
-    """Mirror of ``cli._parse_drawio`` container detection (REVIEW.md C4)."""
-    is_group = "group" in style_low or "container=1" in style_low
-    is_dashed = "dashed=1" in style_low and "fillcolor=none" in style_low
-    is_boundary_group = is_group and ("group_" in style_low or "gricon=" in style_low)
-    return cid.startswith("boundary") or is_dashed or is_boundary_group
-
-
-def _is_text_style(style_low: str) -> bool:
-    return style_low.startswith("text;") or "text;" in style_low
 
 
 def build_geometry(text: str) -> DiagramGeometry:

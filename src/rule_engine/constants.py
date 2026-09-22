@@ -34,6 +34,9 @@ __all__ = [
     "BRAND_HEX",
     "SECRET_MARKERS",
     "SECRET_CONTENT_MARKERS",
+    "ROOT_LAYER_ID",
+    "is_boundary_container_style",
+    "is_text_cell_style",
     "TERMINOLOGY_PATH",
     "load_terminology",
     "provider_labels",
@@ -164,6 +167,47 @@ BRAND_HEX: Dict[str, str] = {
     "generic": "#FFFFFF",
     **_brand_hex_from_terminology(),
 }
+
+
+# --------------------------------------------------------------------------- #
+# Shared .drawio cell classification (single home so cli + geometry agree)
+# --------------------------------------------------------------------------- #
+
+#: The draw.io root layer cell id. A vertex parented here (or to a boundary
+#: container) is a top-level diagram node; a vertex parented to another node is
+#: that node's internal glyph geometry.
+ROOT_LAYER_ID = "1"
+
+
+def is_boundary_container_style(cell_id: str, style: str) -> bool:
+    """Return True when a vertex is a Boundary / Network-Boundary container.
+
+    Shared by ``cli._parse_drawio`` (node counting) and
+    ``geometry.build_geometry`` (layout checks) so the container-detection rule
+    (REVIEW.md C4) cannot drift between the two. A vertex is a container when:
+
+    * its id starts with the conventional ``boundary`` prefix; or
+    * it is a dashed borderless rectangle (generic/oci/gcp boundary style,
+      ``dashed=1`` + ``fillColor=none``); or
+    * it is an AWS-style group container — a group/``container=1`` style that
+      names a ``group_*`` container icon or ``grIcon=`` (e.g.
+      ``shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_account;dashed=0``).
+
+    A group-styled cell that merely hosts embedded glyph geometry (an OCI node
+    container) is NOT a boundary — it names no ``group_``/``grIcon=`` — and is
+    handled as an ordinary top-level node.
+    """
+    low = (style or "").lower()
+    is_group = "group" in low or "container=1" in low
+    is_dashed = "dashed=1" in low and "fillcolor=none" in low
+    is_boundary_group = is_group and ("group_" in low or "gricon=" in low)
+    return (cell_id or "").startswith("boundary") or is_dashed or is_boundary_group
+
+
+def is_text_cell_style(style: str) -> bool:
+    """Return True when a cell is a text/label cell (title, legend, free text)."""
+    low = (style or "").lower()
+    return low.startswith("text;") or "text;" in low or "text" == low.strip()
 
 
 def provider_labels() -> Dict[str, Dict[str, str]]:
