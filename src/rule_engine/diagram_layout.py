@@ -250,11 +250,47 @@ def embed_oci_stencil(
                 caption_ids.add(cid)
                 changed = True
 
-    icon_h = icon_bottom if icon_bottom and icon_bottom > 0 else stencil_h
-    icon_w = stencil_w
+    # Scale by the GLYPH's real bounding box, not the stencil's declared size.
+    # The declared width/height include the baked-in caption (a long caption like
+    # "OCI Container Engine for Kubernetes" makes the stencil w=138 even though the
+    # glyph itself is ~84x84). Measuring the drawn shape cells (non-caption, with a
+    # ``shape=``/``stencil`` geometry) yields the actual glyph extent, so every
+    # provider glyph normalizes to the same visual size — matching the reference
+    # pack where all service icons share one standardized icon footprint.
+    gx0 = gy0 = float("inf")
+    gx1 = gy1 = float("-inf")
+    for cell in cells:
+        m = _ID_RE.search(cell)
+        if not m or m.group(1) in ("0", "1") or m.group(1) in caption_ids:
+            continue
+        if "shape=" not in cell and "stencil" not in cell:
+            continue
+        gm = _GEOM_RE.search(cell)
+        if not gm:
+            continue
+        g = gm.group(0)
+        x = _num(g, "x") or 0.0
+        y = _num(g, "y") or 0.0
+        w = _num(g, "width")
+        h = _num(g, "height")
+        if w is None or h is None:
+            continue
+        gx0, gy0 = min(gx0, x), min(gy0, y)
+        gx1, gy1 = max(gx1, x + w), max(gy1, y + h)
+
+    if gx1 > gx0 and gy1 > gy0:
+        icon_w = gx1 - gx0
+        icon_h = gy1 - gy0
+    else:
+        # Fallback to the caption-based estimate if no shape cells were measured.
+        icon_w = stencil_w
+        icon_h = icon_bottom if icon_bottom and icon_bottom > 0 else stencil_h
+        gx0 = gy0 = 0.0
+
     scale = min(box / icon_w, box / icon_h) if icon_w and icon_h else 1.0
-    pad_x = (box - icon_w * scale) / 2.0
-    pad_y = (box - icon_h * scale) / 2.0
+    # Center the scaled glyph in the box, accounting for a non-zero bbox origin.
+    pad_x = (box - icon_w * scale) / 2.0 - gx0 * scale
+    pad_y = (box - icon_h * scale) / 2.0 - gy0 * scale
 
     alloc = _IdAllocator(node_id)
     id_map: Dict[str, str] = {}
