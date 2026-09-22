@@ -26,8 +26,10 @@ venv/
 env/
 ENV/
 
-# Downloaded asset packs (draw.io icon libraries, unpacked provider assets)
-assets/
+# Downloaded asset packs (draw.io icon libraries, unpacked provider assets).
+# Anchored to the repo-root vendor dir only — must NOT match the source package
+# src/rule_engine/assets/, which is code that ships with the engine.
+/assets/
 asset-packs/
 *.drawio-lib
 azure-icons/
