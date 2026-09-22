@@ -43,6 +43,10 @@ every applicable rule against every artifact.
 | `flow-legend` | A diagram uses numeric flow markers on edges but has no `Flow` legend cell covering every marker. | WARNING | diagram-standards Numbered Flow Legend |
 | `edge-routing` | A diagram edge is not orthogonally routed, crosses a node icon, shares a corridor with a parallel edge, overlaps a label/legend, or two edges leave/enter one node side on the same contact point. | WARNING | diagram-standards Edge Routing |
 | `container-padding` | A container border sits flush against or straddles a child node (no grid-step padding). | WARNING | diagram-standards Container Padding |
+| `min-font-size` | A diagram carries on-diagram text below the 12px minimum font size. | WARNING | diagram-standards Accessibility & Contrast |
+| `grid-alignment` | A diagram node's absolute x or y is not a whole multiple of the grid step (default 10). | WARNING | diagram-standards Layout Geometry |
+| `node-overlap` | Two diagram node icon boxes overlap (intersecting rectangles). | WARNING | diagram-standards Layout Geometry |
+| `arrow-style` | A diagram edge uses a filled/heavy arrowhead (or an unspecified head that defaults to filled), or a stroke width below 1pt. | WARNING | diagram-standards Accessibility & Contrast |
 
 ### Rule Detail
 
@@ -83,7 +87,7 @@ every applicable rule against every artifact.
   the `Flow` legend, or whose `Flow` legend does not cover every marker, produces a
   WARNING. Diagrams that use descriptive prose labels instead of numeric markers are
   unaffected.
-- **`edge-routing` (WARNING)** — Edges should be orthogonally routed
+- **`edge-routing` (WARNING)** — *Geometry-enforced from the parsed `.drawio` model.* The check is conservative to avoid false positives on validly routed diagrams: it flags a **non-orthogonal** edge, and a **waypoint-free** edge whose straight run between its real contact points passes through an unrelated node. An edge carrying explicit `<mxPoint>` waypoints is treated as deliberately routed (draw.io routes orthogonally around nodes). Beyond the enforced core, edges should be orthogonally routed
   (`edgeStyle=orthogonalEdgeStyle` for `.drawio`), must not cross through a node icon,
   and must enter a node on its left/top and exit on its right/bottom. When one node
   side carries more than one edge, each edge uses a distinct contact point
@@ -96,10 +100,27 @@ every applicable rule against every artifact.
   several near-parallel detours, and start arrow stubs just past the source perimeter
   (`exitPerimeter=0`) so they do not bite into the glyph. A violation of any of these is a
   WARNING.
-- **`container-padding` (WARNING)** — A Boundary or Network Boundary container must keep
+- **`container-padding` (WARNING)** — *Geometry-enforced from the parsed `.drawio` model* (a node's absolute box is measured against each container box). A Boundary or Network Boundary container must keep
   at least one grid step of padding between its border and every child node, and between
   a nested container and its parent. A node placed flush against or straddling a
   container border is a WARNING.
+- **`min-font-size` (WARNING)** — Every piece of on-diagram text (node labels, edge
+  labels, boundary captions, title cell, and the `Flow`/`Legend` cells) must render at
+  **12px or larger**, the accessibility floor from published AWS diagram conventions. A
+  diagram whose parsed `fontSize=<n>` tokens include any value below 12 produces a
+  WARNING. When no font sizes are parsed (e.g. a programmatic artifact), the rule is
+  skipped rather than assumed to pass.
+- **`grid-alignment` (WARNING)** — *Geometry-enforced.* Every diagram node's absolute
+  x and y origin must be a whole multiple of the model grid step (draw.io `gridSize`,
+  default 10) so nodes share one rhythm. A node off the grid produces a WARNING. When no
+  geometry is parsed (a programmatic artifact), the rule is skipped.
+- **`node-overlap` (WARNING)** — *Geometry-enforced.* No two node icon boxes may overlap.
+  Overlapping rectangles (icons drawn on top of each other) produce a WARNING. Boundary
+  containers are excluded (nodes are expected to sit inside them).
+- **`arrow-style` (WARNING)** — *Geometry-enforced.* Prefer an **open** arrowhead
+  (`endArrow=open;endFill=0`) over a heavy filled head, and keep stroke width at ≥ 1pt.
+  An edge with a filled head (`block`/`classic`/`diamond`/`oval`, fill on), an unspecified
+  head (which defaults to filled `classic`), or a sub-1pt `strokeWidth` produces a WARNING.
 
 ## Publication Eligibility
 

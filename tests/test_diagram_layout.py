@@ -75,3 +75,21 @@ def test_full_diagram_counts_one_node_per_service():
     art = _parse_drawio("mem.drawio", doc)
     # Three service nodes counted; boundary + legends excluded.
     assert sorted(art.node_names) == ["svc0", "svc1", "svc2"]
+
+
+# --- REVIEW.md #3: OCI stencil pack-shape guard -----------------------------
+
+
+def test_embed_oci_stencil_raises_on_missing_group_cell():
+    """A stencil with no id="2" group cell fails loudly, not silently."""
+    import pytest
+
+    bad_xml = (
+        "<mxGraphModel><root>"
+        '<mxCell id="0"/><mxCell id="1" parent="0"/>'
+        '<mxCell id="9" style="shape=stencil(X);html=1" vertex="1" parent="1">'
+        '<mxGeometry width="80" height="80" as="geometry"/></mxCell>'
+        "</root></mxGraphModel>"
+    )
+    with pytest.raises(dl.OciStencilError):
+        dl.embed_oci_stencil("n1", bad_xml, 80, 80, "n1")

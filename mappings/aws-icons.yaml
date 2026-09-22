@@ -20,31 +20,31 @@ resources:
   serverless_fn:
     icon_id: mxgraph.aws4.lambda
     brand_hex: "#ED7100"
-    style: "shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;fillColor=#ED7100;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;fillColor=#ED7100;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   object_store:
     icon_id: mxgraph.aws4.s3
     brand_hex: "#7AA116"
-    style: "shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.s3;fillColor=#7AA116;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.s3;fillColor=#7AA116;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   managed_sql:
     icon_id: mxgraph.aws4.rds
     brand_hex: "#527FFF"
-    style: "shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.rds;fillColor=#527FFF;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.rds;fillColor=#527FFF;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   message_queue:
     icon_id: mxgraph.aws4.sqs
     brand_hex: "#E7157B"
-    style: "shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.sqs;fillColor=#E7157B;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.sqs;fillColor=#E7157B;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   secrets_store:
     icon_id: mxgraph.aws4.secrets_manager
     brand_hex: "#DD344C"
-    style: "shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.secrets_manager;fillColor=#DD344C;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.secrets_manager;fillColor=#DD344C;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   managed_k8s:
     icon_id: mxgraph.aws4.eks
     brand_hex: "#ED7100"
-    style: "shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.eks;fillColor=#ED7100;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.eks;fillColor=#ED7100;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   llm_platform:
     icon_id: mxgraph.aws4.bedrock
     brand_hex: "#01A88D"
-    style: "shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.bedrock;fillColor=#01A88D;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.bedrock;fillColor=#01A88D;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
 
 containers:
   boundary:

@@ -17,39 +17,39 @@ resources:
   boundary:
     icon_id: azure.subscription
     brand_hex: "#0078D4"
-    style: "shape=mxgraph.azure.subscription;fillColor=#0078D4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "shape=mxgraph.azure.subscription;fillColor=#0078D4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   network_boundary:
     icon_id: azure.virtual_network
     brand_hex: "#0078D4"
-    style: "shape=mxgraph.azure.virtual_network;fillColor=#0078D4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "shape=mxgraph.azure.virtual_network;fillColor=#0078D4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   serverless_fn:
     icon_id: azure.function_apps
     brand_hex: "#0062AD"
-    style: "shape=mxgraph.azure.function_apps;fillColor=#0062AD;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "shape=mxgraph.azure.function_apps;fillColor=#0062AD;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   object_store:
     icon_id: azure.storage_accounts
     brand_hex: "#0078D4"
-    style: "shape=mxgraph.azure.storage_accounts;fillColor=#0078D4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "shape=mxgraph.azure.storage_accounts;fillColor=#0078D4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   managed_sql:
     icon_id: azure.sql_database
     brand_hex: "#0078D4"
-    style: "shape=mxgraph.azure.sql_database;fillColor=#0078D4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "shape=mxgraph.azure.sql_database;fillColor=#0078D4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   message_queue:
     icon_id: azure.service_bus
     brand_hex: "#0078D4"
-    style: "shape=mxgraph.azure.service_bus;fillColor=#0078D4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "shape=mxgraph.azure.service_bus;fillColor=#0078D4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   secrets_store:
     icon_id: azure.key_vaults
     brand_hex: "#0078D4"
-    style: "shape=mxgraph.azure.key_vaults;fillColor=#0078D4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "shape=mxgraph.azure.key_vaults;fillColor=#0078D4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   managed_k8s:
     icon_id: azure.kubernetes_services
     brand_hex: "#0078D4"
-    style: "shape=mxgraph.azure.kubernetes_services;fillColor=#0078D4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "shape=mxgraph.azure.kubernetes_services;fillColor=#0078D4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   llm_platform:
     icon_id: azure.cognitive_services
     brand_hex: "#0078D4"
-    style: "shape=mxgraph.azure.cognitive_services;fillColor=#0078D4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "shape=mxgraph.azure.cognitive_services;fillColor=#0078D4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
 containers:
   boundary:
     icon_id: azure.subscription

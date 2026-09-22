@@ -17,39 +17,39 @@ resources:
   boundary:
     icon_id: oci.compartment
     brand_hex: "#F80000"
-    style: "shape=mxgraph.oci.compartment;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "shape=mxgraph.oci.compartment;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   network_boundary:
     icon_id: oci.virtual_cloud_network
     brand_hex: "#F80000"
-    style: "shape=mxgraph.oci.virtual_cloud_network;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "shape=mxgraph.oci.virtual_cloud_network;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   serverless_fn:
     icon_id: oci.functions
     brand_hex: "#F80000"
-    style: "shape=mxgraph.oci.functions;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "shape=mxgraph.oci.functions;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   object_store:
     icon_id: oci.object_storage
     brand_hex: "#F80000"
-    style: "shape=mxgraph.oci.object_storage;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "shape=mxgraph.oci.object_storage;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   managed_sql:
     icon_id: oci.autonomous_database
     brand_hex: "#F80000"
-    style: "shape=mxgraph.oci.autonomous_database;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "shape=mxgraph.oci.autonomous_database;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   message_queue:
     icon_id: oci.streaming
     brand_hex: "#F80000"
-    style: "shape=mxgraph.oci.streaming;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "shape=mxgraph.oci.streaming;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   secrets_store:
     icon_id: oci.vault
     brand_hex: "#F80000"
-    style: "shape=mxgraph.oci.vault;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "shape=mxgraph.oci.vault;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   managed_k8s:
     icon_id: oci.container_engine_kubernetes
     brand_hex: "#F80000"
-    style: "shape=mxgraph.oci.container_engine_kubernetes;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "shape=mxgraph.oci.container_engine_kubernetes;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   llm_platform:
     icon_id: oci.generative_ai
     brand_hex: "#F80000"
-    style: "shape=mxgraph.oci.generative_ai;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "shape=mxgraph.oci.generative_ai;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
 containers:
   boundary:
     icon_id: oci.compartment

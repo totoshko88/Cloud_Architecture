@@ -140,11 +140,9 @@ TYPE_MAPPING: dict[str, dict[str, str]] = _build_type_mapping()
 # secret-bearing field and is dropped during canonicalization (design section 4c
 # step 1; secret-safety). This keeps secret values, key material, and
 # SecureString contents out of the hashed bytes.
-# Config-key drop list: the shared secret vocabulary (constants.SECRET_MARKERS),
-# minus the raw PEM-block marker which is a content-scan concern, not a key name.
-_SECRET_KEY_SUBSTRINGS: tuple[str, ...] = tuple(
-    m for m in SECRET_MARKERS if not m.startswith("-----")
-)
+# Config-key drop list: the shared broad secret vocabulary
+# (constants.SECRET_MARKERS), matched against object KEY NAMES.
+_SECRET_KEY_SUBSTRINGS: tuple[str, ...] = SECRET_MARKERS
 
 
 def _is_secret_key(key: str) -> bool:

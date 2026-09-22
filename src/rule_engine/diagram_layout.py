@@ -53,10 +53,21 @@ ROW_STEP = 160
 #: container (>= one grid step, per diagram-standards Container Padding).
 CONTAINER_PAD = 30
 
-#: Standard node label style suffix (label sits directly under the icon).
+#: Minimum on-diagram font size, in px. AWS diagram conventions require a
+#: >= 12px floor for readability/accessibility (see diagram-standards.md
+#: "Accessibility & Contrast" and the ``min-font-size`` lint rule). Every text
+#: style below (labels, boundaries, legends) sits at or above this value.
+MIN_FONT_SIZE = 12
+
+#: Minimum edge stroke width in pt (AWS convention: lines >= 1pt). The shared
+#: builder draws edges at this width; the ``arrow-style`` lint rule flags thinner.
+EDGE_STROKE_WIDTH = 1.5
+
+#: Standard node label style suffix (label sits directly under the icon). The
+#: label font is held at ``MIN_FONT_SIZE`` so node captions clear the 12px floor.
 _LABEL_STYLE = (
     "verticalLabelPosition=bottom;verticalAlign=top;align=center;"
-    "fontSize=11;fontStyle=0"
+    f"fontSize={MIN_FONT_SIZE};fontStyle=0"
 )
 
 #: Boundary stroke colors (diagram-standards Legend): dashed green stack
@@ -66,8 +77,8 @@ STACK_BOUNDARY_STROKE = "#00A000"
 NETWORK_BOUNDARY_STROKE = "#0062AD"
 
 _TEXT_STYLE = (
-    "text;html=1;align=left;verticalAlign=top;fontSize=11;whiteSpace=wrap;"
-    "strokeColor=#000000;fillColor=#FFFFFF"
+    f"text;html=1;align=left;verticalAlign=top;fontSize={MIN_FONT_SIZE};"
+    "whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF"
 )
 
 
@@ -158,6 +169,20 @@ _PARENT_RE = re.compile(r'\bparent="([^"]*)"')
 _GEOM_RE = re.compile(r"<mxGeometry\b[^>]*?/>")
 # A stencil's baked-in caption cell (Oracle Sans text below the icon).
 _CAPTION_MARKERS = ("Oracle Sans", "font-family", "foreignObject")
+# The extracted OCI stencils place the top-level group at cell id="2" (parent
+# "1"); the icon geometry hangs off it. This is a shape of the current pack.
+_OCI_GROUP_CELL_ID = "2"
+
+
+class OciStencilError(ValueError):
+    """Raised when an extracted OCI stencil does not match the expected shape.
+
+    The embedder makes two pack-shape assumptions (fail-honest per asset-packs):
+    the top-level group is cell ``id="2"``, and a baked-in caption (when present)
+    is detectable by the Oracle-Sans markers. If a refreshed pack breaks either,
+    this turns a silent visual defect (leaked caption / mis-scaled icon) into a
+    loud generator failure so the pack shape can be re-checked.
+    """
 
 
 def _num(attrs: str, name: str) -> Optional[float]:
@@ -190,6 +215,15 @@ def embed_oci_stencil(
     ``node_id``. Returns the inner glyph cells (to place inside a group node).
     """
     cells = _CELL_RE.findall(stencil_xml)
+
+    # Guard the pack-shape assumption: the top-level group must be id="2".
+    cell_ids = {(_ID_RE.search(c).group(1)) for c in cells if _ID_RE.search(c)}
+    if _OCI_GROUP_CELL_ID not in cell_ids:
+        raise OciStencilError(
+            f"OCI stencil for node {node_id!r} has no group cell "
+            f'id="{_OCI_GROUP_CELL_ID}"; the extracted pack shape changed — '
+            "re-check scripts/fetch_assets.py stencil extraction."
+        )
 
     parent_of: Dict[str, str] = {}
     caption_ids: set[str] = set()
@@ -350,7 +384,12 @@ def edge_cell(e: Edge) -> str:
     ex, ey = e.exit
     nx, ny = e.entry
     style = (
-        f"edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;{dash}"
+        # Open arrowhead (endArrow=open;endFill=0) and a >= 1pt stroke, per AWS
+        # diagram conventions (diagram-standards "Accessibility & Contrast" /
+        # arrow-style lint rule): open pointers read cleaner than heavy filled
+        # heads and the stroke stays visible when scaled down.
+        f"edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;"
+        f"strokeWidth={EDGE_STROKE_WIDTH};{dash}"
         f"exitX={ex};exitY={ey};exitDx=0;exitDy=0;exitPerimeter=0;"
         f"entryX={nx};entryY={ny};entryDx=0;entryDy=0;"
         "fontSize=12;fontStyle=1"
@@ -448,7 +487,7 @@ __all__ = [
     "ICON_SIZE", "GRID", "COL_STEP", "ROW_STEP", "CONTAINER_PAD",
     "STACK_BOUNDARY_STROKE", "NETWORK_BOUNDARY_STROKE",
     "Node", "Edge", "Boundary", "IconRenderer",
-    "builtin_icon", "embed_oci_stencil", "OciStencilIcon",
+    "builtin_icon", "embed_oci_stencil", "OciStencilIcon", "OciStencilError",
     "title_cell", "boundary_cell", "edge_cell", "text_cell",
     "STANDARD_LEGEND_LINES", "build_diagram",
 ]

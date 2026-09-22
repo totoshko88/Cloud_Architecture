@@ -80,6 +80,7 @@ _EDGE_RE = re.compile(r'edge="1"', re.IGNORECASE)
 _STYLE_ATTR_RE = re.compile(r'style="([^"]*)"', re.IGNORECASE)
 _ID_ATTR_RE = re.compile(r'\bid="([^"]*)"', re.IGNORECASE)
 _PARENT_ATTR_RE = re.compile(r'\bparent="([^"]*)"', re.IGNORECASE)
+_FONT_SIZE_RE = re.compile(r"fontSize=([0-9]+)", re.IGNORECASE)
 
 # The draw.io root layer cell id. Vertices parented here (or to a boundary
 # container) are top-level diagram nodes; vertices parented to another node
@@ -296,12 +297,28 @@ def _parse_drawio(path: str, text: str) -> Artifact:
     if path.endswith(".drawio"):
         companion = path[: -len(".drawio")] + ".diagram.md"
 
+    # Harvest every fontSize token so the ``min-font-size`` rule can flag text
+    # below the accessibility floor (REVIEW.md D1). Includes labels, titles,
+    # boundary captions, and legend cells.
+    font_sizes = [int(m) for m in _FONT_SIZE_RE.findall(text)]
+
+    # Parse a light geometry model so the geometry-aware rules
+    # (grid-alignment, container-padding, edge-routing, node-overlap)
+    # can evaluate layout quality on the real file (REVIEW.md D2/D3/D6).
+    try:
+        from rule_engine import geometry as _geometry
+        geo = _geometry.build_geometry(text)
+    except Exception:
+        geo = None
+
     return Artifact(
         kind="diagram",
         path=path,
         node_names=node_names,
         edges=edges,
         icons=icons,
+        font_sizes=font_sizes,
+        geometry=geo,
         has_legend=has_legend,
         title_cell=title_cell,
         source_format="drawio",

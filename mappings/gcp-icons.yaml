@@ -17,39 +17,39 @@ resources:
   boundary:
     icon_id: gcp.project
     brand_hex: "#4285F4"
-    style: "shape=mxgraph.gcp2.project;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "shape=mxgraph.gcp2.project;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   network_boundary:
     icon_id: gcp.virtual_private_cloud
     brand_hex: "#4285F4"
-    style: "shape=mxgraph.gcp2.virtual_private_cloud;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "shape=mxgraph.gcp2.virtual_private_cloud;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   serverless_fn:
     icon_id: gcp.cloud_functions
     brand_hex: "#4285F4"
-    style: "shape=mxgraph.gcp2.cloud_functions;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "shape=mxgraph.gcp2.cloud_functions;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   object_store:
     icon_id: gcp.cloud_storage
     brand_hex: "#4285F4"
-    style: "shape=mxgraph.gcp2.cloud_storage;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "shape=mxgraph.gcp2.cloud_storage;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   managed_sql:
     icon_id: gcp.cloud_sql
     brand_hex: "#4285F4"
-    style: "shape=mxgraph.gcp2.cloud_sql;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "shape=mxgraph.gcp2.cloud_sql;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   message_queue:
     icon_id: gcp.pubsub
     brand_hex: "#4285F4"
-    style: "shape=mxgraph.gcp2.pubsub;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "shape=mxgraph.gcp2.pubsub;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   secrets_store:
     icon_id: gcp.secret_manager
     brand_hex: "#4285F4"
-    style: "shape=mxgraph.gcp2.secret_manager;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "shape=mxgraph.gcp2.secret_manager;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   managed_k8s:
     icon_id: gcp.google_kubernetes_engine
     brand_hex: "#4285F4"
-    style: "shape=mxgraph.gcp2.google_kubernetes_engine;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "shape=mxgraph.gcp2.google_kubernetes_engine;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   llm_platform:
     icon_id: gcp.vertex_ai
     brand_hex: "#4285F4"
-    style: "shape=mxgraph.gcp2.vertex_ai;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "shape=mxgraph.gcp2.vertex_ai;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
 containers:
   boundary:
     icon_id: gcp.project

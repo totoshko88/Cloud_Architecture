@@ -35,8 +35,11 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
-# Shared secret-material vocabulary (single source of truth, REVIEW.md U2).
-from rule_engine.constants import SECRET_MARKERS as _SECRET_MARKERS
+# Narrow raw-content secret vocabulary (single source of truth, REVIEW.md U2).
+# The linter scans RAW snapshot content, so it uses the value-oriented
+# SECRET_CONTENT_MARKERS — not the broad key-name list — to avoid false CRITICAL
+# findings on secret-free metadata (e.g. the type value ``secrets_store``).
+from rule_engine.constants import SECRET_CONTENT_MARKERS as _SECRET_MARKERS
 
 
 # ---------------------------------------------------------------------------
@@ -63,6 +66,12 @@ RULE_ICON_RESOLVED = "icon-resolved"
 RULE_SECRET_SAFETY = "secret-safety"
 RULE_TITLE_VERSIONED = "title-versioned"
 RULE_MERMAID_TYPE = "mermaid-type"
+RULE_MIN_FONT_SIZE = "min-font-size"
+RULE_GRID_ALIGNMENT = "grid-alignment"
+RULE_CONTAINER_PADDING = "container-padding"
+RULE_EDGE_ROUTING = "edge-routing"
+RULE_NODE_OVERLAP = "node-overlap"
+RULE_ARROW_STYLE = "arrow-style"
 
 # Severity assigned to each rule when its condition holds (authoritative table).
 RULE_SEVERITIES: Dict[str, Severity] = {
@@ -76,10 +85,25 @@ RULE_SEVERITIES: Dict[str, Severity] = {
     RULE_SECRET_SAFETY: Severity.CRITICAL,
     RULE_TITLE_VERSIONED: Severity.WARNING,
     RULE_MERMAID_TYPE: Severity.WARNING,
+    RULE_MIN_FONT_SIZE: Severity.WARNING,
+    RULE_GRID_ALIGNMENT: Severity.WARNING,
+    RULE_CONTAINER_PADDING: Severity.WARNING,
+    RULE_EDGE_ROUTING: Severity.WARNING,
+    RULE_NODE_OVERLAP: Severity.WARNING,
+    RULE_ARROW_STYLE: Severity.WARNING,
 }
 
 # Maximum node count for a single diagram (Requirement 1 AC4 / 7 AC4).
 MAX_NODES = 12
+
+# Minimum on-diagram font size, in px. AWS diagram conventions require a >= 12px
+# floor for text readability/accessibility (diagram-standards.md "Accessibility &
+# Contrast"). Any diagram text below this trips the advisory ``min-font-size``
+# rule. Mirrors ``rule_engine.diagram_layout.MIN_FONT_SIZE``.
+MIN_FONT_SIZE = 12
+
+# Matches every ``fontSize=<n>`` occurrence in a draw.io style string.
+_FONT_SIZE_RE = re.compile(r"fontSize=([0-9]+)")
 
 # Allowed unquoted character set for a node name (Requirement 1 AC6 / 7 AC6).
 _UNQUOTED_NODE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -198,6 +222,15 @@ class Artifact:
     edges: Sequence[Edge] = field(default_factory=list)
     has_legend: bool = True
     icons: Sequence[Any] = field(default_factory=list)
+    # Font sizes (px) of the diagram's text-bearing cells, harvested from the
+    # draw.io ``fontSize=<n>`` style tokens. ``min-font-size`` flags any below
+    # ``MIN_FONT_SIZE``. Empty means "not parsed" and the rule is skipped.
+    font_sizes: Sequence[int] = field(default_factory=list)
+    # Optional parsed geometry (rule_engine.geometry.DiagramGeometry). When the
+    # CLI parses a .drawio file it attaches this so the geometry-aware rules
+    # (grid-alignment, container-padding, edge-routing, node-overlap) can run.
+    # Left None for programmatic artifacts; those rules then no-op.
+    geometry: Any = None
     title_cell: Optional[str] = None
     source_format: str = "plantuml"
     diagram_type: Optional[str] = None
@@ -383,6 +416,20 @@ def _check_title_versioned(a: Artifact) -> bool:
     return not (has_version and has_date)
 
 
+def _check_min_font_size(a: Artifact) -> bool:
+    """min-font-size: a diagram carries text below MIN_FONT_SIZE px (WARNING).
+
+    AWS diagram conventions require a >= 12px font floor for readability and
+    accessibility (diagram-standards.md "Accessibility & Contrast"). The check
+    inspects ``font_sizes`` harvested from the diagram's ``fontSize=<n>`` style
+    tokens; an empty list means the sizes were not parsed and the rule is
+    skipped (never a false positive on a programmatic Artifact).
+    """
+    if not _is_diagram(a):
+        return False
+    return any(int(fs) < MIN_FONT_SIZE for fs in a.font_sizes)
+
+
 def _check_mermaid_type(a: Artifact) -> bool:
     """mermaid-type: Mermaid used for a non sequence/flow/state diagram (WARNING)."""
     if not _is_diagram(a):
@@ -391,6 +438,62 @@ def _check_mermaid_type(a: Artifact) -> bool:
         return False
     dtype = (a.diagram_type or "").lower()
     return dtype not in _MERMAID_ALLOWED_TYPES
+
+
+# --- Geometry-aware rules (REVIEW.md D2/D3/D6) ---------------------------------
+# These operate on the optional ``geometry`` attached by the CLI .drawio parser
+# (rule_engine.geometry.DiagramGeometry). When no geometry is present (a
+# programmatic artifact or a non-diagram), each predicate returns False, so the
+# rule never fires spuriously.
+
+
+def _geometry_of(a: Artifact):
+    return getattr(a, "geometry", None) if _is_diagram(a) else None
+
+
+def _check_grid_alignment(a: Artifact) -> bool:
+    """grid-alignment: a node's absolute x/y is not a multiple of the grid (WARNING)."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    return bool(_geo.check_grid_alignment(geo))
+
+
+def _check_container_padding(a: Artifact) -> bool:
+    """container-padding: a node sits <1 grid step from / straddles a container (WARNING)."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    return bool(_geo.check_container_padding(geo))
+
+
+def _check_edge_routing(a: Artifact) -> bool:
+    """edge-routing: a non-orthogonal edge, or a waypoint-free edge crossing a node (WARNING)."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    return bool(_geo.check_edge_routing(geo))
+
+
+def _check_node_overlap(a: Artifact) -> bool:
+    """node-overlap: two node icon boxes overlap (WARNING)."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    return bool(_geo.check_node_overlap(geo))
+
+
+def _check_arrow_style(a: Artifact) -> bool:
+    """arrow-style: an edge uses a filled/heavy arrowhead or a sub-1pt stroke (WARNING)."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    return bool(_geo.check_arrow_style(geo))
 
 
 # Ordered rule registry: (rule name, predicate). Order defines finding order.
@@ -405,6 +508,12 @@ _RULES = (
     (RULE_SECRET_SAFETY, _check_secret_safety),
     (RULE_TITLE_VERSIONED, _check_title_versioned),
     (RULE_MERMAID_TYPE, _check_mermaid_type),
+    (RULE_MIN_FONT_SIZE, _check_min_font_size),
+    (RULE_GRID_ALIGNMENT, _check_grid_alignment),
+    (RULE_CONTAINER_PADDING, _check_container_padding),
+    (RULE_EDGE_ROUTING, _check_edge_routing),
+    (RULE_NODE_OVERLAP, _check_node_overlap),
+    (RULE_ARROW_STYLE, _check_arrow_style),
 )
 
 
@@ -622,6 +731,12 @@ __all__ = [
     "RULE_FRONTMATTER",
     "RULE_ICON_RESOLVED",
     "RULE_SECRET_SAFETY",
+    "RULE_MIN_FONT_SIZE",
+    "RULE_GRID_ALIGNMENT",
+    "RULE_CONTAINER_PADDING",
+    "RULE_EDGE_ROUTING",
+    "RULE_NODE_OVERLAP",
+    "RULE_ARROW_STYLE",
     "RULE_TITLE_VERSIONED",
     "RULE_MERMAID_TYPE",
 ]

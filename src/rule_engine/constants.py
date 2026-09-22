@@ -33,6 +33,7 @@ __all__ = [
     "ICON_SOURCES",
     "BRAND_HEX",
     "SECRET_MARKERS",
+    "SECRET_CONTENT_MARKERS",
     "TERMINOLOGY_PATH",
     "load_terminology",
     "provider_labels",
@@ -70,10 +71,22 @@ ICON_SOURCES: Tuple[str, ...] = ("builtin", "custom")
 # Shared secret-material vocabulary (U2)
 # --------------------------------------------------------------------------- #
 #
-# One vocabulary consumed by:
-#   - normalizer._is_secret_key  (config-key drop list, substring match)
-#   - linter._content_has_secret (raw snapshot content scan)
-# so a field treated as secret by one is treated as secret by the other.
+# There are two matching semantics, so there are two vocabularies drawn from one
+# place:
+#
+#   SECRET_MARKERS          — broad, matched against object KEY NAMES by the
+#                             Normalizer (normalizer._is_secret_key). A field
+#                             literally named ``secret``/``token``/``access_key``
+#                             is credential-bearing and dropped before hashing.
+#
+#   SECRET_CONTENT_MARKERS  — narrow, matched as substrings against RAW SNAPSHOT
+#                             CONTENT by the Linter (linter._content_has_secret).
+#                             It must contain only tokens that reliably indicate a
+#                             secret VALUE or a compound credential key, because a
+#                             broad token like ``secret`` would false-positive on
+#                             legitimate metadata (e.g. the neutral type value
+#                             ``secrets_store`` or a field name ``access_key_id``)
+#                             and wrongly block a secret-free snapshot.
 SECRET_MARKERS: Tuple[str, ...] = (
     "password",
     "passwd",
@@ -94,7 +107,22 @@ SECRET_MARKERS: Tuple[str, ...] = (
     "secret_access_key",
     "secretaccesskey",
     "aws_secret_access_key",
-    "-----begin ",  # PEM key material block
+)
+
+#: Narrow markers for scanning raw snapshot CONTENT for a leaked secret value or
+#: compound credential key. Deliberately excludes broad single words
+#: (``secret``, ``token``, ``credential``, ``access_key``, ``apikey``) that occur
+#: in ordinary resource metadata.
+SECRET_CONTENT_MARKERS: Tuple[str, ...] = (
+    "-----begin ",         # PEM key material block
+    "securestring",        # SSM SecureString value
+    "private_key",
+    "privatekey",
+    "secret_access_key",
+    "secretaccesskey",
+    "aws_secret_access_key",
+    "client_secret",
+    "session_token",
 )
 
 # --------------------------------------------------------------------------- #
