@@ -1,0 +1,56 @@
+# Official provider icon asset sources.
+#
+# The asset downloader (scripts/fetch_assets.py) reads this file to fetch each
+# provider's official icon pack from its authoritative source, unpack it into a
+# local (git-ignored) asset root, and let the Asset Index resolve specific
+# services to an official SVG/PNG (or, for OCI, an extracted draw.io stencil).
+#
+# Rules act per this mapping: the engine never hard-codes a download URL or a
+# pack layout in core code — a new/updated pack is a data change here.
+#
+# NOTE: vendor icon assets remain under their owners' trademark/usage terms.
+# They are a build-time input, downloaded on demand, and never committed.
+
+version: 1
+
+# Where unpacked packs land, relative to the repo root. Git-ignored.
+asset_root: assets/vendor
+
+providers:
+  aws:
+    pack: AWS Architecture Icons
+    url: "https://d1.awsstatic.com/onedam/marketing-channels/website/public/shared/architecture-icon-release/Icon-package_07312026.5846e92413caa21490223536cc97f1269e44fa92.zip"
+    unpack_to: aws-icons
+    kind: svg-png-tree          # per-service SVG/PNG files in category folders
+    icon_source: builtin        # mxgraph.aws4 exists in draw.io; pack is the fallback for new services
+
+  azure:
+    pack: Azure Public Service Icons
+    url: "https://arch-center.azureedge.net/icons/Azure_Public_Service_Icons_V24.zip"
+    unpack_to: azure-icons
+    kind: svg-tree
+    icon_source: builtin        # mxgraph.mscae covers most; pack is fallback
+
+  gcp_category:
+    pack: GCP Category Icons
+    url: "https://services.google.com/fh/files/misc/category-icons.zip"
+    unpack_to: gcp-category
+    kind: svg-png-tree
+    icon_source: builtin
+
+  gcp_core:
+    pack: GCP Core Product Icons
+    url: "https://services.google.com/fh/files/misc/core-products-icons.zip"
+    unpack_to: gcp-core
+    kind: svg-png-tree
+    icon_source: builtin
+
+  oci:
+    pack: OCI Style Guide for draw.io
+    url: "https://docs.oracle.com/iaas/Content/Resources/Assets/OCI-Style-Guide-for-Drawio.zip"
+    unpack_to: oci-style
+    kind: drawio-library        # a draw.io <mxlibrary> of mxgraph.oci.* stencils
+    icon_source: custom         # NO built-in OCI library; stencils come only from this pack
+    library_xml: "OCI Style Guide for Drawio/OCI Library.xml"
+    # Extract the library into standalone, importable stencils here (git-ignored).
+    stencils_out: oci-stencils

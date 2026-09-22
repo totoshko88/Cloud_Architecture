@@ -1,0 +1,454 @@
+"""Shared, provider-neutral diagram layout builder.
+
+This module is the single source of truth for the **numeric layout geometry** of
+every generated architecture diagram, so AWS, Azure, GCP, OCI, and generic
+diagrams all share one look: the same icon size, the same label placement, the
+same lane grid, the same container padding, and the same orthogonal edge routing
+with distinct waypoint corridors.
+
+The canonical values are taken from the AWS golden example
+(``examples/aws/01-aws-agent-platform.drawio``), which is the reference diagram
+for the standard (see ``.kiro/steering/diagram-standards.md`` → "Layout
+Geometry"). Keeping them here — rather than duplicated in each per-provider
+generator — means a future provider is added by supplying an *icon renderer*
+(how to draw one node's glyph), not by re-deriving the layout.
+
+Two icon-renderer strategies are provided:
+
+- :func:`builtin_icon` — a node whose glyph is a built-in draw.io stencil id
+  (e.g. ``mxgraph.aws4.resourceIcon`` / ``mxgraph.gcp2.*``). One flat cell.
+- :func:`OciStencilIcon` — a node whose glyph is an embedded OCI stencil group
+  (OCI ships no built-in draw.io library), with the stencil's baked-in caption
+  stripped and the icon scaled square, so it matches the built-in-icon nodes.
+
+Both strategies emit a node that the Linter counts as exactly one top-level node
+(nested glyph sub-cells are the node's geometry, per
+``rule_engine.cli._parse_drawio``).
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+
+# ---------------------------------------------------------------------------
+# Canonical layout geometry (AWS reference). Do not fork these per provider.
+# ---------------------------------------------------------------------------
+
+#: Square icon footprint in model units. The node's cell is exactly this size so
+#: the bottom label hugs the icon (AWS reference uses 78x78).
+ICON_SIZE = 78
+
+#: Grid step (matches draw.io ``gridSize``). Spacings are whole multiples of it.
+GRID = 10
+
+#: Horizontal distance between adjacent node columns (lanes read left→right).
+COL_STEP = 220
+
+#: Vertical distance between adjacent node rows.
+ROW_STEP = 160
+
+#: Minimum padding between a container border and its children / a nested
+#: container (>= one grid step, per diagram-standards Container Padding).
+CONTAINER_PAD = 30
+
+#: Standard node label style suffix (label sits directly under the icon).
+_LABEL_STYLE = (
+    "verticalLabelPosition=bottom;verticalAlign=top;align=center;"
+    "fontSize=11;fontStyle=0"
+)
+
+#: Boundary stroke colors (diagram-standards Legend): dashed green stack
+#: boundary, dashed blue network boundary. Providers with an official group
+#: shape (AWS) may override via ``boundary_style``.
+STACK_BOUNDARY_STROKE = "#00A000"
+NETWORK_BOUNDARY_STROKE = "#0062AD"
+
+_TEXT_STYLE = (
+    "text;html=1;align=left;verticalAlign=top;fontSize=11;whiteSpace=wrap;"
+    "strokeColor=#000000;fillColor=#FFFFFF"
+)
+
+
+# ---------------------------------------------------------------------------
+# Data model
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Node:
+    """One diagram node placed at (x, y) with an ``ICON_SIZE`` square footprint."""
+
+    id: str
+    label: str
+    x: int
+    y: int
+    # Icon renderer: given (node, parent_id) returns the full <mxCell> XML for
+    # this node (a single top-level cell, plus any nested glyph geometry).
+    render: "IconRenderer" = field(repr=False, default=None)  # type: ignore[assignment]
+
+
+@dataclass
+class Edge:
+    """One orthogonal edge with a numeric marker and explicit contact points."""
+
+    id: str
+    source: str
+    target: str
+    marker: str
+    dashed: bool = False
+    exit: Tuple[float, float] = (1.0, 0.5)
+    entry: Tuple[float, float] = (0.0, 0.5)
+    # Explicit routing waypoints (model coords) so parallel runs never share a
+    # corridor. Each is (x, y).
+    points: Sequence[Tuple[float, float]] = ()
+
+
+@dataclass
+class Boundary:
+    """A Boundary / Network-Boundary container rectangle."""
+
+    id: str
+    label: str
+    x: int
+    y: int
+    w: int
+    h: int
+    stroke: str = STACK_BOUNDARY_STROKE
+    parent: str = "1"
+    style: Optional[str] = None  # full style override (e.g. AWS group shape)
+
+
+# An icon renderer produces the node's mxCell XML. Signature: (node, parent_id).
+IconRenderer = Callable[[Node, str], str]
+
+
+# ---------------------------------------------------------------------------
+# Icon renderers
+# ---------------------------------------------------------------------------
+
+
+def builtin_icon(shape_style: str) -> IconRenderer:
+    """Renderer for a built-in draw.io stencil node (AWS/Azure/GCP).
+
+    ``shape_style`` is the provider style prefix, e.g.
+    ``"shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;fillColor=#ED7100;strokeColor=#ffffff;aspect=fixed;html=1"``.
+    The standard label suffix is appended so every provider's labels match.
+    """
+
+    def render(node: Node, parent_id: str) -> str:
+        style = f"{shape_style};{_LABEL_STYLE}"
+        return (
+            f'        <mxCell id="{node.id}" value="{node.label}" style="{style}" '
+            f'vertex="1" parent="{parent_id}">\n'
+            f'          <mxGeometry x="{node.x}" y="{node.y}" '
+            f'width="{ICON_SIZE}" height="{ICON_SIZE}" as="geometry" />\n'
+            f"        </mxCell>\n"
+        )
+
+    return render
+
+
+# --- OCI embedded-stencil renderer ----------------------------------------
+
+_CELL_RE = re.compile(r"<mxCell\b[^>]*?(?:/>|>.*?</mxCell>)", re.S)
+_ID_RE = re.compile(r'\bid="([^"]*)"')
+_PARENT_RE = re.compile(r'\bparent="([^"]*)"')
+_GEOM_RE = re.compile(r"<mxGeometry\b[^>]*?/>")
+# A stencil's baked-in caption cell (Oracle Sans text below the icon).
+_CAPTION_MARKERS = ("Oracle Sans", "font-family", "foreignObject")
+
+
+def _num(attrs: str, name: str) -> Optional[float]:
+    m = re.search(rf'\b{name}="([-0-9.eE]+)"', attrs)
+    return float(m.group(1)) if m else None
+
+
+class _IdAllocator:
+    def __init__(self, prefix: str) -> None:
+        self.prefix = prefix
+        self.n = 0
+
+    def next(self) -> str:
+        self.n += 1
+        return f"{self.prefix}-g{self.n}"
+
+
+def embed_oci_stencil(
+    node_id: str,
+    stencil_xml: str,
+    stencil_w: float,
+    stencil_h: float,
+    parent_id: str,
+    box: int = ICON_SIZE,
+) -> str:
+    """Embed one extracted OCI stencil group as ``node_id``'s icon geometry.
+
+    Drops the root cells and the baked-in caption subtree, scales the icon-only
+    region uniformly into a ``box`` square, and re-parents the group under
+    ``node_id``. Returns the inner glyph cells (to place inside a group node).
+    """
+    cells = _CELL_RE.findall(stencil_xml)
+
+    parent_of: Dict[str, str] = {}
+    caption_ids: set[str] = set()
+    icon_bottom = stencil_h
+    for cell in cells:
+        m = _ID_RE.search(cell)
+        if not m:
+            continue
+        cid = m.group(1)
+        pm = _PARENT_RE.search(cell)
+        parent_of[cid] = pm.group(1) if pm else ""
+        if "value=" in cell and any(mk in cell for mk in _CAPTION_MARKERS):
+            caption_ids.add(cid)
+            gm = _GEOM_RE.search(cell)
+            if gm:
+                cy = _num(gm.group(0), "y")
+                if cy is not None:
+                    icon_bottom = min(icon_bottom, cy)
+    changed = True
+    while changed:
+        changed = False
+        for cid, par in parent_of.items():
+            if par in caption_ids and cid not in caption_ids:
+                caption_ids.add(cid)
+                changed = True
+
+    icon_h = icon_bottom if icon_bottom and icon_bottom > 0 else stencil_h
+    icon_w = stencil_w
+    scale = min(box / icon_w, box / icon_h) if icon_w and icon_h else 1.0
+    pad_x = (box - icon_w * scale) / 2.0
+    pad_y = (box - icon_h * scale) / 2.0
+
+    alloc = _IdAllocator(node_id)
+    id_map: Dict[str, str] = {}
+    kept: List[str] = []
+    for cell in cells:
+        m = _ID_RE.search(cell)
+        if not m:
+            continue
+        oid = m.group(1)
+        if oid in ("0", "1") or oid in caption_ids:
+            continue
+        id_map[oid] = alloc.next()
+        kept.append(cell)
+
+    def _rescale(cell: str, is_group: bool) -> str:
+        def repl(gm: "re.Match[str]") -> str:
+            attrs = gm.group(0)
+            w = _num(attrs, "width")
+            h = _num(attrs, "height")
+            x = _num(attrs, "x")
+            y = _num(attrs, "y")
+            out = attrs
+            if w is not None:
+                out = re.sub(r'\bwidth="[-0-9.eE]+"', f'width="{w * scale:.3f}"', out)
+            if h is not None:
+                out = re.sub(r'\bheight="[-0-9.eE]+"', f'height="{h * scale:.3f}"', out)
+            if is_group:
+                if re.search(r'\bx="', out):
+                    out = re.sub(r'\bx="[-0-9.eE]+"', f'x="{pad_x:.3f}"', out)
+                else:
+                    out = out.replace("<mxGeometry", f'<mxGeometry x="{pad_x:.3f}"', 1)
+                if re.search(r'\by="', out):
+                    out = re.sub(r'\by="[-0-9.eE]+"', f'y="{pad_y:.3f}"', out)
+                else:
+                    out = out.replace("<mxGeometry", f'<mxGeometry y="{pad_y:.3f}"', 1)
+            else:
+                if x is not None:
+                    out = re.sub(r'\bx="[-0-9.eE]+"', f'x="{x * scale:.3f}"', out)
+                if y is not None:
+                    out = re.sub(r'\by="[-0-9.eE]+"', f'y="{y * scale:.3f}"', out)
+            return out
+
+        return _GEOM_RE.sub(repl, cell, count=1)
+
+    out: List[str] = []
+    for cell in kept:
+        oid = _ID_RE.search(cell).group(1)
+        new_id = id_map[oid]
+        pm = _PARENT_RE.search(cell)
+        old_parent = pm.group(1) if pm else "1"
+        new_parent = parent_id if old_parent in ("0", "1") else id_map.get(old_parent, parent_id)
+        cell2 = _ID_RE.sub(f'id="{new_id}"', cell, count=1)
+        if _PARENT_RE.search(cell2):
+            cell2 = _PARENT_RE.sub(f'parent="{new_parent}"', cell2, count=1)
+        else:
+            cell2 = cell2.replace("<mxCell", f'<mxCell parent="{new_parent}"', 1)
+        if oid == "2":
+            cell2 = re.sub(r'\bvalue="[^"]*"', 'value=""', cell2, count=1)
+        cell2 = _rescale(cell2, is_group=(oid == "2"))
+        out.append(cell2)
+    return "".join(out)
+
+
+class OciStencilIcon:
+    """Renderer for an OCI node whose glyph is an embedded stencil group.
+
+    ``stencils`` maps a slug -> ``{"w", "h", "xml"}`` (as produced by
+    ``scripts/fetch_assets.py``). ``brand_hex`` colors the node label.
+    """
+
+    def __init__(self, stencils: Dict[str, Any], slug: str, brand_hex: str = "#F80000"):
+        if slug not in stencils:
+            raise KeyError(f"OCI stencil slug {slug!r} not found in extracted pack")
+        self.entry = stencils[slug]
+        self.slug = slug
+        self.brand_hex = brand_hex
+
+    def __call__(self, node: Node, parent_id: str) -> str:
+        gw = float(self.entry.get("w") or ICON_SIZE)
+        gh = float(self.entry.get("h") or ICON_SIZE)
+        style = (
+            "group;html=1;fillColor=none;strokeColor=none;"
+            f"{_LABEL_STYLE};fontColor={self.brand_hex}"
+        )
+        container = (
+            f'        <mxCell id="{node.id}" value="{node.label}" style="{style}" '
+            f'vertex="1" connectable="1" parent="{parent_id}">\n'
+            f'          <mxGeometry x="{node.x}" y="{node.y}" '
+            f'width="{ICON_SIZE}" height="{ICON_SIZE}" as="geometry" />\n'
+            f"        </mxCell>\n"
+        )
+        glyph = embed_oci_stencil(node.id, self.entry["xml"], gw, gh, node.id, ICON_SIZE)
+        return container + "          " + glyph + "\n"
+
+
+# ---------------------------------------------------------------------------
+# Cell builders
+# ---------------------------------------------------------------------------
+
+
+def title_cell(text: str, x: int = 40, y: int = 20, w: int = 900) -> str:
+    return (
+        f'        <mxCell id="title" value="{text}" '
+        'style="text;html=1;strokeColor=none;fillColor=none;align=left;'
+        'verticalAlign=middle;fontSize=16;fontStyle=1" vertex="1" parent="1">\n'
+        f'          <mxGeometry x="{x}" y="{y}" width="{w}" height="30" as="geometry" />\n'
+        "        </mxCell>\n"
+    )
+
+
+def boundary_cell(b: Boundary) -> str:
+    style = b.style or (
+        "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;"
+        f"strokeColor={b.stroke};fillColor=none;verticalAlign=top;"
+        f"fontColor={b.stroke};fontSize=12"
+    )
+    return (
+        f'        <mxCell id="{b.id}" value="{b.label}" style="{style}" '
+        f'vertex="1" parent="{b.parent}">\n'
+        f'          <mxGeometry x="{b.x}" y="{b.y}" width="{b.w}" height="{b.h}" as="geometry" />\n'
+        "        </mxCell>\n"
+    )
+
+
+def edge_cell(e: Edge) -> str:
+    dash = "dashed=1;" if e.dashed else ""
+    ex, ey = e.exit
+    nx, ny = e.entry
+    style = (
+        f"edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;{dash}"
+        f"exitX={ex};exitY={ey};exitDx=0;exitDy=0;exitPerimeter=0;"
+        f"entryX={nx};entryY={ny};entryDx=0;entryDy=0;"
+        "fontSize=12;fontStyle=1"
+    )
+    head = (
+        f'        <mxCell id="{e.id}" value="{e.marker}" style="{style}" '
+        f'edge="1" parent="1" source="{e.source}" target="{e.target}">\n'
+    )
+    if e.points:
+        pts = "".join(
+            f'              <mxPoint x="{px:.2f}" y="{py:.2f}" />\n' for px, py in e.points
+        )
+        return (
+            head
+            + '          <mxGeometry relative="1" as="geometry">\n'
+            + '            <Array as="points">\n'
+            + pts
+            + "            </Array>\n"
+            + "          </mxGeometry>\n"
+            + "        </mxCell>\n"
+        )
+    return head + '          <mxGeometry relative="1" as="geometry" />\n        </mxCell>\n'
+
+
+def text_cell(cid: str, lines: Sequence[str], x: int, y: int, w: int = 320, h: int = 200) -> str:
+    value = "&#10;".join(lines)
+    return (
+        f'        <mxCell id="{cid}" value="{value}" style="{_TEXT_STYLE}" '
+        f'vertex="1" parent="1">\n'
+        f'          <mxGeometry x="{x}" y="{y}" width="{w}" height="{h}" as="geometry" />\n'
+        "        </mxCell>\n"
+    )
+
+
+STANDARD_LEGEND_LINES = (
+    "Legend",
+    "Solid line = primary flow",
+    "Dashed line = asynchronous / event-driven flow",
+    "Red = blocked / missing / disabled",
+    "🆕 = new in version N",
+    "🔄 = changed in version N",
+    "Dashed green boundary = stack boundary",
+    "Dashed blue boundary = Network Boundary",
+    "Numbered markers (1..N) = ordered data flow steps; see Flow list",
+)
+
+
+def build_diagram(
+    *,
+    diagram_id: str,
+    diagram_name: str,
+    title: str,
+    boundaries: Sequence[Boundary],
+    nodes: Sequence[Node],
+    edges: Sequence[Edge],
+    flow_lines: Sequence[str],
+    legend_x: int,
+    legend_y_flow: int = 120,
+    legend_y_legend: int = 360,
+    page_w: int = 1850,
+    page_h: int = 950,
+) -> str:
+    """Assemble a full ``.drawio`` document from the standard building blocks."""
+    parts: List[str] = []
+    parts.append(
+        f'<mxfile host="app.diagrams.net" agent="rule-engine golden-example" version="24.0.0">\n'
+        f'  <diagram id="{diagram_id}" name="{diagram_name}">\n'
+        f'    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="{GRID}" guides="1" '
+        'tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" '
+        f'pageWidth="{page_w}" pageHeight="{page_h}" math="0" shadow="0">\n'
+        "      <root>\n"
+        '        <mxCell id="0" />\n'
+        '        <mxCell id="1" parent="0" />\n\n'
+    )
+    parts.append(title_cell(title))
+    parts.append("\n")
+    for b in boundaries:
+        parts.append(boundary_cell(b))
+    parts.append("\n")
+    for n in nodes:
+        parts.append(n.render(n, "1"))
+    parts.append("\n")
+    for e in edges:
+        parts.append(edge_cell(e))
+    parts.append("\n")
+    parts.append(text_cell("flow-legend", flow_lines, legend_x, legend_y_flow, 320, 200))
+    parts.append(text_cell("legend", STANDARD_LEGEND_LINES, legend_x, legend_y_legend, 320, 210))
+    parts.append(
+        "      </root>\n    </mxGraphModel>\n  </diagram>\n</mxfile>\n"
+    )
+    return "".join(parts)
+
+
+__all__ = [
+    "ICON_SIZE", "GRID", "COL_STEP", "ROW_STEP", "CONTAINER_PAD",
+    "STACK_BOUNDARY_STROKE", "NETWORK_BOUNDARY_STROKE",
+    "Node", "Edge", "Boundary", "IconRenderer",
+    "builtin_icon", "embed_oci_stencil", "OciStencilIcon",
+    "title_cell", "boundary_cell", "edge_cell", "text_cell",
+    "STANDARD_LEGEND_LINES", "build_diagram",
+]

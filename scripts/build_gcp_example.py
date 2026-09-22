@@ -1,0 +1,146 @@
+#!/usr/bin/env python3
+"""Generate the GCP golden example diagram on the shared layout standard.
+
+GCP has built-in draw.io stencils (``mxgraph.gcp2.*``), so each node is a single
+flat cell rendered by :func:`rule_engine.diagram_layout.builtin_icon`. The layout
+geometry (icon size, label placement, lane grid, container padding, edge routing)
+comes entirely from the shared builder, so the GCP diagram matches the AWS
+reference and the OCI example exactly.
+
+This replaces the earlier hand-authored GCP diagram, whose icons were 64px (vs the
+78px standard) and whose flow-5 corridor ran too close to the VPC bottom border.
+
+Usage::
+
+    python scripts/build_gcp_example.py            # write the .drawio
+    python scripts/build_gcp_example.py --stdout
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+from typing import List, Optional, Sequence
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+from rule_engine.diagram_layout import (  # noqa: E402
+    Boundary,
+    Edge,
+    Node,
+    build_diagram,
+    builtin_icon,
+)
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+OUT = REPO_ROOT / "examples" / "gcp" / "01-gcp-vertex-pipeline.drawio"
+
+TITLE = "gcp vertex-pipeline — acme-prod / us-central1 | 2026-09-22 | v1"
+GCP_BLUE = "#4285F4"
+
+
+def _gcp(shape: str) -> str:
+    """Build a GCP built-in stencil style prefix for the given shape name."""
+    return (
+        f"shape=mxgraph.gcp2.{shape};fillColor={GCP_BLUE};strokeColor=#ffffff;"
+        "aspect=fixed;html=1"
+    )
+
+
+# Same AWS-mirrored topology as OCI: hub (vertex-ai) adjacent to the data column;
+# async messaging + workers stacked above/below the hub.
+NODE_SPECS = [
+    ("api-gateway", "cloud_functions", 120, 440),
+    ("load-balancer", "cloud_load_balancing", 360, 440),
+    ("pubsub-events", "cloud_pubsub", 620, 200),
+    ("secret-manager", "key_management_service", 620, 680),
+    ("ingest-function", "cloud_functions", 880, 200),
+    ("vertex-ai", "cloud_machine_learning", 880, 440),
+    ("training-gke", "container_engine", 880, 680),
+    ("cloud-sql", "cloud_sql", 1140, 360),
+    ("model-storage", "cloud_storage", 1140, 520),
+]
+
+# Node centers (icon 78): api(159,479) lb(399,479) pubsub(659,239)
+# secret(659,719) ingest(919,239) vertex(919,479) train(919,719)
+# sql(1179,399) store(1179,559). Mirrors the OCI routing exactly.
+EDGES: List[Edge] = [
+    Edge("e1", "api-gateway", "load-balancer", "1", exit=(1.0, 0.5), entry=(0.0, 0.5)),
+    Edge("e2", "load-balancer", "vertex-ai", "2", exit=(1.0, 0.5), entry=(0.0, 0.5)),
+    Edge("e3", "api-gateway", "pubsub-events", "3", dashed=True,
+         exit=(0.5, 0.0), entry=(0.0, 0.5), points=[(159, 239)]),
+    Edge("e4", "pubsub-events", "ingest-function", "4", dashed=True,
+         exit=(1.0, 0.5), entry=(0.0, 0.5)),
+    # 5: ingest down to training, skipping vertex (middle) via left corridor x=855.
+    Edge("e5", "ingest-function", "training-gke", "5", exit=(0.25, 1.0), entry=(0.0, 0.5),
+         points=[(855, 719)]),
+    # 6: training up to vertex bottom (adjacent rows, straight vertical).
+    Edge("e6", "training-gke", "vertex-ai", "6", exit=(0.5, 0.0), entry=(0.5, 1.0)),
+    # 7: vertex (upper-right) to cloud-sql; riser x=1060 up to row y=399.
+    Edge("e7", "vertex-ai", "cloud-sql", "7", exit=(1.0, 0.25), entry=(0.0, 0.5),
+         points=[(1060, 459), (1060, 399)]),
+    # 8: vertex (lower-right) to model-storage; riser x=1090 down to row y=559.
+    Edge("e8", "vertex-ai", "model-storage", "8", exit=(1.0, 0.75), entry=(0.0, 0.5),
+         points=[(1090, 499), (1090, 559)]),
+    # 9: vertex left to secret-manager — single L-bend. Exit hub left at y=498
+    # (below the load-balancer->hub edge at y=479), one corner at (659,498), then
+    # straight down into secret top.
+    Edge("e9", "vertex-ai", "secret-manager", "9", exit=(0.0, 0.75), entry=(0.5, 0.0),
+         points=[(659, 498)]),
+]
+
+FLOW_LINES = [
+    "Flow",
+    "1. api-gateway forwards request to load-balancer",
+    "2. load-balancer routes inference to Vertex AI",
+    "3. api-gateway publishes event to Pub/Sub (async)",
+    "4. Pub/Sub delivers event to ingest-function (async)",
+    "5. ingest-function submits training job to GKE",
+    "6. GKE registers trained model with Vertex AI",
+    "7. Vertex AI reads metadata from Cloud SQL",
+    "8. Vertex AI stores artifacts in Cloud Storage",
+    "9. Vertex AI fetches credentials from Secret Manager",
+]
+
+
+def build() -> str:
+    boundaries = [
+        Boundary("boundary-project", "project-acme-prod",
+                 x=40, y=70, w=1360, h=790, stroke="#00A000"),
+        Boundary("boundary-vpc", "vpc-prod",
+                 x=580, y=150, w=420, h=670, stroke="#0062AD"),
+    ]
+    nodes: List[Node] = [
+        Node(id=nid, label=nid, x=x, y=y, render=builtin_icon(_gcp(shape)))
+        for (nid, shape, x, y) in NODE_SPECS
+    ]
+    return build_diagram(
+        diagram_id="gcp-vertex-pipeline",
+        diagram_name="gcp-vertex-pipeline",
+        title=TITLE,
+        boundaries=boundaries,
+        nodes=nodes,
+        edges=EDGES,
+        flow_lines=FLOW_LINES,
+        legend_x=1460,
+    )
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    parser = argparse.ArgumentParser(prog="build_gcp_example")
+    parser.add_argument("--stdout", action="store_true")
+    parser.add_argument("--out", default=str(OUT))
+    args = parser.parse_args(argv)
+
+    xml = build()
+    if args.stdout:
+        sys.stdout.write(xml)
+        return 0
+    Path(args.out).write_text(xml, encoding="utf-8")
+    print(f"build_gcp_example: wrote {args.out} ({len(NODE_SPECS)} nodes)")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -77,6 +77,14 @@ _VALUE_ATTR_RE = re.compile(r'value="([^"]*)"', re.IGNORECASE)
 _VERTEX_RE = re.compile(r'vertex="1"', re.IGNORECASE)
 _EDGE_RE = re.compile(r'edge="1"', re.IGNORECASE)
 _STYLE_ATTR_RE = re.compile(r'style="([^"]*)"', re.IGNORECASE)
+_ID_ATTR_RE = re.compile(r'\bid="([^"]*)"', re.IGNORECASE)
+_PARENT_ATTR_RE = re.compile(r'\bparent="([^"]*)"', re.IGNORECASE)
+
+# The draw.io root layer cell id. Vertices parented here (or to a boundary
+# container) are top-level diagram nodes; vertices parented to another node
+# (e.g. the sub-cells of an embedded icon/stencil group) are that node's
+# internal glyph geometry and are NOT counted as separate diagram nodes.
+_ROOT_LAYER_ID = "1"
 
 
 def _parse_frontmatter(text: str) -> Optional[Dict[str, Any]]:
@@ -143,22 +151,66 @@ def _parse_frontmatter_fallback(block: str) -> Dict[str, Any]:
 
 
 def _parse_drawio(path: str, text: str) -> Artifact:
-    """Best-effort parse of a ``.drawio`` XML source into a diagram Artifact."""
-    node_names: List[str] = []
+    """Best-effort parse of a ``.drawio`` XML source into a diagram Artifact.
+
+    Only **top-level** diagram nodes are counted. A vertex is a node when it is
+    parented to the root layer or to a Boundary/Network-Boundary container; a
+    vertex parented to another node — for example the sub-cells of an embedded
+    icon/stencil group that carry a provider glyph — is that node's internal
+    geometry, not a separate node, so it is excluded from ``node_names``,
+    ``icons`` and the node count.
+    """
     edges: List[Edge] = []
-    icons: List[Any] = []
+
+    cells = _MXCELL_RE.findall(text)
 
     # Locate a title cell heuristically: a value containing a ` vN ` token
     # (the title-cell version identifier). Recorded so it is excluded from the
     # node set below.
     title_cell: Optional[str] = None
-    for cell in _MXCELL_RE.findall(text):
+    for cell in cells:
         value_match = _VALUE_ATTR_RE.search(cell)
         if value_match and re.search(r"\bv[1-9][0-9]*\b", value_match.group(1)):
             title_cell = value_match.group(1)
             break
 
-    for cell in _MXCELL_RE.findall(text):
+    # First pass: gather every cell's id/parent and classify text vs. structural
+    # cells, so we can distinguish top-level nodes from nested glyph geometry.
+    def _cell_id(cell: str) -> str:
+        m = _ID_ATTR_RE.search(cell)
+        return m.group(1) if m else ""
+
+    def _cell_parent(cell: str) -> str:
+        m = _PARENT_ATTR_RE.search(cell)
+        return m.group(1) if m else ""
+
+    def _is_text_cell(value: str, style_low: str) -> bool:
+        return (
+            "text" in style_low
+            or style_low.startswith("text;")
+            or value == title_cell
+            or value.lower().startswith("legend")
+        )
+
+    # Boundary/Network-Boundary containers hold nodes but are themselves the
+    # stack/network frame. A vertex whose parent is the root layer or one of
+    # these containers is a top-level node; the containers are identified by a
+    # dashed boundary style (or a conventional ``boundary`` id prefix).
+    boundary_ids: set[str] = set()
+    for cell in cells:
+        if not _VERTEX_RE.search(cell):
+            continue
+        cid = _cell_id(cell)
+        style_low = (_STYLE_ATTR_RE.search(cell) or [None, ""]).group(1).lower() \
+            if _STYLE_ATTR_RE.search(cell) else ""
+        if cid.startswith("boundary") or ("dashed=1" in style_low and "fillcolor=none" in style_low):
+            boundary_ids.add(cid)
+
+    node_container_parents = {_ROOT_LAYER_ID} | boundary_ids
+
+    node_names: List[str] = []
+    icons: List[Any] = []
+    for cell in cells:
         value_match = _VALUE_ATTR_RE.search(cell)
         value = value_match.group(1) if value_match else ""
         style_match = _STYLE_ATTR_RE.search(cell)
@@ -167,18 +219,19 @@ def _parse_drawio(path: str, text: str) -> Artifact:
         if _EDGE_RE.search(cell):
             edges.append(Edge(label=value or None))
         elif _VERTEX_RE.search(cell):
-            # Text-only cells (titles, legends, free labels) are not diagram
-            # nodes: skip cells that carry a text/label style or match the
-            # title cell / a legend block.
-            is_text_cell = (
-                "text" in style_low
-                or style_low.startswith("text;")
-                or value == title_cell
-                or value.lower().startswith("legend")
-            )
-            if is_text_cell:
+            cid = _cell_id(cell)
+            parent = _cell_parent(cell)
+            # Skip text-only cells (titles, legends, free labels).
+            if _is_text_cell(value, style_low):
                 continue
-            # A real node: record its (possibly special-char) name and icon.
+            # A boundary container is not itself a counted node.
+            if cid in boundary_ids:
+                continue
+            # Only top-level nodes count: a vertex nested inside another node
+            # (an embedded glyph/stencil group) is that node's internal
+            # geometry, not a separate node.
+            if parent not in node_container_parents:
+                continue
             if value or style:
                 node_names.append(value)
             if style:

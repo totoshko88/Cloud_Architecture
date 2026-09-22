@@ -151,6 +151,48 @@ container (for example a Network Boundary inside a Boundary) and its parent. Do 
 a node flush against, or straddling, a container border. Size containers so their
 children plus this padding fit without the border clipping a node or its label.
 
+## Layout Geometry (canonical, all providers)
+
+Every generated diagram uses one shared numeric layout so AWS, Azure, GCP, OCI, and
+generic diagrams read identically. The **AWS golden example**
+(`examples/aws/01-aws-agent-platform.drawio`) is the reference; the values below are its
+distilled standard. The shared builder `src/rule_engine/diagram_layout.py` implements them
+and is the mechanism new diagrams should use — a new provider supplies an *icon renderer*,
+not new geometry.
+
+| Constant | Value | Meaning |
+| --- | --- | --- |
+| Icon footprint | **78 × 78** | Every service node's cell is a 78×78 square (`aspect=fixed`). |
+| Label placement | `verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=11` | The label sits directly under the icon. The node cell equals the icon size so the label hugs the icon — never a taller footprint that pushes the label away. |
+| Column step | **220** | Horizontal distance between adjacent node columns (lanes read left→right). |
+| Row step | **160** | Vertical distance between adjacent node rows. |
+| Grid step | **10** | Model `gridSize`; every spacing is a whole multiple of it. |
+| Container padding | **≥ 30** | Padding between a container border and its children / a nested container (≥ 1 grid step; the reference uses 30). |
+| Legend column | right margin | The `Flow` and `Legend` text cells stack in the right margin, clear of the diagram body. |
+
+**Icon size is uniform.** All service icons render at the same 78×78 footprint regardless
+of the source asset's native aspect ratio. For a provider with a built-in stencil
+(`mxgraph.aws4.*`, `mxgraph.gcp2.*`, `mxgraph.mscae.*`) the node is one flat cell at 78×78.
+For OCI (no built-in library) the official stencil is embedded, its baked-in caption is
+**stripped** (so the node carries exactly one label — the service name), and the icon is
+scaled uniformly into the 78×78 square. Do not let a stencil's own caption double the label
+or distort the aspect ratio.
+
+**Reference topology (hub-adjacent-to-data).** Place the platform-core hub in the column
+**immediately left of the data column**, with asynchronous-messaging and worker nodes
+stacked in the rows **above and below** the hub — never between the hub and the data
+stores. This keeps hub→data edges short and straight and leaves the data column reachable
+without crossing an intervening icon.
+
+**Edge routing on the grid.** Route every edge orthogonally
+(`edgeStyle=orthogonalEdgeStyle`), start stubs just past the source perimeter
+(`exitPerimeter=0`), and enter left/top, exit right/bottom. When two or more edges would
+share a corridor, give each explicit `<mxPoint>` waypoints on its own grid column/row,
+offset by ≥ 1 grid step, so no two lines overlap and no line crosses an unrelated icon or a
+legend block. When several nodes stack in one column, route edges among them through a side
+corridor (one grid column left or right of the stack) rather than straight through the
+middle icon.
+
 ## Raster Alt Text
 
 - Whenever a diagram includes a raster image, provide non-empty alt text describing the
@@ -243,6 +285,9 @@ endlegend
 - [ ] Arrow stubs start just past the source perimeter (exitPerimeter=0), not into the glyph
 - [ ] No edge overlaps an unrelated node, a label, or the right-side Flow/Legend blocks
 - [ ] Containers pad ≥ 1 grid step around child nodes and nested containers
+- [ ] Icons uniform 78×78 (aspect=fixed); label hugs the icon (footprint = icon size)
+- [ ] OCI stencils embedded with baked-in caption stripped and icon scaled square
+- [ ] Grid layout: columns step 220, rows step 160; hub adjacent to the data column
 - [ ] Raster images carry non-empty alt text
 - [ ] Triple present: `.drawio` + `.drawio.png` + `.diagram.md`
 - [ ] Title cell: `<provider> <workload> — <boundary id> / <region> | <date> | vN`
