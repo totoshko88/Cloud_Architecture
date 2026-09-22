@@ -1,0 +1,57 @@
+# AWS icon mapping table for the Diagram & Inventory Rule Engine.
+#
+# Maps each of the nine neutral resource types to a draw.io icon id, a brand
+# hex color (#RRGGBB), and a complete draw.io style string using the AWS 2019+
+# built-in library form:
+#   shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.<service>
+#
+# Container/group styles for the Boundary (AWS Account) and Network Boundary
+# (Amazon VPC) are declared under `containers` using shape=mxgraph.aws4.group.
+#
+# Icon ids and brand hexes are sourced from the curated AWS seed inventory in
+# src/rule_engine/assets/enumerate.py (_SEED["aws"]); the S3 style-string
+# pattern matches design.md section 4b exactly.
+# Requirements: 2.3, 2.4, 2.6, 2.9, 9.3
+provider: aws
+asset_pack: "mxgraph.aws4 (draw.io built-in, AWS 2019+)"
+icon_source: builtin
+
+resources:
+  serverless_fn:
+    icon_id: mxgraph.aws4.lambda
+    brand_hex: "#ED7100"
+    style: "shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;fillColor=#ED7100;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  object_store:
+    icon_id: mxgraph.aws4.s3
+    brand_hex: "#7AA116"
+    style: "shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.s3;fillColor=#7AA116;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  managed_sql:
+    icon_id: mxgraph.aws4.rds
+    brand_hex: "#527FFF"
+    style: "shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.rds;fillColor=#527FFF;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  message_queue:
+    icon_id: mxgraph.aws4.sqs
+    brand_hex: "#E7157B"
+    style: "shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.sqs;fillColor=#E7157B;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  secrets_store:
+    icon_id: mxgraph.aws4.secrets_manager
+    brand_hex: "#DD344C"
+    style: "shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.secrets_manager;fillColor=#DD344C;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  managed_k8s:
+    icon_id: mxgraph.aws4.eks
+    brand_hex: "#ED7100"
+    style: "shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.eks;fillColor=#ED7100;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  llm_platform:
+    icon_id: mxgraph.aws4.bedrock
+    brand_hex: "#01A88D"
+    style: "shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.bedrock;fillColor=#01A88D;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+
+containers:
+  boundary:
+    icon_id: mxgraph.aws4.group_account
+    brand_hex: "#232F3E"
+    style: "shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_account;grStroke=1;fillColor=none;strokeColor=#232F3E;dashed=0;verticalAlign=top;align=left;spacingLeft=30;fontColor=#232F3E;fontSize=12;html=1"
+  network_boundary:
+    icon_id: mxgraph.aws4.group_vpc
+    brand_hex: "#8C4FFF"
+    style: "shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_vpc;grStroke=1;fillColor=none;strokeColor=#8C4FFF;dashed=0;verticalAlign=top;align=left;spacingLeft=30;fontColor=#8C4FFF;fontSize=12;html=1"

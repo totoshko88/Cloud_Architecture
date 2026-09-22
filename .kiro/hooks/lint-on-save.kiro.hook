@@ -1,0 +1,14 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Lint on save",
+      "trigger": "PostFileSave",
+      "matcher": "\\.(drawio|md)$",
+      "action": {
+        "type": "command",
+        "command": "rule-engine-lint --file \"$KIRO_FILE_PATH\" --fail-on error,critical"
+      }
+    }
+  ]
+}

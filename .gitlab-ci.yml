@@ -1,0 +1,302 @@
+# CI Pipeline definition for the Diagram & Inventory Rule Engine.
+#
+# Requirement 10 (Distribution, Documentation, and CI/CD):
+#   - 10.1  CI Pipeline definition stored under version control (this file).
+#   - 10.2  Run the Linter over every diagram + document; validate every
+#           mappings/<provider>-icons.yaml and the Inventory Schema.
+#   - 10.4  On a release trigger, package a Release Bundle: steering docs,
+#           mappings, Inventory Schema, examples, and the add-a-provider runbook
+#           (docs/add-a-provider.md).
+#   - 10.5  Name every Release Bundle with a Semantic Version identifier.
+#   - 10.6  Generate/update the Changelog (added/changed/removed) for the
+#           released Semantic Version in reverse chronological order.
+#   - 10.10 Publish the Release Bundle and the updated Changelog as artifacts.
+#
+# Fail conditions (task 12.2):
+#   - 10.3  IF the Linter reports >= 1 CRITICAL or ERROR finding, THEN fail the
+#           run and produce NO Release Bundle. The `lint` stage runs first and
+#           exits non-zero via `--fail-on error,critical`; the release stages
+#           (`version-guard`, `build`, `changelog`, `publish`) declare
+#           `needs: [lint, validate]` so a failed gate stops the pipeline and no
+#           bundle is ever packaged.
+#   - 10.7  IF the release trigger's Semantic Version already exists in the
+#           Changelog, THEN fail the run and produce NO Release Bundle. The
+#           `version-guard` stage runs the reusable
+#           `src/rule_engine/version_guard.py` check BEFORE `build`, so a
+#           duplicate version fails the pipeline before any archive is created.
+
+stages:
+  - lint
+  - validate
+  - version-guard
+  - build
+  - changelog
+  - publish
+
+# ---------------------------------------------------------------------------
+# Global configuration
+# ---------------------------------------------------------------------------
+default:
+  image: python:3.12-slim
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  # The Semantic Version for a release run. On a tag pipeline the version is
+  # derived from the tag (CI_COMMIT_TAG, e.g. "v1.2.3" or "1.2.3"); non-tag
+  # runs fall back to the placeholder below and do not publish a release.
+  RELEASE_VERSION: "0.0.0"
+  # Name every Release Bundle with a Semantic Version (Requirement 10.5).
+  BUNDLE_NAME: "rule-engine"
+
+cache:
+  paths:
+    - .cache/pip
+
+# Reusable install step: install the package (with runtime + CI deps) so the
+# rule-engine-lint / rule-engine-validate-schema console scripts are available.
+.install: &install
+  - python --version
+  - pip install --upgrade pip
+  - pip install -e .
+
+# A release run is triggered by a Git tag. Non-tag pipelines run lint + validate
+# only; build/changelog/publish are release-only (Requirement 10.4).
+.release_rules: &release_rules
+  rules:
+    - if: '$CI_COMMIT_TAG'
+
+# ---------------------------------------------------------------------------
+# Stage: lint
+#   Run the Linter over every diagram + document. A single CRITICAL or ERROR
+#   finding fails the run (Requirement 10.2, 10.3). --fail-on error,critical
+#   makes the gate fail-closed; WARNING findings do not block.
+# ---------------------------------------------------------------------------
+lint:
+  stage: lint
+  before_script: *install
+  script:
+    - echo "Linting every diagram and Markdown document (fail on CRITICAL/ERROR)"
+    - rule-engine-lint --all --fail-on error,critical
+
+# ---------------------------------------------------------------------------
+# Stage: validate
+#   Validate the golden examples against the Inventory Schema, confirm the
+#   Inventory Schema is itself a valid JSON Schema, and confirm every
+#   mappings/<provider>-icons.yaml is well-formed YAML (Requirement 10.2).
+# ---------------------------------------------------------------------------
+validate:
+  stage: validate
+  before_script: *install
+  script:
+    - echo "Validating golden examples against the Inventory Schema"
+    - rule-engine-validate-schema --schema schemas/inventory.schema.json --targets 'examples/**/*.json'
+    - echo "Confirming the Inventory Schema is a valid JSON Schema"
+    - |
+      python -c "
+      import json, sys
+      from jsonschema import Draft202012Validator
+      with open('schemas/inventory.schema.json', encoding='utf-8') as fh:
+          schema = json.load(fh)
+      Draft202012Validator.check_schema(schema)
+      print('OK: schemas/inventory.schema.json is a valid JSON Schema')
+      "
+    - echo "Confirming every mappings/<provider>-icons.yaml is well-formed YAML"
+    - |
+      python -c "
+      import glob, sys, yaml
+      failures = []
+      files = sorted(glob.glob('mappings/*-icons.yaml'))
+      if not files:
+          print('ERROR: no mappings/<provider>-icons.yaml files found', file=sys.stderr)
+          sys.exit(1)
+      for path in files:
+          try:
+              with open(path, encoding='utf-8') as fh:
+                  yaml.safe_load(fh)
+              print('OK:  ' + path)
+          except yaml.YAMLError as exc:
+              failures.append(path + ': ' + str(exc))
+      if failures:
+          print('BLOCKING: malformed mapping YAML:', file=sys.stderr)
+          for reason in failures:
+              print('    - ' + reason, file=sys.stderr)
+          sys.exit(1)
+      "
+
+# ---------------------------------------------------------------------------
+# Stage: version-guard
+#   On a release trigger (tag), fail-closed BEFORE any Release Bundle is built
+#   if the release Semantic Version already exists in CHANGELOG.md
+#   (Requirement 10.7). This runs the reusable, unit-testable version guard
+#   (src/rule_engine/version_guard.py); a duplicate version exits non-zero and
+#   stops the pipeline, so build/changelog/publish never run and no archive is
+#   ever created. It also `needs: [lint, validate]`, so a lint CRITICAL/ERROR
+#   (Requirement 10.3) short-circuits the release path here as well.
+# ---------------------------------------------------------------------------
+version-guard:
+  stage: version-guard
+  <<: *release_rules
+  needs:
+    - lint
+    - validate
+  before_script:
+    - *install
+    - export RELEASE_VERSION="${CI_COMMIT_TAG#v}"
+  script:
+    - echo "Checking that Semantic Version ${RELEASE_VERSION} is not already in CHANGELOG.md"
+    # Fail-closed on a duplicate Semantic Version (Requirement 10.7). Non-zero
+    # exit here stops the pipeline before the build stage packages a bundle.
+    - python -m rule_engine.version_guard CHANGELOG.md "${RELEASE_VERSION}"
+
+# ---------------------------------------------------------------------------
+# Stage: build
+#   On a release trigger (tag), package the Release Bundle containing the
+#   steering documents, the mapping files, the Inventory Schema, the examples,
+#   and the "add a new provider" runbook. The archive is named with a Semantic
+#   Version (Requirement 10.4, 10.5).
+#
+#   `needs: [lint, validate, version-guard]` makes the fail conditions explicit
+#   and robust: if the Linter reported a CRITICAL/ERROR (10.3) or the version
+#   already exists in the Changelog (10.7), those upstream jobs fail and this
+#   build job never runs -- so NO Release Bundle is produced. As a defense in
+#   depth, the guard is re-run at the start of the build script before the
+#   archive is created.
+# ---------------------------------------------------------------------------
+build:
+  stage: build
+  <<: *release_rules
+  needs:
+    - lint
+    - validate
+    - version-guard
+  before_script:
+    - *install
+    # Derive the Semantic Version from the tag, tolerating an optional leading
+    # "v" (v1.2.3 -> 1.2.3). This is the name of the Release Bundle.
+    - export RELEASE_VERSION="${CI_COMMIT_TAG#v}"
+    - echo "Release Semantic Version = ${RELEASE_VERSION}"
+  script:
+    # Defense in depth (Requirement 10.7): re-assert the version is absent
+    # right before packaging, so no archive is created for a duplicate version.
+    - echo "Re-checking Semantic Version ${RELEASE_VERSION} before packaging"
+    - python -m rule_engine.version_guard CHANGELOG.md "${RELEASE_VERSION}"
+    - echo "Packaging the Release Bundle for version ${RELEASE_VERSION}"
+    - export BUNDLE_ARCHIVE="${BUNDLE_NAME}-${RELEASE_VERSION}.tar.gz"
+    - echo "${RELEASE_VERSION}" > VERSION
+    # Runbook: the "add a new provider" runbook is the dedicated document
+    # docs/add-a-provider.md (Requirement 9 AC9). The spec design document is
+    # also bundled for the design-level narrative.
+    - |
+      tar -czf "${BUNDLE_ARCHIVE}" \
+        .kiro/steering/ \
+        mappings/ \
+        schemas/inventory.schema.json \
+        examples/ \
+        docs/add-a-provider.md \
+        .kiro/specs/multicloud-diagram-inventory/design.md \
+        README.md \
+        VERSION
+    - echo "Built ${BUNDLE_ARCHIVE}"
+    - ls -l "${BUNDLE_ARCHIVE}"
+  artifacts:
+    paths:
+      - "${BUNDLE_NAME}-*.tar.gz"
+      - VERSION
+    expire_in: 1 week
+
+# ---------------------------------------------------------------------------
+# Stage: changelog
+#   Generate or update CHANGELOG.md, recording the added/changed/removed items
+#   for the released Semantic Version in reverse chronological order
+#   (newest version first) (Requirement 10.6). The duplicate-version fail
+#   condition (Requirement 10.7) is hardened in task 12.2.
+# ---------------------------------------------------------------------------
+changelog:
+  stage: changelog
+  <<: *release_rules
+  needs:
+    - version-guard
+    - build
+  before_script:
+    - *install
+    - export RELEASE_VERSION="${CI_COMMIT_TAG#v}"
+  script:
+    - echo "Updating CHANGELOG.md for version ${RELEASE_VERSION} (reverse chronological)"
+    - |
+      python -c "
+      import datetime, os, re, sys
+
+      from rule_engine.version_guard import assert_version_absent, DuplicateVersionError
+
+      version = os.environ['RELEASE_VERSION']
+      today = datetime.date.today().isoformat()
+      path = 'CHANGELOG.md'
+
+      header = (
+          '# Changelog\n\n'
+          'All notable changes to the Rule Engine are recorded here, per '
+          'released version, in reverse chronological order.\n\n'
+      )
+      try:
+          with open(path, encoding='utf-8') as fh:
+              existing = fh.read()
+      except FileNotFoundError:
+          existing = header
+
+      # Fail-closed on a duplicate Semantic Version (Requirement 10.7) using the
+      # shared version guard, so no Changelog entry (and no bundle) is produced
+      # for a version already recorded.
+      try:
+          assert_version_absent(path, version)
+      except DuplicateVersionError as exc:
+          print('BLOCKING: ' + str(exc), file=sys.stderr)
+          sys.exit(1)
+
+      entry = (
+          '## [' + version + '] - ' + today + '\n\n'
+          '### Added\n- Release ' + version + ' of the Diagram & Inventory Rule Engine bundle.\n\n'
+          '### Changed\n- _None recorded for this release._\n\n'
+          '### Removed\n- _None recorded for this release._\n\n'
+      )
+
+      # Insert the new (newest) version entry immediately above the first
+      # existing version section so the file stays reverse-chronological.
+      match = re.search(r'^## ', existing, re.M)
+      if match:
+          updated = existing[: match.start()] + entry + existing[match.start():]
+      else:
+          updated = (existing if existing.strip() else header) + entry
+
+      with open(path, 'w', encoding='utf-8') as fh:
+          fh.write(updated)
+      print('Updated CHANGELOG.md with version ' + version)
+      "
+    - echo "CHANGELOG.md updated"
+  artifacts:
+    paths:
+      - CHANGELOG.md
+    expire_in: 1 week
+
+# ---------------------------------------------------------------------------
+# Stage: publish
+#   On a successful release run, publish the Release Bundle and the updated
+#   Changelog as CI artifacts (Requirement 10.10).
+# ---------------------------------------------------------------------------
+publish:
+  stage: publish
+  <<: *release_rules
+  needs:
+    - build
+    - changelog
+  before_script:
+    - export RELEASE_VERSION="${CI_COMMIT_TAG#v}"
+  script:
+    - echo "Publishing Release Bundle rule-engine-${RELEASE_VERSION}.tar.gz and CHANGELOG.md as artifacts"
+    - ls -l "${BUNDLE_NAME}-${RELEASE_VERSION}.tar.gz" CHANGELOG.md
+  artifacts:
+    name: "${BUNDLE_NAME}-${CI_COMMIT_TAG}"
+    paths:
+      - "${BUNDLE_NAME}-*.tar.gz"
+      - CHANGELOG.md
+      - VERSION
+    expire_in: never

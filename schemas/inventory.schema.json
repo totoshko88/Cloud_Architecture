@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rule-engine/schemas/inventory.schema.json",
+  "title": "Normalized Resource",
+  "type": "object",
+  "required": [
+    "provider",
+    "resource_type",
+    "native_type",
+    "id",
+    "name",
+    "boundary",
+    "region",
+    "tags",
+    "config_digest"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "provider": { "enum": ["aws", "azure", "gcp", "oci", "generic"] },
+    "resource_type": {
+      "enum": [
+        "boundary",
+        "network_boundary",
+        "serverless_fn",
+        "object_store",
+        "managed_sql",
+        "message_queue",
+        "secrets_store",
+        "managed_k8s",
+        "llm_platform"
+      ]
+    },
+    "native_type": { "type": "string", "minLength": 1 },
+    "id": { "type": "string" },
+    "name": { "type": "string", "minLength": 1 },
+    "boundary": { "type": "string", "minLength": 1 },
+    "region": { "type": "string", "minLength": 1 },
+    "tags": { "type": "object", "additionalProperties": { "type": "string" } },
+    "config_digest": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

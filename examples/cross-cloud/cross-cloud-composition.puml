@@ -1,0 +1,56 @@
+@startuml
+' Cross-cloud composition C4 container diagram spanning aws, azure, and gcp.
+' Provider-neutral core rules apply: one start/end directive pair, no
+' preprocessor directives, at most 12 nodes, every cross-provider edge labeled,
+' special-character node names double-quoted, versioned title, Legend block.
+' Each provider is named, colored with its brand hex, and its Boundary and
+' Network Boundary are rendered as nested rectangle group containers.
+
+title cross-cloud agent-platform — acme-multicloud / multi-region | 2026-09-22 | v1
+
+' ---- AWS provider (brand #232F3E) -------------------------------------------
+' Boundary container = AWS Account; Network Boundary container = AWS VPC.
+rectangle "AWS Account 111111111111" as aws_account #232F3E {
+  rectangle "AWS VPC vpc-edge" as aws_vpc #232F3E {
+    rectangle "edge-gateway" as edge_gateway #232F3E
+    rectangle "auth-lambda" as auth_lambda #232F3E
+  }
+}
+
+' ---- Azure provider (brand #0078D4) -----------------------------------------
+' Boundary container = Azure Subscription; Network Boundary container = VNet.
+rectangle "Azure Subscription sub-acme" as azure_sub #0078D4 {
+  rectangle "Azure VNet vnet-core" as azure_vnet #0078D4 {
+    rectangle "openai-service" as openai_service #0078D4
+    rectangle "service-bus" as service_bus #0078D4
+  }
+}
+
+' ---- GCP provider (brand #4285F4) -------------------------------------------
+' Boundary container = GCP Project; Network Boundary container = VPC.
+rectangle "GCP Project acme-data" as gcp_project #4285F4 {
+  rectangle "GCP VPC vpc-data" as gcp_vpc #4285F4 {
+    rectangle "vertex-ai" as vertex_ai #4285F4
+    rectangle "cloud-storage" as cloud_storage #4285F4
+  }
+}
+
+' ---- Cross-provider edges (every edge labeled with the data flow) -----------
+edge_gateway --> auth_lambda : validate JWT
+auth_lambda --> openai_service : forward RAG prompt (AWS to Azure)
+openai_service --> service_bus : publish completion event
+service_bus --> vertex_ai : stream embeddings (Azure to GCP)
+vertex_ai --> cloud_storage : persist model artifacts
+cloud_storage --> edge_gateway : return signed artifact URL (GCP to AWS)
+
+legend right
+  Solid line = primary flow
+  Dashed line = asynchronous / event-driven flow
+  Red = blocked / missing / disabled
+  New in version N = marked with new marker
+  Changed in version N = marked with changed marker
+  Dashed green boundary = stack boundary
+  Dashed blue boundary = Network Boundary
+  AWS = brand #232F3E ; Azure = brand #0078D4 ; GCP = brand #4285F4
+endlegend
+@enduml

@@ -1,0 +1,132 @@
+<mxfile host="app.diagrams.net" agent="rule-engine golden-example" version="24.0.0">
+  <diagram id="azure-openai-rag" name="azure-openai-rag">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1900" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title cell: <provider> <workload> — <boundary id> / <region> | <date> | vN -->
+        <mxCell id="title" value="azure azure-openai-rag — sub-9f3c1a / eastus | 2026-09-22 | v1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=16;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="700" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Boundary container: Subscription (dashed green boundary) -->
+        <mxCell id="boundary" value="Subscription-sub-9f3c1a" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#00A000;fillColor=none;verticalAlign=top;fontColor=#00A000;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="200" y="70" width="1160" height="800" as="geometry" />
+        </mxCell>
+
+        <!-- Network Boundary container: VNet (dashed blue boundary); padded away from Boundary and from its children -->
+        <mxCell id="vnet" value="VNet-vnet-core" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#0062AD;fillColor=none;verticalAlign=top;fontColor=#0062AD;fontSize=12" vertex="1" parent="boundary">
+          <mxGeometry x="280" y="80" width="820" height="680" as="geometry" />
+        </mxCell>
+
+        <!-- Lane order: actors -> edge -> router -> async -> workers -> platform core -> data -->
+
+        <!-- actors: User (outside the Subscription boundary) -->
+        <mxCell id="User" value="User" style="shape=mxgraph.azure.user;fillColor=#0078D4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center" vertex="1" parent="1">
+          <mxGeometry x="80" y="440" width="60" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- edge: Application Gateway (inside Subscription, outside VNet) -->
+        <mxCell id="AppGateway" value="AppGateway" style="shape=mxgraph.mscae.cloud.application_gateway;fillColor=#0078D4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center" vertex="1" parent="1">
+          <mxGeometry x="300" y="440" width="64" height="64" as="geometry" />
+        </mxCell>
+
+        <!-- router / api: Functions (inside VNet, padded from left border) -->
+        <mxCell id="ApiFunction" value="ApiFunction" style="shape=mxgraph.mscae.cloud.functions;fillColor=#0078D4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center" vertex="1" parent="1">
+          <mxGeometry x="540" y="440" width="64" height="64" as="geometry" />
+        </mxCell>
+
+        <!-- async messaging: Service Bus (top row) -->
+        <mxCell id="ServiceBus" value="ServiceBus" style="shape=mxgraph.mscae.cloud.service_bus2;fillColor=#0078D4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center" vertex="1" parent="1">
+          <mxGeometry x="720" y="220" width="64" height="64" as="geometry" />
+        </mxCell>
+
+        <!-- workers: Ingest Functions (top row) -->
+        <mxCell id="IngestFunction" value="IngestFunction" style="shape=mxgraph.mscae.cloud.functions;fillColor=#0078D4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center" vertex="1" parent="1">
+          <mxGeometry x="900" y="220" width="64" height="64" as="geometry" />
+        </mxCell>
+
+        <!-- platform core: LLM platform (Azure OpenAI via Cognitive Services) (middle row) -->
+        <mxCell id="AzureOpenAI" value="AzureOpenAI" style="shape=mxgraph.mscae.cloud.cognitive_services;fillColor=#0078D4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center" vertex="1" parent="1">
+          <mxGeometry x="720" y="440" width="64" height="64" as="geometry" />
+        </mxCell>
+
+        <!-- platform core: secrets store (Key Vault) (bottom row under ApiFunction) -->
+        <mxCell id="KeyVault" value="KeyVault" style="shape=mxgraph.mscae.cloud.key_vault;fillColor=#0078D4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center" vertex="1" parent="1">
+          <mxGeometry x="540" y="640" width="64" height="64" as="geometry" />
+        </mxCell>
+
+        <!-- data: object store (Storage) (right column, upper) -->
+        <mxCell id="BlobStorage" value="BlobStorage" style="shape=mxgraph.mscae.cloud.azure_storage;fillColor=#0078D4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center" vertex="1" parent="1">
+          <mxGeometry x="900" y="440" width="64" height="64" as="geometry" />
+        </mxCell>
+
+        <!-- data: managed SQL (vector store) (far-right column, lower) -->
+        <mxCell id="AzureSqlDB" value="AzureSqlDB" style="shape=mxgraph.mscae.cloud.sql_database_premium;fillColor=#0078D4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center" vertex="1" parent="1">
+          <mxGeometry x="1120" y="640" width="64" height="64" as="geometry" />
+        </mxCell>
+
+        <!-- ===== Edges: numeric markers 1..9; each run on its own grid corridor ===== -->
+        <!-- 1: User -> AppGateway (straight) -->
+        <mxCell id="e1" value="1" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="User" target="AppGateway">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- 2: AppGateway -> ApiFunction (straight) -->
+        <mxCell id="e2" value="2" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="AppGateway" target="ApiFunction">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- 3: ApiFunction out-top -> ServiceBus in-left (async); riser x=572 -->
+        <mxCell id="e3" value="3" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;html=1;dashed=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="ApiFunction" target="ServiceBus">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="572" y="252" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <!-- 4: ServiceBus -> IngestFunction (straight top row) -->
+        <mxCell id="e4" value="4" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;html=1;dashed=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="ServiceBus" target="IngestFunction">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- 5: ApiFunction -> AzureOpenAI (straight middle row) -->
+        <mxCell id="e5" value="5" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="ApiFunction" target="AzureOpenAI">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- 6: ApiFunction out-bottom -> KeyVault in-top (straight vertical) -->
+        <mxCell id="e6" value="6" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="ApiFunction" target="KeyVault">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- 7: IngestFunction out-bottom -> BlobStorage in-top (straight vertical, x=932) -->
+        <mxCell id="e7" value="7" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="IngestFunction" target="BlobStorage">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- 8: IngestFunction out-right -> AzureSqlDB in-top; own right corridor x=1152, clear of BlobStorage -->
+        <mxCell id="e8" value="8" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="IngestFunction" target="AzureSqlDB">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1152" y="252" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <!-- 9: AzureOpenAI out-bottom -> AzureSqlDB in-left; low corridor y=672 -->
+        <mxCell id="e9" value="9" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="AzureOpenAI" target="AzureSqlDB">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="752" y="672" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Numbered flow legend to the RIGHT of the diagram (outside the Subscription boundary) -->
+        <mxCell id="flow-legend" value="Flow&#10;1. User sends HTTPS request to Application Gateway&#10;2. App Gateway routes /chat to the API Function&#10;3. API Function publishes ingest job to Service Bus (async)&#10;4. Service Bus delivers message to Ingest Function (async)&#10;5. API Function embeds and completes via Azure OpenAI&#10;6. API Function reads API key from Key Vault&#10;7. Ingest Function loads documents from Blob Storage&#10;8. Ingest Function upserts vectors into Azure SQL DB&#10;9. Azure OpenAI queries vectors from Azure SQL DB" style="text;html=1;align=left;verticalAlign=top;fontSize=11;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF" vertex="1" parent="1">
+          <mxGeometry x="1420" y="120" width="360" height="200" as="geometry" />
+        </mxCell>
+
+        <!-- Legend block (value starts with "Legend" -> treated as text cell, not a node) -->
+        <mxCell id="legend" value="Legend&#10;Solid line = primary flow&#10;Dashed line = asynchronous / event-driven flow&#10;Red = blocked / missing / disabled&#10;🆕 = new in version N&#10;🔄 = changed in version N&#10;Dashed green boundary = stack boundary&#10;Dashed blue boundary = Network Boundary&#10;Numbered markers (1..N) = ordered data flow steps; see Flow list" style="text;html=1;align=left;verticalAlign=top;fontSize=11;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF" vertex="1" parent="1">
+          <mxGeometry x="1420" y="360" width="360" height="200" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

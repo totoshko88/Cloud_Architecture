@@ -1,0 +1,54 @@
+# Generic (vendor-neutral) icon mapping table.
+#
+# The generic profile intentionally uses NO vendor icons. Every resource type
+# renders as a plain draw.io rectangle (or UML shape) and every fill/stroke
+# color is restricted to grayscale values ranging from white (#FFFFFF) to
+# black (#000000). See Requirement 2 AC7 and design section "4b. Icon Mapping
+# Data Model" (generic example row).
+provider: generic
+asset_pack: "none — vendor-neutral grayscale shapes"
+icon_source: builtin
+
+resources:
+  boundary:
+    icon_id: rectangle
+    brand_hex: "#333333"
+    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;dashed=1"
+  network_boundary:
+    icon_id: rectangle
+    brand_hex: "#666666"
+    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#666666;dashed=1"
+  serverless_fn:
+    icon_id: rectangle
+    brand_hex: "#000000"
+    style: "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000"
+  object_store:
+    icon_id: rectangle
+    brand_hex: "#000000"
+    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000"
+  managed_sql:
+    icon_id: cylinder
+    brand_hex: "#000000"
+    style: "shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000;boundedLbl=1;backgroundOutline=1;size=15"
+  message_queue:
+    icon_id: rectangle
+    brand_hex: "#333333"
+    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#333333"
+  secrets_store:
+    icon_id: rectangle
+    brand_hex: "#000000"
+    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000;dashed=0"
+  managed_k8s:
+    icon_id: rectangle
+    brand_hex: "#333333"
+    style: "rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#333333"
+  llm_platform:
+    icon_id: rectangle
+    brand_hex: "#000000"
+    style: "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000"
+
+containers:
+  boundary:
+    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#333333;dashed=1;verticalAlign=top;fontColor=#333333"
+  network_boundary:
+    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#666666;dashed=1;verticalAlign=top;fontColor=#666666"

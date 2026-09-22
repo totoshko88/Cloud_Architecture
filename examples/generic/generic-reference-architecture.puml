@@ -1,0 +1,83 @@
+@startuml
+' Generic (vendor-neutral) reference architecture — golden example.
+' Source format: PlantUML C4/component diagram (diagram-standards decision matrix:
+' a component/architecture diagram is always authored in PlantUML).
+' No preprocessor directives are used (no !include / !define / !ifdef / %...).
+' Grayscale only: white fill (#FFFFFF) / gray-to-black stroke, per the generic
+' Provider Profile and mappings/generic-icons.yaml. No vendor icons.
+' Node count: 9 workload nodes (both boundary containers rendered as boxes),
+' which is at or below the 12-node cap.
+
+title generic reference-architecture — env-prod / region-1 | 2026-09-22 | v1
+
+' ---- Grayscale skin: no vendor color, white fill with black/gray stroke. ----
+skinparam backgroundColor #FFFFFF
+skinparam shadowing false
+skinparam defaultFontColor #000000
+skinparam ArrowColor #000000
+skinparam rectangle {
+  BackgroundColor #FFFFFF
+  BorderColor #000000
+  FontColor #000000
+}
+skinparam database {
+  BackgroundColor #FFFFFF
+  BorderColor #000000
+  FontColor #000000
+}
+skinparam queue {
+  BackgroundColor #F5F5F5
+  BorderColor #333333
+  FontColor #000000
+}
+
+' ==== Boundary (dashed green boundary in the Legend) = the stack boundary ====
+rectangle "Environment env-prod" as Boundary #line.dashed;line:006600 {
+
+  ' == Actor lane (leftmost) ==
+  actor "End User" as EndUser
+
+  ' == Network Boundary (dashed blue boundary) = the Network Boundary ==
+  rectangle "Network region-1" as NetworkBoundary #line.dashed;line:0000CC {
+
+    ' -- edge lane --
+    rectangle "Managed Kubernetes\n(api-cluster)" as K8s
+
+    ' -- async messaging lane --
+    queue "Message Queue\n(task-queue)" as Queue
+
+    ' -- workers lane --
+    rectangle "Function\n(tool-invoker)" as Function
+
+    ' -- platform core lane --
+    rectangle "LLM Platform\n(inference)" as LLM
+
+    ' -- data lane --
+    database "Managed SQL\n(state-db)" as SQL
+    rectangle "Object Store\n(artifact-store)" as ObjectStore
+    rectangle "Secrets Store\n(app-secrets)" as Secrets
+  }
+}
+
+' ==== Edges: every edge carries a non-empty descriptive label. ====
+' Solid = primary flow; dashed = asynchronous / event-driven flow.
+EndUser --> K8s : "submits request (HTTPS)"
+K8s --> Queue : "enqueues task"
+Queue ..> Function : "delivers message (async)"
+Function --> LLM : "invokes inference"
+Function --> SQL : "persists state"
+Function --> ObjectStore : "writes artifact"
+Function --> Secrets : "reads credentials"
+
+' ==== Mandatory Legend block ====
+legend right
+  Solid line = primary flow
+  Dashed line = asynchronous / event-driven flow
+  Red = blocked / missing / disabled
+  🆕 = new in version N
+  🔄 = changed in version N
+  Dashed green boundary = stack boundary
+  Dashed blue boundary = Network Boundary
+endlegend
+
+@enduml

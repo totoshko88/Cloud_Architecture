@@ -1,0 +1,13 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Validate on task completion",
+      "trigger": "PostTaskExec",
+      "action": {
+        "type": "command",
+        "command": "rule-engine-lint --all --fail-on error,critical && rule-engine-validate-schema --schema schemas/inventory.schema.json --targets 'examples/**/*.json'"
+      }
+    }
+  ]
+}

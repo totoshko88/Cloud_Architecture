@@ -1,0 +1,122 @@
+<mxfile host="app.diagrams.net" agent="rule-engine golden-example" version="24.0.0">
+  <diagram id="oci-genai-stack" name="oci-genai-stack">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Title cell (non-node: carries the vN token) -->
+        <mxCell id="title" value="oci genai-stack — acme-prod / us-ashburn-1 | 2026-09-22 | v1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=16;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="720" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Boundary container: OCI Compartment (dashed green boundary per diagram-standards Legend) -->
+        <mxCell id="boundary-compartment" value="compartment-acme-prod" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#00A000;fillColor=none;verticalAlign=top;fontColor=#00A000;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="40" y="70" width="1160" height="760" as="geometry" />
+        </mxCell>
+
+        <!-- Network Boundary container: VCN (dashed blue boundary) -->
+        <mxCell id="boundary-vcn" value="vcn-prod" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#0062AD;fillColor=none;verticalAlign=top;fontColor=#0062AD;fontSize=12" vertex="1" parent="boundary-compartment">
+          <mxGeometry x="300" y="70" width="820" height="640" as="geometry" />
+        </mxCell>
+
+        <!-- OCI service icons use the profile's custom mxgraph.oci.* asset pack
+             (see mappings/oci-icons.yaml). Where that unpacked pack is not
+             installed, draw.io renders the OCI-red (#F80000) node box instead. -->
+
+        <!-- edge lane: API function -->
+        <mxCell id="api-function" value="api-function" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F80000;strokeColor=#7A0000;fontColor=#ffffff;fontSize=11;fontStyle=1;verticalAlign=middle;align=center" vertex="1" parent="1">
+          <mxGeometry x="120" y="400" width="120" height="56" as="geometry" />
+        </mxCell>
+
+        <!-- router lane: load balancer (VCN) -->
+        <mxCell id="load-balancer" value="load-balancer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F80000;strokeColor=#7A0000;fontColor=#ffffff;fontSize=11;fontStyle=1;verticalAlign=middle;align=center" vertex="1" parent="1">
+          <mxGeometry x="360" y="400" width="120" height="56" as="geometry" />
+        </mxCell>
+
+        <!-- async messaging lane: Streaming -->
+        <mxCell id="streaming-events" value="streaming-events" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F80000;strokeColor=#7A0000;fontColor=#ffffff;fontSize=11;fontStyle=1;verticalAlign=middle;align=center" vertex="1" parent="1">
+          <mxGeometry x="560" y="220" width="120" height="56" as="geometry" />
+        </mxCell>
+
+        <!-- workers lane: ingest function -->
+        <mxCell id="ingest-function" value="ingest-function" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F80000;strokeColor=#7A0000;fontColor=#ffffff;fontSize=11;fontStyle=1;verticalAlign=middle;align=center" vertex="1" parent="1">
+          <mxGeometry x="760" y="220" width="120" height="56" as="geometry" />
+        </mxCell>
+
+        <!-- workers lane: training on OKE -->
+        <mxCell id="training-oke" value="training-oke" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F80000;strokeColor=#7A0000;fontColor=#ffffff;fontSize=11;fontStyle=1;verticalAlign=middle;align=center" vertex="1" parent="1">
+          <mxGeometry x="760" y="580" width="120" height="56" as="geometry" />
+        </mxCell>
+
+        <!-- platform core lane: Generative AI -->
+        <mxCell id="generative-ai" value="generative-ai" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F80000;strokeColor=#7A0000;fontColor=#ffffff;fontSize=11;fontStyle=1;verticalAlign=middle;align=center" vertex="1" parent="1">
+          <mxGeometry x="600" y="400" width="120" height="56" as="geometry" />
+        </mxCell>
+
+        <!-- data lane: Autonomous DB -->
+        <mxCell id="autonomous-db" value="autonomous-db" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F80000;strokeColor=#7A0000;fontColor=#ffffff;fontSize=11;fontStyle=1;verticalAlign=middle;align=center" vertex="1" parent="1">
+          <mxGeometry x="960" y="300" width="120" height="56" as="geometry" />
+        </mxCell>
+
+        <!-- data lane: Object Storage -->
+        <mxCell id="model-storage" value="model-storage" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F80000;strokeColor=#7A0000;fontColor=#ffffff;fontSize=11;fontStyle=1;verticalAlign=middle;align=center" vertex="1" parent="1">
+          <mxGeometry x="960" y="440" width="120" height="56" as="geometry" />
+        </mxCell>
+
+        <!-- platform core lane: Vault -->
+        <mxCell id="vault-secrets" value="vault-secrets" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F80000;strokeColor=#7A0000;fontColor=#ffffff;fontSize=11;fontStyle=1;verticalAlign=middle;align=center" vertex="1" parent="1">
+          <mxGeometry x="600" y="580" width="120" height="56" as="geometry" />
+        </mxCell>
+
+        <!-- Edges: numeric markers 1..9; descriptions in the Flow legend to the right. -->
+        <!-- 1: api-function out-right -> load-balancer in-left -->
+        <mxCell id="e1" value="1" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="api-function" target="load-balancer">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- 2: load-balancer out-right -> generative-ai in-left -->
+        <mxCell id="e2" value="2" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="load-balancer" target="generative-ai">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- 3: api-function out-top -> streaming in-left (async) -->
+        <mxCell id="e3" value="3" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;html=1;dashed=1;exitX=0.75;exitY=0;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="api-function" target="streaming-events">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- 4: streaming out-right -> ingest-function in-left (async) -->
+        <mxCell id="e4" value="4" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;html=1;dashed=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="streaming-events" target="ingest-function">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- 5: ingest-function out-bottom -> training-oke in-top -->
+        <mxCell id="e5" value="5" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="ingest-function" target="training-oke">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- 6: training-oke out-top -> generative-ai in-bottom -->
+        <mxCell id="e6" value="6" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;html=1;exitX=0.25;exitY=0;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="training-oke" target="generative-ai">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- 7: generative-ai out-right-top -> autonomous-db in-left -->
+        <mxCell id="e7" value="7" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;html=1;exitX=1;exitY=0.25;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="generative-ai" target="autonomous-db">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- 8: generative-ai out-right-bottom -> model-storage in-left -->
+        <mxCell id="e8" value="8" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;html=1;exitX=1;exitY=0.75;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="generative-ai" target="model-storage">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <!-- 9: ingest-function out-bottom-right -> vault-secrets in-top -->
+        <mxCell id="e9" value="9" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;html=1;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="ingest-function" target="vault-secrets">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Numbered flow legend to the RIGHT of the diagram -->
+        <mxCell id="flow-legend" value="Flow&#10;1. api-function forwards request to load-balancer&#10;2. load-balancer routes inference to Generative AI&#10;3. api-function publishes event to Streaming (async)&#10;4. Streaming delivers event to ingest-function (async)&#10;5. ingest-function submits training job to OKE&#10;6. OKE registers trained model with Generative AI&#10;7. Generative AI reads metadata from Autonomous DB&#10;8. Generative AI stores artifacts in Object Storage&#10;9. ingest-function fetches credentials from Vault" style="text;html=1;align=left;verticalAlign=top;fontSize=11;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF" vertex="1" parent="1">
+          <mxGeometry x="1220" y="120" width="360" height="200" as="geometry" />
+        </mxCell>
+
+        <!-- Legend cell (non-node: value begins with "Legend") -->
+        <mxCell id="legend" value="Legend&#10;Solid line = primary flow&#10;Dashed line = asynchronous / event-driven flow&#10;Red = blocked / missing / disabled&#10;🆕 = new in version N&#10;🔄 = changed in version N&#10;Dashed green boundary = stack boundary&#10;Dashed blue boundary = Network Boundary&#10;Numbered markers (1..N) = ordered data flow steps; see Flow list" style="text;html=1;align=left;verticalAlign=top;fontSize=11;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF" vertex="1" parent="1">
+          <mxGeometry x="1220" y="360" width="360" height="200" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

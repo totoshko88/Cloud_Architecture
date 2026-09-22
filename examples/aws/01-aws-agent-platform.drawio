@@ -1,0 +1,80 @@
+<mxfile host="Electron" agent="rule-engine-golden-example">
+  <diagram id="aws-agent-platform-v1" name="aws-agent-platform">
+    <mxGraphModel dx="1880" dy="1360" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1850" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" parent="1" style="text;html=1;align=left;verticalAlign=middle;fontSize=16;fontStyle=1" value="aws aws-agent-platform — 123456789012 / us-east-1 | 2026-09-22 | v1" vertex="1">
+          <mxGeometry height="30" width="900" x="40" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="boundary-account" parent="1" style="shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_account;grStroke=1;fillColor=none;strokeColor=#232F3E;dashed=0;verticalAlign=top;align=left;spacingLeft=30;fontColor=#232F3E;fontSize=12;html=1" value="Account-123456789012" vertex="1">
+          <mxGeometry height="760" width="1360" x="40" y="70" as="geometry" />
+        </mxCell>
+        <mxCell id="boundary-vpc" parent="boundary-account" style="shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_vpc;grStroke=1;fillColor=none;strokeColor=#8C4FFF;dashed=0;verticalAlign=top;align=left;spacingLeft=30;fontColor=#8C4FFF;fontSize=12;html=1" value="VPC-agent-net" vertex="1">
+          <mxGeometry height="640" width="960" x="340" y="70" as="geometry" />
+        </mxCell>
+        <mxCell id="node-eks" parent="1" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.eks;fillColor=#ED7100;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center" value="agent-eks-cluster" vertex="1">
+          <mxGeometry height="78" width="78" x="440" y="360" as="geometry" />
+        </mxCell>
+        <mxCell id="node-sqs" parent="1" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.sqs;fillColor=#E7157B;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center" value="agent-task-queue" vertex="1">
+          <mxGeometry height="78" width="78" x="660" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="node-lambda" parent="1" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;fillColor=#ED7100;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center" value="agent-tool-invoker" vertex="1">
+          <mxGeometry height="78" width="78" x="880" y="360" as="geometry" />
+        </mxCell>
+        <mxCell id="node-bedrock" parent="1" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.bedrock;fillColor=#01A88D;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center" value="agent-bedrock-llm" vertex="1">
+          <mxGeometry height="78" width="78" x="1100" y="200" as="geometry" />
+        </mxCell>
+        <mxCell id="node-secrets" parent="1" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.secrets_manager;fillColor=#DD344C;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center" value="agent-api-secrets" vertex="1">
+          <mxGeometry height="78" width="78" x="880" y="580" as="geometry" />
+        </mxCell>
+        <mxCell id="node-rds" parent="1" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.rds;fillColor=#527FFF;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center" value="agent-conversation-db" vertex="1">
+          <mxGeometry height="78" width="78" x="1100" y="440" as="geometry" />
+        </mxCell>
+        <mxCell id="node-s3" parent="1" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.s3;fillColor=#7AA116;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center" value="agent-artifact-store" vertex="1">
+          <mxGeometry height="78" width="78" x="1100" y="580" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-eks-sqs" edge="1" parent="1" source="node-eks" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;exitX=1.026;exitY=0.493;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1;exitPerimeter=0;" target="node-sqs" value="1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-sqs-lambda" edge="1" parent="1" source="node-sqs" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;endArrow=block;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.25;entryY=0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="node-lambda" value="2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-lambda-bedrock" edge="1" parent="1" source="node-lambda" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;exitX=1;exitY=0.25;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="node-bedrock" value="3">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1000" y="379.54" />
+              <mxPoint x="1000" y="240" />
+              <mxPoint x="1100" y="240" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-lambda-rds" edge="1" parent="1" source="node-lambda" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="node-rds" value="4">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1060" y="399.08" />
+              <mxPoint x="1060" y="479.08" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-lambda-s3" edge="1" parent="1" source="node-lambda" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;exitX=1.006;exitY=0.75;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1;exitPerimeter=0;" target="node-s3" value="5">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1000" y="418.46" />
+              <mxPoint x="1000" y="619.08" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-lambda-secrets" edge="1" parent="1" source="node-lambda" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="node-secrets" value="6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="flow-legend" parent="1" style="text;html=1;align=left;verticalAlign=top;fontSize=11;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF" value="Flow&#xa;1. EKS enqueues agent task on SQS&#xa;2. SQS delivers queued message to Lambda (async)&#xa;3. Lambda invokes Bedrock model inference&#xa;4. Lambda persists conversation to RDS&#xa;5. Lambda stores generated artifact in S3&#xa;6. Lambda reads API credentials from Secrets Manager" vertex="1">
+          <mxGeometry height="150" width="330" x="1460" y="120" as="geometry" />
+        </mxCell>
+        <mxCell id="legend" parent="1" style="text;html=1;align=left;verticalAlign=top;fontSize=11;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF" value="Legend&#xa;Solid line = primary flow&#xa;Dashed line = asynchronous / event-driven flow&#xa;Red = blocked / missing / disabled&#xa;🆕 = new in version N&#xa;🔄 = changed in version N&#xa;Dashed green boundary = stack boundary&#xa;Dashed blue boundary = Network Boundary&#xa;Numbered markers (1..N) = ordered data flow steps; see Flow list" vertex="1">
+          <mxGeometry height="200" width="330" x="1460" y="300" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

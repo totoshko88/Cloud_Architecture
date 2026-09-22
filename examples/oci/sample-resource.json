@@ -1,0 +1,14 @@
+{
+  "provider": "oci",
+  "resource_type": "object_store",
+  "native_type": "oci_objectstorage_bucket",
+  "id": "ocid1.bucket.oc1.iad.aaaaaaaaacme0prod0assets",
+  "name": "acme-prod-assets",
+  "boundary": "ocid1.compartment.oc1..aaaaaaaaacme0prod",
+  "region": "us-ashburn-1",
+  "tags": {
+    "env": "prod",
+    "team": "platform"
+  },
+  "config_digest": "4aa26e1386418ebf2e4a79b5b6d73692a845fc74afea7e15d4c7bee314e27f1d"
+}

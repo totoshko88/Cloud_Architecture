@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rule-engine"
+version = "1.1.0"
+description = "Diagram & Inventory Rule Engine — a cloud-agnostic Kiro project for deterministic diagram and inventory generation."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+dependencies = [
+    "jsonschema",
+    "PyYAML",
+    "hypothesis",
+    "pytest",
+]
+
+[project.scripts]
+# Lint console entry point used by the lint-on-save / validate-on-task Kiro
+# hooks and by the CI pipeline (task 6.2).
+rule-engine-lint = "rule_engine.cli:main"
+# Schema-validation console entry point used by the validate-on-task Kiro hook
+# and by the CI pipeline (task 10.2).
+rule-engine-validate-schema = "rule_engine.validate_schema_cli:main"
+# Asset-index / icon-fallback entry point: index official provider icon packs and
+# resolve specific service names (including services missing from built-in
+# stencils) to an official SVG/PNG.
+rule-engine-index-assets = "rule_engine.asset_index_cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

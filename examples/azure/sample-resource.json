@@ -1,0 +1,14 @@
+{
+  "provider": "azure",
+  "resource_type": "object_store",
+  "native_type": "Microsoft.Storage/storageAccounts",
+  "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/acme-prod/providers/Microsoft.Storage/storageAccounts/acmeprodassets",
+  "name": "acmeprodassets",
+  "boundary": "00000000-0000-0000-0000-000000000000",
+  "region": "eastus",
+  "tags": {
+    "env": "prod",
+    "team": "platform"
+  },
+  "config_digest": "be54b5644f6baf1cb991c32e6b0dc7f5ea907d922b26e16b584ca0eed47b4bfb"
+}

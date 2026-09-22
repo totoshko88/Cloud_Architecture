@@ -1,0 +1,14 @@
+{
+  "provider": "aws",
+  "resource_type": "object_store",
+  "native_type": "AWS::S3::Bucket",
+  "id": "arn:aws:s3:::acme-prod-assets",
+  "name": "acme-prod-assets",
+  "boundary": "123456789012",
+  "region": "us-east-1",
+  "tags": {
+    "env": "prod",
+    "team": "platform"
+  },
+  "config_digest": "20a120b331089726813a40c52f9f8eefadaf60a5f399f0074373f1e32c0d139d"
+}

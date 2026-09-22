@@ -1,0 +1,14 @@
+{
+  "provider": "gcp",
+  "resource_type": "object_store",
+  "native_type": "storage.googleapis.com/Bucket",
+  "id": "//storage.googleapis.com/acme-prod-assets",
+  "name": "acme-prod-assets",
+  "boundary": "acme-prod",
+  "region": "us-central1",
+  "tags": {
+    "env": "prod",
+    "team": "platform"
+  },
+  "config_digest": "f2371d4e81b6af52fc6c99f7d93867b330d8aedbff9567093ec70c8f89d5e0f3"
+}

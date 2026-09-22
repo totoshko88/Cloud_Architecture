@@ -1,0 +1,61 @@
+# GCP icon mapping table for the Rule Engine Icon Resolver.
+#
+# Maps each of the 9 neutral resource types to an icon id, a brand hex color
+# (#RRGGBB), and a complete draw.io style string that references the custom
+# Google Cloud shape library imported from the unpacked GCP icon assets.
+# Also declares exactly one Boundary and one Network Boundary container style
+# (Requirement 2 AC6). Brand anchor: GCP #4285F4.
+#
+# icon_source is `custom`: the GCP category and core-products icons are imported
+# as a custom draw.io shape library from unpacked assets (design section 4b).
+# Every icon id and brand hex is sourced from the authoritative asset pack
+# declared below (Requirement 2 AC9).
+provider: gcp
+asset_pack: "Google Cloud Architecture Icons (custom draw.io shape library, unpacked)"
+icon_source: custom
+resources:
+  boundary:
+    icon_id: gcp.project
+    brand_hex: "#4285F4"
+    style: "shape=mxgraph.gcp2.project;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  network_boundary:
+    icon_id: gcp.virtual_private_cloud
+    brand_hex: "#4285F4"
+    style: "shape=mxgraph.gcp2.virtual_private_cloud;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  serverless_fn:
+    icon_id: gcp.cloud_functions
+    brand_hex: "#4285F4"
+    style: "shape=mxgraph.gcp2.cloud_functions;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  object_store:
+    icon_id: gcp.cloud_storage
+    brand_hex: "#4285F4"
+    style: "shape=mxgraph.gcp2.cloud_storage;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  managed_sql:
+    icon_id: gcp.cloud_sql
+    brand_hex: "#4285F4"
+    style: "shape=mxgraph.gcp2.cloud_sql;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  message_queue:
+    icon_id: gcp.pubsub
+    brand_hex: "#4285F4"
+    style: "shape=mxgraph.gcp2.pubsub;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  secrets_store:
+    icon_id: gcp.secret_manager
+    brand_hex: "#4285F4"
+    style: "shape=mxgraph.gcp2.secret_manager;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  managed_k8s:
+    icon_id: gcp.google_kubernetes_engine
+    brand_hex: "#4285F4"
+    style: "shape=mxgraph.gcp2.google_kubernetes_engine;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  llm_platform:
+    icon_id: gcp.vertex_ai
+    brand_hex: "#4285F4"
+    style: "shape=mxgraph.gcp2.vertex_ai;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+containers:
+  boundary:
+    icon_id: gcp.project
+    brand_hex: "#4285F4"
+    style: "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#4285F4;fillColor=none;verticalAlign=top;fontColor=#4285F4;fontSize=12"
+  network_boundary:
+    icon_id: gcp.virtual_private_cloud
+    brand_hex: "#4285F4"
+    style: "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#34A853;fillColor=none;verticalAlign=top;fontColor=#34A853;fontSize=12"

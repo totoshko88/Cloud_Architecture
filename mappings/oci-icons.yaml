@@ -1,0 +1,61 @@
+# OCI icon mapping table for the Rule Engine Icon Resolver.
+#
+# Maps each of the 9 neutral resource types to an icon id, a brand hex color
+# (#RRGGBB), and a complete draw.io style string that references the custom
+# OCI shape library imported from the unpacked Oracle Cloud Infrastructure
+# icon assets. Also declares exactly one Boundary and one Network Boundary
+# container style (Requirement 2 AC6). Brand anchor: OCI #F80000.
+#
+# icon_source is `custom`: OCI icons are imported as a custom draw.io shape
+# library from unpacked assets per the OCI draw.io style guide (design
+# section 4b). Every icon id and brand hex is sourced from the authoritative
+# asset pack declared below (Requirement 2 AC9).
+provider: oci
+asset_pack: "OCI draw.io Style Guide icon set (custom draw.io shape library, unpacked)"
+icon_source: custom
+resources:
+  boundary:
+    icon_id: oci.compartment
+    brand_hex: "#F80000"
+    style: "shape=mxgraph.oci.compartment;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  network_boundary:
+    icon_id: oci.virtual_cloud_network
+    brand_hex: "#F80000"
+    style: "shape=mxgraph.oci.virtual_cloud_network;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  serverless_fn:
+    icon_id: oci.functions
+    brand_hex: "#F80000"
+    style: "shape=mxgraph.oci.functions;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  object_store:
+    icon_id: oci.object_storage
+    brand_hex: "#F80000"
+    style: "shape=mxgraph.oci.object_storage;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  managed_sql:
+    icon_id: oci.autonomous_database
+    brand_hex: "#F80000"
+    style: "shape=mxgraph.oci.autonomous_database;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  message_queue:
+    icon_id: oci.streaming
+    brand_hex: "#F80000"
+    style: "shape=mxgraph.oci.streaming;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  secrets_store:
+    icon_id: oci.vault
+    brand_hex: "#F80000"
+    style: "shape=mxgraph.oci.vault;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  managed_k8s:
+    icon_id: oci.container_engine_kubernetes
+    brand_hex: "#F80000"
+    style: "shape=mxgraph.oci.container_engine_kubernetes;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  llm_platform:
+    icon_id: oci.generative_ai
+    brand_hex: "#F80000"
+    style: "shape=mxgraph.oci.generative_ai;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=11;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+containers:
+  boundary:
+    icon_id: oci.compartment
+    brand_hex: "#F80000"
+    style: "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#F80000;fillColor=none;verticalAlign=top;fontColor=#F80000;fontSize=12"
+  network_boundary:
+    icon_id: oci.virtual_cloud_network
+    brand_hex: "#F80000"
+    style: "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#C74634;fillColor=none;verticalAlign=top;fontColor=#C74634;fontSize=12"
