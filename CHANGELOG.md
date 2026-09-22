@@ -3,6 +3,18 @@
 
 All notable changes to the Rule Engine are recorded here, per released version, in reverse chronological order.
 
+## [1.1.1] - 2026-09-23
+
+Icon-size consistency for the OCI golden example so every service node reads at the same footprint, matching the reference toolkit.
+
+### Fixed
+
+- **OCI embedded glyphs** (`src/rule_engine/diagram_layout.py`): scale each embedded stencil by the glyph's **real bounding box** (measured from the drawn shape cells) instead of the stencil's declared width/height, which includes the baked-in caption. A long caption (e.g. "OCI Container Engine for Kubernetes", declared width 138) previously shrank the glyph under the fit, so `training-oke` rendered noticeably smaller than its siblings. All OCI icons now normalize to one standardized footprint.
+
+### Changed
+
+- Regenerated the OCI example PNG raster.
+
 ## [1.1.0] - 2026-09-23
 
 Diagram routing quality, an official-asset icon fallback, the steering rules that codify both, and a diagram-rules review pass (REVIEW.md findings D1–D7): accessibility, a real geometry model, and layout-quality lint enforcement.
