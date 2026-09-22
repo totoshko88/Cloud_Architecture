@@ -43,7 +43,7 @@ from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
-PROVIDERS: tuple[str, ...] = ("aws", "azure", "gcp", "oci", "generic")
+from rule_engine.constants import PROVIDERS  # single source of truth
 
 # Preferred asset formats, best first. SVG is vector (scales cleanly in draw.io);
 # PNG is the raster fallback.

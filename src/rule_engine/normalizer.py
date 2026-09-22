@@ -33,6 +33,12 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from rule_engine.constants import (
+    NEUTRAL_RESOURCE_TYPES,
+    PROVIDERS,
+    SECRET_MARKERS,
+    native_aliases,
+)
 from rule_engine.schema import ResourceValidationError, validate_resource
 
 __all__ = [
@@ -52,21 +58,8 @@ __all__ = [
 # --------------------------------------------------------------------------- #
 # Constants
 # --------------------------------------------------------------------------- #
-
-PROVIDERS: tuple[str, ...] = ("aws", "azure", "gcp", "oci", "generic")
-
-# The nine neutral resource types (Inventory Schema enum, design section 4c).
-NEUTRAL_RESOURCE_TYPES: tuple[str, ...] = (
-    "boundary",
-    "network_boundary",
-    "serverless_fn",
-    "object_store",
-    "managed_sql",
-    "message_queue",
-    "secrets_store",
-    "managed_k8s",
-    "llm_platform",
-)
+# PROVIDERS and NEUTRAL_RESOURCE_TYPES are re-exported from rule_engine.constants
+# (the single source of truth) for backward compatibility with existing imports.
 
 # Mandatory Inventory Schema fields (design section 4c "required"). ``id`` may be
 # an empty string per the schema (minLength is not set on ``id``); every other
@@ -108,78 +101,9 @@ _SOURCED_FIELDS: tuple[str, ...] = (
 # spellings/aliases so a native type such as ``"AWS::Lambda::Function"``,
 # ``"lambda"`` or ``"aws_lambda_function"`` all resolve to ``serverless_fn``.
 
-# neutral_type -> {provider -> [native aliases...]}
-_NATIVE_ALIASES: dict[str, dict[str, tuple[str, ...]]] = {
-    "boundary": {
-        "aws": ("account", "aws::organizations::account", "aws_account"),
-        "azure": ("subscription", "azurerm_subscription"),
-        "gcp": ("project", "google_project", "cloudresourcemanager.project"),
-        "oci": ("tenancy", "compartment", "oci_identity_compartment"),
-        "generic": ("environment", "boundary"),
-    },
-    "network_boundary": {
-        "aws": ("vpc", "aws::ec2::vpc", "aws_vpc"),
-        "azure": ("vnet", "virtualnetwork", "virtual_network", "azurerm_virtual_network"),
-        "gcp": ("vpc", "google_compute_network", "compute.network"),
-        "oci": ("vcn", "virtual_cloud_network", "oci_core_vcn"),
-        "generic": ("network", "network_boundary"),
-    },
-    "serverless_fn": {
-        "aws": ("lambda", "aws::lambda::function", "aws_lambda_function"),
-        "azure": ("functions", "function_app", "functionapp", "azurerm_function_app"),
-        "gcp": ("cloud_functions", "cloudfunctions.function", "google_cloudfunctions_function"),
-        "oci": ("functions", "oci_functions_function", "fnfunction"),
-        "generic": ("function", "serverless_fn"),
-    },
-    "object_store": {
-        "aws": ("s3", "aws::s3::bucket", "aws_s3_bucket", "bucket"),
-        "azure": ("blob_storage", "blobstorage", "storage_account", "storageaccount",
-                  "azurerm_storage_account"),
-        "gcp": ("cloud_storage", "storage.bucket", "google_storage_bucket", "gcs"),
-        "oci": ("object_storage", "oci_objectstorage_bucket", "bucket"),
-        "generic": ("object_store",),
-    },
-    "managed_sql": {
-        "aws": ("rds", "aws::rds::dbinstance", "aws_db_instance", "db_instance"),
-        "azure": ("azure_sql_db", "sql_database", "sqldatabase", "azurerm_sql_database",
-                  "azurerm_mssql_database"),
-        "gcp": ("cloud_sql", "sqladmin.instance", "google_sql_database_instance"),
-        "oci": ("autonomous_database", "db_system", "dbsystem",
-                "oci_database_autonomous_database"),
-        "generic": ("managed_sql",),
-    },
-    "message_queue": {
-        "aws": ("sqs", "aws::sqs::queue", "aws_sqs_queue", "queue"),
-        "azure": ("service_bus", "servicebus", "servicebus_queue",
-                  "azurerm_servicebus_queue"),
-        "gcp": ("pubsub", "pub_sub", "pubsub.topic", "google_pubsub_topic"),
-        "oci": ("streaming", "queue", "oci_streaming_stream", "oci_queue_queue"),
-        "generic": ("message_queue",),
-    },
-    "secrets_store": {
-        "aws": ("secrets_manager", "aws::secretsmanager::secret",
-                "aws_secretsmanager_secret"),
-        "azure": ("key_vault", "keyvault", "azurerm_key_vault"),
-        "gcp": ("secret_manager", "secretmanager.secret", "google_secret_manager_secret"),
-        "oci": ("vault", "oci_kms_vault"),
-        "generic": ("secrets_store",),
-    },
-    "managed_k8s": {
-        "aws": ("eks", "aws::eks::cluster", "aws_eks_cluster"),
-        "azure": ("aks", "kubernetes_service", "azurerm_kubernetes_cluster"),
-        "gcp": ("gke", "container.cluster", "google_container_cluster"),
-        "oci": ("oke", "container_engine", "oci_containerengine_cluster"),
-        "generic": ("managed_kubernetes", "managed_k8s"),
-    },
-    "llm_platform": {
-        "aws": ("bedrock", "aws::bedrock::model", "aws_bedrock"),
-        "azure": ("azure_openai", "cognitive_services", "openai",
-                  "azurerm_cognitive_account"),
-        "gcp": ("vertex_ai", "vertexai", "aiplatform", "google_vertex_ai"),
-        "oci": ("generative_ai", "genai", "oci_generative_ai"),
-        "generic": ("llm_platform",),
-    },
-}
+# neutral_type -> {provider -> (native aliases...)}, loaded from the single
+# terminology source of truth (profiles/terminology.yaml via constants).
+_NATIVE_ALIASES: dict[str, dict[str, tuple[str, ...]]] = native_aliases()
 
 
 def _build_type_mapping() -> dict[str, dict[str, str]]:
@@ -216,22 +140,10 @@ TYPE_MAPPING: dict[str, dict[str, str]] = _build_type_mapping()
 # secret-bearing field and is dropped during canonicalization (design section 4c
 # step 1; secret-safety). This keeps secret values, key material, and
 # SecureString contents out of the hashed bytes.
-_SECRET_KEY_SUBSTRINGS: tuple[str, ...] = (
-    "password",
-    "passwd",
-    "secret",
-    "token",
-    "credential",
-    "private_key",
-    "privatekey",
-    "securestring",
-    "apikey",
-    "api_key",
-    "access_key",
-    "accesskey",
-    "secret_key",
-    "secretkey",
-    "session_token",
+# Config-key drop list: the shared secret vocabulary (constants.SECRET_MARKERS),
+# minus the raw PEM-block marker which is a content-scan concern, not a key name.
+_SECRET_KEY_SUBSTRINGS: tuple[str, ...] = tuple(
+    m for m in SECRET_MARKERS if not m.startswith("-----")
 )
 
 

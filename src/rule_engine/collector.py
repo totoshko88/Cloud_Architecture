@@ -45,13 +45,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
+from rule_engine.constants import PROVIDERS as _PROVIDERS
+
 
 # ---------------------------------------------------------------------------
 # Provider read-only verb contracts (inventory-standards.md §1, provider-profiles)
 # ---------------------------------------------------------------------------
 
-# Valid providers (Normalized Resource ``provider`` enum).
-_PROVIDERS = ("aws", "azure", "gcp", "oci", "generic")
+# Valid providers come from rule_engine.constants (single source of truth).
 
 # Per-provider read-only enumeration verb patterns. A verb name must match one
 # of these (case-insensitive) to be eligible for execution. ``generic`` uses

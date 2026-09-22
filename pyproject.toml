@@ -7,13 +7,23 @@ name = "rule-engine"
 version = "1.1.0"
 description = "Diagram & Inventory Rule Engine — a cloud-agnostic Kiro project for deterministic diagram and inventory generation."
 readme = "README.md"
+# Python 3.14 is intentional: Python 3.10 reaches end-of-life in October 2026,
+# so the engine targets a supported runtime (matched by the CI image
+# python:3.14-slim). See INSTALL.md.
 requires-python = ">=3.14"
 license = { file = "LICENSE" }
+# Runtime dependencies only. Test/dev tools live in the `dev` extra below so
+# downstream consumers of the engine do not install them (REVIEW.md G3).
 dependencies = [
     "jsonschema",
     "PyYAML",
-    "hypothesis",
+]
+
+[project.optional-dependencies]
+# Install with:  pip install -e ".[dev]"
+dev = [
     "pytest",
+    "hypothesis",
 ]
 
 [project.scripts]

@@ -29,31 +29,12 @@ from typing import Any, Dict
 
 import yaml
 
+from rule_engine.constants import CONTAINER_KINDS, ICON_SOURCES, PROVIDERS
+from rule_engine.constants import NEUTRAL_RESOURCE_TYPES as RESOURCE_TYPES
+
 # ---------------------------------------------------------------------------
-# Domain constants
+# Domain constants (re-exported from rule_engine.constants, the single source)
 # ---------------------------------------------------------------------------
-
-#: The five supported Provider Profiles (requirements Glossary — Provider).
-PROVIDERS: tuple[str, ...] = ("aws", "azure", "gcp", "oci", "generic")
-
-#: The nine neutral Normalized Resource Types the resolver understands.
-RESOURCE_TYPES: tuple[str, ...] = (
-    "boundary",
-    "network_boundary",
-    "serverless_fn",
-    "object_store",
-    "managed_sql",
-    "message_queue",
-    "secrets_store",
-    "managed_k8s",
-    "llm_platform",
-)
-
-#: The two structural container kinds (Boundary and Network Boundary).
-CONTAINER_KINDS: tuple[str, ...] = ("boundary", "network_boundary")
-
-#: Accepted values for the top-level ``icon_source`` field (Requirement 2 AC5).
-ICON_SOURCES: tuple[str, ...] = ("builtin", "custom")
 
 #: A brand color must be a single ``#`` followed by exactly six hex digits.
 _HEX_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")

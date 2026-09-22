@@ -3,6 +3,9 @@
 All notable changes to the Rule Engine are recorded here, per released version, in
 reverse chronological order.
 
+> Note: releases 1.0.0 and 1.1.0 share the date 2026-09-22 — they were cut on the
+> same day (initial release followed by the diagram-routing/icon-fallback release).
+
 ## [1.1.0] - 2026-09-22
 
 Diagram routing quality, an official-asset icon fallback, and the steering rules

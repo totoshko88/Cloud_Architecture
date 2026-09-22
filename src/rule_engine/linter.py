@@ -35,6 +35,9 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
+# Shared secret-material vocabulary (single source of truth, REVIEW.md U2).
+from rule_engine.constants import SECRET_MARKERS as _SECRET_MARKERS
+
 
 # ---------------------------------------------------------------------------
 # Severities and rule names
@@ -267,18 +270,9 @@ def _icon_is_unresolved(icon: Any) -> bool:
     return icon is None
 
 
-# Heuristic markers for secret material in raw snapshot content. Used only when
-# the caller has not set the explicit ``contains_secret`` flag.
-_SECRET_MARKERS = (
-    "securestring",
-    "-----begin ",  # PEM key material blocks
-    "private_key",
-    "privatekey",
-    "secret_access_key",
-    "secretaccesskey",
-    "aws_secret_access_key",
-    "client_secret",
-)
+# The heuristic markers for secret material in raw snapshot content are the
+# shared _SECRET_MARKERS imported at the top of this module (REVIEW.md U2), used
+# only when the caller has not set the explicit ``contains_secret`` flag.
 
 
 def _content_has_secret(content: Optional[str]) -> bool:

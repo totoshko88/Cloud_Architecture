@@ -73,3 +73,52 @@ def test_embedded_glyph_diagram_does_not_trip_node_count():
     rules = {f["rule"] for f in result["findings"]}
     assert "node-count" not in rules
     assert "node-quote" not in rules
+
+
+# --- REVIEW.md C2: icon-resolved fires on real placeholder styles -----------
+
+
+def test_icon_resolved_fires_on_placeholder_style():
+    """A node with shape=none / empty style is unresolved -> icon-resolved ERROR."""
+    body = (
+        '<mxCell id="ok" value="s3" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.s3" '
+        'vertex="1" parent="1"><mxGeometry width="78" height="78" as="geometry"/></mxCell>'
+        '<mxCell id="ph" value="ph" style="shape=none" '
+        'vertex="1" parent="1"><mxGeometry width="78" height="78" as="geometry"/></mxCell>'
+    )
+    art = _parse_drawio("mem.drawio", _wrap(body))
+    result = lint(art)
+    rules = {f["rule"] for f in result["findings"]}
+    assert "icon-resolved" in rules
+
+
+def test_generic_shapeless_box_is_resolved():
+    """The generic profile's fill/stroke box (no shape=) is a resolved icon."""
+    body = (
+        '<mxCell id="g" value="store" '
+        'style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000" '
+        'vertex="1" parent="1"><mxGeometry width="78" height="78" as="geometry"/></mxCell>'
+    )
+    art = _parse_drawio("mem.drawio", _wrap(body))
+    result = lint(art)
+    rules = {f["rule"] for f in result["findings"]}
+    assert "icon-resolved" not in rules
+
+
+# --- REVIEW.md C4: AWS group container is not counted as a node -------------
+
+
+def test_aws_group_boundary_not_counted_as_node():
+    """A mxgraph.aws4.group container (dashed=0) is a boundary, not a node."""
+    body = (
+        '<mxCell id="boundary-account" value="Account" '
+        'style="shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_account;dashed=0;'
+        'fillColor=none;strokeColor=#232F3E" vertex="1" parent="1">'
+        '<mxGeometry width="800" height="400" as="geometry"/></mxCell>'
+        '<mxCell id="n1" value="svc" style="shape=mxgraph.aws4.resourceIcon" '
+        'vertex="1" parent="boundary-account">'
+        '<mxGeometry width="78" height="78" as="geometry"/></mxCell>'
+    )
+    art = _parse_drawio("mem.drawio", _wrap(body))
+    # Only the service node counts; the group container does not.
+    assert art.node_names == ["svc"]

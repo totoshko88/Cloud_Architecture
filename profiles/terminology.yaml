@@ -1,0 +1,224 @@
+# Single source of truth for the neutral-concept -> per-provider terminology,
+# native-type aliases, and seed icon metadata (REVIEW.md finding C1).
+#
+# This file is the authoritative machine-readable form of the terminology
+# normalization table declared in `.kiro/steering/provider-profiles.md`. The
+# core modules READ from it rather than each hard-coding its own copy:
+#
+#   - rule_engine.contract   -> native display `label` per provider
+#   - rule_engine.normalizer -> native-type `aliases` -> neutral resource_type
+#   - rule_engine.assets.enumerate -> seed `icon` (id / name / brand_hex)
+#
+# Adding a provider is therefore a data change here (plus the icon mapping YAML
+# and a golden example), never a change to core Python. A CI test
+# (tests/test_terminology_source.py) asserts every core module and the steering
+# table agree with this file.
+#
+# Structure:
+#   providers: ordered list of the five Provider Profile ids.
+#   brand_hex: per-provider brand anchor (#RRGGBB); `generic` has no vendor color.
+#   resources: one entry per neutral resource_type; each carries, per provider,
+#     a `label` (native service name), `aliases` (native-type strings a collector
+#     may emit), and `icon` (id / name / hex) used to seed the offline icon
+#     inventory. `generic` carries labels + aliases but no vendor icon.
+
+version: 1
+
+providers: [aws, azure, gcp, oci, generic]
+
+brand_hex:
+  aws: "#232F3E"      # AWS Squid Ink
+  azure: "#0078D4"    # Azure blue
+  gcp: "#4285F4"      # Google blue
+  oci: "#F80000"      # Oracle red
+  generic: "#FFFFFF"  # grayscale — no vendor color (white fill / black stroke)
+
+resources:
+  boundary:
+    aws:
+      label: Account
+      aliases: [account, "aws::organizations::account", aws_account]
+      icon: { id: mxgraph.aws4.group_account, name: AWS Account, hex: "#232F3E" }
+    azure:
+      label: Subscription
+      aliases: [subscription, azurerm_subscription]
+      icon: { id: azure.subscription, name: Azure Subscription, hex: "#0078D4" }
+    gcp:
+      label: Project
+      aliases: [project, google_project, cloudresourcemanager.project]
+      icon: { id: gcp.project, name: Google Cloud Project, hex: "#4285F4" }
+    oci:
+      label: Tenancy/Compartment
+      aliases: [tenancy, compartment, oci_identity_compartment]
+      icon: { id: oci.compartment, name: OCI Tenancy / Compartment, hex: "#F80000" }
+    generic:
+      label: Environment
+      aliases: [environment, boundary]
+
+  network_boundary:
+    aws:
+      label: VPC
+      aliases: [vpc, "aws::ec2::vpc", aws_vpc]
+      icon: { id: mxgraph.aws4.group_vpc, name: Amazon VPC, hex: "#8C4FFF" }
+    azure:
+      label: VNet
+      aliases: [vnet, virtualnetwork, virtual_network, azurerm_virtual_network]
+      icon: { id: azure.virtual_network, name: Azure Virtual Network, hex: "#0078D4" }
+    gcp:
+      label: VPC
+      aliases: [vpc, google_compute_network, compute.network]
+      icon: { id: gcp.virtual_private_cloud, name: Google VPC, hex: "#4285F4" }
+    oci:
+      label: VCN
+      aliases: [vcn, virtual_cloud_network, oci_core_vcn]
+      icon: { id: oci.virtual_cloud_network, name: OCI VCN, hex: "#F80000" }
+    generic:
+      label: Network
+      aliases: [network, network_boundary]
+
+  serverless_fn:
+    aws:
+      label: Lambda
+      aliases: [lambda, "aws::lambda::function", aws_lambda_function]
+      icon: { id: mxgraph.aws4.lambda, name: AWS Lambda, hex: "#ED7100" }
+    azure:
+      label: Functions
+      aliases: [functions, function_app, functionapp, azurerm_function_app]
+      icon: { id: azure.function_apps, name: Azure Functions, hex: "#0062AD" }
+    gcp:
+      label: Cloud Functions
+      aliases: [cloud_functions, cloudfunctions.function, google_cloudfunctions_function]
+      icon: { id: gcp.cloud_functions, name: Cloud Functions, hex: "#4285F4" }
+    oci:
+      label: Functions
+      aliases: [functions, oci_functions_function, fnfunction]
+      icon: { id: oci.functions, name: OCI Functions, hex: "#F80000" }
+    generic:
+      label: Function
+      aliases: [function, serverless_fn]
+
+  object_store:
+    aws:
+      label: S3
+      aliases: [s3, "aws::s3::bucket", aws_s3_bucket, bucket]
+      icon: { id: mxgraph.aws4.s3, name: Amazon S3, hex: "#7AA116" }
+    azure:
+      label: Blob Storage
+      aliases: [blob_storage, blobstorage, storage_account, storageaccount, azurerm_storage_account]
+      icon: { id: azure.storage_accounts, name: Azure Blob Storage, hex: "#0078D4" }
+    gcp:
+      label: Cloud Storage
+      aliases: [cloud_storage, storage.bucket, google_storage_bucket, gcs]
+      icon: { id: gcp.cloud_storage, name: Cloud Storage, hex: "#4285F4" }
+    oci:
+      label: Object Storage
+      aliases: [object_storage, oci_objectstorage_bucket, bucket]
+      icon: { id: oci.object_storage, name: OCI Object Storage, hex: "#F80000" }
+    generic:
+      label: Object Store
+      aliases: [object_store]
+
+  managed_sql:
+    aws:
+      label: RDS
+      aliases: [rds, "aws::rds::dbinstance", aws_db_instance, db_instance]
+      icon: { id: mxgraph.aws4.rds, name: Amazon RDS, hex: "#527FFF" }
+    azure:
+      label: Azure SQL DB
+      aliases: [azure_sql_db, sql_database, sqldatabase, azurerm_sql_database, azurerm_mssql_database]
+      icon: { id: azure.sql_database, name: Azure SQL Database, hex: "#0078D4" }
+    gcp:
+      label: Cloud SQL
+      aliases: [cloud_sql, sqladmin.instance, google_sql_database_instance]
+      icon: { id: gcp.cloud_sql, name: Cloud SQL, hex: "#4285F4" }
+    oci:
+      label: Autonomous/DB Systems
+      aliases: [autonomous_database, db_system, dbsystem, oci_database_autonomous_database]
+      icon: { id: oci.autonomous_database, name: OCI Autonomous Database, hex: "#F80000" }
+    generic:
+      label: Managed SQL
+      aliases: [managed_sql]
+
+  message_queue:
+    aws:
+      label: SQS
+      aliases: [sqs, "aws::sqs::queue", aws_sqs_queue, queue]
+      icon: { id: mxgraph.aws4.sqs, name: Amazon SQS, hex: "#E7157B" }
+    azure:
+      label: Service Bus/Queue
+      aliases: [service_bus, servicebus, servicebus_queue, azurerm_servicebus_queue]
+      icon: { id: azure.service_bus, name: Azure Service Bus, hex: "#0078D4" }
+    gcp:
+      label: Pub/Sub
+      aliases: [pubsub, pub_sub, pubsub.topic, google_pubsub_topic]
+      icon: { id: gcp.pubsub, name: Pub/Sub, hex: "#4285F4" }
+    oci:
+      label: Streaming/Queue
+      aliases: [streaming, queue, oci_streaming_stream, oci_queue_queue]
+      icon: { id: oci.streaming, name: OCI Streaming / Queue, hex: "#F80000" }
+    generic:
+      label: Message Queue
+      aliases: [message_queue]
+
+  secrets_store:
+    aws:
+      label: Secrets Manager
+      aliases: [secrets_manager, "aws::secretsmanager::secret", aws_secretsmanager_secret]
+      icon: { id: mxgraph.aws4.secrets_manager, name: AWS Secrets Manager, hex: "#DD344C" }
+    azure:
+      label: Key Vault
+      aliases: [key_vault, keyvault, azurerm_key_vault]
+      icon: { id: azure.key_vaults, name: Azure Key Vault, hex: "#0078D4" }
+    gcp:
+      label: Secret Manager
+      aliases: [secret_manager, secretmanager.secret, google_secret_manager_secret]
+      icon: { id: gcp.secret_manager, name: Secret Manager, hex: "#4285F4" }
+    oci:
+      label: Vault
+      aliases: [vault, oci_kms_vault]
+      icon: { id: oci.vault, name: OCI Vault, hex: "#F80000" }
+    generic:
+      label: Secrets Store
+      aliases: [secrets_store]
+
+  managed_k8s:
+    aws:
+      label: EKS
+      aliases: [eks, "aws::eks::cluster", aws_eks_cluster]
+      icon: { id: mxgraph.aws4.eks, name: Amazon EKS, hex: "#ED7100" }
+    azure:
+      label: AKS
+      aliases: [aks, kubernetes_service, azurerm_kubernetes_cluster]
+      icon: { id: azure.kubernetes_services, name: Azure Kubernetes Service, hex: "#0078D4" }
+    gcp:
+      label: GKE
+      aliases: [gke, container.cluster, google_container_cluster]
+      icon: { id: gcp.google_kubernetes_engine, name: Google Kubernetes Engine, hex: "#4285F4" }
+    oci:
+      label: OKE
+      aliases: [oke, container_engine, oci_containerengine_cluster]
+      icon: { id: oci.container_engine_kubernetes, name: OCI Kubernetes Engine (OKE), hex: "#F80000" }
+    generic:
+      label: Managed Kubernetes
+      aliases: [managed_kubernetes, managed_k8s]
+
+  llm_platform:
+    aws:
+      label: Bedrock
+      aliases: [bedrock, "aws::bedrock::model", aws_bedrock]
+      icon: { id: mxgraph.aws4.bedrock, name: Amazon Bedrock, hex: "#01A88D" }
+    azure:
+      label: Azure OpenAI
+      aliases: [azure_openai, cognitive_services, openai, azurerm_cognitive_account]
+      icon: { id: azure.cognitive_services, name: Azure OpenAI Service, hex: "#0078D4" }
+    gcp:
+      label: Vertex AI
+      aliases: [vertex_ai, vertexai, aiplatform, google_vertex_ai]
+      icon: { id: gcp.vertex_ai, name: Vertex AI, hex: "#4285F4" }
+    oci:
+      label: OCI Generative AI
+      aliases: [generative_ai, genai, oci_generative_ai]
+      icon: { id: oci.generative_ai, name: OCI Generative AI, hex: "#F80000" }
+    generic:
+      label: LLM Platform
+      aliases: [llm_platform]

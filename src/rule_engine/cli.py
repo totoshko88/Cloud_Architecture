@@ -41,6 +41,7 @@ Exit codes
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import sys
@@ -85,6 +86,38 @@ _PARENT_ATTR_RE = re.compile(r'\bparent="([^"]*)"', re.IGNORECASE)
 # (e.g. the sub-cells of an embedded icon/stencil group) are that node's
 # internal glyph geometry and are NOT counted as separate diagram nodes.
 _ROOT_LAYER_ID = "1"
+
+# Style tokens that mark an UNRESOLVED / placeholder icon (REVIEW.md C2). A node
+# is resolved when it carries a concrete, non-empty style — whether that is a
+# provider stencil (``shape=mxgraph.aws4.*`` / ``mxgraph.gcp2.*`` / embedded OCI
+# ``shape=stencil(...)``), a shaped node (``shape=cylinder3`` etc.), or the
+# generic profile's intentionally shapeless fill/stroke box. It is UNRESOLVED
+# only when the style is empty, explicitly names no shape (``shape=none``), or
+# contains a literal placeholder/unresolved marker. This lets ``icon-resolved``
+# fire on a parsed ``.drawio`` file, not only on programmatic Artifacts.
+_UNRESOLVED_STYLE_MARKERS = (
+    "shape=none",
+    "placeholder",
+    "unresolved",
+    "image=data:image/svg",  # a data-URI SVG image node draw.io fails to render
+)
+
+
+def _icon_descriptor_for_style(style: str) -> Dict[str, Any]:
+    """Classify a node's draw.io ``style`` into a linter icon descriptor.
+
+    Returns ``{"style": style, "resolved": bool}`` (with ``placeholder`` set when
+    unresolved). A style is unresolved when it is empty or matches one of
+    :data:`_UNRESOLVED_STYLE_MARKERS`; any other concrete style — a provider
+    stencil, a shaped node, an embedded stencil group, or the generic profile's
+    grayscale fill/stroke box — is a resolved icon.
+    """
+    low = (style or "").strip().lower()
+    if low == "":
+        return {"style": style, "resolved": False, "placeholder": True}
+    if any(marker in low for marker in _UNRESOLVED_STYLE_MARKERS):
+        return {"style": style, "resolved": False, "placeholder": True}
+    return {"style": style, "resolved": True}
 
 
 def _parse_frontmatter(text: str) -> Optional[Dict[str, Any]]:
@@ -194,16 +227,34 @@ def _parse_drawio(path: str, text: str) -> Artifact:
 
     # Boundary/Network-Boundary containers hold nodes but are themselves the
     # stack/network frame. A vertex whose parent is the root layer or one of
-    # these containers is a top-level node; the containers are identified by a
-    # dashed boundary style (or a conventional ``boundary`` id prefix).
+    # these containers is a top-level node. Container detection is robust
+    # (REVIEW.md C4): a vertex is a container when ANY of the following hold —
+    #   * its id starts with the conventional ``boundary`` prefix;
+    #   * it uses a group/container style (``group``/``;group``/``shape=*group``/
+    #     ``container=1``) — this catches the AWS profile group shape
+    #     ``shape=mxgraph.aws4.group;...;dashed=0`` which the old dashed-only test
+    #     missed, wrongly counting it as a node and inflating ``node-count``;
+    #   * it is a dashed borderless boundary rectangle (generic/oci/gcp style).
     boundary_ids: set[str] = set()
     for cell in cells:
         if not _VERTEX_RE.search(cell):
             continue
         cid = _cell_id(cell)
-        style_low = (_STYLE_ATTR_RE.search(cell) or [None, ""]).group(1).lower() \
-            if _STYLE_ATTR_RE.search(cell) else ""
-        if cid.startswith("boundary") or ("dashed=1" in style_low and "fillcolor=none" in style_low):
+        m = _STYLE_ATTR_RE.search(cell)
+        style_low = m.group(1).lower() if m else ""
+        is_group_style = (
+            "group" in style_low  # group / ;group / shape=...group / grIcon=
+            or "container=1" in style_low
+        )
+        is_dashed_boundary = "dashed=1" in style_low and "fillcolor=none" in style_low
+        # An AWS-style boundary group names ``group`` in its shape and a
+        # ``group_*``/``grIcon=`` container icon (e.g. mxgraph.aws4.group with
+        # grIcon=mxgraph.aws4.group_account). A group-styled cell that merely
+        # hosts embedded glyph geometry (an OCI node container) is NOT a boundary
+        # — its children are stencil cells, and it is handled as a normal
+        # top-level node by the parent rule below.
+        is_boundary_group = is_group_style and ("group_" in style_low or "gricon=" in style_low)
+        if cid.startswith("boundary") or is_dashed_boundary or is_boundary_group:
             boundary_ids.add(cid)
 
     node_container_parents = {_ROOT_LAYER_ID} | boundary_ids
@@ -234,8 +285,9 @@ def _parse_drawio(path: str, text: str) -> Artifact:
                 continue
             if value or style:
                 node_names.append(value)
-            if style:
-                icons.append({"style": style, "resolved": True})
+            # Classify the icon so an unresolved placeholder trips icon-resolved
+            # (REVIEW.md C2). A node with no style at all is itself unresolved.
+            icons.append(_icon_descriptor_for_style(style))
 
     has_legend = "legend" in text.lower()
 
@@ -269,8 +321,26 @@ def _parse_markdown(path: str, text: str) -> Artifact:
     )
 
 
+def _parse_snapshot(path: str, text: str) -> Artifact:
+    """Parse an inventory Snapshot JSON file into a snapshot Artifact.
+
+    The whole file content is handed to the Linter's ``secret-safety`` scan
+    (REVIEW.md C3): a Snapshot must record metadata only, so any secret value,
+    key material, or SecureString content in the file is a CRITICAL finding.
+    """
+    return Artifact(
+        kind="snapshot",
+        path=path,
+        is_snapshot_file=True,
+        content=text,
+    )
+
+
 def parse_artifact(path: str) -> Artifact:
     """Parse a file at ``path`` into an :class:`Artifact` (best-effort).
+
+    ``.drawio`` files parse as diagrams, ``.md``/``.markdown`` as documents, and
+    Snapshot ``.json`` files as snapshots (routed through ``secret-safety``).
 
     Raises
     ------
@@ -288,6 +358,8 @@ def parse_artifact(path: str) -> Artifact:
         return _parse_drawio(path, text)
     if lower.endswith((".md", ".markdown")):
         return _parse_markdown(path, text)
+    if lower.endswith(".json"):
+        return _parse_snapshot(path, text)
     raise ValueError(f"unsupported artifact type for linting: {path}")
 
 
@@ -317,6 +389,7 @@ _EXCLUDED_MD_BASENAMES = {
     "notice.md",
     "code_of_conduct.md",
     "security.md",
+    "review.md",  # hand-authored architecture review, not a generated KB doc
 }
 
 
@@ -333,8 +406,40 @@ def _is_generated_markdown(path: str) -> bool:
     return base not in _EXCLUDED_MD_BASENAMES
 
 
+def _is_snapshot_json(path: str) -> bool:
+    """Return True when a ``.json`` file is an inventory Snapshot to secret-scan.
+
+    A JSON file is treated as a Snapshot (REVIEW.md C3) when either:
+
+    * it lives inside an ``inventory-*`` Snapshot folder (inventory-standards
+      snapshot naming), or
+    * its content is a Normalized Resource (an object with ``resource_type`` or
+      ``provider``) or a list of such objects.
+
+    JSON Schema files and other config JSON are not snapshots and are skipped.
+    """
+    parts = os.path.normpath(path).split(os.sep)
+    if any(seg.startswith("inventory-") for seg in parts):
+        return True
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            data = json.loads(fh.read())
+    except (OSError, json.JSONDecodeError):
+        return False
+    candidates = data if isinstance(data, list) else [data]
+    for item in candidates:
+        if isinstance(item, dict) and ("resource_type" in item or "provider" in item):
+            return True
+    return False
+
+
 def discover_artifacts(workspace_root: str) -> List[str]:
-    """Return the sorted list of lintable ``.drawio``/Markdown files under root."""
+    """Return the sorted list of lintable ``.drawio``/Markdown/Snapshot files.
+
+    Diagrams (``.drawio``), engine-generated Markdown, and inventory Snapshot
+    JSON files are all routed through the Linter so the ``secret-safety``
+    CRITICAL gate actually runs in the CLI/CI ``--all`` path (REVIEW.md C3).
+    """
     found: List[str] = []
     for dirpath, dirnames, filenames in os.walk(workspace_root):
         dirnames[:] = [d for d in dirnames if d not in _EXCLUDED_DIRS]
@@ -344,6 +449,8 @@ def discover_artifacts(workspace_root: str) -> List[str]:
             if low.endswith(".drawio"):
                 found.append(full)
             elif low.endswith((".md", ".markdown")) and _is_generated_markdown(full):
+                found.append(full)
+            elif low.endswith(".json") and _is_snapshot_json(full):
                 found.append(full)
     return sorted(found)
 

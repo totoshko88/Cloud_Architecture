@@ -59,6 +59,9 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 from rule_engine import delta as delta_engine
 from rule_engine import icon_resolver
 from rule_engine import linter as linter_mod
+from rule_engine.constants import BRAND_HEX as _BRAND_HEX
+from rule_engine.constants import PROVIDERS
+from rule_engine.constants import provider_labels as _provider_labels
 
 __all__ = [
     "PROVIDERS",
@@ -73,9 +76,8 @@ __all__ = [
 # --------------------------------------------------------------------------- #
 # Constants
 # --------------------------------------------------------------------------- #
-
-#: The five supported Provider Profiles (Requirement 9 AC6/AC7 enumeration).
-PROVIDERS: Tuple[str, ...] = ("aws", "azure", "gcp", "oci", "generic")
+# PROVIDERS and the brand palette come from rule_engine.constants (single source
+# of truth). The terminology labels are loaded from profiles/terminology.yaml.
 
 #: The five required contract inputs, in the order they are validated
 #: (design "Rule Engine Contract" — Inputs).
@@ -88,42 +90,9 @@ REQUIRED_INPUTS: Tuple[str, ...] = (
 )
 
 # Neutral resource-type -> per-provider native label (terminology normalization
-# table; .kiro/steering/provider-profiles.md). Used for diagram node display
-# labels and the companion/inventory documents.
-_PROVIDER_LABELS: Dict[str, Dict[str, str]] = {
-    "boundary": {"aws": "Account", "azure": "Subscription", "gcp": "Project",
-                 "oci": "Tenancy/Compartment", "generic": "Environment"},
-    "network_boundary": {"aws": "VPC", "azure": "VNet", "gcp": "VPC",
-                         "oci": "VCN", "generic": "Network"},
-    "serverless_fn": {"aws": "Lambda", "azure": "Functions",
-                      "gcp": "Cloud Functions", "oci": "Functions",
-                      "generic": "Function"},
-    "object_store": {"aws": "S3", "azure": "Blob Storage",
-                     "gcp": "Cloud Storage", "oci": "Object Storage",
-                     "generic": "Object Store"},
-    "managed_sql": {"aws": "RDS", "azure": "Azure SQL DB", "gcp": "Cloud SQL",
-                    "oci": "Autonomous/DB Systems", "generic": "Managed SQL"},
-    "message_queue": {"aws": "SQS", "azure": "Service Bus/Queue",
-                      "gcp": "Pub/Sub", "oci": "Streaming/Queue",
-                      "generic": "Message Queue"},
-    "secrets_store": {"aws": "Secrets Manager", "azure": "Key Vault",
-                      "gcp": "Secret Manager", "oci": "Vault",
-                      "generic": "Secrets Store"},
-    "managed_k8s": {"aws": "EKS", "azure": "AKS", "gcp": "GKE", "oci": "OKE",
-                    "generic": "Managed Kubernetes"},
-    "llm_platform": {"aws": "Bedrock", "azure": "Azure OpenAI",
-                     "gcp": "Vertex AI", "oci": "OCI Generative AI",
-                     "generic": "LLM Platform"},
-}
-
-# Per-provider brand-anchor hex (provider-profiles.md — Brand Palette).
-_BRAND_HEX: Dict[str, str] = {
-    "aws": "#232F3E",
-    "azure": "#0078D4",
-    "gcp": "#4285F4",
-    "oci": "#F80000",
-    "generic": "#FFFFFF",
-}
+# table; profiles/terminology.yaml). Used for diagram node display labels and the
+# companion/inventory documents.
+_PROVIDER_LABELS: Dict[str, Dict[str, str]] = _provider_labels()
 
 # Highest zero-padded sequence permitted for NN (01–99).
 _MAX_SEQUENCE = 99
