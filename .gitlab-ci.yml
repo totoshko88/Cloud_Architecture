@@ -123,9 +123,25 @@ validate:
           sys.exit(1)
       "
     - echo "Fetching official icon packs so file-path icon references can be verified"
-    - python scripts/fetch_assets.py --only gcp_category gcp_core azure || echo "WARNING: asset fetch failed; asset-paths guard will skip"
+    - python scripts/fetch_assets.py --only gcp_category gcp_core azure aws oci || echo "WARNING: asset fetch failed; asset-paths guard will skip"
     - echo "Verifying every mapping icon file path exists under the asset root"
     - python -m rule_engine.asset_paths_guard
+    - echo "Verifying the committed icon index is current with the official packs"
+    # Icon-set index (v1.3.x): rebuild from the fetched packs and confirm the
+    # committed mappings/icon-index.json is byte-identical (no stale role→icon
+    # wiring). Skips gracefully if a pack failed to fetch.
+    - rule-engine-build-icon-sets --check --no-fetch || echo "WARNING: icon-index check skipped (packs incomplete) or STALE — see log"
+    - echo "Verifying every diagram icon reference resolves (incl. azure2 img/lib paths)"
+    # Icon-reference verifier: a well-formed-but-nonexistent id/path renders as an
+    # empty/broken icon that the linter's icon-resolved rule cannot see. This
+    # checks aws4 ids, azure2 img/lib paths (against mappings/azure2-shapes.json),
+    # GCP asset paths, and OCI slugs. Fail-honest: skips a source not present.
+    - |
+      rc=0
+      for f in examples/**/*.drawio; do
+        rule-engine-verify-icon --file "$f" || rc=1
+      done
+      [ "$rc" -eq 0 ] || { echo "BLOCKING: unresolved icon reference(s) — see above"; exit 1; }
     - echo "Enforcing the exported .drawio.png export budget (<=1200px wide, <500KB)"
     # Raster gate (REVIEW.md D7): the linter checks the .drawio source + companion
     # document, not the rendered PNG, so this guard fails-closed on an oversized or

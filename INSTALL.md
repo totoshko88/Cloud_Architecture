@@ -62,14 +62,33 @@ Follow these steps in order.
 
    A clean run reports every golden example as eligible for publication.
 
-6. **Confirm the always-on steering documents are picked up.** Open the project in Kiro
+6. **(Optional, for diagram generation) Build the official icon sets.** Diagram
+   generation and raster export resolve each node's icon from the official provider
+   packs. To fetch those packs and (re)build the committed icon index, run the
+   init-time builder:
+
+   ```bash
+   rule-engine-build-icon-sets            # download packs + build mappings/icon-index.json
+   rule-engine-build-icon-sets --check    # verify the committed index is current (CI)
+   ```
+
+   This downloads each pack declared in `mappings/asset-sources.yaml` into the
+   git-ignored `assets/vendor/` root, parses every pack's filename/library structure,
+   and writes `mappings/icon-index.json` (each diagram role → its resolved official icon
+   per provider). The vendor binaries stay uncommitted; only the index is committed, so
+   the linter and generators resolve and verify role→icon wiring without the packs
+   present. Re-run it whenever a provider refreshes its icon pack — a new or renamed icon
+   is a re-index, not a code change. Linting and schema checks (steps 4–5) do **not**
+   require this step.
+
+7. **Confirm the always-on steering documents are picked up.** Open the project in Kiro
    and verify the five documents under `.kiro/steering/` (`diagram-standards.md`,
    `inventory-standards.md`, `provider-profiles.md`, `kb-frontmatter.md`, and
    `diagram-lint.md`) are active. Because they are always-on, every agent turn in the
    workspace inherits the diagram, inventory, profile, frontmatter, and lint rules with no
    further configuration.
 
-7. **Enable the Kiro hooks.** Confirm the hooks under `.kiro/hooks/` are active so quality
+8. **Enable the Kiro hooks.** Confirm the hooks under `.kiro/hooks/` are active so quality
    gates run automatically:
    - `lint-on-save.kiro.hook` — runs `rule-engine-lint --file "$KIRO_FILE_PATH"` on saving
      any `.drawio` or `.md` file and surfaces a blocking failure reason to the session.

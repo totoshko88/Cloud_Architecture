@@ -41,6 +41,19 @@ The `resource_type` column is the enum value used in the Normalized Resource sch
 (`schemas/inventory.schema.json`). Provider labels are the native service names surfaced
 in diagrams and inventory documents.
 
+### Presentation roles (diagram-only, beyond the nine types)
+
+The nine concepts above are the **inventory/schema** contract. Diagrams additionally use
+**presentation roles** — how a node is *drawn* — for distinct services that are not
+first-class inventory types, for example `cdn`, `dns`, `waf`, `lb`, and `cache`. These are
+declared in `mappings/roles.yaml` and resolved, per provider, into the committed
+`mappings/icon-index.json` by the init-time icon-set builder (`rule-engine-build-icon-sets`;
+see `asset-packs.md`). The rule is **one role per distinct service** — a CDN is not an
+object store, a DNS is not a load balancer — so each gets its own correct per-provider icon
+(AWS CloudFront/Route 53/WAF; Azure CDN Profiles/DNS/WAF; GCP Networking/Security-Identity
+category icons per Google's product-first, category-fallback convention; OCI `cdn`/`dns`/`waf`
+embedded stencils). Adding the schema does not change; only the diagram role table grows.
+
 ## Per-Provider Container Conventions
 
 Each profile declares exactly one Boundary container style and exactly one Network

@@ -109,11 +109,26 @@ jobs:
           "
       - name: Fetch official icon packs so file-path icon references can be verified
         # GCP maps to both gcp-category and gcp-core (product-first priority);
-        # Azure to its pack. Fetch-aware: the guard skips if a fetch fails.
+        # Azure/AWS/OCI to their packs. Fetch-aware: the guard skips if a fetch fails.
         run: |
-          python scripts/fetch_assets.py --only gcp_category gcp_core azure || echo "WARNING: asset fetch failed; asset-paths guard will skip"
+          python scripts/fetch_assets.py --only gcp_category gcp_core azure aws oci || echo "WARNING: asset fetch failed; asset-paths guard will skip"
       - name: Verify every mapping icon file path exists under the asset root
         run: python -m rule_engine.asset_paths_guard
+      - name: Verify the committed icon index is current with the official packs
+        # Rebuild mappings/icon-index.json from the fetched packs and confirm the
+        # committed file is byte-identical (no stale role->icon wiring). Skips
+        # gracefully if a pack failed to fetch.
+        run: rule-engine-build-icon-sets --check --no-fetch || echo "WARNING: icon-index check skipped (packs incomplete) or STALE — see log"
+      - name: Verify every diagram icon reference resolves (incl. azure2 img/lib paths)
+        # A well-formed-but-nonexistent id/path renders as an empty/broken icon
+        # the linter cannot see. Checks aws4 ids, azure2 img/lib paths (against
+        # mappings/azure2-shapes.json), GCP asset paths, and OCI slugs.
+        run: |
+          rc=0
+          for f in examples/**/*.drawio; do
+            rule-engine-verify-icon --file "$f" || rc=1
+          done
+          [ "$rc" -eq 0 ] || { echo "BLOCKING: unresolved icon reference(s)"; exit 1; }
       - name: Enforce the exported .drawio.png export budget (D7)
         # The committed golden-example rasters must stay <=1200px wide and <500KB.
         # The linter checks the .drawio source + companion, not the rendered PNG,
