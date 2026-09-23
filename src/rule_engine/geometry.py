@@ -51,6 +51,17 @@ from rule_engine.constants import is_text_cell_style as _is_text_style
 # are expected to be whole multiples of it (diagram-standards Layout Geometry).
 GRID = 10
 
+# The label band drawn *below* a node's icon (``verticalLabelPosition=bottom``).
+# A node's on-canvas footprint is not just its 78x78 icon box — the service name
+# renders in a band beneath it, and that band collides with the next row / the
+# container border exactly as the icon does. The icon-only box (78x78) is
+# therefore label-blind: it lets a label crowd or overflow a boundary while the
+# padding/overlap checks pass. ``LABEL_BAND`` extends every node box downward by
+# one label line so overlap and container-padding measure what the reader sees.
+# One line at the 12px floor plus leading ~= 30px (three grid steps); this is a
+# conservative floor, not a per-string measurement.
+LABEL_BAND = 30
+
 _CELL_RE = re.compile(r"<mxCell\b[^>]*?(?:/>|>.*?</mxCell>)", re.S)
 _GEOM_RE = re.compile(r"<mxGeometry\b[^>]*?(?:/>|>.*?</mxGeometry>)", re.S)
 _POINT_RE = re.compile(r'<mxPoint x="([-0-9.]+)" y="([-0-9.]+)"')
@@ -107,6 +118,15 @@ class Box:
 
     def center(self) -> Tuple[float, float]:
         return (self.x + self.w / 2.0, self.y + self.h / 2.0)
+
+    def footprint(self, label_band: float = LABEL_BAND) -> "Box":
+        """Return this box grown downward by ``label_band`` for the node label.
+
+        A node's visual footprint is its icon box plus the caption band drawn
+        beneath it. The overlap and container-padding checks use the footprint,
+        not the bare icon box, so a label that crowds the next row or a boundary
+        border is caught (a purely icon-based test is label-blind)."""
+        return Box(self.id, self.x, self.y, self.w, self.h + label_band)
 
 
 @dataclass
@@ -234,9 +254,16 @@ def check_grid_alignment(geo: DiagramGeometry, grid: int = GRID) -> List[str]:
     return sorted(out)
 
 
-def check_node_overlap(geo: DiagramGeometry) -> List[Tuple[str, str]]:
-    """Return id pairs whose node boxes overlap (axis-aligned intersection)."""
-    boxes = list(geo.nodes.values())
+def check_node_overlap(
+    geo: DiagramGeometry, label_band: float = LABEL_BAND
+) -> List[Tuple[str, str]]:
+    """Return id pairs whose node **footprints** overlap.
+
+    The footprint is the icon box grown downward by ``label_band`` (the caption
+    band), so two nodes whose icons clear each other but whose labels collide are
+    still flagged — the defect a reader sees. Pass ``label_band=0`` for the
+    legacy icon-only test."""
+    boxes = [b.footprint(label_band) for b in geo.nodes.values()]
     out: List[Tuple[str, str]] = []
     for i in range(len(boxes)):
         for j in range(i + 1, len(boxes)):
@@ -247,12 +274,19 @@ def check_node_overlap(geo: DiagramGeometry) -> List[Tuple[str, str]]:
 
 
 def check_container_padding(
-    geo: DiagramGeometry, pad: int = GRID
+    geo: DiagramGeometry, pad: int = GRID, label_band: float = LABEL_BAND
 ) -> List[Tuple[str, str, float]]:
     """Return ``(node_id, container_id, min_pad)`` where a node inside a
-    container leaves less than ``pad`` on some side (or straddles the border)."""
+    container leaves less than ``pad`` on some side (or straddles the border).
+
+    The node is measured by its **footprint** (icon + caption band), so a label
+    that reaches the container border is caught even when the icon clears it. A
+    node is considered "inside" a container when its footprint sits within the
+    container region; the smallest of the four side gaps is compared to
+    ``pad``."""
     out: List[Tuple[str, str, float]] = []
-    for ncid, n in geo.nodes.items():
+    for ncid, node in geo.nodes.items():
+        n = node.footprint(label_band)
         for ccid, c in geo.containers.items():
             inside = c.x <= n.x and c.y <= n.y and n.right <= c.right and n.bottom <= c.bottom
             if not inside:
@@ -266,6 +300,74 @@ def check_container_padding(
             min_pad = min(n.x - c.x, n.y - c.y, c.right - n.right, c.bottom - n.bottom)
             if min_pad < pad:
                 out.append((ncid, ccid, float(min_pad)))
+    return out
+
+
+def check_container_overlap(geo: DiagramGeometry) -> List[Tuple[str, str]]:
+    """Return id pairs of **sibling** containers whose boxes overlap.
+
+    Two containers are siblings when neither fully contains the other; a proper
+    nesting (Account ⊃ Region ⊃ AZ) is expected and never flagged. But two peer
+    boundaries that partially overlap (e.g. a primary-VPC box bleeding into the
+    passive-VPC box) put shared area under two labelled groups at once — a
+    structural defect that makes a node ambiguous about which boundary it lives
+    in. This is the container-level twin of :func:`check_node_overlap`."""
+
+    def _contains(outer: Box, inner: Box) -> bool:
+        return (
+            outer.x <= inner.x
+            and outer.y <= inner.y
+            and inner.right <= outer.right
+            and inner.bottom <= outer.bottom
+        )
+
+    boxes = list(geo.containers.values())
+    out: List[Tuple[str, str]] = []
+    for i in range(len(boxes)):
+        for j in range(i + 1, len(boxes)):
+            a, b = boxes[i], boxes[j]
+            if _contains(a, b) or _contains(b, a):
+                continue  # proper nesting, not a sibling overlap
+            if a.x < b.right and b.x < a.right and a.y < b.bottom and b.y < a.bottom:
+                out.append(tuple(sorted((a.id, b.id))))  # type: ignore[arg-type]
+    return sorted(set(out))
+
+
+def check_edge_direction(geo: DiagramGeometry) -> List[Tuple[str, str]]:
+    """Return ``(edge_id, reason)`` for edges that break the directional contract.
+
+    The contract (diagram-standards Edge Routing → "The directional contract"):
+    an edge **exits** its source on the **right or bottom** and **enters** its
+    target on the **left or top**. In draw.io fractions that means the exit
+    point sits on the right/bottom half (``exitX >= 0.5`` or ``exitY >= 0.5``)
+    and the entry point on the left/top half (``entryX <= 0.5`` or
+    ``entryY <= 0.5``).
+
+    A point is read as position within the node's unit square: ``x`` grows to
+    the right, ``y`` grows downward. A valid **exit** leans to the right
+    (``exitX >= 0.5``, which admits the right edge and the top-right/bottom-right
+    corners) or sits on the bottom edge (``exitY == 1``). A valid **entry** leans
+    to the left (``entryX <= 0.5``) or sits on the top edge (``entryY == 0``). A
+    left-edge exit like ``(0, 0.5)`` or a right-edge entry like ``(1, 0.5)`` is
+    the defect this catches.
+
+    This is enforced only for edges that declare explicit contact points
+    (``exitX/exitY`` / ``entryX/entryY``); an edge that floats its connection is
+    left to draw.io's perimeter router and not judged here. A ``exit-<side>`` or
+    ``enter-<side>`` reason names the violated half."""
+    out: List[Tuple[str, str]] = []
+    for e in geo.edges:
+        ex, ey = e.exit
+        nx, ny = e.entry
+        if ex is not None or ey is not None:
+            exit_ok = (ex is not None and ex >= 0.5) or (ey is not None and ey >= 1.0)
+            if not exit_ok:
+                out.append((e.id, "exit-not-right-or-bottom"))
+                continue
+        if nx is not None or ny is not None:
+            entry_ok = (nx is not None and nx <= 0.5) or (ny is not None and ny <= 0.0)
+            if not entry_ok:
+                out.append((e.id, "enter-not-left-or-top"))
     return out
 
 
@@ -311,6 +413,112 @@ def check_edge_routing(geo: DiagramGeometry) -> List[Tuple[str, str]]:
                 out.append((e.id, f"straight-through-{other}"))
                 break
     return out
+
+
+_TEXT_CELL_RE = re.compile(r'<mxCell\b[^>]*\bstyle="([^"]*text;[^"]*)"[^>]*>', re.I)
+_SPACING_TOKENS = ("spacingleft", "spacingright", "spacingtop", "spacingbottom")
+
+
+def check_text_padding(text: str) -> List[str]:
+    """Return the styles of text cells missing uniform inner padding.
+
+    Every ``text;`` cell (Flow / Legend / note box) must set all four
+    ``spacing{Left,Right,Top,Bottom}`` tokens so no line abuts the border
+    (diagram-standards → text-box padding). A text cell missing any of the four
+    is returned (as its style string) so the linter can flag ``text-padding``.
+    The diagram *title* cell (``fillColor=none``, no border) is exempt — it has
+    no visible box to pad against."""
+    out: List[str] = []
+    for style in _TEXT_CELL_RE.findall(text or ""):
+        low = style.lower()
+        # A text cell has a visible box only when it sets BOTH a concrete fill and
+        # a concrete stroke color. A borderless cell (no fill/stroke, or an
+        # explicit ``none``) — e.g. the diagram title or a free label — has no box
+        # to pad and is exempt. Only a filled+stroked box (Flow/Legend/note) must
+        # carry uniform inner padding.
+        has_fill = bool(re.search(r"fillcolor=#[0-9a-f]{3,8}", low))
+        has_stroke = bool(re.search(r"strokecolor=#[0-9a-f]{3,8}", low))
+        if not (has_fill and has_stroke):
+            continue
+        if not all(tok in low for tok in _SPACING_TOKENS):
+            out.append(style)
+    return out
+
+
+def check_edge_float(geo: DiagramGeometry) -> List[str]:
+    """Return ids of edges that declare no explicit exit/entry contact point.
+
+    On a dense (landscape) diagram every edge must fix its contact points
+    (``exitX/exitY`` + ``entryX/entryY``) so the directional contract is checkable
+    and the perimeter router cannot drift a side. A ``floated`` edge — one that
+    sets neither an exit nor an entry point — is a landscape defect."""
+    out: List[str] = []
+    for e in geo.edges:
+        has_exit = e.exit[0] is not None or e.exit[1] is not None
+        has_entry = e.entry[0] is not None or e.entry[1] is not None
+        if not (has_exit and has_entry):
+            out.append(e.id)
+    return sorted(out)
+
+
+def check_corridor_sharing(geo: DiagramGeometry, grid: int = GRID) -> List[Tuple[str, str]]:
+    """Return id pairs of edges that share a straight horizontal/vertical corridor.
+
+    Two *long* edges must not run in the same corridor: parallel runs are offset
+    by >= one grid step (diagram-standards Edge Routing). This flags a pair whose
+    dominant straight segment lies on the **same grid line** (same y for a
+    horizontal run, or same x for a vertical run) and whose extents overlap — the
+    "two lines merge into one" defect.
+
+    Conservative: only segments spanning more than one column/row step are
+    considered "long"; short adjacent stubs are ignored. Each edge's segments are
+    taken from its explicit waypoints (real routing); an edge with < 2 points
+    (a straight source→target line) contributes its endpoints when both contact
+    points are known via the connected node boxes."""
+    # Build the set of straight segments each edge occupies.
+    def segments_of(e: EdgeGeom) -> List[Tuple[str, float, float, float]]:
+        """Return ('h'|'v', line, lo, hi) segments from an edge's waypoints."""
+        pts: List[Tuple[float, float]] = list(e.points)
+        # Prepend/append real contact points when the node boxes are known.
+        if e.source in geo.nodes and e.exit[0] is not None and e.exit[1] is not None:
+            s = geo.nodes[e.source]
+            pts = [(s.x + e.exit[0] * s.w, s.y + e.exit[1] * s.h)] + pts
+        if e.target in geo.nodes and e.entry[0] is not None and e.entry[1] is not None:
+            t = geo.nodes[e.target]
+            pts = pts + [(t.x + e.entry[0] * t.w, t.y + e.entry[1] * t.h)]
+        segs: List[Tuple[str, float, float, float]] = []
+        for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+            if abs(y1 - y0) <= 1 and abs(x1 - x0) > 2 * grid:  # horizontal long run
+                segs.append(("h", round(y0), min(x0, x1), max(x0, x1)))
+            elif abs(x1 - x0) <= 1 and abs(y1 - y0) > 2 * grid:  # vertical long run
+                segs.append(("v", round(x0), min(y0, y1), max(y0, y1)))
+        return segs
+
+    edge_segs = {e.id: segments_of(e) for e in geo.edges}
+    src_of = {e.id: e.source for e in geo.edges}
+    tgt_of = {e.id: e.target for e in geo.edges}
+    out: List[Tuple[str, str]] = []
+    ids = list(edge_segs)
+    for i in range(len(ids)):
+        for j in range(i + 1, len(ids)):
+            a, b = ids[i], ids[j]
+            # A shared trunk is legitimate (diagram-standards "shared trunk,
+            # opposite branches"): two edges that leave the SAME source (or reach
+            # the same target) may share their stub before branching. Only flag
+            # unrelated edges that merge into one corridor.
+            if src_of[a] == src_of[b] or tgt_of[a] == tgt_of[b]:
+                continue
+            shared = False
+            for oa, la, loa, hia in edge_segs[a]:
+                for ob, lb, lob, hib in edge_segs[b]:
+                    if oa == ob and la == lb and loa < hib and lob < hia:
+                        shared = True
+                        break
+                if shared:
+                    break
+            if shared:
+                out.append(tuple(sorted((a, b))))  # type: ignore[arg-type]
+    return sorted(set(out))
 
 
 def check_arrow_style(geo: DiagramGeometry, min_stroke: float = 1.0) -> List[Tuple[str, str]]:

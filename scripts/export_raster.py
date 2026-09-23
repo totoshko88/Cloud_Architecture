@@ -54,9 +54,27 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # image=<path> where <path> is a repo-relative asset file we must inline.
 _ASSET_IMAGE_RE = re.compile(r"image=(assets/vendor/[^;\"]+)")
 
+# Class-aware export width (matches the raster gate's class-aware budget). A
+# ``flow`` diagram fits a doc column at 1200px; a ``landscape`` as-built needs a
+# wider raster so 30-plus nodes stay legible (the reference detailed as-built
+# exports at ~3400px). The class is read from the companion .diagram.md.
 EXPORT_WIDTH = "1200"
+LANDSCAPE_EXPORT_WIDTH = "3400"
 EXPORT_BORDER = "8"
 EXPORT_THEME = "light"
+
+
+def _diagram_class_of(source: Path) -> str:
+    """Return ``diagram_class`` from the .drawio's companion doc (default flow)."""
+    companion = Path(str(source)[: -len(".drawio")] + ".diagram.md") if str(source).endswith(".drawio") else None
+    if companion is None or not companion.is_file():
+        return "flow"
+    try:
+        text = companion.read_text(encoding="utf-8")
+    except OSError:
+        return "flow"
+    m = re.search(r"^diagram_class:\s*([A-Za-z_]+)\s*$", text, re.MULTILINE)
+    return m.group(1).strip().lower() if m else "flow"
 
 
 def _mime_for(path: Path) -> str:
@@ -104,6 +122,7 @@ def export_one(
     out_png = Path(str(source) + ".png")
     original = source.read_text(encoding="utf-8")
     inlined = inline_local_images(original, repo_root)
+    width = LANDSCAPE_EXPORT_WIDTH if _diagram_class_of(source) == "landscape" else EXPORT_WIDTH
 
     if inlined == original:
         # No local assets to inline (AWS/OCI/Azure): export the source directly.
@@ -119,7 +138,7 @@ def export_one(
         subprocess.run(
             [
                 drawio, "--export", "--format", "png",
-                "--width", EXPORT_WIDTH,
+                "--width", width,
                 "--border", EXPORT_BORDER,
                 "--theme", EXPORT_THEME,
                 "--output", str(out_png),

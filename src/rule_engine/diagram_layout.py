@@ -79,9 +79,14 @@ _LABEL_STYLE = (
 STACK_BOUNDARY_STROKE = "#00A000"
 NETWORK_BOUNDARY_STROKE = "#0062AD"
 
+# Every text/legend/note box carries uniform inner padding of one grid step on
+# all four sides (spacing*=GRID) so no line of text abuts the border — the
+# reference audit as-built uses spacing*=10 and the shared builder must match
+# (see .kiro/steering/diagram-standards.md → Container Padding / text boxes).
 _TEXT_STYLE = (
     f"text;html=1;align=left;verticalAlign=top;fontSize={MIN_FONT_SIZE};"
-    "whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF"
+    "whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF;"
+    f"spacingLeft={GRID};spacingRight={GRID};spacingTop={GRID};spacingBottom={GRID}"
 )
 
 
@@ -546,8 +551,27 @@ def build_diagram(
     for e in edges:
         parts.append(edge_cell(e))
     parts.append("\n")
-    parts.append(text_cell("flow-legend", flow_lines, legend_x, legend_y_flow, 320, 200))
-    parts.append(text_cell("legend", STANDARD_LEGEND_LINES, legend_x, legend_y_legend, 320, 210))
+    # Size each text box from its content plus uniform padding so no line is
+    # clipped or abuts the border. Height: one 12px line ~= 16px of leading, plus
+    # one grid step of padding top and bottom. Width: wide enough that the
+    # LONGEST line across BOTH the Flow and Legend boxes fits WITHOUT wrapping,
+    # then the SAME width is applied to both so the pair reads as one aligned
+    # block (diagram-standards → Legend/Flow furniture). ~6.6px per 12px glyph +
+    # 2× the grid-step inner padding, rounded up to the grid.
+    def _text_h(lines: Sequence[str]) -> int:
+        return len(list(lines)) * 16 + 2 * GRID
+
+    def _text_w(*line_groups: Sequence[str]) -> int:
+        longest = max((len(s) for grp in line_groups for s in grp), default=20)
+        # ~5.6px per 12px glyph (measured against the reference) + one grid step
+        # of inner padding each side; rounded up to the grid. Tight to content so
+        # the box is only as wide as its longest line, not oversized.
+        raw = int(longest * 5.6) + 2 * GRID
+        return int(-(-raw // GRID) * GRID)  # round up to a grid multiple
+
+    box_w = _text_w(flow_lines, STANDARD_LEGEND_LINES)
+    parts.append(text_cell("flow-legend", flow_lines, legend_x, legend_y_flow, box_w, _text_h(flow_lines)))
+    parts.append(text_cell("legend", STANDARD_LEGEND_LINES, legend_x, legend_y_legend, box_w, _text_h(STANDARD_LEGEND_LINES)))
     parts.append(
         "      </root>\n    </mxGraphModel>\n  </diagram>\n</mxfile>\n"
     )

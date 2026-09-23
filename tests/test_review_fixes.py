@@ -154,7 +154,6 @@ def test_golden_examples_pass_all_geometry_rules():
     """The four golden .drawio examples must be clean under every geometry rule
     (no false positives) — grid-alignment, container-padding, edge-routing,
     node-overlap."""
-    import glob
     from rule_engine import cli as _cli
     from rule_engine.linter import (
         lint, RULE_GRID_ALIGNMENT, RULE_CONTAINER_PADDING,
@@ -163,7 +162,12 @@ def test_golden_examples_pass_all_geometry_rules():
     geo_rules = {RULE_GRID_ALIGNMENT, RULE_CONTAINER_PADDING,
                  RULE_EDGE_ROUTING, RULE_NODE_OVERLAP}
     here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    drawios = glob.glob(os.path.join(here, "examples", "**", "*.drawio"), recursive=True)
+    # Use the CLI discovery so scratch/copy files (… копія.drawio, … - Copy.drawio)
+    # are excluded exactly as the --all scan and golden-example tests exclude them.
+    drawios = [
+        a for a in _cli.discover_artifacts(here)
+        if a.endswith(".drawio") and (os.sep + "examples" + os.sep) in a
+    ]
     assert drawios
     for path in drawios:
         art = _cli.parse_artifact(path)

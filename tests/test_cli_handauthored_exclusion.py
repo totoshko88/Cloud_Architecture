@@ -62,3 +62,35 @@ def test_file_mode_still_flags_generated_doc_without_frontmatter(tmp_path, capsy
     out = capsys.readouterr().out
     assert rc != 0
     assert "frontmatter" in out
+
+
+# --- scratch / duplicate file exclusion (v1.3.x) --------------------------- #
+
+from rule_engine.cli import _is_scratch_copy, discover_artifacts  # noqa: E402
+
+
+def test_is_scratch_copy_flags_editor_duplicates():
+    # Localized "copy" suffixes and numeric duplicates are scratch.
+    assert _is_scratch_copy("02-aws-ha-multiregion-landscape \u043a\u043e\u043f\u0456\u044f.drawio")
+    assert _is_scratch_copy("diagram - Copy.drawio")
+    assert _is_scratch_copy("diagram copy.drawio")
+    assert _is_scratch_copy("diagram copy 2.drawio")
+    assert _is_scratch_copy("diagram (1).drawio")
+
+
+def test_is_scratch_copy_keeps_legitimate_names():
+    # A real name that merely contains the substring is NOT scratch.
+    assert not _is_scratch_copy("01-aws-agent-platform.drawio")
+    assert not _is_scratch_copy("copybook.drawio")
+    assert not _is_scratch_copy("02-aws-ha-multiregion-landscape.drawio")
+
+
+def test_discover_artifacts_skips_scratch_copies(tmp_path):
+    ex = tmp_path / "examples" / "aws"
+    _write(str(ex / "02-topic.drawio"), "<mxfile/>")
+    _write(str(ex / "02-topic \u043a\u043e\u043f\u0456\u044f.drawio"), "<mxfile/>")
+    _write(str(ex / "02-topic - Copy.drawio"), "<mxfile/>")
+    found = discover_artifacts(str(tmp_path))
+    names = {os.path.basename(a) for a in found}
+    assert "02-topic.drawio" in names
+    assert not any("\u043a\u043e\u043f" in n or "copy" in n.lower() for n in names)
