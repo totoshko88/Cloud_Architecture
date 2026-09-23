@@ -1,104 +1,102 @@
-<mxfile host="app.diagrams.net" agent="rule-engine golden-example" version="24.0.0">
+<mxfile host="Electron" agent="rule-engine golden-example">
   <diagram id="gcp-vertex-pipeline" name="gcp-vertex-pipeline">
-    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1850" pageHeight="950" math="0" shadow="0">
+    <mxGraphModel dx="1880" dy="1360" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1850" pageHeight="950" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-
-        <mxCell id="title" value="gcp vertex-pipeline — acme-prod / us-central1 | 2026-09-22 | v1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=16;fontStyle=1" vertex="1" parent="1">
-          <mxGeometry x="40" y="20" width="900" height="30" as="geometry" />
+        <mxCell id="title" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=16;fontStyle=1" value="gcp vertex-pipeline — acme-prod / us-central1 | 2026-09-22 | v1" vertex="1">
+          <mxGeometry height="30" width="900" x="40" y="20" as="geometry" />
         </mxCell>
-
-        <mxCell id="boundary-project" value="project-acme-prod" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#00A000;fillColor=none;verticalAlign=top;fontColor=#00A000;fontSize=12" vertex="1" parent="1">
-          <mxGeometry x="40" y="70" width="1360" height="790" as="geometry" />
+        <mxCell id="boundary-project" parent="1" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#00A000;fillColor=none;verticalAlign=top;fontColor=#00A000;fontSize=12" value="project-acme-prod" vertex="1">
+          <mxGeometry height="790" width="1360" x="40" y="70" as="geometry" />
         </mxCell>
-        <mxCell id="boundary-vpc" value="vpc-prod" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#0062AD;fillColor=none;verticalAlign=top;fontColor=#0062AD;fontSize=12" vertex="1" parent="1">
-          <mxGeometry x="580" y="150" width="420" height="670" as="geometry" />
+        <mxCell id="boundary-vpc" parent="1" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#0062AD;fillColor=none;verticalAlign=top;fontColor=#0062AD;fontSize=12" value="vpc-prod" vertex="1">
+          <mxGeometry height="670" width="440" x="580" y="150" as="geometry" />
         </mxCell>
-
-        <mxCell id="api-gateway" value="api-gateway" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-core/Unique Icons/Apigee/SVG/Apigee-512-color-rgb.svg" vertex="1" parent="1">
-          <mxGeometry x="120" y="440" width="78" height="78" as="geometry" />
+        <mxCell id="api-gateway" parent="1" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-core/Unique Icons/Apigee/SVG/Apigee-512-color-rgb.svg" value="api-gateway" vertex="1">
+          <mxGeometry height="78" width="78" x="120" y="440" as="geometry" />
         </mxCell>
-        <mxCell id="load-balancer" value="load-balancer" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg" vertex="1" parent="1">
-          <mxGeometry x="360" y="440" width="78" height="78" as="geometry" />
+        <mxCell id="load-balancer" parent="1" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg" value="load-balancer" vertex="1">
+          <mxGeometry height="78" width="78" x="360" y="440" as="geometry" />
         </mxCell>
-        <mxCell id="pubsub-events" value="pubsub-events" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Integration Services/SVG/IntegrationServices-512-color.svg" vertex="1" parent="1">
-          <mxGeometry x="620" y="200" width="78" height="78" as="geometry" />
+        <mxCell id="pubsub-events" parent="1" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Integration Services/SVG/IntegrationServices-512-color.svg" value="pubsub-events" vertex="1">
+          <mxGeometry height="78" width="78" x="620" y="200" as="geometry" />
         </mxCell>
-        <mxCell id="secret-manager" value="secret-manager" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg" vertex="1" parent="1">
-          <mxGeometry x="620" y="680" width="78" height="78" as="geometry" />
+        <mxCell id="secret-manager" parent="1" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg" value="secret-manager" vertex="1">
+          <mxGeometry height="78" width="78" x="620" y="680" as="geometry" />
         </mxCell>
-        <mxCell id="ingest-function" value="ingest-function" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Serverless Computing/SVG/ServerlessComputing-512-color.svg" vertex="1" parent="1">
-          <mxGeometry x="880" y="200" width="78" height="78" as="geometry" />
+        <mxCell id="ingest-function" parent="1" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Serverless Computing/SVG/ServerlessComputing-512-color.svg" value="ingest-function" vertex="1">
+          <mxGeometry height="78" width="78" x="880" y="200" as="geometry" />
         </mxCell>
-        <mxCell id="vertex-ai" value="vertex-ai" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-core/Unique Icons/Vertex AI/SVG/VertexAI-512-color.svg" vertex="1" parent="1">
-          <mxGeometry x="880" y="440" width="78" height="78" as="geometry" />
+        <mxCell id="vertex-ai" parent="1" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-core/Unique Icons/Vertex AI/SVG/VertexAI-512-color.svg" value="vertex-ai" vertex="1">
+          <mxGeometry height="78" width="78" x="880" y="440" as="geometry" />
         </mxCell>
-        <mxCell id="training-gke" value="training-gke" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-core/Unique Icons/GKE/SVG/GKE-512-color.svg" vertex="1" parent="1">
-          <mxGeometry x="880" y="680" width="78" height="78" as="geometry" />
+        <mxCell id="training-gke" parent="1" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-core/Unique Icons/GKE/SVG/GKE-512-color.svg" value="training-gke" vertex="1">
+          <mxGeometry height="78" width="78" x="880" y="680" as="geometry" />
         </mxCell>
-        <mxCell id="cloud-sql" value="cloud-sql" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-core/Unique Icons/Cloud SQL/SVG/CloudSQL-512-color.svg" vertex="1" parent="1">
-          <mxGeometry x="1140" y="360" width="78" height="78" as="geometry" />
+        <mxCell id="cloud-sql" parent="1" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-core/Unique Icons/Cloud SQL/SVG/CloudSQL-512-color.svg" value="cloud-sql" vertex="1">
+          <mxGeometry height="78" width="78" x="1140" y="360" as="geometry" />
         </mxCell>
-        <mxCell id="model-storage" value="model-storage" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-core/Unique Icons/Cloud Storage/SVG/Cloud_Storage-512-color.svg" vertex="1" parent="1">
-          <mxGeometry x="1140" y="520" width="78" height="78" as="geometry" />
+        <mxCell id="model-storage" parent="1" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-core/Unique Icons/Cloud Storage/SVG/Cloud_Storage-512-color.svg" value="model-storage" vertex="1">
+          <mxGeometry height="78" width="78" x="1140" y="520" as="geometry" />
         </mxCell>
-
-        <mxCell id="e1" value="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="api-gateway" target="load-balancer">
+        <mxCell id="e1" edge="1" parent="1" source="api-gateway" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="load-balancer" value="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e2" value="2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="load-balancer" target="vertex-ai">
+        <mxCell id="e2" edge="1" parent="1" source="load-balancer" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="vertex-ai" value="2">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e3" value="3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=0.5;exitY=0.0;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="api-gateway" target="pubsub-events">
+        <mxCell id="e3" edge="1" parent="1" source="api-gateway" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=0.5;exitY=0.0;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="pubsub-events" value="3">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="159.00" y="239.00" />
+              <mxPoint x="159" y="239" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="e4" value="4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="pubsub-events" target="ingest-function">
+        <mxCell id="e4" edge="1" parent="1" source="pubsub-events" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="ingest-function" value="4">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e5" value="5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.25;exitY=1.0;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="ingest-function" target="training-gke">
+        <mxCell id="e5" edge="1" parent="1" source="ingest-function" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.966;exitY=0.572;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="training-gke" value="5">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="855.00" y="719.00" />
+              <mxPoint x="980" y="244.62" />
+              <mxPoint x="980" y="320" />
+              <mxPoint x="855.08" y="320" />
+              <mxPoint x="855.08" y="719.08" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="e6" value="6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.5;exitY=0.0;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=1.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="training-gke" target="vertex-ai">
+        <mxCell id="e6" edge="1" parent="1" source="training-gke" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.5;exitY=0.0;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=1.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="vertex-ai" value="6">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e7" value="7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0;exitY=0.25;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="vertex-ai" target="cloud-sql">
+        <mxCell id="e7" edge="1" parent="1" source="vertex-ai" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0;exitY=0.25;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="cloud-sql" value="7">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="1060.00" y="459.00" />
-              <mxPoint x="1060.00" y="399.00" />
+              <mxPoint x="1060" y="459" />
+              <mxPoint x="1060" y="399" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="e8" value="8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0;exitY=0.75;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="vertex-ai" target="model-storage">
+        <mxCell id="e8" edge="1" parent="1" source="vertex-ai" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0;exitY=0.75;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="model-storage" value="8">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="1090.00" y="499.00" />
-              <mxPoint x="1090.00" y="559.00" />
+              <mxPoint x="1090" y="499" />
+              <mxPoint x="1090" y="559" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="e9" value="9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.0;exitY=0.75;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="vertex-ai" target="secret-manager">
+        <mxCell id="e9" edge="1" parent="1" source="vertex-ai" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.0;exitY=0.75;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="secret-manager" value="9">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="659.00" y="498.00" />
+              <mxPoint x="659" y="498" />
             </Array>
           </mxGeometry>
         </mxCell>
-
-        <mxCell id="flow-legend" value="Flow&#10;1. api-gateway forwards request to load-balancer&#10;2. load-balancer routes inference to Vertex AI&#10;3. api-gateway publishes event to Pub/Sub (async)&#10;4. Pub/Sub delivers event to ingest-function (async)&#10;5. ingest-function submits training job to GKE&#10;6. GKE registers trained model with Vertex AI&#10;7. Vertex AI reads metadata from Cloud SQL&#10;8. Vertex AI stores artifacts in Cloud Storage&#10;9. Vertex AI fetches credentials from Secret Manager" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF;spacingLeft=10;spacingRight=10;spacingTop=10;spacingBottom=10" vertex="1" parent="1">
-          <mxGeometry x="1460" y="120" width="380" height="180" as="geometry" />
+        <mxCell id="flow-legend" parent="1" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF;spacingLeft=10;spacingRight=10;spacingTop=10;spacingBottom=10" value="Flow&#xa;1. api-gateway forwards request to load-balancer&#xa;2. load-balancer routes inference to Vertex AI&#xa;3. api-gateway publishes event to Pub/Sub (async)&#xa;4. Pub/Sub delivers event to ingest-function (async)&#xa;5. ingest-function submits training job to GKE&#xa;6. GKE registers trained model with Vertex AI&#xa;7. Vertex AI reads metadata from Cloud SQL&#xa;8. Vertex AI stores artifacts in Cloud Storage&#xa;9. Vertex AI fetches credentials from Secret Manager" vertex="1">
+          <mxGeometry height="180" width="380" x="1460" y="120" as="geometry" />
         </mxCell>
-        <mxCell id="legend" value="Legend&#10;Solid line = primary flow&#10;Dashed line = asynchronous / event-driven flow&#10;Red = blocked / missing / disabled&#10;🆕 = new in version N&#10;🔄 = changed in version N&#10;Dashed outer boundary = stack Boundary (profile brand color)&#10;Dashed inner boundary = Network Boundary (profile brand color)&#10;Numbered markers (1..N) = ordered data flow steps; see Flow list" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF;spacingLeft=10;spacingRight=10;spacingTop=10;spacingBottom=10" vertex="1" parent="1">
-          <mxGeometry x="1460" y="360" width="380" height="164" as="geometry" />
+        <mxCell id="legend" parent="1" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF;spacingLeft=10;spacingRight=10;spacingTop=10;spacingBottom=10" value="Legend&#xa;Solid line = primary flow&#xa;Dashed line = asynchronous / event-driven flow&#xa;Red = blocked / missing / disabled&#xa;🆕 = new in version N&#xa;🔄 = changed in version N&#xa;Dashed outer boundary = stack Boundary (profile brand color)&#xa;Dashed inner boundary = Network Boundary (profile brand color)&#xa;Numbered markers (1..N) = ordered data flow steps; see Flow list" vertex="1">
+          <mxGeometry height="164" width="380" x="1460" y="360" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>
