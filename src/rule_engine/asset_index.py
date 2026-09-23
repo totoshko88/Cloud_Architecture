@@ -372,7 +372,7 @@ def resolve_asset(
             provider=provider, query=service_name, source="official-asset",
             asset_path="OCI Style Guide for Drawio/OCI Library.xml",
             ext=".xml",
-            note="import the OCI draw.io custom library (mxgraph.oci.*) shape",
+            note="embed the OCI stencil (shape=stencil(...) glyph decoded from OCI Library.xml; no mxgraph.oci.* namespace)",
         )
 
     return ResolvedAsset(

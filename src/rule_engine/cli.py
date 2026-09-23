@@ -391,6 +391,9 @@ _EXCLUDED_MD_BASENAMES = {
     "code_of_conduct.md",
     "security.md",
     "review.md",  # hand-authored architecture review, not a generated KB doc
+    "architecture.md",  # hand-authored project architecture/algorithm doc
+    "kiro-university-compliance.md",  # hand-authored Kiro feature-compliance doc
+    "skill.md",  # Kiro agent-skill manifest (.kiro/skills/*/SKILL.md), not a KB doc
 }
 
 
@@ -558,6 +561,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     # Gather targets.
     if args.file:
+        # A single hand-authored Markdown doc (README, ARCHITECTURE, a SKILL.md,
+        # etc.) is not an engine-generated KB document, so the kb-frontmatter
+        # contract does not apply. Mirror the --all scan's exclusion here so the
+        # lint-on-save hook (which calls --file on any saved .md) does not raise
+        # a false `frontmatter` CRITICAL on such files.
+        low = args.file.lower()
+        if low.endswith((".md", ".markdown")) and not _is_generated_markdown(args.file):
+            print(f"[SKIP] {args.file}: hand-authored document (frontmatter contract not applied)")
+            return EXIT_OK
         targets = [args.file]
     else:
         targets = discover_artifacts(workspace_root)
