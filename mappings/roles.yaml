@@ -1,0 +1,108 @@
+# Diagram presentation roles → per-provider service query.
+#
+# A "role" is how a NODE is shown in a diagram (its icon), which is a superset of
+# the nine neutral *resource types* in schemas/inventory.schema.json. The neutral
+# types cover the inventory/normalizer contract; diagram generators additionally
+# need presentation-only roles (cdn, dns, waf, cache, …) that map to a distinct
+# vendor icon but are not first-class inventory types.
+#
+# RULE (see .kiro/steering/diagram-standards.md — "One role per distinct
+# service"): a service that is semantically different from an existing role gets
+# its OWN role with a per-provider icon — never a look-alike. A CDN is not an
+# object store; a DNS is not a load balancer; a WAF is not a generic secrets
+# store. This file is the single source of truth for that role → service mapping;
+# scripts/build_icon_sets.py resolves each query against the indexed official
+# packs and writes the resolved icon into the committed mappings/icon-index.json.
+#
+# For each role, per provider, `query` is the service name resolved against that
+# provider's official pack index (asset_index.resolve_asset). For GCP a role may
+# also declare `gcp_category` — the Google docs category whose icon stands in when
+# the service has no dedicated 2025 product icon (product-first, category-fallback;
+# this is Google's own convention, e.g. Cloud CDN → Networking category icon).
+version: 1
+
+roles:
+
+  # --- container roles (rendered as group/boundary styles, not node icons) --
+  # boundary and network_boundary are drawn as dashed container frames (see each
+  # mappings/<provider>-icons.yaml `containers:` block), not as node image icons.
+  # Their entries here resolve the *representative* group glyph for reference.
+  boundary:
+    aws: "Account"
+    azure: "Subscriptions"
+    gcp_category: "Management Tools"
+    oci: "compartments"
+  network_boundary:
+    aws: "Virtual Private Cloud"
+    azure: "Virtual Networks"
+    gcp_category: "Networking"
+    oci: "virtual-cloud-network-vcn"
+  serverless_fn:
+    aws: "Lambda"
+    azure: "Function Apps"
+    gcp_category: "Serverless Computing"
+    oci: "functions"
+  object_store:
+    aws: "Simple Storage Service"
+    azure: "Storage Accounts"
+    gcp: "Cloud Storage"
+    oci: "object-storage"
+  managed_sql:
+    aws: "RDS"
+    azure: "SQL Database"
+    gcp: "Cloud SQL"
+    oci: "autonomous-db"
+  message_queue:
+    aws: "Simple Queue Service"
+    azure: "Service Bus"
+    gcp_category: "Integration Services"
+    oci: "streaming"
+  secrets_store:
+    aws: "Secrets Manager"
+    azure: "Key Vaults"
+    gcp_category: "Security Identity"
+    oci: "vault"
+  managed_k8s:
+    aws: "Elastic Kubernetes Service"
+    azure: "Kubernetes Services"
+    gcp: "GKE"
+    oci: "container-engine-for-kubernetes"
+  llm_platform:
+    aws: "Bedrock"
+    azure: "Azure OpenAI"
+    gcp: "Vertex AI"
+    oci: "artificial-intelligence"
+
+  # --- presentation-only roles (distinct icon, not an inventory type) -------
+  # CDN: AWS CloudFront, Azure CDN Profiles, GCP → Networking category (Google's
+  # own convention: Cloud CDN has no product glyph), OCI CDN stencil.
+  cdn:
+    aws: "CloudFront"
+    azure: "CDN Profiles"
+    gcp_category: "Networking"
+    oci: "cdn"
+  # DNS / traffic routing.
+  dns:
+    aws: "Route 53"
+    azure: "DNS Zones"
+    gcp_category: "Networking"
+    oci: "dns"
+  # Web Application Firewall.
+  waf:
+    aws: "WAF"
+    azure: "Web Application Firewall Policies WAF"
+    gcp_category: "Security Identity"
+    oci: "waf"
+  # Load balancer.
+  lb:
+    aws: "Elastic Load Balancing"
+    azure: "Load Balancers"
+    gcp_category: "Networking"
+    oci: "load-balancer"
+  # In-memory cache. OCI has no dedicated cache glyph → falls back to its
+  # database family; recorded as a gap for OCI.
+  cache:
+    aws: "ElastiCache"
+    azure: "Cache Redis"
+    gcp_category: "Databases"
+    oci: "autonomous-db"
