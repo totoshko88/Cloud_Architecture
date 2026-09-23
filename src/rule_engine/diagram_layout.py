@@ -16,7 +16,10 @@ generator — means a future provider is added by supplying an *icon renderer*
 Two icon-renderer strategies are provided:
 
 - :func:`builtin_icon` — a node whose glyph is a built-in draw.io stencil id
-  (e.g. ``mxgraph.aws4.resourceIcon`` / ``mxgraph.gcp2.*``). One flat cell.
+  (e.g. ``mxgraph.aws4.resourceIcon``). One flat cell.
+- :func:`image_icon` — a node whose glyph is a file-path image shape
+  (``image;...;image=<path under the asset root>.svg``), used by the file-path
+  providers (GCP official 2025 icons, Azure azure2). One flat cell.
 - :func:`OciStencilIcon` — a node whose glyph is an embedded OCI stencil group
   (OCI ships no built-in draw.io library), with the stencil's baked-in caption
   stripped and the icon scaled square, so it matches the built-in-icon nodes.
@@ -150,6 +153,38 @@ def builtin_icon(shape_style: str) -> IconRenderer:
 
     def render(node: Node, parent_id: str) -> str:
         style = f"{shape_style};{_LABEL_STYLE}"
+        return (
+            f'        <mxCell id="{node.id}" value="{node.label}" style="{style}" '
+            f'vertex="1" parent="{parent_id}">\n'
+            f'          <mxGeometry x="{node.x}" y="{node.y}" '
+            f'width="{ICON_SIZE}" height="{ICON_SIZE}" as="geometry" />\n'
+            f"        </mxCell>\n"
+        )
+
+    return render
+
+
+def image_icon(image_path: str) -> IconRenderer:
+    """Renderer for a file-path image-shape node (GCP official icons, Azure azure2).
+
+    ``image_path`` is the icon path under the fetched asset root, e.g.
+    ``"assets/vendor/gcp-core/Unique Icons/Vertex AI/SVG/VertexAI-512-color.svg"``
+    or ``"img/lib/azure2/<category>/<Name>.svg"``. The path is emitted verbatim as
+    the draw.io ``image=`` style token, so it must be a file path — never an inline
+    ``data:`` URI, which the linter flags as ``icon-resolved`` (see
+    ``.kiro/steering/asset-packs.md`` -> "Image-style caveat").
+
+    Produces one flat ``image`` cell with the same 78x78 footprint and bottom
+    label placement as :func:`builtin_icon`, so file-path providers match the AWS
+    reference exactly.
+    """
+
+    def render(node: Node, parent_id: str) -> str:
+        style = (
+            "image;html=1;aspect=fixed;points=[];align=center;"
+            f"verticalLabelPosition=bottom;verticalAlign=top;fontSize={MIN_FONT_SIZE};"
+            f"image={image_path}"
+        )
         return (
             f'        <mxCell id="{node.id}" value="{node.label}" style="{style}" '
             f'vertex="1" parent="{parent_id}">\n'
@@ -467,8 +502,8 @@ STANDARD_LEGEND_LINES = (
     "Red = blocked / missing / disabled",
     "🆕 = new in version N",
     "🔄 = changed in version N",
-    "Dashed green boundary = stack boundary",
-    "Dashed blue boundary = Network Boundary",
+    "Dashed outer boundary = stack Boundary (profile brand color)",
+    "Dashed inner boundary = Network Boundary (profile brand color)",
     "Numbered markers (1..N) = ordered data flow steps; see Flow list",
 )
 

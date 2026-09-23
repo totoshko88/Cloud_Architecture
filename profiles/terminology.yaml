@@ -59,7 +59,7 @@ resources:
     aws:
       label: VPC
       aliases: [vpc, "aws::ec2::vpc", aws_vpc]
-      icon: { id: mxgraph.aws4.group_vpc, name: Amazon VPC, hex: "#8C4FFF" }
+      icon: { id: mxgraph.aws4.group_vpc2, name: Amazon VPC, hex: "#8C4FFF" }
     azure:
       label: VNet
       aliases: [vnet, virtualnetwork, virtual_network, azurerm_virtual_network]

@@ -61,8 +61,9 @@ Built-in `mxgraph.aws4.*` icons; EKS → SQS → Lambda → Bedrock/RDS/S3/Secre
 
 ### GCP — Vertex pipeline
 
-Built-in `mxgraph.gcp2.*` icons; API Gateway → Load Balancer → Vertex AI with Pub/Sub,
-GKE, Cloud SQL, Cloud Storage, and Secret Manager inside a VPC.
+Official Google Cloud 2025 icons (Core Product + Product Category, by file path); API
+Gateway → Load Balancer → Vertex AI with Pub/Sub, GKE, Cloud SQL, Cloud Storage, and
+Secret Manager inside a VPC.
 
 ![GCP Vertex pipeline golden example: API Gateway to Load Balancer to Vertex AI, Pub/Sub to ingest Function, GKE training, Cloud SQL and Cloud Storage, Secret Manager inside a VPC within a Project](examples/gcp/01-gcp-vertex-pipeline.drawio.png)
 

@@ -76,8 +76,8 @@ legend right
   Red = blocked / missing / disabled
   🆕 = new in version N
   🔄 = changed in version N
-  Dashed green boundary = stack boundary
-  Dashed blue boundary = Network Boundary
+  Dashed outer boundary (green) = stack Boundary
+  Dashed inner boundary (blue) = Network Boundary
 endlegend
 
 @enduml

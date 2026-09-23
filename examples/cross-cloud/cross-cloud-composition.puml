@@ -49,8 +49,8 @@ legend right
   Red = blocked / missing / disabled
   New in version N = marked with new marker
   Changed in version N = marked with changed marker
-  Dashed green boundary = stack boundary
-  Dashed blue boundary = Network Boundary
+  Dashed outer boundary = stack Boundary (profile brand color)
+  Dashed inner boundary = Network Boundary (profile brand color)
   AWS = brand #232F3E ; Azure = brand #0078D4 ; GCP = brand #4285F4
 endlegend
 @enduml

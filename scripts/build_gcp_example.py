@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
 """Generate the GCP golden example diagram on the shared layout standard.
 
-GCP has built-in draw.io stencils (``mxgraph.gcp2.*``), so each node is a single
-flat cell rendered by :func:`rule_engine.diagram_layout.builtin_icon`. The layout
-geometry (icon size, label placement, lane grid, container padding, edge routing)
-comes entirely from the shared builder, so the GCP diagram matches the AWS
-reference and the OCI example exactly.
+GCP resolves icons to the **official Google Cloud 2025 packs** referenced by file
+path (never the pre-2025 ``mxgraph.gcp2.*`` stencils, which the icon mapping and
+``asset-packs.md`` keep only as a last-resort fallback). Each node is a single
+flat ``image`` cell rendered by :func:`rule_engine.diagram_layout.image_icon`,
+with the icon path taken from ``mappings/gcp-icons.yaml`` (Core Product first,
+Product Category fallback). The golden example additionally uses the **Apigee**
+product icon for ``api-gateway`` so it reads distinctly from ``load-balancer``
+(Networking category). The layout geometry (icon size, label placement, lane
+grid, container padding, edge routing) comes entirely from the shared builder, so
+the GCP diagram matches the AWS reference and the OCI example exactly.
 
 This replaces the earlier hand-authored GCP diagram, whose icons were 64px (vs the
 78px standard) and whose flow-5 corridor ran too close to the VPC bottom border.
@@ -30,36 +35,36 @@ from rule_engine.diagram_layout import (  # noqa: E402
     Edge,
     Node,
     build_diagram,
-    builtin_icon,
+    image_icon,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 OUT = REPO_ROOT / "examples" / "gcp" / "01-gcp-vertex-pipeline.drawio"
 
 TITLE = "gcp vertex-pipeline — acme-prod / us-central1 | 2026-09-22 | v1"
-GCP_BLUE = "#4285F4"
 
 
-def _gcp(shape: str) -> str:
-    """Build a GCP built-in stencil style prefix for the given shape name."""
-    return (
-        f"shape=mxgraph.gcp2.{shape};fillColor={GCP_BLUE};strokeColor=#ffffff;"
-        "aspect=fixed;html=1"
-    )
-
+# Official GCP 2025 icon paths under the fetched asset root, per node. Sourced
+# from mappings/gcp-icons.yaml (Core Product first, Product Category fallback);
+# api-gateway uses the Apigee product icon (closest official product to an API
+# gateway) so it is visually distinct from load-balancer (Networking category).
+# Paths must stay file-path (never data: URIs) to pass the icon-resolved linter.
+_GCP_CORE = "assets/vendor/gcp-core/Unique Icons"
+_GCP_CAT = "assets/vendor/gcp-category/Category Icons"
 
 # Same AWS-mirrored topology as OCI: hub (vertex-ai) adjacent to the data column;
 # async messaging + workers stacked above/below the hub.
+# (node id, icon path, x, y)
 NODE_SPECS = [
-    ("api-gateway", "cloud_functions", 120, 440),
-    ("load-balancer", "cloud_load_balancing", 360, 440),
-    ("pubsub-events", "cloud_pubsub", 620, 200),
-    ("secret-manager", "key_management_service", 620, 680),
-    ("ingest-function", "cloud_functions", 880, 200),
-    ("vertex-ai", "cloud_machine_learning", 880, 440),
-    ("training-gke", "container_engine", 880, 680),
-    ("cloud-sql", "cloud_sql", 1140, 360),
-    ("model-storage", "cloud_storage", 1140, 520),
+    ("api-gateway", f"{_GCP_CORE}/Apigee/SVG/Apigee-512-color-rgb.svg", 120, 440),
+    ("load-balancer", f"{_GCP_CAT}/Networking/SVG/Networking-512-color-rgb.svg", 360, 440),
+    ("pubsub-events", f"{_GCP_CAT}/Integration Services/SVG/IntegrationServices-512-color.svg", 620, 200),
+    ("secret-manager", f"{_GCP_CAT}/Security Identity/SVG/SecurityIdentity-512-color.svg", 620, 680),
+    ("ingest-function", f"{_GCP_CAT}/Serverless Computing/SVG/ServerlessComputing-512-color.svg", 880, 200),
+    ("vertex-ai", f"{_GCP_CORE}/Vertex AI/SVG/VertexAI-512-color.svg", 880, 440),
+    ("training-gke", f"{_GCP_CORE}/GKE/SVG/GKE-512-color.svg", 880, 680),
+    ("cloud-sql", f"{_GCP_CORE}/Cloud SQL/SVG/CloudSQL-512-color.svg", 1140, 360),
+    ("model-storage", f"{_GCP_CORE}/Cloud Storage/SVG/Cloud_Storage-512-color.svg", 1140, 520),
 ]
 
 # Node centers (icon 78): api(159,479) lb(399,479) pubsub(659,239)
@@ -112,8 +117,8 @@ def build() -> str:
                  x=580, y=150, w=420, h=670, stroke="#0062AD"),
     ]
     nodes: List[Node] = [
-        Node(id=nid, label=nid, x=x, y=y, render=builtin_icon(_gcp(shape)))
-        for (nid, shape, x, y) in NODE_SPECS
+        Node(id=nid, label=nid, x=x, y=y, render=image_icon(icon_path))
+        for (nid, icon_path, x, y) in NODE_SPECS
     ]
     return build_diagram(
         diagram_id="gcp-vertex-pipeline",

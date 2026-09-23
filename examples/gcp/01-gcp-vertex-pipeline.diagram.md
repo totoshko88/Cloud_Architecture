@@ -58,8 +58,8 @@ outside `[A-Za-z0-9_-]`; either rename it or wrap the value in double quotes. A
 `legend-present` error means the Legend cell was removed or its value no longer
 begins with the word Legend. A `title-versioned` warning means the title cell lost
 its `vN` version token or its `YYYY-MM-DD` date. An `icon-resolved` error means a
-node style points at a placeholder rather than a resolved `mxgraph.gcp2` shape from
-the GCP icon mapping. A `companion-doc` error means this `.diagram.md` file is
+node style points at a placeholder rather than a resolved official Google Cloud
+icon file path from the GCP icon mapping. A `companion-doc` error means this `.diagram.md` file is
 missing or misnamed relative to the `.drawio` source. Fix each finding and re-run
 the CLI until it reports the artifact as eligible.
 

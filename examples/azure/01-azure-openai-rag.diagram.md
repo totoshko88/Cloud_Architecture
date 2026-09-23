@@ -61,8 +61,8 @@ error means a node value contains a space or other special character and is not
 double-quoted; rename the node to the allowed character set or wrap it in
 quotes. A missing `legend-present` finding indicates the Legend cell was removed
 or its value no longer begins with `Legend`. An `icon-resolved` error signals a
-placeholder icon; confirm each node style references a real `mxgraph.azure.*`
-shape from the icon mapping. A `companion-doc` error appears when this file is
+placeholder icon; confirm each node style references a real azure2 image shape
+(`image=img/lib/azure2/<category>/<Name>.svg`) from the icon mapping. A `companion-doc` error appears when this file is
 renamed away from the diagram stem. Frontmatter problems are CRITICAL: verify
 all twelve keys are present and non-empty, and that `related_docs` holds at least
 one entry. Re-run the CLI linter after each change until it reports OK.

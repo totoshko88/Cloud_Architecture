@@ -1,55 +1,70 @@
 # OCI icon mapping table for the Rule Engine Icon Resolver.
 #
-# Maps each of the 9 neutral resource types to an icon id, a brand hex color
-# (#RRGGBB), and a complete draw.io style string that references the custom
-# OCI shape library imported from the unpacked Oracle Cloud Infrastructure
-# icon assets. Also declares exactly one Boundary and one Network Boundary
-# container style (Requirement 2 AC6). Brand anchor: OCI #F80000.
+# OCI has NO built-in draw.io stencil library and NO `mxgraph.oci.*` shape ids
+# exist anywhere (verified against the Oracle `OCI Library.xml`, which ships
+# `shape=stencil(...)` glyphs keyed by title, not named mxgraph ids). So OCI does
+# NOT resolve through a shape id like the other providers. Instead each neutral
+# type references a `stencil` slug; `scripts/fetch_assets.py` decodes
+# `OCI Library.xml` into `assets/vendor/oci-stencils/stencils.json` (slug -> ready-
+# to-embed stencil XML), and the diagram generator (scripts/build_oci_example.py,
+# rule_engine.diagram_layout.embed_oci_stencil) embeds that stencil group into the
+# node at generation. Slugs are the title-derived keys produced by
+# fetch_assets._slugify and were verified present in the library.
 #
-# icon_source is `custom`: OCI icons are imported as a custom draw.io shape
-# library from unpacked assets per the OCI draw.io style guide (design
-# section 4b). Every icon id and brand hex is sourced from the authoritative
-# asset pack declared below (Requirement 2 AC9).
+# The `style` here is a SELF-CONTAINED fallback: an OCI-red (#F80000) labelled box
+# (see asset-packs.md "OCI note"). It renders correctly on its own when the
+# stencil is not embedded, and keeps `resolve_icon` working (it requires a
+# non-empty style). Brand anchor: OCI #F80000.
 provider: oci
-asset_pack: "OCI draw.io Style Guide icon set (custom draw.io shape library, unpacked)"
+asset_pack: "OCI draw.io Style Guide library (OCI Library.xml, decoded to oci-stencils/stencils.json)"
 icon_source: custom
 resources:
   boundary:
-    icon_id: oci.compartment
+    icon_id: oci.boundary
     brand_hex: "#F80000"
-    style: "shape=mxgraph.oci.compartment;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    stencil: "assets/vendor/oci-stencils/stencils.json#compartments"  # Identity and Security - Compartments
+    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#F80000;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   network_boundary:
-    icon_id: oci.virtual_cloud_network
+    icon_id: oci.network_boundary
     brand_hex: "#F80000"
-    style: "shape=mxgraph.oci.virtual_cloud_network;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    stencil: "assets/vendor/oci-stencils/stencils.json#virtual-cloud-network-vcn"  # Networking - Virtual Cloud Network VCN
+    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#F80000;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   serverless_fn:
-    icon_id: oci.functions
+    icon_id: oci.serverless_fn
     brand_hex: "#F80000"
-    style: "shape=mxgraph.oci.functions;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    stencil: "assets/vendor/oci-stencils/stencils.json#functions"  # Compute - Functions
+    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#F80000;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   object_store:
-    icon_id: oci.object_storage
+    icon_id: oci.object_store
     brand_hex: "#F80000"
-    style: "shape=mxgraph.oci.object_storage;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    stencil: "assets/vendor/oci-stencils/stencils.json#object-storage"  # Storage - Object Storage
+    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#F80000;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   managed_sql:
-    icon_id: oci.autonomous_database
+    icon_id: oci.managed_sql
     brand_hex: "#F80000"
-    style: "shape=mxgraph.oci.autonomous_database;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    stencil: "assets/vendor/oci-stencils/stencils.json#autonomous-db"  # Database - Autonomous DB
+    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#F80000;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   message_queue:
-    icon_id: oci.streaming
+    icon_id: oci.message_queue
     brand_hex: "#F80000"
-    style: "shape=mxgraph.oci.streaming;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    stencil: "assets/vendor/oci-stencils/stencils.json#streaming"  # Analytics and AI - Streaming
+    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#F80000;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   secrets_store:
-    icon_id: oci.vault
+    icon_id: oci.secrets_store
     brand_hex: "#F80000"
-    style: "shape=mxgraph.oci.vault;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    stencil: "assets/vendor/oci-stencils/stencils.json#vault"  # Identity and Security - Vault
+    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#F80000;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   managed_k8s:
-    icon_id: oci.container_engine_kubernetes
+    icon_id: oci.managed_k8s
     brand_hex: "#F80000"
-    style: "shape=mxgraph.oci.container_engine_kubernetes;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    stencil: "assets/vendor/oci-stencils/stencils.json#container-engine-for-kubernetes"  # Developer Services - Container Engine for Kubernetes
+    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#F80000;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   llm_platform:
-    icon_id: oci.generative_ai
+    icon_id: oci.llm_platform
     brand_hex: "#F80000"
-    style: "shape=mxgraph.oci.generative_ai;fillColor=#F80000;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    stencil: "assets/vendor/oci-stencils/stencils.json#artificial-intelligence"  # Analytics and AI - Artificial Intelligence
+    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#F80000;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+
 containers:
   boundary:
     icon_id: oci.compartment

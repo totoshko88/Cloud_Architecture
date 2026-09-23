@@ -122,15 +122,24 @@ validate:
               print('    - ' + reason, file=sys.stderr)
           sys.exit(1)
       "
+    - echo "Fetching official icon packs so file-path icon references can be verified"
+    - python scripts/fetch_assets.py --only gcp_category gcp_core azure || echo "WARNING: asset fetch failed; asset-paths guard will skip"
+    - echo "Verifying every mapping icon file path exists under the asset root"
+    - python -m rule_engine.asset_paths_guard
+    - echo "Enforcing the exported .drawio.png export budget (<=1200px wide, <500KB)"
+    # Raster gate (REVIEW.md D7): the linter checks the .drawio source + companion
+    # document, not the rendered PNG, so this guard fails-closed on an oversized or
+    # oversize raster. The committed golden-example rasters must stay within budget.
+    - python -m rule_engine.raster_gate
 
 # ---------------------------------------------------------------------------
 # Stage: version-guard
 #   On a release trigger (tag), fail-closed BEFORE any Release Bundle is built
-#   if the release Semantic Version already exists in CHANGELOG.md
-#   (Requirement 10.7). This runs the reusable, unit-testable version guard
-#   (src/rule_engine/version_guard.py); a duplicate version exits non-zero and
-#   stops the pipeline, so build/changelog/publish never run and no archive is
-#   ever created. It also `needs: [lint, validate]`, so a lint CRITICAL/ERROR
+#   if the release Semantic Version has NO curated section in CHANGELOG.md
+#   (Requirement 10.7). The Changelog is hand-curated, so the release version's
+#   section must already exist; a missing entry exits non-zero and stops the
+#   pipeline, so build/changelog/publish never run and no archive is ever
+#   created. It also `needs: [lint, validate]`, so a lint CRITICAL/ERROR
 #   (Requirement 10.3) short-circuits the release path here as well.
 # ---------------------------------------------------------------------------
 version-guard:
@@ -143,9 +152,10 @@ version-guard:
     - *install
     - export RELEASE_VERSION="${CI_COMMIT_TAG#v}"
   script:
-    - echo "Checking that Semantic Version ${RELEASE_VERSION} is not already in CHANGELOG.md"
-    # Fail-closed on a duplicate Semantic Version (Requirement 10.7). Non-zero
-    # exit here stops the pipeline before the build stage packages a bundle.
+    - echo "Checking that Semantic Version ${RELEASE_VERSION} has a curated section in CHANGELOG.md"
+    # Fail-closed when the curated Changelog section is missing (Requirement
+    # 10.7). Non-zero exit here stops the pipeline before the build stage
+    # packages a bundle.
     - python -m rule_engine.version_guard CHANGELOG.md "${RELEASE_VERSION}"
 
 # ---------------------------------------------------------------------------
@@ -176,9 +186,10 @@ build:
     - export RELEASE_VERSION="${CI_COMMIT_TAG#v}"
     - echo "Release Semantic Version = ${RELEASE_VERSION}"
   script:
-    # Defense in depth (Requirement 10.7): re-assert the version is absent
-    # right before packaging, so no archive is created for a duplicate version.
-    - echo "Re-checking Semantic Version ${RELEASE_VERSION} before packaging"
+    # Defense in depth (Requirement 10.7): re-assert the curated Changelog
+    # section exists right before packaging, so no archive is created for a
+    # version whose changelog entry is missing.
+    - echo "Re-checking Semantic Version ${RELEASE_VERSION} has a curated CHANGELOG section before packaging"
     - python -m rule_engine.version_guard CHANGELOG.md "${RELEASE_VERSION}"
     - echo "Packaging the Release Bundle for version ${RELEASE_VERSION}"
     - export BUNDLE_ARCHIVE="${BUNDLE_NAME}-${RELEASE_VERSION}.tar.gz"
@@ -206,10 +217,12 @@ build:
 
 # ---------------------------------------------------------------------------
 # Stage: changelog
-#   Generate or update CHANGELOG.md, recording the added/changed/removed items
-#   for the released Semantic Version in reverse chronological order
-#   (newest version first) (Requirement 10.6). The duplicate-version fail
-#   condition (Requirement 10.7) is hardened in task 12.2.
+#   CHANGELOG.md is HAND-CURATED and authoritative: the maintainer writes each
+#   release's added/changed/removed narrative before tagging (Requirement 10.6).
+#   CI never rewrites it. This stage is non-destructive: it re-verifies (defense
+#   in depth) that the released version has a curated section — the version-guard
+#   already enforced this (Requirement 10.7) — and passes CHANGELOG.md through as
+#   a release artifact. It fails-closed if the curated section is missing.
 # ---------------------------------------------------------------------------
 changelog:
   stage: changelog
@@ -221,57 +234,12 @@ changelog:
     - *install
     - export RELEASE_VERSION="${CI_COMMIT_TAG#v}"
   script:
-    - echo "Updating CHANGELOG.md for version ${RELEASE_VERSION} (reverse chronological)"
-    - |
-      python -c "
-      import datetime, os, re, sys
-
-      from rule_engine.version_guard import assert_version_absent, DuplicateVersionError
-
-      version = os.environ['RELEASE_VERSION']
-      today = datetime.date.today().isoformat()
-      path = 'CHANGELOG.md'
-
-      header = (
-          '# Changelog\n\n'
-          'All notable changes to the Rule Engine are recorded here, per '
-          'released version, in reverse chronological order.\n\n'
-      )
-      try:
-          with open(path, encoding='utf-8') as fh:
-              existing = fh.read()
-      except FileNotFoundError:
-          existing = header
-
-      # Fail-closed on a duplicate Semantic Version (Requirement 10.7) using the
-      # shared version guard, so no Changelog entry (and no bundle) is produced
-      # for a version already recorded.
-      try:
-          assert_version_absent(path, version)
-      except DuplicateVersionError as exc:
-          print('BLOCKING: ' + str(exc), file=sys.stderr)
-          sys.exit(1)
-
-      entry = (
-          '## [' + version + '] - ' + today + '\n\n'
-          '### Added\n- Release ' + version + ' of the Diagram & Inventory Rule Engine bundle.\n\n'
-          '### Changed\n- _None recorded for this release._\n\n'
-          '### Removed\n- _None recorded for this release._\n\n'
-      )
-
-      # Insert the new (newest) version entry immediately above the first
-      # existing version section so the file stays reverse-chronological.
-      match = re.search(r'^## ', existing, re.M)
-      if match:
-          updated = existing[: match.start()] + entry + existing[match.start():]
-      else:
-          updated = (existing if existing.strip() else header) + entry
-
-      with open(path, 'w', encoding='utf-8') as fh:
-          fh.write(updated)
-      print('Updated CHANGELOG.md with version ' + version)
-      "
-    - echo "CHANGELOG.md updated"
+    - echo "Verifying the curated CHANGELOG.md section for version ${RELEASE_VERSION} (non-destructive; CI does not rewrite it)"
+    # Fail-closed when the curated section is missing (Requirement 10.7). CI does
+    # NOT modify CHANGELOG.md — the hand-written entry is authoritative and is
+    # published as-is.
+    - python -m rule_engine.version_guard CHANGELOG.md "${RELEASE_VERSION}"
+    - echo "CHANGELOG.md curated section present; publishing as-is"
   artifacts:
     paths:
       - CHANGELOG.md

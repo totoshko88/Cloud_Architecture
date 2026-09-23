@@ -29,27 +29,26 @@ providers:
     url: "https://arch-center.azureedge.net/icons/Azure_Public_Service_Icons_V24.zip"
     unpack_to: azure-icons
     kind: svg-tree
-    icon_source: builtin        # mxgraph.mscae covers most; pack is fallback
+    icon_source: custom         # azure2 file-path image shapes (img/lib/azure2/*); pack is the asset source
 
   gcp_category:
     pack: GCP Category Icons
     url: "https://services.google.com/fh/files/misc/category-icons.zip"
     unpack_to: gcp-category
     kind: svg-png-tree
-    icon_source: builtin
-
+    icon_source: custom         # official 2025 category icons, referenced by file path
   gcp_core:
     pack: GCP Core Product Icons
     url: "https://services.google.com/fh/files/misc/core-products-icons.zip"
     unpack_to: gcp-core
     kind: svg-png-tree
-    icon_source: builtin
+    icon_source: custom         # official 2025 core product icons, referenced by file path
 
   oci:
     pack: OCI Style Guide for draw.io
     url: "https://docs.oracle.com/iaas/Content/Resources/Assets/OCI-Style-Guide-for-Drawio.zip"
     unpack_to: oci-style
-    kind: drawio-library        # a draw.io <mxlibrary> of mxgraph.oci.* stencils
+    kind: drawio-library        # a draw.io <mxlibrary> of shape=stencil(...) glyphs keyed by title (no mxgraph.oci.* namespace)
     icon_source: custom         # NO built-in OCI library; stencils come only from this pack
     library_xml: "OCI Style Guide for Drawio/OCI Library.xml"
     # Extract the library into standalone, importable stencils here (git-ignored).
