@@ -1,55 +1,78 @@
 # GCP icon mapping table for the Rule Engine Icon Resolver.
 #
-# Maps each of the 9 neutral resource types to an icon id, a brand hex color
-# (#RRGGBB), and a complete draw.io style string that references the custom
-# Google Cloud shape library imported from the unpacked GCP icon assets.
-# Also declares exactly one Boundary and one Network Boundary container style
-# (Requirement 2 AC6). Brand anchor: GCP #4285F4.
+# Icon source priority (highest first), per the maintainer decision:
+#   1. Official Core Product icons  (core-products-icons.zip -> gcp-core) — a
+#      service's own unique 2025 icon. Used when the neutral type maps to a
+#      flagship product Google ships a dedicated icon for.
+#   2. Official Product Category icons (category-icons.zip -> gcp-category) — the
+#      general category glyph, used when no dedicated product icon exists (Google
+#      deliberately represents non-flagship services by their category since the
+#      early-2025 iconography update).
+#   3. Built-in draw.io `mxgraph.gcp2.*` stencils — only as a last resort when no
+#      official asset exists. NOTE: contrary to an earlier claim, gcp2 is NOT
+#      "9 structural shapes only": it defines 255 shapes incl. per-service icons
+#      (verified against the draw.io app.asar). It is a pre-2025 style, so it is
+#      the fallback, not the default, to avoid mixing icon eras.
 #
-# icon_source is `custom`: the GCP category and core-products icons are imported
-# as a custom draw.io shape library from unpacked assets (design section 4b).
-# Every icon id and brand hex is sourced from the authoritative asset pack
-# declared below (Requirement 2 AC9).
+# All nine neutral types are covered by tiers 1–2, so no gcp2 fallback is needed
+# here. Four types resolve to a dedicated product icon; five to a category icon.
+# Both official packs are referenced by file path under the git-ignored asset
+# root that scripts/fetch_assets.py produces (image=assets/vendor/gcp-...), the
+# same file-path image-shape approach used for Azure (azure2). Brand anchor: GCP #4285F4.
+#
+# icon_source is `custom`: the icons come from the official packs fetched on demand,
+# referenced by file path, not from a built-in draw.io library. Every path is
+# sourced from a pack declared in mappings/asset-sources.yaml (Requirement 2 AC9).
 provider: gcp
-asset_pack: "Google Cloud Architecture Icons (custom draw.io shape library, unpacked)"
+asset_pack: "Google Cloud official icons — Core Product (core-products-icons.zip -> gcp-core) with Product Category fallback (category-icons.zip -> gcp-category)"
 icon_source: custom
 resources:
   boundary:
-    icon_id: gcp.project
+    icon_id: gcp-category.boundary
+    icon_provenance: category
     brand_hex: "#4285F4"
-    style: "shape=mxgraph.gcp2.project;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Management Tools/SVG/ManagementTools-512-color.svg"
   network_boundary:
-    icon_id: gcp.virtual_private_cloud
+    icon_id: gcp-category.network_boundary
+    icon_provenance: category
     brand_hex: "#4285F4"
-    style: "shape=mxgraph.gcp2.virtual_private_cloud;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg"
   serverless_fn:
-    icon_id: gcp.cloud_functions
+    icon_id: gcp-category.serverless_fn
+    icon_provenance: category
     brand_hex: "#4285F4"
-    style: "shape=mxgraph.gcp2.cloud_functions;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Serverless Computing/SVG/ServerlessComputing-512-color.svg"
   object_store:
-    icon_id: gcp.cloud_storage
+    icon_id: gcp-core.cloud_storage
+    icon_provenance: product
     brand_hex: "#4285F4"
-    style: "shape=mxgraph.gcp2.cloud_storage;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-core/Unique Icons/Cloud Storage/SVG/Cloud_Storage-512-color.svg"
   managed_sql:
-    icon_id: gcp.cloud_sql
+    icon_id: gcp-core.cloud_sql
+    icon_provenance: product
     brand_hex: "#4285F4"
-    style: "shape=mxgraph.gcp2.cloud_sql;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-core/Unique Icons/Cloud SQL/SVG/CloudSQL-512-color.svg"
   message_queue:
-    icon_id: gcp.pubsub
+    icon_id: gcp-category.message_queue
+    icon_provenance: category
     brand_hex: "#4285F4"
-    style: "shape=mxgraph.gcp2.pubsub;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Integration Services/SVG/IntegrationServices-512-color.svg"
   secrets_store:
-    icon_id: gcp.secret_manager
+    icon_id: gcp-category.secrets_store
+    icon_provenance: category
     brand_hex: "#4285F4"
-    style: "shape=mxgraph.gcp2.secret_manager;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg"
   managed_k8s:
-    icon_id: gcp.google_kubernetes_engine
+    icon_id: gcp-core.gke
+    icon_provenance: product
     brand_hex: "#4285F4"
-    style: "shape=mxgraph.gcp2.google_kubernetes_engine;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-core/Unique Icons/GKE/SVG/GKE-512-color.svg"
   llm_platform:
-    icon_id: gcp.vertex_ai
+    icon_id: gcp-core.vertex_ai
+    icon_provenance: product
     brand_hex: "#4285F4"
-    style: "shape=mxgraph.gcp2.vertex_ai;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-core/Unique Icons/Vertex AI/SVG/VertexAI-512-color.svg"
+
 containers:
   boundary:
     icon_id: gcp.project

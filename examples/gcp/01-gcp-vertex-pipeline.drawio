@@ -16,31 +16,31 @@
           <mxGeometry x="580" y="150" width="420" height="670" as="geometry" />
         </mxCell>
 
-        <mxCell id="api-gateway" value="api-gateway" style="shape=mxgraph.gcp2.cloud_functions;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12;fontStyle=0" vertex="1" parent="1">
+        <mxCell id="api-gateway" value="api-gateway" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-core/Unique Icons/Apigee/SVG/Apigee-512-color-rgb.svg" vertex="1" parent="1">
           <mxGeometry x="120" y="440" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="load-balancer" value="load-balancer" style="shape=mxgraph.gcp2.cloud_load_balancing;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12;fontStyle=0" vertex="1" parent="1">
+        <mxCell id="load-balancer" value="load-balancer" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg" vertex="1" parent="1">
           <mxGeometry x="360" y="440" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="pubsub-events" value="pubsub-events" style="shape=mxgraph.gcp2.cloud_pubsub;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12;fontStyle=0" vertex="1" parent="1">
+        <mxCell id="pubsub-events" value="pubsub-events" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Integration Services/SVG/IntegrationServices-512-color.svg" vertex="1" parent="1">
           <mxGeometry x="620" y="200" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="secret-manager" value="secret-manager" style="shape=mxgraph.gcp2.key_management_service;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12;fontStyle=0" vertex="1" parent="1">
+        <mxCell id="secret-manager" value="secret-manager" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg" vertex="1" parent="1">
           <mxGeometry x="620" y="680" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="ingest-function" value="ingest-function" style="shape=mxgraph.gcp2.cloud_functions;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12;fontStyle=0" vertex="1" parent="1">
+        <mxCell id="ingest-function" value="ingest-function" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Serverless Computing/SVG/ServerlessComputing-512-color.svg" vertex="1" parent="1">
           <mxGeometry x="880" y="200" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="vertex-ai" value="vertex-ai" style="shape=mxgraph.gcp2.cloud_machine_learning;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12;fontStyle=0" vertex="1" parent="1">
+        <mxCell id="vertex-ai" value="vertex-ai" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-core/Unique Icons/Vertex AI/SVG/VertexAI-512-color.svg" vertex="1" parent="1">
           <mxGeometry x="880" y="440" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="training-gke" value="training-gke" style="shape=mxgraph.gcp2.container_engine;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12;fontStyle=0" vertex="1" parent="1">
+        <mxCell id="training-gke" value="training-gke" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-core/Unique Icons/GKE/SVG/GKE-512-color.svg" vertex="1" parent="1">
           <mxGeometry x="880" y="680" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="cloud-sql" value="cloud-sql" style="shape=mxgraph.gcp2.cloud_sql;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12;fontStyle=0" vertex="1" parent="1">
+        <mxCell id="cloud-sql" value="cloud-sql" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-core/Unique Icons/Cloud SQL/SVG/CloudSQL-512-color.svg" vertex="1" parent="1">
           <mxGeometry x="1140" y="360" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="model-storage" value="model-storage" style="shape=mxgraph.gcp2.cloud_storage;fillColor=#4285F4;strokeColor=#ffffff;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12;fontStyle=0" vertex="1" parent="1">
+        <mxCell id="model-storage" value="model-storage" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-core/Unique Icons/Cloud Storage/SVG/Cloud_Storage-512-color.svg" vertex="1" parent="1">
           <mxGeometry x="1140" y="520" width="78" height="78" as="geometry" />
         </mxCell>
 
@@ -97,7 +97,7 @@
         <mxCell id="flow-legend" value="Flow&#10;1. api-gateway forwards request to load-balancer&#10;2. load-balancer routes inference to Vertex AI&#10;3. api-gateway publishes event to Pub/Sub (async)&#10;4. Pub/Sub delivers event to ingest-function (async)&#10;5. ingest-function submits training job to GKE&#10;6. GKE registers trained model with Vertex AI&#10;7. Vertex AI reads metadata from Cloud SQL&#10;8. Vertex AI stores artifacts in Cloud Storage&#10;9. Vertex AI fetches credentials from Secret Manager" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF" vertex="1" parent="1">
           <mxGeometry x="1460" y="120" width="320" height="200" as="geometry" />
         </mxCell>
-        <mxCell id="legend" value="Legend&#10;Solid line = primary flow&#10;Dashed line = asynchronous / event-driven flow&#10;Red = blocked / missing / disabled&#10;🆕 = new in version N&#10;🔄 = changed in version N&#10;Dashed green boundary = stack boundary&#10;Dashed blue boundary = Network Boundary&#10;Numbered markers (1..N) = ordered data flow steps; see Flow list" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF" vertex="1" parent="1">
+        <mxCell id="legend" value="Legend&#10;Solid line = primary flow&#10;Dashed line = asynchronous / event-driven flow&#10;Red = blocked / missing / disabled&#10;🆕 = new in version N&#10;🔄 = changed in version N&#10;Dashed outer boundary = stack Boundary (profile brand color)&#10;Dashed inner boundary = Network Boundary (profile brand color)&#10;Numbered markers (1..N) = ordered data flow steps; see Flow list" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF" vertex="1" parent="1">
           <mxGeometry x="1460" y="360" width="320" height="210" as="geometry" />
         </mxCell>
       </root>

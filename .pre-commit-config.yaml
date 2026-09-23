@@ -36,6 +36,14 @@ repos:
         pass_filenames: false
         files: '^(examples/.*\.json|schemas/inventory\.schema\.json)$'
 
+      - id: rule-engine-check-rasters
+        name: rule-engine-check-rasters (PNG export budget)
+        entry: rule-engine-check-rasters
+        language: system
+        pass_filenames: false
+        # Re-run when a diagram source or its exported raster changes.
+        files: '\.drawio(\.png)?$'
+
       - id: pytest
         name: pytest (unit + property-based)
         entry: pytest -q

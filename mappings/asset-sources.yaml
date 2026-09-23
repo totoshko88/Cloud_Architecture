@@ -37,7 +37,6 @@ providers:
     unpack_to: gcp-category
     kind: svg-png-tree
     icon_source: builtin
-
   gcp_core:
     pack: GCP Core Product Icons
     url: "https://services.google.com/fh/files/misc/core-products-icons.zip"

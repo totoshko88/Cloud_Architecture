@@ -122,6 +122,15 @@ validate:
               print('    - ' + reason, file=sys.stderr)
           sys.exit(1)
       "
+    - echo "Fetching official icon packs so file-path icon references can be verified"
+    - python scripts/fetch_assets.py --only gcp_category gcp_core azure || echo "WARNING: asset fetch failed; asset-paths guard will skip"
+    - echo "Verifying every mapping icon file path exists under the asset root"
+    - python -m rule_engine.asset_paths_guard
+    - echo "Enforcing the exported .drawio.png export budget (<=1200px wide, <500KB)"
+    # Raster gate (REVIEW.md D7): the linter checks the .drawio source + companion
+    # document, not the rendered PNG, so this guard fails-closed on an oversized or
+    # oversize raster. The committed golden-example rasters must stay within budget.
+    - python -m rule_engine.raster_gate
 
 # ---------------------------------------------------------------------------
 # Stage: version-guard

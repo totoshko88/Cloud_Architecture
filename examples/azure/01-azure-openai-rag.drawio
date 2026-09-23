@@ -23,47 +23,47 @@
         <!-- Lane order: actors -> edge -> router -> async -> workers -> platform core -> data -->
 
         <!-- actors: User (outside the Subscription boundary) -->
-        <mxCell id="User" value="User" style="shape=mxgraph.azure.user;fillColor=#0078D4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center" vertex="1" parent="1">
+        <mxCell id="User" value="User" style="image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/identity/Users.svg" vertex="1" parent="1">
           <mxGeometry x="80" y="440" width="60" height="60" as="geometry" />
         </mxCell>
 
         <!-- edge: Application Gateway (inside Subscription, outside VNet) -->
-        <mxCell id="AppGateway" value="AppGateway" style="shape=mxgraph.mscae.cloud.application_gateway;fillColor=#0078D4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center" vertex="1" parent="1">
+        <mxCell id="AppGateway" value="AppGateway" style="image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/networking/Application_Gateways.svg" vertex="1" parent="1">
           <mxGeometry x="300" y="440" width="64" height="64" as="geometry" />
         </mxCell>
 
         <!-- router / api: Functions (inside VNet, padded from left border) -->
-        <mxCell id="ApiFunction" value="ApiFunction" style="shape=mxgraph.mscae.cloud.functions;fillColor=#0078D4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center" vertex="1" parent="1">
+        <mxCell id="ApiFunction" value="ApiFunction" style="image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/compute/Function_Apps.svg" vertex="1" parent="1">
           <mxGeometry x="540" y="440" width="64" height="64" as="geometry" />
         </mxCell>
 
         <!-- async messaging: Service Bus (top row) -->
-        <mxCell id="ServiceBus" value="ServiceBus" style="shape=mxgraph.mscae.cloud.service_bus2;fillColor=#0078D4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center" vertex="1" parent="1">
+        <mxCell id="ServiceBus" value="ServiceBus" style="image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/general/Service_Bus.svg" vertex="1" parent="1">
           <mxGeometry x="720" y="220" width="64" height="64" as="geometry" />
         </mxCell>
 
         <!-- workers: Ingest Functions (top row) -->
-        <mxCell id="IngestFunction" value="IngestFunction" style="shape=mxgraph.mscae.cloud.functions;fillColor=#0078D4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center" vertex="1" parent="1">
+        <mxCell id="IngestFunction" value="IngestFunction" style="image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/compute/Function_Apps.svg" vertex="1" parent="1">
           <mxGeometry x="900" y="220" width="64" height="64" as="geometry" />
         </mxCell>
 
         <!-- platform core: LLM platform (Azure OpenAI via Cognitive Services) (middle row) -->
-        <mxCell id="AzureOpenAI" value="AzureOpenAI" style="shape=mxgraph.mscae.cloud.cognitive_services;fillColor=#0078D4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center" vertex="1" parent="1">
+        <mxCell id="AzureOpenAI" value="AzureOpenAI" style="image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/ai_machine_learning/Azure_OpenAI.svg" vertex="1" parent="1">
           <mxGeometry x="720" y="440" width="64" height="64" as="geometry" />
         </mxCell>
 
         <!-- platform core: secrets store (Key Vault) (bottom row under ApiFunction) -->
-        <mxCell id="KeyVault" value="KeyVault" style="shape=mxgraph.mscae.cloud.key_vault;fillColor=#0078D4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center" vertex="1" parent="1">
+        <mxCell id="KeyVault" value="KeyVault" style="image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/security/Key_Vaults.svg" vertex="1" parent="1">
           <mxGeometry x="540" y="640" width="64" height="64" as="geometry" />
         </mxCell>
 
         <!-- data: object store (Storage) (right column, upper) -->
-        <mxCell id="BlobStorage" value="BlobStorage" style="shape=mxgraph.mscae.cloud.azure_storage;fillColor=#0078D4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center" vertex="1" parent="1">
+        <mxCell id="BlobStorage" value="BlobStorage" style="image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/storage/Storage_Accounts.svg" vertex="1" parent="1">
           <mxGeometry x="900" y="440" width="64" height="64" as="geometry" />
         </mxCell>
 
         <!-- data: managed SQL (vector store) (far-right column, lower) -->
-        <mxCell id="AzureSqlDB" value="AzureSqlDB" style="shape=mxgraph.mscae.cloud.sql_database_premium;fillColor=#0078D4;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center" vertex="1" parent="1">
+        <mxCell id="AzureSqlDB" value="AzureSqlDB" style="image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/databases/SQL_Database.svg" vertex="1" parent="1">
           <mxGeometry x="1120" y="640" width="64" height="64" as="geometry" />
         </mxCell>
 
@@ -123,7 +123,7 @@
         </mxCell>
 
         <!-- Legend block (value starts with "Legend" -> treated as text cell, not a node) -->
-        <mxCell id="legend" value="Legend&#10;Solid line = primary flow&#10;Dashed line = asynchronous / event-driven flow&#10;Red = blocked / missing / disabled&#10;🆕 = new in version N&#10;🔄 = changed in version N&#10;Dashed green boundary = stack boundary&#10;Dashed blue boundary = Network Boundary&#10;Numbered markers (1..N) = ordered data flow steps; see Flow list" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF" vertex="1" parent="1">
+        <mxCell id="legend" value="Legend&#10;Solid line = primary flow&#10;Dashed line = asynchronous / event-driven flow&#10;Red = blocked / missing / disabled&#10;🆕 = new in version N&#10;🔄 = changed in version N&#10;Dashed outer boundary = stack Boundary (profile brand color)&#10;Dashed inner boundary = Network Boundary (profile brand color)&#10;Numbered markers (1..N) = ordered data flow steps; see Flow list" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF" vertex="1" parent="1">
           <mxGeometry x="1420" y="360" width="360" height="200" as="geometry" />
         </mxCell>
       </root>

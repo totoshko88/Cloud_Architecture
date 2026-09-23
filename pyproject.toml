@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rule-engine"
-version = "1.1.1"
+version = "1.2.0"
 description = "Diagram & Inventory Rule Engine — a cloud-agnostic Kiro project for deterministic diagram and inventory generation."
 readme = "README.md"
 # Python 3.14 is intentional: Python 3.10 reaches end-of-life in October 2026,
@@ -38,6 +38,12 @@ rule-engine-validate-schema = "rule_engine.validate_schema_cli:main"
 # resolve specific service names (including services missing from built-in
 # stencils) to an official SVG/PNG.
 rule-engine-index-assets = "rule_engine.asset_index_cli:main"
+# Asset-path guard: verify every mapping icon file path (image=<path>) exists
+# under the fetched asset root. Used by the CI validate stage after fetch_assets.
+rule-engine-check-asset-paths = "rule_engine.asset_paths_guard:main"
+# Raster gate: verify every exported .drawio.png stays within the D7 export
+# budget (<= 1200px wide, < 500KB). Used by the CI validate stage.
+rule-engine-check-rasters = "rule_engine.raster_gate:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

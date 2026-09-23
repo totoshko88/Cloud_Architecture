@@ -125,9 +125,11 @@ Every generated diagram uses one shared numeric layout so AWS, Azure, GCP, OCI, 
 | Container padding | **≥ 30** | Padding between a container border and its children / a nested container (≥ 1 grid step; the reference uses 30). |
 | Legend column | right margin | The `Flow` and `Legend` text cells stack in the right margin, clear of the diagram body. |
 
-**Icon size is uniform.** All service icons render at the same 78×78 footprint regardless of the source asset's native aspect ratio. For a provider with a built-in stencil (`mxgraph.aws4.*`, `mxgraph.gcp2.*`, `mxgraph.mscae.*`) the node is one flat cell at 78×78. For OCI (no built-in library) the official stencil is embedded, its baked-in caption is **stripped** (so the node carries exactly one label — the service name), and the icon is scaled uniformly into the 78×78 square. Do not let a stencil's own caption double the label or distort the aspect ratio.
+**Icon size is uniform.** All service icons render at the same 78×78 footprint regardless of the source asset's native aspect ratio. The exact stencil id / style string for each provider is authoritative in `mappings/<provider>-icons.yaml` — never hand-write or guess a `shape=mxgraph.<lib>.<id>` (an unknown id renders as an empty box → `icon-resolved` ERROR; see `asset-packs.md`). AWS (`mxgraph.aws4.*`) and GCP (`mxgraph.gcp2.*`) resolve to draw.io built-in stencils; Azure and OCI use **custom imported** shape libraries (`icon_source: custom` in their mapping — Azure V24 and the OCI draw.io style guide), not built-in libraries, so their packs must be imported into draw.io before the ids resolve. Whatever the source, the node is one flat cell at 78×78. For OCI the official stencil is embedded, its baked-in caption is **stripped** (so the node carries exactly one label — the service name), and the icon is scaled uniformly into the 78×78 square. Do not let a stencil's own caption double the label or distort the aspect ratio.
 
 **Reference topology (hub-adjacent-to-data).** Place the platform-core hub in the column **immediately left of the data column**, with asynchronous-messaging and worker nodes stacked in the rows **above and below** the hub — never between the hub and the data stores. This keeps hub→data edges short and straight and leaves the data column reachable without crossing an intervening icon.
+
+**North–South reference geometry (infrastructure/deployment diagrams).** The canonical values above describe the default **left→right** flow layout. For a **North–South** infra diagram (see *Diagram Orientation*), rotate the same grid 90°: the eight lanes become **rows top→bottom** (actors/edge at the top, data/on-premises at the bottom), spaced by the **row step (160)**; nodes within a tier are placed **left→right across columns** spaced by the **column step (220)**, with redundant peers (AZ-a / AZ-b) side by side on the same row. Icon footprint (78×78), grid step (10), container padding (≥ 30), and the right-margin Flow/Legend column are unchanged. The geometry-enforced lint rules (grid-alignment, container-padding, node-overlap, edge-routing) apply identically on either axis, since they measure absolute coordinates and are orientation-agnostic. (The four shipped golden examples are all left→right; an infrastructure golden example is a documented gap — see REVIEW.md.)
 
 **Edge routing on the grid.** Route every edge orthogonally (`edgeStyle=orthogonalEdgeStyle`), start stubs just past the source perimeter (`exitPerimeter=0`), and enter left/top, exit right/bottom. When two or more edges would share a corridor, give each explicit `<mxPoint>` waypoints on its own grid column/row, offset by ≥ 1 grid step, so no two lines overlap and no line crosses an unrelated icon or a legend block. When several nodes stack in one column, route edges among them through a side corridor (one grid column left or right of the stack) rather than straight through the middle icon.
 
@@ -204,8 +206,8 @@ Every diagram includes a Legend that defines all of the following:
 - **red** = blocked or missing or disabled
 - **🆕** = new in version N
 - **🔄** = changed in version N
-- **dashed green boundary** = the stack boundary
-- **dashed blue boundary** = the Network Boundary
+- **dashed boundary, outer** = the stack Boundary (Account / Subscription / Project / Tenancy / Environment)
+- **dashed boundary, inner** = the Network Boundary (VPC / VNet / VCN / Network)Boundary **stroke color follows the Provider Profile brand palette** (e.g. AWS Account `#232F3E` / VPC `#8C4FFF`; GCP Project `#4285F4` / VPC `#34A853`; the `generic` profile uses green for the stack boundary and blue for the Network Boundary). Distinguish the two boundaries by their **dashed outer-vs-inner nesting and their labels**, never by color alone (see Accessibility & Contrast — double-encode). The legend entry names each boundary in words so it is correct for every provider.
 
 A diagram with no Legend is a lint ERROR (`legend-present`). Example PlantUML legend:
 
@@ -216,8 +218,8 @@ legend right
   Red = blocked / missing / disabled
   🆕 = new in version N
   🔄 = changed in version N
-  Dashed green boundary = stack boundary
-  Dashed blue boundary = Network Boundary
+  Dashed outer boundary = stack Boundary (profile brand color)
+  Dashed inner boundary = Network Boundary (profile brand color)
 endlegend
 
 ```
