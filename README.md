@@ -88,15 +88,37 @@ file-path image shapes (`img/lib/azure2/*`); **GCP** official 2025 icons by file
 own docs do); **OCI** embedded stencils from the official draw.io pack; **generic** grayscale
 base shapes.
 
-### Preview — AWS
+### Application-flow previews
 
-The application-flow summary and the wide as-built landscape of the same HA system:
+One application-flow diagram per cloud, each in the provider's own icon set — visually
+distinct at a glance.
+
+#### AWS — agent platform
+
+Built-in `mxgraph.aws4.*` icons; EKS → SQS → Lambda → Bedrock/RDS/S3/Secrets Manager.
 
 ![AWS agent-platform application flow: EKS enqueues to SQS, Lambda invokes Bedrock and persists to RDS/S3/Secrets Manager inside a VPC within an Account boundary](examples/aws/01-aws-agent-platform.drawio.png)
 
-![AWS HA multi-region flow summary: DNS failover routes to the active region's load balancer, app tier, database and object store, with cross-region replication to the passive region](examples/aws/02-aws-ha-multiregion-summary.drawio.png)
+#### Azure — OpenAI RAG
 
-![AWS HA multi-region landscape as-built: two regions each with two availability zones, full application/cache/database/object-store/queue/worker tiers nested in Account to VPC to AZ boundaries, with cross-region replication corridors](examples/aws/02-aws-ha-multiregion-landscape.drawio.png)
+azure2 image shapes; Application Gateway → Functions, Service Bus to the ingest Function,
+Azure OpenAI with Key Vault, Blob Storage, and Azure SQL DB inside a VNet.
+
+![Azure OpenAI RAG application flow: App Gateway to Functions, Service Bus to ingest Function, Azure OpenAI with Key Vault, Blob Storage, and Azure SQL DB inside a VNet](examples/azure/01-azure-openai-rag.drawio.png)
+
+#### GCP — Vertex pipeline
+
+Official Google Cloud 2025 icons (product-first, category-fallback); API Gateway → Load
+Balancer → Vertex AI with Pub/Sub, GKE, Cloud SQL, Cloud Storage, and Secret Manager.
+
+![GCP Vertex pipeline application flow: API Gateway to Load Balancer to Vertex AI, Pub/Sub to ingest Function, GKE training, Cloud SQL and Cloud Storage, Secret Manager inside a VPC within a Project](examples/gcp/01-gcp-vertex-pipeline.drawio.png)
+
+#### OCI — Generative AI stack
+
+Embedded official OCI stencils; Functions → Load Balancer → Generative AI with Streaming,
+OKE, Autonomous DB, Object Storage, and Vault inside a VCN.
+
+![OCI Generative AI stack application flow: Functions to Load Balancer to Generative AI, Streaming to ingest Functions, OKE training, Autonomous DB and Object Storage, Vault inside a VCN within a Compartment](examples/oci/01-oci-genai-stack.drawio.png)
 
 ## Quick start
 
