@@ -94,11 +94,11 @@
           </mxGeometry>
         </mxCell>
 
-        <mxCell id="flow-legend" value="Flow&#10;1. api-gateway forwards request to load-balancer&#10;2. load-balancer routes inference to Vertex AI&#10;3. api-gateway publishes event to Pub/Sub (async)&#10;4. Pub/Sub delivers event to ingest-function (async)&#10;5. ingest-function submits training job to GKE&#10;6. GKE registers trained model with Vertex AI&#10;7. Vertex AI reads metadata from Cloud SQL&#10;8. Vertex AI stores artifacts in Cloud Storage&#10;9. Vertex AI fetches credentials from Secret Manager" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF" vertex="1" parent="1">
-          <mxGeometry x="1460" y="120" width="320" height="200" as="geometry" />
+        <mxCell id="flow-legend" value="Flow&#10;1. api-gateway forwards request to load-balancer&#10;2. load-balancer routes inference to Vertex AI&#10;3. api-gateway publishes event to Pub/Sub (async)&#10;4. Pub/Sub delivers event to ingest-function (async)&#10;5. ingest-function submits training job to GKE&#10;6. GKE registers trained model with Vertex AI&#10;7. Vertex AI reads metadata from Cloud SQL&#10;8. Vertex AI stores artifacts in Cloud Storage&#10;9. Vertex AI fetches credentials from Secret Manager" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF;spacingLeft=10;spacingRight=10;spacingTop=10;spacingBottom=10" vertex="1" parent="1">
+          <mxGeometry x="1460" y="120" width="380" height="180" as="geometry" />
         </mxCell>
-        <mxCell id="legend" value="Legend&#10;Solid line = primary flow&#10;Dashed line = asynchronous / event-driven flow&#10;Red = blocked / missing / disabled&#10;🆕 = new in version N&#10;🔄 = changed in version N&#10;Dashed outer boundary = stack Boundary (profile brand color)&#10;Dashed inner boundary = Network Boundary (profile brand color)&#10;Numbered markers (1..N) = ordered data flow steps; see Flow list" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF" vertex="1" parent="1">
-          <mxGeometry x="1460" y="360" width="320" height="210" as="geometry" />
+        <mxCell id="legend" value="Legend&#10;Solid line = primary flow&#10;Dashed line = asynchronous / event-driven flow&#10;Red = blocked / missing / disabled&#10;🆕 = new in version N&#10;🔄 = changed in version N&#10;Dashed outer boundary = stack Boundary (profile brand color)&#10;Dashed inner boundary = Network Boundary (profile brand color)&#10;Numbered markers (1..N) = ordered data flow steps; see Flow list" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF;spacingLeft=10;spacingRight=10;spacingTop=10;spacingBottom=10" vertex="1" parent="1">
+          <mxGeometry x="1460" y="360" width="380" height="164" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>
