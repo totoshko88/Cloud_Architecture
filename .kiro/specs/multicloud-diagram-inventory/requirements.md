@@ -213,8 +213,8 @@ All requirements follow EARS notation and the Absolute Context principle: no pro
 3. IF the Linter reports at least one CRITICAL finding or at least one ERROR finding during a CI Pipeline run, THEN THE CI Pipeline SHALL fail the run and SHALL produce no Release Bundle.
 4. WHEN the CI Pipeline runs on a release trigger, THE CI Pipeline SHALL package a Release Bundle containing the steering documents, the mapping files, the Inventory Schema, the examples, and the "add a new provider" runbook.
 5. THE CI Pipeline SHALL name every Release Bundle using a Semantic Version identifier.
-6. WHEN the CI Pipeline produces a release, THE CI Pipeline SHALL generate or update a Changelog that records the added, changed, and removed items for the released Semantic Version in reverse chronological order.
-7. IF a release trigger specifies a Semantic Version that already exists in the Changelog, THEN THE CI Pipeline SHALL fail the run and SHALL produce no Release Bundle.
+6. THE Changelog SHALL be hand-curated: the maintainer SHALL record the added, changed, and removed items for each Semantic Version, in reverse chronological order, before the release is triggered, and the CI Pipeline SHALL NOT rewrite the Changelog.
+7. IF a release trigger specifies a Semantic Version that has no curated section in the Changelog, THEN THE CI Pipeline SHALL fail the run and SHALL produce no Release Bundle.
 8. THE Rule Engine SHALL provide a README at the repository root that describes the purpose, the contents, a quick start, and links to the steering documents and the Installation Guide.
 9. THE Rule Engine SHALL provide an Installation Guide that enumerates the prerequisites and the ordered steps to install and activate the Rule Engine in a Kiro workspace.
 10. WHEN the CI Pipeline completes a successful release run, THE CI Pipeline SHALL publish the Release Bundle and the updated Changelog as release artifacts.
