@@ -110,7 +110,8 @@ jobs:
       - name: Fetch official icon packs so file-path icon references can be verified
         # GCP maps to both gcp-category and gcp-core (product-first priority);
         # Azure to its pack. Fetch-aware: the guard skips if a fetch fails.
-        run: python scripts/fetch_assets.py --only gcp_category gcp_core azure || echo "WARNING: asset fetch failed; asset-paths guard will skip"
+        run: |
+          python scripts/fetch_assets.py --only gcp_category gcp_core azure || echo "WARNING: asset fetch failed; asset-paths guard will skip"
       - name: Verify every mapping icon file path exists under the asset root
         run: python -m rule_engine.asset_paths_guard
       - name: Enforce the exported .drawio.png export budget (D7)
