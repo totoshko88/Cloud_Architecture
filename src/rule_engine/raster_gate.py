@@ -54,7 +54,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # the reference detailed as-built exports at ~3400px). The landscape budget is
 # therefore wider and heavier, matching the reference; readability at that width
 # is held by the container/padding/overlap/direction rules, not by a narrow cap.
-MAX_WIDTH_PX = 1200
+# The flow width (1600px) is a touch wider than a single doc column so a wide
+# summary (DNS fan-out across two regions) stays legible; a landscape needs far
+# more room still.
+MAX_WIDTH_PX = 1600
 MAX_SIZE_BYTES = 500 * 1024  # 500KB
 
 LANDSCAPE_MAX_WIDTH_PX = 3600

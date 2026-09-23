@@ -70,7 +70,7 @@ with a right-side Flow legend, the standard Legend block, and geometry-enforced 
 Each cloud ships three diagrams: an **application-flow** view (`01`), and the sanctioned
 **HA multi-region** pair — a `flow` **summary** (≤ 12 nodes) cross-linked to a `landscape`
 **as-built** (~34 nodes) of the *same* active-passive system. The application-flow and
-summary export at ≤ 1200px; the landscape exports wide (≤ 3600px) so every node stays
+summary export at ≤ 1600px; the landscape exports wide (≤ 3600px) so every node stays
 legible. Icons are the provider's official glyphs, resolved through `mappings/icon-index.json`.
 
 | Cloud | Application flow (`01`) | HA summary (`flow`) | HA as-built (`landscape`) |

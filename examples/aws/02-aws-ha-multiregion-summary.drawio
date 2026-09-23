@@ -44,11 +44,11 @@
           <mxGeometry x="1280" y="520" width="78" height="78" as="geometry" />
         </mxCell>
 
-        <mxCell id="s1" value="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="dns" target="lb_a">
+        <mxCell id="s1" value="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.35;exitY=1.0;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="dns" target="lb_a">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="739.00" y="220.00" />
-              <mxPoint x="399.00" y="220.00" />
+              <mxPoint x="727.00" y="230.00" />
+              <mxPoint x="399.00" y="230.00" />
             </Array>
           </mxGeometry>
         </mxCell>
@@ -58,19 +58,20 @@
         <mxCell id="s3" value="3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="app_a" target="db_a">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="s4" value="4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.25;exitY=1.0;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="app_a" target="obj_a">
+        <mxCell id="s4" value="4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.25;exitY=1.0;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="app_a" target="obj_a">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="379.00" y="650.00" />
-              <mxPoint x="159.00" y="650.00" />
+              <mxPoint x="100.00" y="650.00" />
+              <mxPoint x="100.00" y="559.00" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="s5" value="5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=0.5;exitY=1.0;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="dns" target="lb_b">
+        <mxCell id="s5" value="5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=0.65;exitY=1.0;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="dns" target="lb_b">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="739.00" y="220.00" />
-              <mxPoint x="1079.00" y="220.00" />
+              <mxPoint x="751.00" y="250.00" />
+              <mxPoint x="1079.00" y="250.00" />
             </Array>
           </mxGeometry>
         </mxCell>
@@ -83,12 +84,8 @@
         <mxCell id="s8" value="8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="app_b" target="obj_b">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="s9" value="9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=1.0;exitY=0.75;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.75;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="db_a" target="db_b">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="700.00" y="795.00" />
-            </Array>
-          </mxGeometry>
+        <mxCell id="s9" value="9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="db_a" target="db_b">
+          <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
         <mxCell id="flow-legend" value="Flow&#10;1. DNS routes users to the active (primary) region&#10;2. Primary load balancer forwards to the app tier&#10;3. App tier reads/writes the primary database&#10;4. App tier stores objects in the primary object store&#10;5. DNS holds the passive region on standby (health-checked)&#10;6. Passive load balancer forwards to its app tier&#10;7. Passive app tier uses its regional database&#10;8. Passive app tier uses its regional object store&#10;9. Primary database replicates cross-region to the passive database" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF;spacingLeft=10;spacingRight=10;spacingTop=10;spacingBottom=10" vertex="1" parent="1">

@@ -95,15 +95,26 @@ SUMMARY_BOUNDARY_BOXES: List[Tuple[str, int, int, int, int]] = [
     ("nb_b", 1010, 270, 490, 620),
 ]
 SUMMARY_EDGES: List[tuple] = [
-    ("s1", "dns", "lb_a", "1", False, (0.5, 1.0), (0.5, 0.0), [(739, 220), (399, 220)]),
+    # DNS fans out to both regions: each edge exits DNS's bottom at a DISTINCT
+    # point and drops STRAIGHT DOWN (waypoint at the same x as the exit) before
+    # turning, so there is no diagonal kink; the two use different corridor rows
+    # (y=230 / y=250) so their horizontals never merge.
+    ("s1", "dns", "lb_a", "1", False, (0.35, 1.0), (0.5, 0.0), [(727, 230), (399, 230)]),
     ("s2", "lb_a", "app_a", "2", False, (0.5, 1.0), (0.5, 0.0), []),
     ("s3", "app_a", "db_a", "3", False, (0.5, 1.0), (0.5, 0.0), []),
-    ("s4", "app_a", "obj_a", "4", False, (0.25, 1.0), (0.5, 0.0), [(379, 650), (159, 650)]),
-    ("s5", "dns", "lb_b", "5", True, (0.5, 1.0), (0.5, 0.0), [(739, 220), (1079, 220)]),
+    # app -> object-store sits to app's LEFT (a back-reference). Loop CLOCKWISE
+    # UNDER the row: exit app's bottom-left (distinct from edge 3's bottom-centre
+    # exit), drop below the row, run left in a corridor (x=100, in the boundary|obj
+    # gap), rise to the object-store's mid, and enter its LEFT face. Stays clear of
+    # app's icon and does not overlap the app->db spine (edge 3).
+    ("s4", "app_a", "obj_a", "4", False, (0.25, 1.0), (0.0, 0.5), [(379, 650), (100, 650), (100, 559)]),
+    ("s5", "dns", "lb_b", "5", True, (0.65, 1.0), (0.5, 0.0), [(751, 250), (1079, 250)]),
     ("s6", "lb_b", "app_b", "6", False, (0.5, 1.0), (0.5, 0.0), []),
     ("s7", "app_b", "db_b", "7", False, (0.5, 1.0), (0.5, 0.0), []),
     ("s8", "app_b", "obj_b", "8", False, (1.0, 0.5), (0.0, 0.5), []),
-    ("s9", "db_a", "db_b", "9", True, (1.0, 0.75), (0.0, 0.75), [(700, 795)]),
+    # Cross-region DB replication is a straight horizontal: same exit/entry Y,
+    # no mid waypoint (a single offset waypoint made a needless zig).
+    ("s9", "db_a", "db_b", "9", True, (1.0, 0.5), (0.0, 0.5), []),
 ]
 SUMMARY_FLOW = [
     "Flow",

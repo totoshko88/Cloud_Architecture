@@ -58,7 +58,7 @@ _ASSET_IMAGE_RE = re.compile(r"image=(assets/vendor/[^;\"]+)")
 # ``flow`` diagram fits a doc column at 1200px; a ``landscape`` as-built needs a
 # wider raster so 30-plus nodes stay legible (the reference detailed as-built
 # exports at ~3400px). The class is read from the companion .diagram.md.
-EXPORT_WIDTH = "1200"
+EXPORT_WIDTH = "1600"
 LANDSCAPE_EXPORT_WIDTH = "3400"
 EXPORT_BORDER = "8"
 EXPORT_THEME = "light"

@@ -289,11 +289,11 @@ If any required output file for a diagram cannot be produced, return a generatio
 
 ## Raster Export Dimensions
 
-The exported `NN-topic.drawio.png` must stay readable and lightweight, aligned with AWS diagram conventions. **The budget is class-aware**: a `flow` diagram fits a documentation column, so its raster is narrow; a `landscape` as-built exists to show a whole system on one canvas, so forcing it into 1200px shrinks thirty-plus nodes until the icons are illegible (the exact defect the audit surfaced). A landscape therefore exports wider — the reference detailed as-built lands at ~3400px — and readability at that width is held by the container / padding / overlap / direction rules, not by a narrow cap.
+The exported `NN-topic.drawio.png` must stay readable and lightweight, aligned with AWS diagram conventions. **The budget is class-aware**: a `flow` diagram fits a documentation column, so its raster is narrow; a `landscape` as-built exists to show a whole system on one canvas, so forcing it into a flow-width raster shrinks thirty-plus nodes until the icons are illegible (the exact defect the audit surfaced). A landscape therefore exports wider — the reference detailed as-built lands at ~3400px — and readability at that width is held by the container / padding / overlap / direction rules, not by a narrow cap.
 
 | Property | `flow` target | `landscape` target | Rationale |
 | --- | --- | --- | --- |
-| Max export width | **≤ 1200px** | **≤ 3600px** | flow fits a doc column; a landscape needs room for its nodes |
+| Max export width | **≤ 1600px** | **≤ 3600px** | flow fits a doc column (a touch wider for a two-region summary); a landscape needs far more |
 | File size | **< 500KB** | **< 2MB** | fast page loads; a wide as-built is inherently heavier |
 | Resolution | **72–96 DPI** | **72–96 DPI** | crisp on screen without oversizing |
 | Background | explicit **white** (`#FFFFFF`) | explicit **white** (`#FFFFFF`) | consistent rendering across viewers (see Accessibility & Contrast) |
@@ -301,8 +301,8 @@ The exported `NN-topic.drawio.png` must stay readable and lightweight, aligned w
 
 Rules:
 
-- A `flow` raster stays at **1200px or less** and **under 500KB**. If a flow diagram cannot meet that while staying readable, that is a signal it holds too much — **split it** (each split still capped at 12 nodes with an index document), rather than exporting an oversized raster.
-- A `landscape` raster may run up to **3600px** and **under 2MB** — do **not** split a comprehensive as-built to fit the flow width, since that destroys the one thing it exists to show. `scripts/export_raster.py` picks the export width from the diagram's `diagram_class` automatically (flow → 1200px, landscape → 3400px).
+- A `flow` raster stays at **1600px or less** and **under 500KB**. If a flow diagram cannot meet that while staying readable, that is a signal it holds too much — **split it** (each split still capped at 12 nodes with an index document), rather than exporting an oversized raster.
+- A `landscape` raster may run up to **3600px** and **under 2MB** — do **not** split a comprehensive as-built to fit the flow width, since that destroys the one thing it exists to show. `scripts/export_raster.py` picks the export width from the diagram's `diagram_class` automatically (flow → 1600px, landscape → 3400px).
 - The **model** canvas may be larger than the export width (draw.io units); it is the **exported image** that carries the width/size budget. Choose an export scale that lands the image within its class budget.
 - The class-aware budget **is** enforced — by the raster gate (`rule-engine-check-rasters`), which reads each `.drawio`'s companion `diagram_class` and applies the matching width/size ceiling. (The linter still evaluates only the `.drawio` source and companion, not the PNG; the raster gate is the pixel/byte enforcement point.)
 
@@ -400,7 +400,7 @@ endlegend
 - [ ] Grid layout: columns step 220, rows step 160; hub adjacent to the data column
 - [ ] Raster images carry non-empty alt text
 - [ ] Triple present: `.drawio` + `.drawio.png` + `.diagram.md`
-- [ ] Exported PNG within its class budget: flow ≤ 1200px / < 500KB, landscape ≤ 3600px / < 2MB; white background, 8px padding
+- [ ] Exported PNG within its class budget: flow ≤ 1600px / < 500KB, landscape ≤ 3600px / < 2MB; white background, 8px padding
 - [ ] Title cell: `<provider> <workload> — <boundary id> / <region> | <date> | vN`
 - [ ] Legend block present with all line styles, colors, and change markers
 - [ ] Cross-cloud: C4 container, per-profile icons/boundaries, ≤ 12 nodes, labeled edges

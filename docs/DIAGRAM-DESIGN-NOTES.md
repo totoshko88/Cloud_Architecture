@@ -79,7 +79,7 @@ without effort. Each is now a rule.
 - **Text boxes.** Flow and Legend share one width sized tight to the longest line (no wrap),
   each height fit to its own content, with uniform inner padding — so the pair reads as one
   aligned block and no text abuts a border.
-- **Class-aware raster budget.** A `flow` raster stays ≤ 1200px; a `landscape` exports wide
+- **Class-aware raster budget.** A `flow` raster stays ≤ 1600px; a `landscape` exports wide
   (≤ 3600px) so a 30-plus-node as-built stays legible instead of being shrunk illegibly.
 
 ## Verification

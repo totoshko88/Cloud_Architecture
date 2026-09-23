@@ -217,7 +217,7 @@ keeps its exact behavior.
 | `orphan-landscape` | n/a | ERROR unless `summary_of` names a `flow` summary |
 | numbered flow markers | expected | optional (a landscape has no single path) |
 | `overlay-legend-coverage` | WARNING when overlay markers are used | WARNING when overlay markers are used |
-| raster budget (export guidance) | ≤ 1200px / < 500KB | ≤ 3600px / < 2MB (a wide as-built stays legible) |
+| raster budget (export guidance) | ≤ 1600px / < 500KB | ≤ 3600px / < 2MB (a wide as-built stays legible) |
 
 Rules:
 
