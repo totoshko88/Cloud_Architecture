@@ -71,7 +71,7 @@
         <mxCell id="flow-legend" parent="1" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF" value="Flow&#xa;1. EKS enqueues agent task on SQS&#xa;2. SQS delivers queued message to Lambda (async)&#xa;3. Lambda invokes Bedrock model inference&#xa;4. Lambda persists conversation to RDS&#xa;5. Lambda stores generated artifact in S3&#xa;6. Lambda reads API credentials from Secrets Manager" vertex="1">
           <mxGeometry height="150" width="330" x="1460" y="120" as="geometry" />
         </mxCell>
-        <mxCell id="legend" parent="1" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF" value="Legend&#xa;Solid line = primary flow&#xa;Dashed line = asynchronous / event-driven flow&#xa;Red = blocked / missing / disabled&#xa;🆕 = new in version N&#xa;🔄 = changed in version N&#xa;Dashed green boundary = stack boundary&#xa;Dashed blue boundary = Network Boundary&#xa;Numbered markers (1..N) = ordered data flow steps; see Flow list" vertex="1">
+        <mxCell id="legend" parent="1" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF" value="Legend&#xa;Solid line = primary flow&#xa;Dashed line = asynchronous / event-driven flow&#xa;Red = blocked / missing / disabled&#xa;🆕 = new in version N&#xa;🔄 = changed in version N&#xa;Dashed outer boundary = stack Boundary (profile brand color)&#xa;Dashed inner boundary = Network Boundary (profile brand color)&#xa;Numbered markers (1..N) = ordered data flow steps; see Flow list" vertex="1">
           <mxGeometry height="200" width="330" x="1460" y="300" as="geometry" />
         </mxCell>
       </root>

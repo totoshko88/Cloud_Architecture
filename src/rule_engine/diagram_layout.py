@@ -502,8 +502,8 @@ STANDARD_LEGEND_LINES = (
     "Red = blocked / missing / disabled",
     "🆕 = new in version N",
     "🔄 = changed in version N",
-    "Dashed green boundary = stack boundary",
-    "Dashed blue boundary = Network Boundary",
+    "Dashed outer boundary = stack Boundary (profile brand color)",
+    "Dashed inner boundary = Network Boundary (profile brand color)",
     "Numbered markers (1..N) = ordered data flow steps; see Flow list",
 )
 
