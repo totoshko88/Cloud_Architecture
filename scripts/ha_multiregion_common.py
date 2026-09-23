@@ -257,6 +257,65 @@ LANDSCAPE_FLOW = [
     "12. Regional queue drives the worker (async)",
 ]
 
+# --------------------------------------------------------------------------- #
+# Space-optimisation transform (reviewer, 2026-09-23):
+#
+# Balance the horizontal space rather than leaving a large dead gap between the
+# two region bands while the nodes hug the left of each VPC. Region A's inner
+# nodes are nudged RIGHT so they centre within their VPC (even left/right
+# padding), and region B's whole band is pulled LEFT so the inter-region gap
+# shrinks to one consistent step. Both shifts are a whole grid multiple
+# (``REGION_SHIFT`` = 120) so every origin stays on the grid; the region divide
+# ``REGION_SPLIT_X`` classifies which x belongs to region A vs B (nodes,
+# container boxes, and each edge waypoint independently, so a cross-region edge
+# keeps each end anchored to its shifted node). This encodes the rule "centre
+# nodes within their boundary; keep sibling region bands one consistent gap
+# apart" (see diagram-standards → Container Nesting).
+REGION_SHIFT = 120
+REGION_SPLIT_X = 1150  # region A < this <= region B
+
+
+def _shift_x(x: float) -> float:
+    return x - REGION_SHIFT if x >= REGION_SPLIT_X else x + REGION_SHIFT
+
+
+def _compact_landscape():
+    """Apply the region-balance transform in place to the landscape tables."""
+    global LANDSCAPE_NODES, LANDSCAPE_BOUNDARY_BOXES, LANDSCAPE_EDGES
+    # Edge / account row (wafedge/dns/cdn/audit) is account-level, above the
+    # VPCs, and is NOT shifted — only the in-VPC region nodes move.
+    _edge_row = {"wafedge", "dns", "cdn", "audit"}
+    LANDSCAPE_NODES = [
+        (nid, role, (x if nid in _edge_row else int(_shift_x(x))), y)
+        for nid, role, x, y in LANDSCAPE_NODES
+    ]
+    # Region-A boxes STAY put (so region-A nodes gain even left/right padding as
+    # they move right — the centering effect). Region-B boxes move LEFT to close
+    # the inter-region gap. Their widths grow by REGION_SHIFT so the shifted-right
+    # region-A nodes and shifted-left region-B nodes still sit inside with padding.
+    def _shift_box(cid, kind, x, y, w, h):
+        if cid == "boundary-account":
+            return None  # recomputed below to wrap the shifted VPC bands snugly
+        if x >= REGION_SPLIT_X:
+            return (cid, kind, int(x - REGION_SHIFT), y, w, h)  # region B: move left
+        return (cid, kind, x, y, int(w + REGION_SHIFT), h)      # region A: widen right
+    _acct = next(b for b in LANDSCAPE_BOUNDARY_BOXES if b[0] == "boundary-account")
+    shifted = [_shift_box(*b) for b in LANDSCAPE_BOUNDARY_BOXES if b[0] != "boundary-account"]
+    # Account wraps every VPC band + one grid step of padding on each side.
+    _left = min(x for _, _, x, _, _, _ in shifted)
+    _right = max(x + w for _, _, x, _, w, _ in shifted)
+    _acct = ("boundary-account", "account", _left - 30, _acct[3],
+             (_right + 30) - (_left - 30), _acct[5])
+    LANDSCAPE_BOUNDARY_BOXES = [_acct] + shifted
+    LANDSCAPE_EDGES = [
+        (eid, src, tgt, marker, dashed, exit_, entry,
+         [(int(_shift_x(px)), py) for px, py in points])
+        for eid, src, tgt, marker, dashed, exit_, entry, points in LANDSCAPE_EDGES
+    ]
+
+
+_compact_landscape()
+
 # Node display labels (provider-neutral role names; concrete service names live
 # in the companion prose).
 LABELS: Dict[str, str] = {
@@ -366,8 +425,8 @@ def build_landscape(skin: ProviderSkin) -> str:
         diagram_id=f"{skin.provider}-ha-landscape",
         diagram_name=f"{skin.provider}-ha-multiregion-landscape",
         title=title, boundaries=boundaries, nodes=nodes, edges=_edges(LANDSCAPE_EDGES),
-        flow_lines=LANDSCAPE_FLOW, legend_x=2400, legend_y_flow=120,
-        legend_y_legend=460, page_w=2860, page_h=1680,
+        flow_lines=LANDSCAPE_FLOW, legend_x=2260, legend_y_flow=120,
+        legend_y_legend=460, page_w=2680, page_h=1680,
     )
 
 
