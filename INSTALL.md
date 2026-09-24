@@ -44,12 +44,15 @@ Follow these steps in order.
    pip install -e .
    ```
 
-4. **Verify the console scripts are on your `PATH`.** Both should resolve and print
-   usage:
+4. **Verify the console scripts are on your `PATH`.** These should resolve and print
+   usage (the full set the hooks, gate, and CI use):
 
    ```bash
    rule-engine-lint --help
    rule-engine-validate-schema --help
+   rule-engine-check-rasters --help        # class-aware exported-PNG budget
+   rule-engine-verify-icon --help          # every icon reference resolves
+   rule-engine-check-asset-paths --help    # mapping icon paths / OCI slugs exist
    ```
 
 5. **Run a baseline lint and schema check.** This confirms the engine can read the
@@ -82,11 +85,11 @@ Follow these steps in order.
    require this step.
 
 7. **Confirm the always-on steering documents are picked up.** Open the project in Kiro
-   and verify the five documents under `.kiro/steering/` (`diagram-standards.md`,
-   `inventory-standards.md`, `provider-profiles.md`, `kb-frontmatter.md`, and
-   `diagram-lint.md`) are active. Because they are always-on, every agent turn in the
-   workspace inherits the diagram, inventory, profile, frontmatter, and lint rules with no
-   further configuration.
+   and verify the six documents under `.kiro/steering/` (`diagram-standards.md`,
+   `inventory-standards.md`, `provider-profiles.md`, `kb-frontmatter.md`,
+   `diagram-lint.md`, and `asset-packs.md`) are active. Because they are always-on, every
+   agent turn in the workspace inherits the diagram, inventory, profile, frontmatter, lint,
+   and asset-pack rules with no further configuration.
 
 8. **Enable the Kiro hooks.** Confirm the hooks under `.kiro/hooks/` are active so quality
    gates run automatically:
@@ -95,7 +98,31 @@ Follow these steps in order.
    - `validate-on-task.kiro.hook` — runs the linter (`--all`) and schema validation after
      a task executes, and surfaces a blocking failure reason to the session.
 
+9. **(Optional) Use the custom agents.** Three purpose-built agents live under
+   `.kiro/agents/` and are picked up automatically when the project is open in Kiro
+   (switch to one with the agent selector):
+   - `diagram-author` — authors/regenerates the provider diagrams through the layout
+     engine and runs the full gate; `write`/`shell` are scoped to the build/gate commands.
+   - `inventory-collector` — strictly read-only inventory collection (no write tool; only
+     the profile-declared read-only verbs are permitted, every mutating verb is denied).
+   - `rule-engine-reviewer` — a read-only verification gate that judges publication
+     eligibility (lint / raster / icon / schema / tests) but never edits anything.
+
+   These are workspace-local (`.kiro/agents/`), so they ship with the repo and need no
+   extra setup. To make one available in any directory, copy it to `~/.kiro/agents/`.
+
+10. **(Optional) Install the Kiro power.** `powers/rule-engine-artifacts/` packages the
+    artifact-generation skill together with the read-only AWS-docs MCP server into one
+    shareable unit (`plugin.json`, following the
+    `https://agent-plugins.org/schemas/1.0.0/plugin.schema.json` schema). Point Kiro
+    Powers at that directory (or its public GitHub repository) to install the skill and MCP
+    server as a single power instead of the workspace-local copies. See
+    [`powers/rule-engine-artifacts/README.md`](powers/rule-engine-artifacts/README.md).
+
 Once these steps complete, the Rule Engine is installed and active: the steering rules
-govern generation, the hooks gate saves and task completion, and the CLIs are available
-for manual and CI use. See the [README](README.md) for a quick-start overview and links
-to each steering document.
+govern generation, the hooks gate saves and task completion, the custom agents provide
+least-privilege per-workflow configurations, and the CLIs are available for manual and CI
+use. See the [README](README.md) for a quick-start overview and links to each steering
+document, and [docs/KIRO-UNIVERSITY-COMPLIANCE.md](docs/KIRO-UNIVERSITY-COMPLIANCE.md) for
+how the spec, steering, hooks, tests, skill, MCP, agents, and power map to the Kiro
+University lessons.

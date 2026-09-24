@@ -1,0 +1,57 @@
+name: Feature request
+description: Suggest a new capability, a new provider, or an improvement to the rules, layout, or CLIs.
+title: "[Feature]: "
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. Please search
+        [existing issues](https://github.com/totoshko88/Cloud_Architecture/issues)
+        first in case it is already proposed.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What are you trying to do that the engine does not support today?
+      placeholder: I want to generate diagrams for a new provider that is not one of the five profiles...
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the capability you would like. For a new provider, note that this is a data change — a terminology row, container conventions, brand entry, read-only verbs, an icon mapping, and a golden example (see docs/add-a-provider.md).
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Any workarounds or alternative approaches you have thought about.
+    validations:
+      required: false
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Which part of the engine does this touch?
+      options:
+        - New provider profile
+        - Diagram standards / layout
+        - Lint ruleset
+        - Icon resolution / asset packs
+        - Inventory collection
+        - Frontmatter / knowledge base
+        - CLIs / tooling
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true

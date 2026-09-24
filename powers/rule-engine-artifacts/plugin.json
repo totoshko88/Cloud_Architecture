@@ -1,0 +1,35 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "rule-engine-artifacts",
+  "version": "1.0.0",
+  "description": "Generate and validate multi-cloud architecture diagrams (draw.io + companion docs), inventory snapshots, and versioned KB documents for the aws/azure/gcp/oci/generic provider profiles, with the built-in linter, raster gate, and icon verifier as the publication gate.",
+  "author": {
+    "name": "Cloud Architecture Rule Engine"
+  },
+  "keywords": [
+    "diagram",
+    "drawio",
+    "architecture",
+    "multicloud",
+    "aws",
+    "azure",
+    "gcp",
+    "oci",
+    "inventory",
+    "linter",
+    "icons",
+    "rule-engine"
+  ],
+  "skills": [
+    "skills/rule-engine-artifacts/SKILL.md"
+  ],
+  "mcpServers": {
+    "aws-docs": {
+      "command": "uvx",
+      "args": ["awslabs.aws-documentation-mcp-server@latest"],
+      "env": { "FASTMCP_LOG_LEVEL": "ERROR" },
+      "disabled": false,
+      "autoApprove": ["search_documentation", "read_documentation", "recommend"]
+    }
+  }
+}

@@ -47,6 +47,10 @@ install time, so every node renders the correct provider glyph — not a look-al
   - [`asset-packs.md`](.kiro/steering/asset-packs.md) — official provider icon-pack
     sources, layouts, and the built-in → official-asset → unresolved icon fallback order
 - `.kiro/hooks/` — `lint-on-save` and `validate-on-task` automation
+- `.kiro/agents/` — three purpose-built custom agents (`diagram-author`,
+  `inventory-collector`, `rule-engine-reviewer`) with least-privilege tool/permission scopes
+- `.kiro/skills/rule-engine-artifacts/` — the on-demand artifact-generation skill
+- `powers/rule-engine-artifacts/` — the skill + AWS-docs MCP packaged as a Kiro power
 - `.kiro/specs/` — the spec for this engine plus a reusable spec template under `_template/`
 - `mappings/` — per-provider icon/shape mapping files (`<provider>-icons.yaml`), the
   diagram-role table (`roles.yaml`), and the committed icon index built from the official
@@ -157,13 +161,45 @@ Validate the example normalized resources against the schema:
 rule-engine-validate-schema --schema schemas/inventory.schema.json --targets 'examples/**/*.json'
 ```
 
-The five steering documents in `.kiro/steering/` are always on, so once the project is
+The six steering documents in `.kiro/steering/` are always on, so once the project is
 open in a Kiro workspace every agent turn inherits the diagram, inventory, profile,
-frontmatter, and lint rules automatically.
+frontmatter, lint, and asset-pack rules automatically.
+
+## Custom agents, skill, and power
+
+Beyond the always-on steering, the workspace ships purpose-built Kiro configurations:
+
+- `.kiro/agents/` — three **custom agents**, each a least-privilege, per-workflow
+  configuration: [`diagram-author`](.kiro/agents/diagram-author.md) (authors/regenerates
+  diagrams and runs the gate), [`inventory-collector`](.kiro/agents/inventory-collector.md)
+  (strictly read-only collection — the `inventory-standards` zero-mutation contract encoded
+  as permissions), and [`rule-engine-reviewer`](.kiro/agents/rule-engine-reviewer.md)
+  (read-only verification gate).
+- `.kiro/skills/rule-engine-artifacts/SKILL.md` — the on-demand **skill** with the
+  artifact-generation workflow and the exact gate commands.
+- `powers/rule-engine-artifacts/` — the same skill + the read-only AWS-docs MCP server
+  packaged as a shareable **Kiro power** (`plugin.json`).
+
+See [Kiro University compliance](docs/KIRO-UNIVERSITY-COMPLIANCE.md) for how each maps to a
+lesson.
+
+## Community
+
+Contributions are welcome. Before you start, please read:
+
+- [Contributing Guide](CONTRIBUTING.md) — dev setup, the checks that gate every change, and how to add a provider
+- [Code of Conduct](CODE_OF_CONDUCT.md) — the Contributor Covenant we follow
+- [Security Policy](SECURITY.md) — how to report a vulnerability privately
+- [License](LICENSE) — MIT
+
+Open a [bug report or feature request](https://github.com/totoshko88/Cloud_Architecture/issues/new/choose),
+and send changes as a pull request using the
+[PR template](.github/PULL_REQUEST_TEMPLATE.md).
 
 ## Links
 
 - [Installation Guide](INSTALL.md) — prerequisites and ordered install/activate steps
+- [Kiro University compliance](docs/KIRO-UNIVERSITY-COMPLIANCE.md) — spec, steering, hooks, tests, skill, MCP, custom agents, and the packaged power mapped to each lesson
 - [Add a New Provider Runbook](docs/add-a-provider.md) — ordered steps to extend the engine with a new provider
 - [Diagram Design Notes](docs/DIAGRAM-DESIGN-NOTES.md) — the rationale behind the routing, icon-fidelity, and layout rules
 - [Architecture](docs/ARCHITECTURE.md) — data model, components, and the two output pipelines
