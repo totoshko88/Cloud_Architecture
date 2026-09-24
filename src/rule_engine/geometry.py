@@ -425,6 +425,26 @@ def check_exit_thirds(geo: DiagramGeometry, min_sep: float = 0.2) -> List[Tuple[
     return out
 
 
+def segment_crosses_box(
+    p: Tuple[float, float], q: Tuple[float, float], b: Box, inset: float = 2.0
+) -> bool:
+    """Return True when the straight segment ``p``→``q`` passes through box ``b``.
+
+    This is the **single** segment-sampling obstacle predicate: the straight run
+    is sampled at 61 evenly spaced points and a sample counts as a crossing only
+    when it lands strictly inside ``b`` shrunk by ``inset`` on every side, so a
+    mere graze of a border is not a crossing. :func:`check_edge_routing` uses it
+    to decide whether a waypoint-free edge cuts an unrelated node, and the layout
+    engine's routers reuse the *same* predicate as their obstacle test so the
+    router and the validator agree by construction (design.md → Routing)."""
+    for i in range(61):
+        px = p[0] + (q[0] - p[0]) * i / 60.0
+        py = p[1] + (q[1] - p[1]) * i / 60.0
+        if b.x + inset <= px <= b.right - inset and b.y + inset <= py <= b.bottom - inset:
+            return True
+    return False
+
+
 def check_edge_routing(geo: DiagramGeometry) -> List[Tuple[str, str]]:
     """Return ``(edge_id, reason)`` for edges that break routing rules.
 
@@ -458,12 +478,7 @@ def check_edge_routing(geo: DiagramGeometry) -> List[Tuple[str, str]]:
                 continue
             # Sample the straight segment; a 2px inset means a mere graze of a
             # border does not count as a crossing.
-            hit = any(
-                b.x + 2 <= p[0] + (q[0] - p[0]) * i / 60.0 <= b.right - 2
-                and b.y + 2 <= p[1] + (q[1] - p[1]) * i / 60.0 <= b.bottom - 2
-                for i in range(61)
-            )
-            if hit:
+            if segment_crosses_box(p, q, b):
                 out.append((e.id, f"straight-through-{other}"))
                 break
     return out

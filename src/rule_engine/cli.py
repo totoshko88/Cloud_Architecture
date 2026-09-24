@@ -517,6 +517,23 @@ def _is_scratch_copy(name: str) -> bool:
     return False
 
 
+def _is_reference_artifact(name: str) -> bool:
+    """True when a filename is a preserved ``-reference`` snapshot.
+
+    The hand-authored HA golden pair is frozen as ``NN-...-reference.drawio``
+    (plus its ``.drawio.png`` / ``.diagram.md`` companions) before the layout
+    engine takes over generation. A reference snapshot is deliberately kept
+    out of both the lint scan and any regeneration discovery: it is a
+    read-only comparison baseline, not a golden artifact to validate or
+    re-emit. The marker is the ``-reference`` stem suffix, matched before the
+    extension so ``02-aws-ha-multiregion-landscape-reference.drawio`` and its
+    ``-reference.drawio.png`` / ``-reference.diagram.md`` companions are all
+    excluded, while a legitimate name that merely contains the substring is
+    not (the suffix must terminate the stem)."""
+    stem = re.sub(r"\.[A-Za-z0-9.]+$", "", name)
+    return stem.endswith("-reference")
+
+
 def discover_artifacts(workspace_root: str) -> List[str]:
     """Return the sorted list of lintable ``.drawio``/Markdown/Snapshot files.
 
@@ -524,13 +541,15 @@ def discover_artifacts(workspace_root: str) -> List[str]:
     JSON files are all routed through the Linter so the ``secret-safety``
     CRITICAL gate actually runs in the CLI/CI ``--all`` path (REVIEW.md C3).
     Editor/file-manager duplicates (``… копія.drawio``, ``… - Copy.drawio``,
-    ``… (1).drawio``) are scratch, not golden artifacts, and are skipped.
+    ``… (1).drawio``) are scratch, not golden artifacts, and are skipped, as
+    are preserved ``-reference`` snapshots (frozen comparison baselines that
+    are neither linted nor regenerated).
     """
     found: List[str] = []
     for dirpath, dirnames, filenames in os.walk(workspace_root):
         dirnames[:] = [d for d in dirnames if d not in _EXCLUDED_DIRS]
         for name in filenames:
-            if _is_scratch_copy(name):
+            if _is_scratch_copy(name) or _is_reference_artifact(name):
                 continue
             low = name.lower()
             full = os.path.join(dirpath, name)

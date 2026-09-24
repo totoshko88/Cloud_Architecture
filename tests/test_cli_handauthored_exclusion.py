@@ -66,7 +66,11 @@ def test_file_mode_still_flags_generated_doc_without_frontmatter(tmp_path, capsy
 
 # --- scratch / duplicate file exclusion (v1.3.x) --------------------------- #
 
-from rule_engine.cli import _is_scratch_copy, discover_artifacts  # noqa: E402
+from rule_engine.cli import (  # noqa: E402
+    _is_reference_artifact,
+    _is_scratch_copy,
+    discover_artifacts,
+)
 
 
 def test_is_scratch_copy_flags_editor_duplicates():
@@ -94,3 +98,31 @@ def test_discover_artifacts_skips_scratch_copies(tmp_path):
     names = {os.path.basename(a) for a in found}
     assert "02-topic.drawio" in names
     assert not any("\u043a\u043e\u043f" in n or "copy" in n.lower() for n in names)
+
+
+# --- preserved -reference snapshot exclusion (lane-grid-layout-engine) ------ #
+
+
+def test_is_reference_artifact_flags_reference_snapshots():
+    # The frozen -reference triple (drawio + png + companion) is excluded.
+    assert _is_reference_artifact("02-aws-ha-multiregion-landscape-reference.drawio")
+    assert _is_reference_artifact("02-aws-ha-multiregion-landscape-reference.drawio.png")
+    assert _is_reference_artifact("02-aws-ha-multiregion-summary-reference.diagram.md")
+
+
+def test_is_reference_artifact_keeps_legitimate_names():
+    # A live golden artifact and a name that merely contains the substring
+    # (not as a terminating stem suffix) are NOT reference snapshots.
+    assert not _is_reference_artifact("02-aws-ha-multiregion-landscape.drawio")
+    assert not _is_reference_artifact("02-aws-ha-multiregion-summary.diagram.md")
+    assert not _is_reference_artifact("reference-architecture.drawio")
+
+
+def test_discover_artifacts_skips_reference_snapshots(tmp_path):
+    ex = tmp_path / "examples" / "aws"
+    _write(str(ex / "02-topic.drawio"), "<mxfile/>")
+    _write(str(ex / "02-topic-reference.drawio"), "<mxfile/>")
+    found = discover_artifacts(str(tmp_path))
+    names = {os.path.basename(a) for a in found}
+    assert "02-topic.drawio" in names
+    assert "02-topic-reference.drawio" not in names

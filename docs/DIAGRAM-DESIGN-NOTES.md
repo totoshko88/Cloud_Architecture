@@ -82,6 +82,79 @@ without effort. Each is now a rule.
 - **Class-aware raster budget.** A `flow` raster stays ≤ 1600px; a `landscape` exports wide
   (≤ 3600px) so a 30-plus-node as-built stays legible instead of being shrunk illegibly.
 
+## The layout is generated, not hand-authored
+
+Every rule above describes how a *good* diagram is shaped. For a long time the HA
+multi-region pair encoded that shape as **hand-authored coordinate tables** — every node
+`(x, y)` and every edge waypoint was a literal integer a human placed and tuned by eye in
+`scripts/ha_multiregion_common.py`. That worked, but it meant each readability fix was
+another round of manual waypoint tuning: exactly the over-engineering the routing rules
+exist to prevent. The declarative **layout engine** (`src/rule_engine/layout_engine.py`)
+replaces those tables. The two HA diagrams are now **declarations** with no coordinates in
+them at all (`src/rule_engine/ha_multiregion_spec.py`: `SUMMARY_SPEC`, `LANDSCAPE_SPEC`);
+the engine derives the geometry.
+
+The declaration is deliberately small. A node is a role + lane + region + slot; an edge is
+a source + target + marker; a container is a kind + region + parent. There is no field in
+which a coordinate *could* be written — coordinates are the engine's output, never its
+input. The four provider skins keep supplying only icons and labels, so the geometry is now
+identical across AWS, Azure, GCP, and OCI; only the glyphs differ.
+
+### The placement model — lane grid, not a coordinate table
+
+Placement is coordinate-free by construction. A node's **lane** (one of the eight canonical
+tiers) picks its position on the *primary* axis, and its **slot** picks its position on the
+*secondary* axis — rows-down-columns-across for a north-south landscape, columns-across-
+rows-down for a left-right flow. Origins are computed from the canonical `diagram_layout`
+constants (`COL_STEP`, `ROW_STEP`, `ICON_SIZE`, `GRID`), so every origin lands on the grid
+by construction and the two regions come out mirror-symmetric. Containers are then sized
+**bottom-up** around their children's footprints plus `CONTAINER_PAD`, peer bands are
+equalised to a common width, and each region's block is re-centred inside its VPC — the same
+"size a parent from its deepest child" and "equal-width bands" rules above, now executed
+rather than typed. Which node belongs to which AZ is **declared** on the node
+(`NodeSpec.container`), not inferred.
+
+### The routing model — the prose rules, made executable
+
+The contact-point ladder, corridor allocation, and per-class routing are the executable form
+of the edge-routing prose above. `select_contacts` / `spread_contacts` apply the exit/entry
+priority ladder and the distinct-same-side-exit rule (and raise on an over-connected fourth
+edge, rather than emitting a merged line). A `CorridorAllocator` hands out one grid-step
+corridor line per gap and widens the gap when it runs out, so parallel runs never merge.
+`classify_edge` sorts each edge into one of `straight` / `spine` / `fan-out-row` /
+`cross-region` / `back-edge`, and the matching `route_*` function emits corridor-aligned
+waypoints with the stair step and the clockwise obstacle detour — reusing the same
+`geometry.segment_crosses_box` predicate the linter uses, so "the edge crosses no icon" is
+tested with the same code that would later flag it. An edge that classifies as none *raises*
+(fail-honest), the same philosophy as an unresolved icon: no guessed route ever ships.
+
+### The engine produces a candidate and asks the validators
+
+The engine does **not** re-implement the constraints. It produces a candidate layout, then
+`_run_oracle` serialises it (via `build_diagram` + `build_geometry`) and runs the existing
+geometry `check_*` set — the very validators the linter uses — as the acceptance oracle.
+Where a validator reports a fixable finding, a small named repair adjusts the candidate
+(`corridor-sharing` → next lane; `container-padding` → grow the box; off-centre →
+re-centre) and the loop re-validates; an over-connected node is unfixable and raises. The
+loop is bounded and deterministic, so the same declaration yields byte-identical geometry
+every time. This is the key design choice: the routing rules live in one place — the
+validators — and the engine is their inverse, not a second copy of them.
+
+### Two lessons the migration surfaced
+
+Building the engine against the reference exposed two placement defects worth recording,
+because both are non-obvious and both are now encoded:
+
+- **Region B must offset along the *secondary* axis by a content-derived step.** A fixed
+  region step cannot clear a region whose block spans several lanes on the secondary axis —
+  the passive band collided with the active one. The offset is computed from region A's
+  actual extent (`_region_secondary_offset`) and grid-aligned, so the two bands always sit
+  disjoint regardless of how many nodes a lane holds.
+- **AZ membership must be *declared*, not guessed from tier geometry.** Inferring which AZ a
+  node belongs to from its tier produced overlapping AZ boxes when two tiers shared a band.
+  Membership is now an explicit `NodeSpec.container`, with a geometric fallback only when a
+  node declares none.
+
 ## Verification
 
 The linter enforces the geometry rules (`grid-alignment`, `node-overlap`,

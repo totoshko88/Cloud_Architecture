@@ -1,0 +1,243 @@
+{
+  "pbtResults": {},
+  "executionHistory": {
+    "1. Scaffold the module and declaration data model": [
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790212483226
+      },
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790212492049
+      },
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790212601229
+      }
+    ],
+    "2. Node placement on the lane grid": [
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790212483273
+      },
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790212604480
+      },
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790212744893
+      }
+    ],
+    "3. Container sizing, equal width, and block centring": [
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790212483317
+      },
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790212748171
+      },
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790213255953
+      }
+    ],
+    "4. Contact-point selection (exit/entry ladder)": [
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790212483357
+      },
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790213259399
+      },
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790213461738
+      }
+    ],
+    "5. Corridor allocator": [
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790212483397
+      },
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790213465031
+      },
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790213680211
+      }
+    ],
+    "6. Edge classifier and per-class routers": [
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790212483439
+      },
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790213683727
+      },
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790214049764
+      }
+    ],
+    "7. Legend placement": [
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790212483475
+      },
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790214053294
+      },
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790214209080
+      }
+    ],
+    "8. Oracle adapter and repair loop": [
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790212483515
+      },
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790214212630
+      },
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790237809132
+      }
+    ],
+    "9. Property-based invariant test": [
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790212483551
+      },
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790237812724
+      },
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790238022923
+      }
+    ],
+    "10. Preserve the reference diagrams": [
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790212483591
+      },
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790238026941
+      },
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790238409870
+      }
+    ],
+    "11. Author the HA declarations": [
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790212483630
+      },
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790238413566
+      },
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790238729853
+      }
+    ],
+    "12. Migrate the generator to the engine": [
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790212483671
+      },
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790238733711
+      },
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790241463639
+      }
+    ],
+    "13. Full verification and reference comparison": [
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790212483708
+      },
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790241467418
+      },
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790241644889
+      }
+    ],
+    "14. Documentation and changelog": [
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790212483748
+      },
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790241648744
+      },
+      {
+        "executionId": "d046a3b9-7da7-4d4c-8ebc-8f51ef7e2db3",
+        "chatSessionId": "sess_366e3ae0-b71c-49dc-819e-f5e18fc8642c",
+        "timestamp": 1790241893170
+      }
+    ]
+  }
+}

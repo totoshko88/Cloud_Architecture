@@ -160,9 +160,14 @@ def check_rasters(
     # drafts, not publishable artifacts — the linter's discover_artifacts skips
     # them, and the raster gate uses the same exclusion so a hand-edited copy
     # does not fail the triple/PNG check.
-    from rule_engine.cli import _is_scratch_copy
+    # Preserved ``-reference`` snapshots (frozen comparison baselines) are
+    # likewise excluded from the raster gate: like scratch copies, they are not
+    # publishable golden artifacts, so a reference triple must not fail the
+    # triple/PNG budget check nor be treated as a diagram to regenerate.
+    from rule_engine.cli import _is_reference_artifact, _is_scratch_copy
     for src in sorted(glob.glob(str(examples_dir / "**" / "*.drawio"), recursive=True)):
-        if _is_scratch_copy(os.path.basename(src)):
+        base = os.path.basename(src)
+        if _is_scratch_copy(base) or _is_reference_artifact(base):
             continue
         png = src + ".png"
         rel_src = os.path.relpath(src, repo_root)
