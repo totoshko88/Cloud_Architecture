@@ -156,7 +156,14 @@ def check_rasters(
     examples_dir = Path(examples_dir)
     repo_root = Path(repo_root)
     refs: List[RasterRef] = []
+    # Scratch/editor duplicates ("… копія", "… copy", "… (2)") are working
+    # drafts, not publishable artifacts — the linter's discover_artifacts skips
+    # them, and the raster gate uses the same exclusion so a hand-edited copy
+    # does not fail the triple/PNG check.
+    from rule_engine.cli import _is_scratch_copy
     for src in sorted(glob.glob(str(examples_dir / "**" / "*.drawio"), recursive=True)):
+        if _is_scratch_copy(os.path.basename(src)):
+            continue
         png = src + ".png"
         rel_src = os.path.relpath(src, repo_root)
         rel_png = os.path.relpath(png, repo_root)

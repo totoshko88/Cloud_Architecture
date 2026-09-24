@@ -79,6 +79,7 @@ RULE_EDGE_DIRECTION = "edge-direction"
 RULE_TEXT_PADDING = "text-padding"
 RULE_CORRIDOR_SHARING = "corridor-sharing"
 RULE_EDGE_FLOAT = "edge-float"
+RULE_EXIT_THIRDS = "exit-thirds"
 
 # Severity assigned to each rule when its condition holds (authoritative table).
 RULE_SEVERITIES: Dict[str, Severity] = {
@@ -112,6 +113,10 @@ RULE_SEVERITIES: Dict[str, Severity] = {
     RULE_TEXT_PADDING: Severity.WARNING,
     RULE_CORRIDOR_SHARING: Severity.WARNING,
     RULE_EDGE_FLOAT: Severity.WARNING,
+    # Same-side fan-out must use the centred / even-thirds split, and a side may
+    # carry at most three exits (diagram-standards → Label-safe exits). A WARNING
+    # for both classes: it surfaces cramped or lopsided fan-outs without blocking.
+    RULE_EXIT_THIRDS: Severity.WARNING,
 }
 
 # Maximum node count for a single diagram (Requirement 1 AC4 / 7 AC4).
@@ -639,6 +644,15 @@ def _check_corridor_sharing(a: Artifact) -> bool:
     return bool(_geo.check_corridor_sharing(geo))
 
 
+def _check_exit_thirds(a: Artifact) -> bool:
+    """exit-thirds: same-side fan-out is not centred / even-thirds, or >3 exits (WARNING)."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    return bool(_geo.check_exit_thirds(geo))
+
+
 def _check_edge_float(a: Artifact):
     """edge-float: an edge declares no explicit exit/entry contact point.
 
@@ -726,6 +740,7 @@ _RULES = (
     (RULE_TEXT_PADDING, _check_text_padding),
     (RULE_CORRIDOR_SHARING, _check_corridor_sharing),
     (RULE_EDGE_FLOAT, _check_edge_float),
+    (RULE_EXIT_THIRDS, _check_exit_thirds),
     (RULE_ORPHAN_LANDSCAPE, _check_orphan_landscape),
     (RULE_OVERLAY_LEGEND_COVERAGE, _check_overlay_legend_coverage),
 )
@@ -964,6 +979,7 @@ __all__ = [
     "RULE_TEXT_PADDING",
     "RULE_CORRIDOR_SHARING",
     "RULE_EDGE_FLOAT",
+    "RULE_EXIT_THIRDS",
     "LANDSCAPE_NODE_WARN",
     "LANDSCAPE_NODE_ERROR",
     "DIAGRAM_CLASS_FLOW",

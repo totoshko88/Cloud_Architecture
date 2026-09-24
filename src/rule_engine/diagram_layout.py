@@ -525,6 +525,7 @@ def build_diagram(
     legend_x: int,
     legend_y_flow: int = 120,
     legend_y_legend: int = 360,
+    legend_w: int | None = None,
     page_w: int = 1850,
     page_h: int = 950,
 ) -> str:
@@ -558,8 +559,20 @@ def build_diagram(
     # then the SAME width is applied to both so the pair reads as one aligned
     # block (diagram-standards → Legend/Flow furniture). ~6.6px per 12px glyph +
     # 2× the grid-step inner padding, rounded up to the grid.
-    def _text_h(lines: Sequence[str]) -> int:
-        return len(list(lines)) * 16 + 2 * GRID
+    #: usable characters per line at a given box width (glyph ~5.6px + padding).
+    def _chars_per_line(width: int) -> int:
+        return max(1, int((width - 2 * GRID) / 5.6))
+
+    def _text_h(lines: Sequence[str], width: int | None = None) -> int:
+        # One 12px line ~= 16px of leading, plus one grid step of padding top and
+        # bottom. When a narrow ``width`` is set, a line longer than the box wraps,
+        # so count the wrapped visual lines (the box grows taller, not wider).
+        if width is None:
+            visual = len(list(lines))
+        else:
+            cpl = _chars_per_line(width)
+            visual = sum(max(1, -(-len(s) // cpl)) for s in lines)
+        return visual * 16 + 2 * GRID
 
     def _text_w(*line_groups: Sequence[str]) -> int:
         longest = max((len(s) for grp in line_groups for s in grp), default=20)
@@ -569,9 +582,12 @@ def build_diagram(
         raw = int(longest * 5.6) + 2 * GRID
         return int(-(-raw // GRID) * GRID)  # round up to a grid multiple
 
-    box_w = _text_w(flow_lines, STANDARD_LEGEND_LINES)
-    parts.append(text_cell("flow-legend", flow_lines, legend_x, legend_y_flow, box_w, _text_h(flow_lines)))
-    parts.append(text_cell("legend", STANDARD_LEGEND_LINES, legend_x, legend_y_legend, box_w, _text_h(STANDARD_LEGEND_LINES)))
+    # A caller may pin a narrower ``legend_w`` (the Flow/Legend blocks then wrap
+    # and grow taller instead of running wide into the diagram body); otherwise
+    # size to the longest line with no wrap.
+    box_w = legend_w if legend_w is not None else _text_w(flow_lines, STANDARD_LEGEND_LINES)
+    parts.append(text_cell("flow-legend", flow_lines, legend_x, legend_y_flow, box_w, _text_h(flow_lines, legend_w)))
+    parts.append(text_cell("legend", STANDARD_LEGEND_LINES, legend_x, legend_y_legend, box_w, _text_h(STANDARD_LEGEND_LINES, legend_w)))
     parts.append(
         "      </root>\n    </mxGraphModel>\n  </diagram>\n</mxfile>\n"
     )

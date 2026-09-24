@@ -99,16 +99,24 @@ SUMMARY_EDGES: List[tuple] = [
     # point and drops STRAIGHT DOWN (waypoint at the same x as the exit) before
     # turning, so there is no diagonal kink; the two use different corridor rows
     # (y=230 / y=250) so their horizontals never merge.
-    ("s1", "dns", "lb_a", "1", False, (0.35, 1.0), (0.5, 0.0), [(727, 230), (399, 230)]),
+    # DNS fans out DOWN to both regions; two exits on the bottom face take the
+    # canonical even-thirds split for two (0.25 / 0.75), each dropping straight
+    # down before turning into its own corridor row (y=230 / y=250).
+    ("s1", "dns", "lb_a", "1", False, (0.25, 1.0), (0.5, 0.0), [(720, 230), (399, 230)]),
     ("s2", "lb_a", "app_a", "2", False, (0.5, 1.0), (0.5, 0.0), []),
+    # db_a sits DIRECTLY BELOW app_a (both at x=360), so edge 3 is a STRAIGHT
+    # vertical straight down the centre — the shortest, most readable path (a
+    # straight-line target keeps the centre; see diagram-standards → Distinct
+    # same-side exits). The object-store back-edge (edge 4) exits the distinct
+    # left-third 0.25, so the two bottom exits do not merge.
     ("s3", "app_a", "db_a", "3", False, (0.5, 1.0), (0.5, 0.0), []),
     # app -> object-store sits to app's LEFT (a back-reference). Loop CLOCKWISE
-    # UNDER the row: exit app's bottom-left (distinct from edge 3's bottom-centre
-    # exit), drop below the row, run left in a corridor (x=100, in the boundary|obj
+    # UNDER the row: exit app's bottom-left third (0.25, distinct from edge 3's
+    # 0.75), drop below the row, run left in a corridor (x=100, in the boundary|obj
     # gap), rise to the object-store's mid, and enter its LEFT face. Stays clear of
     # app's icon and does not overlap the app->db spine (edge 3).
     ("s4", "app_a", "obj_a", "4", False, (0.25, 1.0), (0.0, 0.5), [(379, 650), (100, 650), (100, 559)]),
-    ("s5", "dns", "lb_b", "5", True, (0.65, 1.0), (0.5, 0.0), [(751, 250), (1079, 250)]),
+    ("s5", "dns", "lb_b", "5", True, (0.75, 1.0), (0.5, 0.0), [(758, 250), (1079, 250)]),
     ("s6", "lb_b", "app_b", "6", False, (0.5, 1.0), (0.5, 0.0), []),
     ("s7", "app_b", "db_b", "7", False, (0.5, 1.0), (0.5, 0.0), []),
     ("s8", "app_b", "obj_b", "8", False, (1.0, 0.5), (0.0, 0.5), []),
@@ -183,26 +191,27 @@ LANDSCAPE_BOUNDARY_BOXES: List[Tuple[str, str, int, int, int, int]] = [
     ("boundary-az-b2", "az", 1390, 1170, 860, 380),
 ]
 LANDSCAPE_EDGES: List[tuple] = [
-    ("l1", "dns", "lb_a", "1", False, (0.5, 1.0), (0.5, 0.0), [(399, 330), (159, 330)]),
-    # Standby back-edge turns ONE column beyond its source (x=480, just right of
-    # dns@360) and crosses in a mid corridor (y=300) — not at the far passive
-    # column — so it is not the longest, most border-crossing line on the canvas.
-    ("l2", "dns", "lb_b", "2", True, (1.0, 0.5), (0.5, 0.0), [(480, 159), (480, 300), (1459, 300)]),
-    # Spine hop: lb_a exits its RIGHT into the gap corridor one column beside the
-    # LB column (x=240, between lb@120 and cache@360), drops to the app row, and
-    # enters app_a1's top — never a straight vertical down the node column.
-    ("l3", "lb_a", "app_a1", "3", False, (1.0, 0.5), (0.5, 0.0), [(240, 459), (240, 700), (159, 700)]),
-    # lb_a -> app_a2 (AZ-2, two tiers down): step sideways into the app|cache gap
-    # corridor (x=280, distinct from the x=240 spine lane) BEFORE the long drop,
-    # then one clean vertical to the AZ-2 row and enter app_a2's top — the vertical
-    # sits in a column gap, not glued to the VPC border as a rail parallel to the
-    # app column, and the edge makes the fewest turns (step, drop, step-in).
-    # lb_a -> app_a2 (two tiers down). The whole app_a1 fan-out (5/6/8) occupies
-    # the gaps and below-row lanes to the RIGHT of the app column (x >= 159), so
-    # this spine takes the RESERVED LEFT corridor (x=100, centered in the vpc|app
-    # gap 60..120) straight down — the only lane that crosses none of the fan-out
-    # horizontals — and enters app_a2 from the LEFT. One vertical, one step in.
-    ("l4", "lb_a", "app_a2", "4", False, (0.25, 1.0), (0.0, 0.5), [(100, 540), (100, 1239)]),
+    # Waypoints below are authored in RAW (pre-region-shift) coordinates and are
+    # moved into place by _compact_landscape's _shift_x, exactly like the nodes —
+    # so they reproduce the reviewer's hand-corrected copy after the shift. RAW
+    # region-A: app_a1@120(r198), cache@360, db@600, obj@840, lb_a@120(r198).
+    # l1: DNS → primary LB. Exit RIGHT (label-safe) with a minimal step out, one
+    # turn down into the pre-LB corridor y=330, and into lb_a's top.
+    ("l1", "dns", "lb_a", "1", False, (1.0, 0.62), (0.5, 0.0), [(360, 168), (360, 330), (159, 330)]),
+    # l2: standby back-edge to the passive LB, in a corridor ABOVE l1 (y=250) that
+    # clears the cdn icon: its vertical sits LEFT of cdn and its horizontal BELOW
+    # cdn, so it never rides over cdn. Exits dns's upper-right (0.32, distinct from
+    # l1's 0.62 so the two do not merge) and enters lb_b's top.
+    ("l2", "dns", "lb_b", "2", True, (1.0, 0.32), (0.5, 0.0), [(400, 145), (400, 250), (1459, 250)]),
+    # l3: spine hop lb_a → app_a1. Exit RIGHT, drop in the gap corridor beside the
+    # LB column (RAW x=280, the lb|cache gap), turn LEFT in the roomy band ABOVE
+    # az-a1 (y=640) and enter app_a1's top — the left turn where there is space.
+    ("l3", "lb_a", "app_a1", "3", False, (1.0, 0.5), (0.5, 0.0), [(280, 459), (280, 640), (159, 640)]),
+    # l4: lb_a → app_a2 (two tiers below, same column blocked by app_a1/api_a1).
+    # Exit RIGHT below l3 (0.72), step further LEFT into the reserved corridor
+    # (RAW x=80, the vpc|app gap) — the one lane crossing none of app_a1's fan-out
+    # — drop the full height, enter app_a2's LEFT. Turn over az (y=600).
+    ("l4", "lb_a", "app_a2", "4", False, (1.0, 0.72), (0.0, 0.5), [(240, 476), (240, 600), (80, 600), (80, 1239)]),
     # In-AZ edges use distinct below-row corridors (y 830 / 850) so no two share
     # a lane; app_a1 fans out to cache (adjacent, direct) and to db/obj via a
     # side corridor below the icon row rather than straight through cache/db.
@@ -213,32 +222,35 @@ LANDSCAPE_EDGES: List[tuple] = [
     # the row (one per target) instead of stacking beside the source, and each
     # horizontal is only as long as it must be (see diagram-standards → Fan-out
     # along a row).
-    # app_a1 fans out with DISTINCT exit points so no two edges leave glued
-    # together: cache (adjacent) exits right-top third (1.0,0.33); db exits
-    # right-bottom third (1.0,0.66); obj exits the BOTTOM. Each is >= a third
-    # apart, so the eye separates them at the source.
-    ("l6", "app_a1", "cache_a1", "6", False, (1.0, 0.33), (0.0, 0.5), []),
-    # db: exit right-bottom third, step into the gap (x=240), drop to lane y=845,
-    # across, up-turn x=560 (gap before db@600), enter db left.
-    ("l5", "app_a1", "db_a1", "5", False, (1.0, 0.66), (0.0, 0.5), [(240, 771), (240, 845), (560, 845), (560, 759)]),
-    ("l7", "db_a1", "db_a2", "7", True, (0.5, 1.0), (0.5, 0.0), [(639, 1130)]),
-    # obj: exit the BOTTOM (0.5,1.0) and go straight DOWN first, THEN turn right
-    # (stair from the bottom, not a corner) — own lane y=880 (distinct from l5's
-    # 845), up-turn x=800 (gap before obj@840), enter obj left.
-    ("l8", "app_a1", "obj_a1", "8", False, (0.5, 1.0), (0.0, 0.5), [(159, 880), (800, 880), (800, 759)]),
-    # Spine hop mirror in region B: corridor at x=1540 (between lb_b@1420 and
-    # cache_b1@1660), same right-exit / drop / enter-top shape as l3.
-    ("l9", "lb_b", "app_b1", "9", False, (1.0, 0.5), (0.5, 0.0), [(1540, 459), (1540, 700), (1459, 700)]),
-    # Cross-region replication edges run in their OWN dedicated corridors above
-    # the AZ boxes (y 650 / 670), one lane each, never sharing an in-AZ lane.
-    # They exit the source's right (contract), rise into their corridor, run
-    # across, and enter the target's top (left/top-compliant).
-    # Cross-region edges step OUT sideways from the source's right (into the gap:
-    # db@600 right=678 -> x=720; obj@840 right=918 -> x=960) BEFORE turning up into
-    # their corridor — the vertical is not glued to the node edge (stair), and the
-    # two corridors (y=670 / y=650) stay one lane each.
-    ("l10", "db_a1", "db_b1", "10", True, (1.0, 0.25), (0.5, 0.0), [(720, 739), (720, 670), (1939, 670)]),
-    ("l11", "obj_a1", "obj_b1", "11", True, (1.0, 0.25), (0.5, 0.0), [(960, 739), (960, 650), (2179, 650)]),
+    # app_a1 fans out along its RIGHT side, top→bottom, matching the reviewer's
+    # copy: cache (nearest) exits the upper third and runs a STRAIGHT horizontal;
+    # db exits the middle and obj exits the lower third, each in its OWN below-row
+    # lane, turning DOWN into the gap immediately LEFT of its target (late turn,
+    # close to the target — not early beside the source). The three exits are
+    # distinct (≥ ⅕ apart) so they never merge; the straight cache line reads
+    # cleanest at the glyph (see diagram-standards → Distinct same-side exits).
+    #   cache: upper third (0.25) → straight into cache's left (same row).
+    ("l6", "app_a1", "cache_a1", "6", False, (1.0, 0.25), (0.0, 0.25), []),
+    #   db: middle (0.5) → drop in the app|cache gap corridor (RAW x=280) → lane
+    #   y=845 → down-turn RAW x=560 (gap just before db@600) → enter db left.
+    ("l5", "app_a1", "db_a1", "5", False, (1.02, 0.5), (0.0, 0.5), [(280, 760), (280, 845), (560, 845), (560, 759)]),
+    #   in-region standby replication: near-straight down, vertical nudged one px
+    #   off db's centre (RAW x=640) so it reads distinct from db's own glyph column.
+    ("l7", "db_a1", "db_a2", "7", True, (0.5, 1.0), (0.5, 0.0), [(639, 1130), (640, 1130), (640, 1200)]),
+    #   obj: lower third (0.75) → step down into corridor RAW x=240 (distinct from
+    #   l5's x=280) → own lane y=880 (below l5's 845) → down-turn RAW x=800 (gap
+    #   just before obj@840) → enter obj left.
+    ("l8", "app_a1", "obj_a1", "8", False, (1.0, 0.75), (0.0, 0.5), [(198, 780), (240, 780), (240, 880), (800, 880), (800, 759)]),
+    # l9: spine hop mirror in region B (RAW x=1540, the lb_b|cache_b1 gap), same
+    # right-exit / drop / turn-left-over-az (y=600) / enter-top shape as l3.
+    ("l9", "lb_b", "app_b1", "9", False, (1.0, 0.5), (0.5, 0.0), [(1540, 459), (1540, 600), (1459, 600)]),
+    # Cross-region replication edges exit the source's RIGHT MIDDLE (0.5), step
+    # out into the gap, rise into their own corridor (y=670 / y=650, one lane
+    # each), run across, and enter the target's TOP. RAW: db_a1@600(r678) steps to
+    # x=720; obj_a1@840(r918) steps to x=1040; targets db_b1@1900 (top-c 1939),
+    # obj_b1@2140 (top-c 2179). l11 makes its final drop into obj_b1's top.
+    ("l10", "db_a1", "db_b1", "10", True, (1.0, 0.5), (0.5, 0.0), [(720, 759), (720, 670), (1939, 670)]),
+    ("l11", "obj_a1", "obj_b1", "11", True, (1.0, 0.5), (0.5, 0.0), [(1040, 759), (1040, 650), (2179, 650), (2179, 720)]),
     ("l12", "queue_a", "fn_a", "12", True, (1.0, 0.5), (0.0, 0.5), []),
 ]
 LANDSCAPE_FLOW = [
@@ -289,16 +301,21 @@ def _compact_landscape():
         (nid, role, (x if nid in _edge_row else int(_shift_x(x))), y)
         for nid, role, x, y in LANDSCAPE_NODES
     ]
-    # Region-A boxes STAY put (so region-A nodes gain even left/right padding as
-    # they move right — the centering effect). Region-B boxes move LEFT to close
-    # the inter-region gap. Their widths grow by REGION_SHIFT so the shifted-right
-    # region-A nodes and shifted-left region-B nodes still sit inside with padding.
+    # Symmetric widen-toward-the-centre so BOTH region bands end the SAME width
+    # (the reviewer's goal: equal-size VPC/AZ boxes, not a narrower passive
+    # region). Region A keeps its left edge and grows its right edge by
+    # REGION_SHIFT; region B keeps its right edge and grows its left edge by
+    # REGION_SHIFT (move left AND widen). Each region's inner nodes were shifted
+    # toward the centre by REGION_SHIFT, so both stay centred with equal padding,
+    # and the two bands are mirror images of identical width.
     def _shift_box(cid, kind, x, y, w, h):
         if cid == "boundary-account":
             return None  # recomputed below to wrap the shifted VPC bands snugly
         if x >= REGION_SPLIT_X:
-            return (cid, kind, int(x - REGION_SHIFT), y, w, h)  # region B: move left
-        return (cid, kind, x, y, int(w + REGION_SHIFT), h)      # region A: widen right
+            # region B: keep the right edge, grow the left edge inward.
+            return (cid, kind, int(x - REGION_SHIFT), y, int(w + REGION_SHIFT), h)
+        # region A: keep the left edge, grow the right edge inward.
+        return (cid, kind, x, y, int(w + REGION_SHIFT), h)
     _acct = next(b for b in LANDSCAPE_BOUNDARY_BOXES if b[0] == "boundary-account")
     shifted = [_shift_box(*b) for b in LANDSCAPE_BOUNDARY_BOXES if b[0] != "boundary-account"]
     # Account wraps every VPC band + one grid step of padding on each side.
@@ -310,6 +327,55 @@ def _compact_landscape():
     LANDSCAPE_EDGES = [
         (eid, src, tgt, marker, dashed, exit_, entry,
          [(int(_shift_x(px)), py) for px, py in points])
+        for eid, src, tgt, marker, dashed, exit_, entry, points in LANDSCAPE_EDGES
+    ]
+    _centre_regions_in_vpc()
+
+
+# Icon footprint (must match diagram_layout.ICON size) and grid step; used to
+# centre nodes on the grid.
+_ICON = 78
+_GRID = 10
+
+
+def _centre_regions_in_vpc():
+    """Slide each region's service nodes (and its edge waypoints) so the block of
+    nodes is symmetric inside its VPC box, snapped to the grid.
+
+    The region-balance widen leaves each region's nodes hugging one side of its
+    VPC (region A to the left, region B to the right). Here every region is
+    re-centred as a whole: compute the block's node centre and the VPC-box
+    centre, and shift the block by the grid-rounded delta. Whole-block shift keeps
+    every hand-tuned edge shape intact (nodes and their waypoints move together),
+    and both regions become mirror-symmetric with equal left/right padding.
+    (Reviewer goal 2026-09-23: symmetric node placement in the VPC, on-grid.)"""
+    global LANDSCAPE_NODES, LANDSCAPE_EDGES
+    _edge_row = {"wafedge", "dns", "cdn", "audit"}
+    vpc = {b[0]: b for b in LANDSCAPE_BOUNDARY_BOXES if b[0].startswith("boundary-vpc")}
+
+    def _region_dx(vpc_box, in_region):
+        xs = [x for nid, _, x, _ in LANDSCAPE_NODES
+              if nid not in _edge_row and in_region(x)]
+        if not xs:
+            return 0
+        block_centre = (min(xs) + (max(xs) + _ICON)) / 2.0
+        _, _, bx, _, bw, _ = vpc_box
+        vpc_centre = bx + bw / 2.0
+        return int(round((vpc_centre - block_centre) / _GRID)) * _GRID
+
+    dx_a = _region_dx(vpc["boundary-vpc-a"], lambda x: x < REGION_SPLIT_X)
+    dx_b = _region_dx(vpc["boundary-vpc-b"], lambda x: x >= REGION_SPLIT_X)
+
+    def _dx_for(x):
+        return dx_a if x < REGION_SPLIT_X else dx_b
+
+    LANDSCAPE_NODES = [
+        (nid, role, (x if nid in _edge_row else x + _dx_for(x)), y)
+        for nid, role, x, y in LANDSCAPE_NODES
+    ]
+    LANDSCAPE_EDGES = [
+        (eid, src, tgt, marker, dashed, exit_, entry,
+         [(px + _dx_for(px), py) for px, py in points])
         for eid, src, tgt, marker, dashed, exit_, entry, points in LANDSCAPE_EDGES
     ]
 
@@ -425,8 +491,11 @@ def build_landscape(skin: ProviderSkin) -> str:
         diagram_id=f"{skin.provider}-ha-landscape",
         diagram_name=f"{skin.provider}-ha-multiregion-landscape",
         title=title, boundaries=boundaries, nodes=nodes, edges=_edges(LANDSCAPE_EDGES),
-        flow_lines=LANDSCAPE_FLOW, legend_x=2260, legend_y_flow=120,
-        legend_y_legend=460, page_w=2680, page_h=1680,
+        # Flow/Legend sit in the right margin, clear of the account box (right
+        # edge 2310): x=2340 (30px gap past the account), pinned narrow (280) so
+        # they wrap taller instead of running wide — no overlap with the cloud.
+        flow_lines=LANDSCAPE_FLOW, legend_x=2340, legend_y_flow=120,
+        legend_y_legend=460, legend_w=280, page_w=2760, page_h=1680,
     )
 
 

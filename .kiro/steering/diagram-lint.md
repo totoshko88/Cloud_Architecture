@@ -49,6 +49,7 @@ every applicable rule against every artifact.
 | `arrow-style` | A diagram edge uses a filled/heavy arrowhead (or an unspecified head that defaults to filled), or a stroke width below 1pt. | WARNING | diagram-standards Accessibility & Contrast |
 | `orphan-landscape` | A `landscape`-class diagram declares no valid `summary_of` cross-link to a `flow` summary. | ERROR | diagram-standards Diagram Class |
 | `overlay-legend-coverage` | A diagram carries an overlay marker (findings/state vocabulary) that the Legend does not document. | WARNING | diagram-standards Overlay Vocabulary |
+| `exit-thirds` | A node fans out **more than three** edges on one side, or two same-side exits sit closer than ~⅕ of the side (they merge into one doubled line). | WARNING | diagram-standards Label-safe exits |
 | `container-overlap` | Two sibling (non-nested) Boundary/Network-Boundary containers overlap. Raised to ERROR for `landscape`. | WARNING/ERROR | diagram-standards Container Nesting |
 | `edge-direction` | An edge with explicit contact points does not exit its source right/bottom and enter its target left/top. Raised to ERROR for `landscape`. | WARNING/ERROR | diagram-standards Edge Routing (directional contract) |
 | `text-padding` | A filled+stroked text/legend/note box does not set uniform inner padding (`spacing{Left,Right,Top,Bottom}`). | WARNING | diagram-standards Text-box Padding |
@@ -129,6 +130,18 @@ every applicable rule against every artifact.
   the system, the `landscape` carries the full as-built, and neither ships
   orphaned. `flow` diagrams are unaffected.
 
+- **`exit-thirds` (WARNING)** — *Geometry-enforced from the parsed `.drawio`
+  model.* A node's service name renders under its icon, so edges fan out on the
+  **right** side (see *Label-safe exits*). The rule enforces two soft, unambiguous
+  conditions rather than a rigid grid: (1) a side carries **at most three** exits —
+  a fourth means the node is over-connected, so split or re-lane; (2) any two exits
+  on one side stay **distinct** (≥ ~⅕ of the side apart) so they do not merge into
+  one doubled line at the glyph. It is deliberately *not* a `0.25/0.5/0.75` check,
+  because the exit-priority ladder keeps a straight-line edge (a target directly
+  opposite) on the centre while the others spread around it — more readable than
+  forced thirds. The rule reads *exit* points only (source-side fan-out); a
+  left-side exit is left to `edge-direction`, and edges that float their contact
+  point are ignored. A violation is a WARNING for both classes.
 - **`overlay-legend-coverage` (WARNING)** — A diagram may carry an optional,
   double-encoded **overlay vocabulary** (shape + color + label) for findings and
   state — for example "spec-required-not-deployed" (red dashed box),

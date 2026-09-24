@@ -115,6 +115,10 @@ def test_disjoint_siblings_not_flagged():
 # --------------------------------------------------------------------------- #
 
 
+def _edge_id(eid, src, tgt, exit_, entry):
+    return EdgeGeom(id=eid, source=src, target=tgt, orthogonal=True, exit=exit_, entry=entry)
+
+
 def _edge(src, tgt, exit_, entry):
     return EdgeGeom(id="e", source=src, target=tgt, orthogonal=True, exit=exit_, entry=entry)
 
@@ -205,6 +209,84 @@ def test_golden_landscapes_clean_under_new_rules():
         assert geo.check_edge_direction(g) == [], path
         assert geo.check_node_overlap(g) == [], path
         assert geo.check_container_padding(g) == [], path
+        assert geo.check_exit_thirds(g) == [], path
+
+
+# --------------------------------------------------------------------------- #
+# exit-thirds (label-safe fan-out: centred / even-thirds, max 3 per side)
+# --------------------------------------------------------------------------- #
+
+
+def test_exit_thirds_single_exit_any_position_clean():
+    """One edge on a side is fine wherever it sits."""
+    g = DiagramGeometry(edges=[_edge("a", "b", (1.0, 0.42), (0.0, 0.5))])
+    assert geo.check_exit_thirds(g) == []
+
+
+def test_exit_thirds_two_right_exits_even_clean():
+    g = DiagramGeometry(edges=[
+        _edge_id("e1", "a", "b", (1.0, 0.25), (0.0, 0.5)),
+        _edge_id("e2", "a", "c", (1.0, 0.75), (0.0, 0.5)),
+    ])
+    assert geo.check_exit_thirds(g) == []
+
+
+def test_exit_thirds_three_right_exits_even_clean():
+    g = DiagramGeometry(edges=[
+        _edge_id("e1", "a", "b", (1.0, 0.25), (0.0, 0.5)),
+        _edge_id("e2", "a", "c", (1.0, 0.5), (0.0, 0.5)),
+        _edge_id("e3", "a", "d", (1.0, 0.75), (0.0, 0.5)),
+    ])
+    assert geo.check_exit_thirds(g) == []
+
+
+def test_exit_thirds_distinct_non_canonical_two_exits_clean():
+    """Two distinct exits need not be exactly 0.25/0.75 — 0.33/0.66 is fine
+    (the rule now only requires they not merge, not a rigid grid)."""
+    g = DiagramGeometry(edges=[
+        _edge_id("e1", "a", "b", (1.0, 0.33), (0.0, 0.5)),
+        _edge_id("e2", "a", "c", (1.0, 0.66), (0.0, 0.5)),
+    ])
+    assert geo.check_exit_thirds(g) == []
+
+
+def test_exit_thirds_merging_two_exits_flagged():
+    """Two exits closer than min_sep read as one doubled line — flagged."""
+    g = DiagramGeometry(edges=[
+        _edge_id("e1", "a", "b", (1.0, 0.5), (0.0, 0.5)),
+        _edge_id("e2", "a", "c", (1.0, 0.6), (0.0, 0.5)),
+    ])
+    hits = geo.check_exit_thirds(g)
+    assert any("merge" in reason for _, reason in hits)
+
+
+def test_exit_thirds_centre_plus_spread_clean():
+    """A straight-line edge on the centre (0.5) plus two spread around it is the
+    sanctioned exit-priority shape and must pass."""
+    g = DiagramGeometry(edges=[
+        _edge_id("e1", "a", "b", (1.0, 0.2), (0.0, 0.5)),
+        _edge_id("e2", "a", "c", (1.0, 0.5), (0.0, 0.5)),
+        _edge_id("e3", "a", "d", (1.0, 0.8), (0.0, 0.5)),
+    ])
+    assert geo.check_exit_thirds(g) == []
+
+
+def test_exit_thirds_over_connected_side_flagged():
+    """A fourth exit on one side is over-connected regardless of spacing."""
+    g = DiagramGeometry(edges=[
+        _edge_id("e1", "a", "b", (1.0, 0.2), (0.0, 0.5)),
+        _edge_id("e2", "a", "c", (1.0, 0.4), (0.0, 0.5)),
+        _edge_id("e3", "a", "d", (1.0, 0.6), (0.0, 0.5)),
+        _edge_id("e4", "a", "e", (1.0, 0.8), (0.0, 0.5)),
+    ])
+    hits = geo.check_exit_thirds(g)
+    assert any("over-connected" in reason for _, reason in hits)
+
+
+def test_exit_thirds_ignores_floating_exit():
+    """An edge with no declared exit point is not judged."""
+    g = DiagramGeometry(edges=[_edge_id("e1", "a", "b", (None, None), (0.0, 0.5))])
+    assert geo.check_exit_thirds(g) == []
 
 
 # --------------------------------------------------------------------------- #

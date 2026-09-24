@@ -371,6 +371,60 @@ def check_edge_direction(geo: DiagramGeometry) -> List[Tuple[str, str]]:
     return out
 
 
+def check_exit_thirds(geo: DiagramGeometry, min_sep: float = 0.2) -> List[Tuple[str, str]]:
+    """Return ``(node_id, reason)`` for a node's over-crowded same-side fan-out
+    (diagram-standards → Label-safe exits / *Distinct same-side exits*).
+
+    Two soft, unambiguous conditions — deliberately **not** the rigid
+    ``0.25/0.5/0.75`` grid, because the exit-priority ladder puts a
+    straight-line edge (a target directly opposite) on the **centre** while the
+    other edges spread around it, which is more readable than forcing thirds:
+
+    1. **At most three exits per side.** A fourth means the node is
+       over-connected — split or re-lane the diagram (``over-connected``).
+    2. **Distinct exits (no two merge).** Any two exits on one side sit at least
+       ``min_sep`` of the face apart (default 0.2 ≈ 16px on a 78px side), so they
+       do not read as one doubled line at the glyph (``exits-merge``).
+
+    Sides are keyed off the *exit* point only (source-side fan-out). An exit on
+    the right face groups by its ``exitY`` band; an exit on the top/bottom face
+    groups by its ``exitX`` band. A left-side exit is not judged here — it
+    already violates the directional contract, which ``check_edge_direction``
+    owns. Edges that float their exit (no explicit point) are ignored."""
+    # Group each declared exit by (source, side); record the band coordinate.
+    sides: Dict[Tuple[str, str], List[float]] = {}
+    for e in geo.edges:
+        ex, ey = e.exit
+        if ex is None and ey is None:
+            continue
+        # Classify the exit face, then the coordinate that varies along it.
+        if ey is not None and ey >= 1.0:            # bottom face
+            side, coord = "bottom", (ex if ex is not None else 0.5)
+        elif ey is not None and ey <= 0.0:          # top face
+            side, coord = "top", (ex if ex is not None else 0.5)
+        elif ex is not None and ex >= 0.5:          # right face (incl. >1 stubs)
+            side, coord = "right", (ey if ey is not None else 0.5)
+        else:
+            # A left-side exit already violates the directional contract
+            # (check_edge_direction owns that); the fan-out rule only judges the
+            # sanctioned right/bottom/top faces, so it is not re-flagged here.
+            continue
+        sides.setdefault((e.source, side), []).append(coord)
+
+    out: List[Tuple[str, str]] = []
+    for (node, side), coords in sorted(sides.items()):
+        if len(coords) <= 1:
+            continue  # a single exit is always fine wherever it sits
+        if len(coords) > 3:
+            out.append((node, f"{side}-over-connected-{len(coords)}-exits"))
+            continue
+        got = sorted(round(c, 3) for c in coords)
+        if any(b - a < min_sep for a, b in zip(got, got[1:])):
+            pts = ",".join(f"{g:.2f}" for g in got)
+            out.append((node, f"{side}-exits-merge(<{min_sep}: {pts})"))
+    return out
+
+
 def check_edge_routing(geo: DiagramGeometry) -> List[Tuple[str, str]]:
     """Return ``(edge_id, reason)`` for edges that break routing rules.
 
@@ -504,9 +558,17 @@ def check_corridor_sharing(geo: DiagramGeometry, grid: int = GRID) -> List[Tuple
             a, b = ids[i], ids[j]
             # A shared trunk is legitimate (diagram-standards "shared trunk,
             # opposite branches"): two edges that leave the SAME source (or reach
-            # the same target) may share their stub before branching. Only flag
-            # unrelated edges that merge into one corridor.
-            if src_of[a] == src_of[b] or tgt_of[a] == tgt_of[b]:
+            # the same target) may share their stub before branching. Two edges
+            # in a CHAIN through one node (target of one is the source of the
+            # other, e.g. app→db and db→db') naturally touch that node's opposite
+            # faces at its centre row — that shared contact point is the node, not
+            # a merged corridor. Only flag genuinely unrelated edges.
+            if (
+                src_of[a] == src_of[b]
+                or tgt_of[a] == tgt_of[b]
+                or tgt_of[a] == src_of[b]
+                or tgt_of[b] == src_of[a]
+            ):
                 continue
             shared = False
             for oa, la, loa, hia in edge_segs[a]:
