@@ -441,6 +441,7 @@ _EXCLUDED_MD_BASENAMES = {
     "kiro-university-compliance.md",  # hand-authored Kiro feature-compliance doc
     "skill.md",  # Kiro agent-skill manifest (.kiro/skills/*/SKILL.md), not a KB doc
     "diagram-design-notes.md",  # hand-authored routing/icon rationale doc
+    "pull_request_template.md",  # GitHub PR template (.github/), not a KB doc
 }
 
 

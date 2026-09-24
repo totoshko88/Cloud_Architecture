@@ -33,6 +33,9 @@ def test_is_generated_markdown_excludes_hand_authored_basenames():
     assert _is_generated_markdown("docs/KIRO-UNIVERSITY-COMPLIANCE.md") is False
     assert _is_generated_markdown(".kiro/skills/x/SKILL.md") is False
     assert _is_generated_markdown("README.md") is False
+    assert _is_generated_markdown("CODE_OF_CONDUCT.md") is False
+    assert _is_generated_markdown("SECURITY.md") is False
+    assert _is_generated_markdown(".github/PULL_REQUEST_TEMPLATE.md") is False
     # A companion / KB doc is still treated as generated.
     assert _is_generated_markdown("examples/aws/01-x.diagram.md") is True
 
