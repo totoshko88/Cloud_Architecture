@@ -36,6 +36,7 @@ from __future__ import annotations
 import argparse
 import glob
 import os
+import re
 import struct
 import sys
 from dataclasses import dataclass
@@ -45,10 +46,42 @@ from typing import List, Optional, Sequence
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # Budget from diagram-standards.md → Raster Export Dimensions.
-MAX_WIDTH_PX = 1200
+#
+# Class-aware (v1.3.x). A ``flow`` diagram fits a documentation column, so its
+# raster stays small (≤ 1200px / < 500KB). A ``landscape`` as-built exists to
+# show a whole system on one canvas; forcing it into 1200px shrinks 30-plus
+# nodes until the icons are illegible (the exact defect the audit surfaced —
+# the reference detailed as-built exports at ~3400px). The landscape budget is
+# therefore wider and heavier, matching the reference; readability at that width
+# is held by the container/padding/overlap/direction rules, not by a narrow cap.
+# The flow width (1600px) is a touch wider than a single doc column so a wide
+# summary (DNS fan-out across two regions) stays legible; a landscape needs far
+# more room still.
+MAX_WIDTH_PX = 1600
 MAX_SIZE_BYTES = 500 * 1024  # 500KB
 
+LANDSCAPE_MAX_WIDTH_PX = 3600
+LANDSCAPE_MAX_SIZE_BYTES = 2 * 1024 * 1024  # 2MB
+
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
+
+def _diagram_class_of(source: str | Path) -> str:
+    """Return the diagram class declared in a ``.drawio``'s companion doc.
+
+    Reads ``diagram_class`` from the sibling ``NN-topic.diagram.md`` YAML
+    frontmatter; defaults to ``"flow"`` when the companion or the key is absent,
+    so every pre-1.3.0 artifact keeps the narrow flow budget."""
+    src = Path(source)
+    companion = Path(str(src)[: -len(".drawio")] + ".diagram.md") if str(src).endswith(".drawio") else None
+    if companion is None or not companion.is_file():
+        return "flow"
+    try:
+        text = companion.read_text(encoding="utf-8")
+    except OSError:
+        return "flow"
+    m = re.search(r"^diagram_class:\s*([A-Za-z_]+)\s*$", text, re.MULTILINE)
+    return m.group(1).strip().lower() if m else "flow"
 
 EXIT_OK = 0
 EXIT_OVER_BUDGET = 1
@@ -61,21 +94,30 @@ class RasterReadError(Exception):
 
 @dataclass
 class RasterRef:
-    """One exported raster measured against the budget."""
+    """One exported raster measured against its class-aware budget."""
 
     source: str            # the .drawio source path, relative to repo root
     png: str               # the .drawio.png path, relative to repo root
     exists: bool           # whether the PNG file exists
     width: Optional[int]   # measured pixel width (None when absent/unreadable)
     size_bytes: Optional[int]  # file size in bytes (None when absent)
+    diagram_class: str = "flow"  # "flow" (narrow budget) or "landscape" (wide)
+
+    @property
+    def max_width(self) -> int:
+        return LANDSCAPE_MAX_WIDTH_PX if self.diagram_class == "landscape" else MAX_WIDTH_PX
+
+    @property
+    def max_size(self) -> int:
+        return LANDSCAPE_MAX_SIZE_BYTES if self.diagram_class == "landscape" else MAX_SIZE_BYTES
 
     @property
     def width_ok(self) -> bool:
-        return self.width is not None and self.width <= MAX_WIDTH_PX
+        return self.width is not None and self.width <= self.max_width
 
     @property
     def size_ok(self) -> bool:
-        return self.size_bytes is not None and self.size_bytes <= MAX_SIZE_BYTES
+        return self.size_bytes is not None and self.size_bytes <= self.max_size
 
     @property
     def within_budget(self) -> bool:
@@ -114,26 +156,40 @@ def check_rasters(
     examples_dir = Path(examples_dir)
     repo_root = Path(repo_root)
     refs: List[RasterRef] = []
+    # Scratch/editor duplicates ("… копія", "… copy", "… (2)") are working
+    # drafts, not publishable artifacts — the linter's discover_artifacts skips
+    # them, and the raster gate uses the same exclusion so a hand-edited copy
+    # does not fail the triple/PNG check.
+    # Preserved ``-reference`` snapshots (frozen comparison baselines) are
+    # likewise excluded from the raster gate: like scratch copies, they are not
+    # publishable golden artifacts, so a reference triple must not fail the
+    # triple/PNG budget check nor be treated as a diagram to regenerate.
+    from rule_engine.cli import _is_reference_artifact, _is_scratch_copy
     for src in sorted(glob.glob(str(examples_dir / "**" / "*.drawio"), recursive=True)):
+        base = os.path.basename(src)
+        if _is_scratch_copy(base) or _is_reference_artifact(base):
+            continue
         png = src + ".png"
         rel_src = os.path.relpath(src, repo_root)
         rel_png = os.path.relpath(png, repo_root)
+        dclass = _diagram_class_of(src)
         if not os.path.isfile(png):
-            refs.append(RasterRef(rel_src, rel_png, False, None, None))
+            refs.append(RasterRef(rel_src, rel_png, False, None, None, dclass))
             continue
         size = os.path.getsize(png)
         try:
             width: Optional[int] = read_png_width(png)
         except RasterReadError:
             width = None
-        refs.append(RasterRef(rel_src, rel_png, True, width, size))
+        refs.append(RasterRef(rel_src, rel_png, True, width, size, dclass))
     return refs
 
 
 def _fmt(ref: RasterRef) -> str:
     w = "?" if ref.width is None else f"{ref.width}px"
     kb = "?" if ref.size_bytes is None else f"{ref.size_bytes // 1024}KB"
-    return f"{ref.png} ({w}, {kb})"
+    budget = f"{ref.diagram_class} budget {ref.max_width}px/{ref.max_size // 1024}KB"
+    return f"{ref.png} ({w}, {kb}; {budget})"
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -180,7 +236,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if over_width:
         failed = True
         print(
-            f"BLOCKING: raster(s) exceed the {MAX_WIDTH_PX}px width budget:",
+            "BLOCKING: raster(s) exceed their class width budget:",
             file=sys.stderr,
         )
         for r in over_width:
@@ -189,7 +245,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if over_size:
         failed = True
         print(
-            f"BLOCKING: raster(s) exceed the {MAX_SIZE_BYTES // 1024}KB size budget:",
+            "BLOCKING: raster(s) exceed their class size budget:",
             file=sys.stderr,
         )
         for r in over_size:
@@ -220,16 +276,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     if failed:
         print(
-            "Re-export the raster within budget: "
-            "drawio --export --format png --width 1200 --border 8 --theme light "
-            "--output <file>.drawio.png <file>.drawio",
+            "Re-export the raster within its class budget "
+            f"(flow ≤ {MAX_WIDTH_PX}px/{MAX_SIZE_BYTES // 1024}KB, "
+            f"landscape ≤ {LANDSCAPE_MAX_WIDTH_PX}px/{LANDSCAPE_MAX_SIZE_BYTES // 1024}KB): "
+            "python scripts/export_raster.py <file>.drawio",
             file=sys.stderr,
         )
         return EXIT_OVER_BUDGET
 
     print(
-        f"OK: all {len(present)} exported raster(s) are within the "
-        f"{MAX_WIDTH_PX}px / {MAX_SIZE_BYTES // 1024}KB budget."
+        f"OK: all {len(present)} exported raster(s) are within their "
+        f"class budget (flow ≤ {MAX_WIDTH_PX}px, landscape ≤ {LANDSCAPE_MAX_WIDTH_PX}px)."
     )
     return EXIT_OK
 

@@ -30,7 +30,7 @@ every applicable rule against every artifact.
 
 | Rule | Condition | Severity | Source |
 | --- | --- | --- | --- |
-| `node-count` | A diagram contains more than 12 nodes. | ERROR | R7 AC4 / R1 AC4 |
+| `node-count` | Too many nodes for the diagram class: `flow` &gt; 12 (ERROR); `landscape` &gt; 30 (WARNING), &gt; 50 (ERROR). | ERROR/WARNING | R7 AC4 / R1 AC4 / diagram-standards Diagram Class |
 | `edge-label` | A diagram edge has no non-empty label. | WARNING | R7 AC5 / R1 AC7 |
 | `node-quote` | A node name contains a space or any character outside `[A-Za-z0-9_-]` and is not enclosed in double quotes. | ERROR | R7 AC6 / R1 AC6 |
 | `legend-present` | A diagram has no Legend. | ERROR | R7 AC7 / R5 AC11 |
@@ -42,18 +42,33 @@ every applicable rule against every artifact.
 | `mermaid-type` | Mermaid is used for a diagram type other than sequence, flow, or state. | WARNING | R7 AC13 / R1 AC2 |
 | `flow-legend` | A diagram uses numeric flow markers on edges but has no `Flow` legend cell covering every marker. | WARNING | diagram-standards Numbered Flow Legend |
 | `edge-routing` | A diagram edge is not orthogonally routed, crosses a node icon, shares a corridor with a parallel edge, overlaps a label/legend, or two edges leave/enter one node side on the same contact point. | WARNING | diagram-standards Edge Routing |
-| `container-padding` | A container border sits flush against or straddles a child node (no grid-step padding). | WARNING | diagram-standards Container Padding |
+| `container-padding` | A container border sits flush against or straddles a child node (no grid-step padding). Raised to ERROR for `landscape`. | WARNING/ERROR | diagram-standards Container Padding |
 | `min-font-size` | A diagram carries on-diagram text below the 12px minimum font size. | WARNING | diagram-standards Accessibility & Contrast |
 | `grid-alignment` | A diagram node's absolute x or y is not a whole multiple of the grid step (default 10). | WARNING | diagram-standards Layout Geometry |
 | `node-overlap` | Two diagram node icon boxes overlap (intersecting rectangles). | WARNING | diagram-standards Layout Geometry |
 | `arrow-style` | A diagram edge uses a filled/heavy arrowhead (or an unspecified head that defaults to filled), or a stroke width below 1pt. | WARNING | diagram-standards Accessibility & Contrast |
+| `orphan-landscape` | A `landscape`-class diagram declares no valid `summary_of` cross-link to a `flow` summary. | ERROR | diagram-standards Diagram Class |
+| `overlay-legend-coverage` | A diagram carries an overlay marker (findings/state vocabulary) that the Legend does not document. | WARNING | diagram-standards Overlay Vocabulary |
+| `exit-thirds` | A node fans out **more than three** edges on one side, or two same-side exits sit closer than ~⅕ of the side (they merge into one doubled line). | WARNING | diagram-standards Label-safe exits |
+| `container-overlap` | Two sibling (non-nested) Boundary/Network-Boundary containers overlap. Raised to ERROR for `landscape`. | WARNING/ERROR | diagram-standards Container Nesting |
+| `edge-direction` | An edge with explicit contact points does not exit its source right/bottom and enter its target left/top. Raised to ERROR for `landscape`. | WARNING/ERROR | diagram-standards Edge Routing (directional contract) |
+| `text-padding` | A filled+stroked text/legend/note box does not set uniform inner padding (`spacing{Left,Right,Top,Bottom}`). | WARNING | diagram-standards Text-box Padding |
+| `corridor-sharing` | Two unrelated long edges run in the same straight horizontal/vertical corridor (same grid line, overlapping extent). | WARNING | diagram-standards Edge Routing (one edge per corridor) |
+| `edge-float` | An edge declares no explicit exit/entry contact point (floats its connection to the perimeter router). Raised to ERROR for `landscape`. | WARNING/ERROR | diagram-standards Edge Routing (no-float on landscape) |
+| `edge-crosses-label` | A routed edge's polyline crosses an **unrelated node's label band** (the caption strip drawn beneath the icon), i.e. a corridor runs through a service name. | WARNING | diagram-standards Edge Routing (corridors clear the label band) |
 
 ### Rule Detail
 
-- **`node-count` (ERROR)** — Count the nodes in the diagram. If the count exceeds
-  12, report an ERROR. Diagrams over the limit must be split so that each holds at
-  most 12 nodes, with an index document referencing each split. The 12-node cap
-  also applies to cross-cloud composition diagrams.
+- **`node-count` (ERROR/WARNING)** — Count the nodes in the diagram; the
+  threshold and severity depend on the diagram **class** (see *Diagram Class*
+  below). For a **`flow`** diagram (the default): more than 12 nodes is an ERROR
+  — split it so each holds at most 12 nodes, with an index document referencing
+  each split. The 12-node cap also applies to cross-cloud composition diagrams.
+  For a **`landscape`** diagram (as-built / inventory): the cap is relaxed —
+  more than 30 nodes is a WARNING and more than 50 nodes is an ERROR — because a
+  landscape's job is completeness on one canvas, and readability is instead held
+  by the raised container-padding rule, the geometry rules, and the mandatory
+  summary cross-link.
 - **`edge-label` (WARNING)** — Every edge must carry a non-empty, descriptive text
   label. An edge with a missing or empty label produces a WARNING.
 - **`node-quote` (ERROR)** — The allowed unquoted character set for a node name is
@@ -103,7 +118,95 @@ every applicable rule against every artifact.
 - **`container-padding` (WARNING)** — *Geometry-enforced from the parsed `.drawio` model* (a node's absolute box is measured against each container box). A Boundary or Network Boundary container must keep
   at least one grid step of padding between its border and every child node, and between
   a nested container and its parent. A node placed flush against or straddling a
-  container border is a WARNING.
+  container border is a WARNING. **Class-aware:** for a `landscape` diagram this is
+  raised to an **ERROR**, because nested labelled containers are the primary
+  device that keeps a large as-built legible, so a padding defect must block
+  publication rather than merely warn.
+
+- **`orphan-landscape` (ERROR)** — A `landscape`-class diagram must declare a
+  `summary_of` cross-link (in its companion `.diagram.md` frontmatter) naming
+  the sibling `flow` summary that overviews the same system. A landscape with an
+  absent or empty `summary_of` is an ERROR. This encodes the "summary + detailed"
+  pair as a checked contract: the ≤12-node `flow` summary carries the shape of
+  the system, the `landscape` carries the full as-built, and neither ships
+  orphaned. `flow` diagrams are unaffected.
+
+- **`exit-thirds` (WARNING)** — *Geometry-enforced from the parsed `.drawio`
+  model.* A node's service name renders under its icon, so edges fan out on the
+  **right** side (see *Label-safe exits*). The rule enforces two soft, unambiguous
+  conditions rather than a rigid grid: (1) a side carries **at most three** exits —
+  a fourth means the node is over-connected, so split or re-lane; (2) any two exits
+  on one side stay **distinct** (≥ ~⅕ of the side apart) so they do not merge into
+  one doubled line at the glyph. It is deliberately *not* a `0.25/0.5/0.75` check,
+  because the exit-priority ladder keeps a straight-line edge (a target directly
+  opposite) on the centre while the others spread around it — more readable than
+  forced thirds. The rule reads *exit* points only (source-side fan-out); a
+  left-side exit is left to `edge-direction`, and edges that float their contact
+  point are ignored. A violation is a WARNING for both classes.
+- **`overlay-legend-coverage` (WARNING)** — A diagram may carry an optional,
+  double-encoded **overlay vocabulary** (shape + color + label) for findings and
+  state — for example "spec-required-not-deployed" (red dashed box),
+  "observability-overlay" (blue stroke), or change markers. When an overlay
+  marker is used, the Legend must document it; an overlay marker not covered by
+  the Legend is a WARNING. Diagrams that carry no overlay markers are
+  unaffected.
+- **`container-overlap` (WARNING/ERROR)** — *Geometry-enforced from the parsed
+  `.drawio` model.* Two boundary containers may **nest** (Account ⊃ Region ⊃
+  Availability Zone) but two **sibling** boundaries — neither containing the
+  other — must not overlap. Overlapping peer boundaries put shared canvas area
+  under two labelled groups at once, so a node in that area is ambiguous about
+  which boundary owns it (the primary-VPC box bleeding into the passive-VPC box
+  is the canonical defect). WARNING for `flow`; **ERROR for `landscape`**, where
+  the nested boundary hierarchy is the primary device that keeps a large
+  as-built legible.
+- **`edge-direction` (WARNING/ERROR)** — *Geometry-enforced.* The **directional
+  contract**: every edge that declares explicit contact points must **exit** its
+  source on the **right or bottom** (`exitX >= 0.5`, admitting the right edge and
+  the top-right / bottom-right corners, or `exitY == 1`) and **enter** its target
+  on the **left or top** (`entryX <= 0.5` or `entryY == 0`). A left-edge exit
+  (`0, 0.5`) or a right-edge entry (`1, 0.5`) is the defect. This single rule
+  removes most crossings on a dense diagram. Edges that float their connection
+  (no explicit contact point) are left to the perimeter router and not judged.
+  WARNING for `flow`; **ERROR for `landscape`**.
+- **Label-aware geometry (applies to `container-padding` and `node-overlap`).**
+  A node's footprint is not its 78×78 icon box alone — the service name renders
+  in a caption band **below** the icon (`verticalLabelPosition=bottom`), and that
+  band collides with the next row and the container border exactly as the icon
+  does. Both `container-padding` and `node-overlap` therefore measure the
+  **footprint** (icon box grown downward by one label line, ~30px = three grid
+  steps), not the bare icon. A label that reaches a boundary border or the icon
+  of the row below is a finding even when the icons themselves clear each other.
+- **`text-padding` (WARNING)** — Every text/legend/note box with a **visible box**
+  (a concrete `fillColor=#…` and `strokeColor=#…`) must set uniform inner padding
+  on all four sides (`spacingLeft/Right/Top/Bottom`, one grid step = 10px) so no
+  line of text abuts the border. A borderless cell — the diagram title or a free
+  label that sets no concrete fill+stroke — has no box to pad and is exempt. The
+  shared builder's `_TEXT_STYLE` carries this padding, so every generated diagram
+  passes; a hand-authored box that drops the tokens trips the rule.
+- **`corridor-sharing` (WARNING)** — *Geometry-enforced.* Two **unrelated** long
+  edges must not run in the same straight corridor: a pair whose dominant
+  horizontal (or vertical) segment lies on the **same grid line** with overlapping
+  extent is flagged, because the two lines merge into one and cannot be told apart.
+  A **shared trunk is exempt** (diagram-standards "shared trunk, opposite
+  branches"): two edges that leave the *same source* or reach the *same target*
+  may share their stub before branching. Only long runs (> two grid steps) count;
+  short adjacent stubs are ignored.
+- **`edge-float` (WARNING/ERROR)** — *Geometry-enforced.* Every edge must fix its
+  contact points (`exitX/exitY` + `entryX/entryY`) so the directional contract is
+  checkable and the perimeter router cannot drift a side. An edge that sets
+  **neither** an exit nor an entry point floats its connection. WARNING for `flow`;
+  **ERROR for `landscape`**, where a dense diagram must pin every contact side.
+- **`edge-crosses-label` (WARNING)** — *Geometry-enforced.* A node's service name
+  renders in a caption band **below** its icon (`verticalLabelPosition=bottom`).
+  A horizontal corridor placed one grid step under an icon runs straight through
+  that caption even though it clears the icon box. This samples each edge's full
+  polyline (its real contact points plus every `<mxPoint>` waypoint) against every
+  **unrelated** node's label-band rectangle (icon bottom … +one label line) with
+  the same `segment_crosses_box` predicate the routers and `edge-routing` use, so
+  a run cutting through a service name is flagged even when the icon-box rules
+  pass. The router avoids it by insetting every horizontal corridor past the
+  source (or upper) row's label band; a hand-authored edge that ignores the band
+  trips the rule. Advisory (WARNING) for both classes.
 - **`min-font-size` (WARNING)** — Every piece of on-diagram text (node labels, edge
   labels, boundary captions, title cell, and the `Flow`/`Legend` cells) must render at
   **12px or larger**, the accessibility floor from published AWS diagram conventions. A
@@ -121,6 +224,45 @@ every applicable rule against every artifact.
   (`endArrow=open;endFill=0`) over a heavy filled head, and keep stroke width at ≥ 1pt.
   An edge with a filled head (`block`/`classic`/`diamond`/`oval`, fill on), an unspecified
   head (which defaults to filled `classic`), or a sub-1pt `strokeWidth` produces a WARNING.
+
+## Diagram Class (flow vs landscape)
+
+Every diagram has a **class** that selects which node-count and container rules
+apply. The class is declared in the companion `.diagram.md` frontmatter key
+`diagram_class` and defaults to `flow` when absent, so every pre-1.3.0 artifact
+keeps its exact behavior.
+
+| Rule | `flow` (default) | `landscape` (as-built / inventory) |
+| --- | --- | --- |
+| `node-count` | ERROR at &gt; 12 | WARNING at &gt; 30, ERROR at &gt; 50 |
+| `container-padding` | WARNING | **ERROR** (containers are load-bearing) |
+| `container-overlap` | WARNING | **ERROR** (sibling boundaries must not overlap) |
+| `edge-direction` | WARNING | **ERROR** (directional contract is strict) |
+| `edge-float` | WARNING | **ERROR** (every edge must pin its contact points) |
+| `orphan-landscape` | n/a | ERROR unless `summary_of` names a `flow` summary |
+| numbered flow markers | expected | optional (a landscape has no single path) |
+| `overlay-legend-coverage` | WARNING when overlay markers are used | WARNING when overlay markers are used |
+| raster budget (export guidance) | ≤ 1600px / < 500KB | ≤ 3600px / < 2MB (a wide as-built stays legible) |
+
+Rules:
+
+- A **`flow`** diagram is a narrative / data-flow view. It keeps the 12-node cap
+  and the numbered-flow-marker convention. This is the default and the only
+  class a diagram has unless its companion declares otherwise.
+- A **`landscape`** diagram is a system-of-record / as-built inventory view. Its
+  value is completeness on one canvas, so the node cap is relaxed (WARNING &gt; 30,
+  ERROR &gt; 50) while other rules tighten: containers become mandatory and their
+  padding is an ERROR, and the diagram must cross-link to a `flow` summary.
+- **Sanctioned pair.** A `landscape` declares `summary_of: <flow-diagram>` and
+  the paired `flow` summary may declare `detailed_view: <landscape-diagram>`.
+  The pair is one publishable unit: the ≤12-node summary carries the shape, the
+  landscape carries the full as-built. A `landscape` with no `summary_of` is an
+  `orphan-landscape` ERROR.
+- **Overlay vocabulary (optional, both classes).** A diagram may double-encode
+  findings/state as shape + color + label (e.g. red dashed box =
+  "spec-required-not-deployed", blue stroke = "observability-overlay", change
+  markers 🆕/🔄). When used, every overlay term must be documented in the Legend
+  (`overlay-legend-coverage`).
 
 ## Publication Eligibility
 

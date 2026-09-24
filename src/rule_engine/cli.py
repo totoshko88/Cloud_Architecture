@@ -289,11 +289,51 @@ def _parse_drawio(path: str, text: str) -> Artifact:
     # Parse a light geometry model so the geometry-aware rules
     # (grid-alignment, container-padding, edge-routing, node-overlap)
     # can evaluate layout quality on the real file (REVIEW.md D2/D3/D6).
+    text_padding_offenders = None
     try:
         from rule_engine import geometry as _geometry
         geo = _geometry.build_geometry(text)
+        text_padding_offenders = _geometry.check_text_padding(text)
     except Exception:
         geo = None
+
+    # Diagram class + cross-link contract (v1.3.0). The class and the
+    # summary_of / detailed_view links are declared in the companion
+    # .diagram.md frontmatter (reliable YAML), not in the .drawio itself.
+    diagram_class = "flow"
+    summary_of = None
+    detailed_view = None
+    if os.path.isfile(companion):
+        try:
+            with open(companion, "r", encoding="utf-8") as _fh:
+                _fm = _parse_frontmatter(_fh.read()) or {}
+            _cls = str(_fm.get("diagram_class", "") or "").strip().lower()
+            if _cls in ("flow", "landscape"):
+                diagram_class = _cls
+            _so = _fm.get("summary_of")
+            summary_of = str(_so).strip() if _so else None
+            _dv = _fm.get("detailed_view")
+            detailed_view = str(_dv).strip() if _dv else None
+        except OSError:
+            pass
+
+    # Overlay vocabulary coverage (v1.3.0). Harvest overlay marker tokens the
+    # diagram declares (from an `overlay:` cell/legend line) and the terms the
+    # Legend documents, so ``overlay-legend-coverage`` can check coverage. Both
+    # are read from the diagram text: a line ``overlay=<term>`` marks a used
+    # overlay term; a Legend line ``<term> =`` documents one. Absent markers
+    # leave both lists empty and the rule no-ops.
+    overlay_markers = re.findall(r"overlay=([A-Za-z0-9_\-]+)", text)
+    legend_overlay_terms = []
+    if has_legend:
+        # Any token appearing as ``overlay=<term>`` that also appears verbatim
+        # in the diagram's legend/text region is considered documented.
+        low = text.lower()
+        for term in set(overlay_markers):
+            # Count occurrences: a marker used on a node/edge (overlay=term)
+            # AND separately named in a legend cell is covered.
+            if low.count(term.lower()) > 1:
+                legend_overlay_terms.append(term)
 
     return Artifact(
         kind="diagram",
@@ -303,11 +343,17 @@ def _parse_drawio(path: str, text: str) -> Artifact:
         icons=icons,
         font_sizes=font_sizes,
         geometry=geo,
+        text_padding_offenders=text_padding_offenders,
         has_legend=has_legend,
         title_cell=title_cell,
         source_format="drawio",
         is_drawio=True,
         has_companion_doc=os.path.isfile(companion),
+        diagram_class=diagram_class,
+        summary_of=summary_of,
+        detailed_view=detailed_view,
+        overlay_markers=overlay_markers,
+        legend_overlay_terms=legend_overlay_terms,
     )
 
 
@@ -394,6 +440,7 @@ _EXCLUDED_MD_BASENAMES = {
     "architecture.md",  # hand-authored project architecture/algorithm doc
     "kiro-university-compliance.md",  # hand-authored Kiro feature-compliance doc
     "skill.md",  # Kiro agent-skill manifest (.kiro/skills/*/SKILL.md), not a KB doc
+    "diagram-design-notes.md",  # hand-authored routing/icon rationale doc
 }
 
 
@@ -437,17 +484,73 @@ def _is_snapshot_json(path: str) -> bool:
     return False
 
 
+# Scratch / duplicate file markers. A copy made by an editor or file manager
+# (e.g. draw.io desktop, Finder, Explorer) is an editing scratch, not a golden
+# artifact, so it is excluded from the --all scan (and thus from lint, the
+# golden-example tests, and CI). Markers cover the common localized "copy"
+# suffixes and numeric duplicates.
+_SCRATCH_NAME_MARKERS = (
+    "копія",       # uk: "copy" (draw.io/Finder on a Ukrainian system)
+    "copy",        # en: "... copy" / "... - Copy"
+    "копия",       # ru
+    "kopie",       # de/nl
+    "copie",       # fr
+    "copia",       # es/it/pt
+)
+
+
+def _is_scratch_copy(name: str) -> bool:
+    """True when a filename looks like an editor/file-manager duplicate.
+
+    Matches a copy marker as a whole word / suffix (``… копія.drawio``,
+    ``… - Copy.drawio``, ``… copy 2.drawio``) or a trailing ``(1)`` numeric
+    duplicate, so a legitimate name that merely contains the substring (e.g.
+    ``copybook``) is not excluded."""
+    stem = re.sub(r"\.[A-Za-z0-9.]+$", "", name).lower()
+    if re.search(r"\(\d+\)\s*$", stem):
+        return True
+    for marker in _SCRATCH_NAME_MARKERS:
+        # marker as a standalone trailing token, optionally followed by a number:
+        # "... copy", "... - copy", "... копія 2".
+        if re.search(rf"(?:^|[ \-_]){re.escape(marker)}(?:[ \-_]?\d+)?\s*$", stem):
+            return True
+    return False
+
+
+def _is_reference_artifact(name: str) -> bool:
+    """True when a filename is a preserved ``-reference`` snapshot.
+
+    The hand-authored HA golden pair is frozen as ``NN-...-reference.drawio``
+    (plus its ``.drawio.png`` / ``.diagram.md`` companions) before the layout
+    engine takes over generation. A reference snapshot is deliberately kept
+    out of both the lint scan and any regeneration discovery: it is a
+    read-only comparison baseline, not a golden artifact to validate or
+    re-emit. The marker is the ``-reference`` stem suffix, matched before the
+    extension so ``02-aws-ha-multiregion-landscape-reference.drawio`` and its
+    ``-reference.drawio.png`` / ``-reference.diagram.md`` companions are all
+    excluded, while a legitimate name that merely contains the substring is
+    not (the suffix must terminate the stem)."""
+    stem = re.sub(r"\.[A-Za-z0-9.]+$", "", name)
+    return stem.endswith("-reference")
+
+
 def discover_artifacts(workspace_root: str) -> List[str]:
     """Return the sorted list of lintable ``.drawio``/Markdown/Snapshot files.
 
     Diagrams (``.drawio``), engine-generated Markdown, and inventory Snapshot
     JSON files are all routed through the Linter so the ``secret-safety``
     CRITICAL gate actually runs in the CLI/CI ``--all`` path (REVIEW.md C3).
+    Editor/file-manager duplicates (``… копія.drawio``, ``… - Copy.drawio``,
+    ``… (1).drawio``) are scratch, not golden artifacts, and are skipped, as
+    are preserved ``-reference`` snapshots (frozen comparison baselines that
+    are neither linted nor regenerated).
     """
     found: List[str] = []
     for dirpath, dirnames, filenames in os.walk(workspace_root):
         dirnames[:] = [d for d in dirnames if d not in _EXCLUDED_DIRS]
         for name in filenames:
+            if _is_scratch_copy(name) or _is_reference_artifact(name):
+                continue
             low = name.lower()
             full = os.path.join(dirpath, name)
             if low.endswith(".drawio"):

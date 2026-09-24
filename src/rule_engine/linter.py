@@ -72,6 +72,15 @@ RULE_CONTAINER_PADDING = "container-padding"
 RULE_EDGE_ROUTING = "edge-routing"
 RULE_NODE_OVERLAP = "node-overlap"
 RULE_ARROW_STYLE = "arrow-style"
+RULE_ORPHAN_LANDSCAPE = "orphan-landscape"
+RULE_OVERLAY_LEGEND_COVERAGE = "overlay-legend-coverage"
+RULE_CONTAINER_OVERLAP = "container-overlap"
+RULE_EDGE_DIRECTION = "edge-direction"
+RULE_TEXT_PADDING = "text-padding"
+RULE_CORRIDOR_SHARING = "corridor-sharing"
+RULE_EDGE_FLOAT = "edge-float"
+RULE_EXIT_THIRDS = "exit-thirds"
+RULE_EDGE_CROSSES_LABEL = "edge-crosses-label"
 
 # Severity assigned to each rule when its condition holds (authoritative table).
 RULE_SEVERITIES: Dict[str, Severity] = {
@@ -91,10 +100,46 @@ RULE_SEVERITIES: Dict[str, Severity] = {
     RULE_EDGE_ROUTING: Severity.WARNING,
     RULE_NODE_OVERLAP: Severity.WARNING,
     RULE_ARROW_STYLE: Severity.WARNING,
+    RULE_ORPHAN_LANDSCAPE: Severity.ERROR,
+    RULE_OVERLAY_LEGEND_COVERAGE: Severity.WARNING,
+    # container-overlap and edge-direction default to WARNING; both are raised
+    # to ERROR for the ``landscape`` class (see their predicates), where nested
+    # boundaries and a strict directional contract are what keep a large
+    # as-built legible.
+    RULE_CONTAINER_OVERLAP: Severity.WARNING,
+    RULE_EDGE_DIRECTION: Severity.WARNING,
+    # Text-box padding and long-edge corridor sharing are WARNINGs for both
+    # classes. edge-float (no explicit contact points) is a WARNING for flow and
+    # raised to ERROR for landscape (a dense diagram must fix every contact side).
+    RULE_TEXT_PADDING: Severity.WARNING,
+    RULE_CORRIDOR_SHARING: Severity.WARNING,
+    RULE_EDGE_FLOAT: Severity.WARNING,
+    # Same-side fan-out must use the centred / even-thirds split, and a side may
+    # carry at most three exits (diagram-standards → Label-safe exits). A WARNING
+    # for both classes: it surfaces cramped or lopsided fan-outs without blocking.
+    RULE_EXIT_THIRDS: Severity.WARNING,
+    # An edge whose routed polyline crosses another node's label band (caption
+    # strip below the icon). Advisory WARNING for both classes: it catches a run
+    # cutting through a service name that the icon-box geometry rules miss.
+    RULE_EDGE_CROSSES_LABEL: Severity.WARNING,
 }
 
 # Maximum node count for a single diagram (Requirement 1 AC4 / 7 AC4).
 MAX_NODES = 12
+
+# Landscape (as-built / inventory) node-count thresholds (v1.3.0). A landscape
+# diagram relaxes the flow 12-node cap because its job is completeness on one
+# canvas; readability is instead enforced by the geometry rules (container
+# padding raised to ERROR, edge routing, node overlap) and the summary
+# cross-link contract.
+LANDSCAPE_NODE_WARN = 30
+LANDSCAPE_NODE_ERROR = 50
+
+# The two diagram classes. ``flow`` (default) keeps every legacy rule exactly
+# as before, so all pre-1.3.0 artifacts lint unchanged. ``landscape`` branches
+# the node-count severity and enables the pair-contract and overlay rules.
+DIAGRAM_CLASS_FLOW = "flow"
+DIAGRAM_CLASS_LANDSCAPE = "landscape"
 
 # Minimum on-diagram font size, in px. AWS diagram conventions require a >= 12px
 # floor for text readability/accessibility (diagram-standards.md "Accessibility &
@@ -237,6 +282,27 @@ class Artifact:
     is_drawio: bool = False
     has_companion_doc: bool = True
 
+    # Diagram class (v1.3.0). ``"flow"`` (default) keeps the 12-node cap and all
+    # legacy rules unchanged. ``"landscape"`` is an as-built / inventory diagram:
+    # relaxed node-count (WARNING>30, ERROR>50), container-padding raised to
+    # ERROR, and a required cross-link to a <=12-node flow summary.
+    diagram_class: str = "flow"
+    # Cross-link contract. A landscape declares ``summary_of`` (path/stem of its
+    # flow summary); a flow may declare ``detailed_view`` (path/stem of its
+    # landscape). Parsed from the companion .diagram.md frontmatter by the CLI.
+    summary_of: Optional[str] = None
+    detailed_view: Optional[str] = None
+    # Overlay vocabulary (findings/state). When the diagram carries double-encoded
+    # overlay markers, ``overlay_markers`` lists them and ``legend_overlay_terms``
+    # lists the terms the Legend documents; overlay-legend-coverage fires when a
+    # marker is not covered by the legend.
+    overlay_markers: Sequence[str] = field(default_factory=list)
+    legend_overlay_terms: Sequence[str] = field(default_factory=list)
+    # Text-box padding (v1.3.x). ``text_padding_offenders`` lists the styles of
+    # any ``text;`` cell missing uniform inner padding (spacing* tokens); a
+    # non-empty list trips ``text-padding``. None means "not parsed" (skip).
+    text_padding_offenders: Optional[Sequence[str]] = None
+
     # Document
     frontmatter: Optional[Mapping[str, Any]] = None
     is_markdown: bool = False
@@ -320,9 +386,25 @@ def _content_has_secret(content: Optional[str]) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _check_node_count(a: Artifact) -> bool:
-    """node-count: a diagram contains more than 12 nodes (ERROR)."""
-    return _is_diagram(a) and len(a.node_names) > MAX_NODES
+def _check_node_count(a: Artifact):
+    """node-count: too many nodes for the diagram class (bool | Severity).
+
+    ``flow`` (default): more than ``MAX_NODES`` (12) is an ERROR, unchanged from
+    pre-1.3.0. ``landscape``: relaxed cap — more than ``LANDSCAPE_NODE_ERROR``
+    (50) is an ERROR, more than ``LANDSCAPE_NODE_WARN`` (30) is a WARNING,
+    otherwise the rule does not fire. Returning an explicit :class:`Severity`
+    lets one rule carry class-dependent severity through the aggregator.
+    """
+    if not _is_diagram(a):
+        return False
+    n = len(a.node_names)
+    if (a.diagram_class or DIAGRAM_CLASS_FLOW).lower() == DIAGRAM_CLASS_LANDSCAPE:
+        if n > LANDSCAPE_NODE_ERROR:
+            return Severity.ERROR
+        if n > LANDSCAPE_NODE_WARN:
+            return Severity.WARNING
+        return False
+    return Severity.ERROR if n > MAX_NODES else False
 
 
 def _check_edge_label(a: Artifact) -> bool:
@@ -460,13 +542,22 @@ def _check_grid_alignment(a: Artifact) -> bool:
     return bool(_geo.check_grid_alignment(geo))
 
 
-def _check_container_padding(a: Artifact) -> bool:
-    """container-padding: a node sits <1 grid step from / straddles a container (WARNING)."""
+def _check_container_padding(a: Artifact):
+    """container-padding: a node sits <1 grid step from / straddles a container.
+
+    WARNING for ``flow`` (unchanged). Raised to ERROR for ``landscape``, where
+    nested labelled containers are what keep a big as-built legible, so a
+    padding defect must block publication (v1.3.0).
+    """
     geo = _geometry_of(a)
     if geo is None:
         return False
     from rule_engine import geometry as _geo
-    return bool(_geo.check_container_padding(geo))
+    if not bool(_geo.check_container_padding(geo)):
+        return False
+    if (a.diagram_class or DIAGRAM_CLASS_FLOW).lower() == DIAGRAM_CLASS_LANDSCAPE:
+        return Severity.ERROR
+    return True
 
 
 def _check_edge_routing(a: Artifact) -> bool:
@@ -496,6 +587,150 @@ def _check_arrow_style(a: Artifact) -> bool:
     return bool(_geo.check_arrow_style(geo))
 
 
+def _check_container_overlap(a: Artifact):
+    """container-overlap: two sibling boundary containers overlap.
+
+    A proper nesting (Account ⊃ Region ⊃ AZ) is fine; two peer boundaries that
+    partially overlap put shared canvas area under two labelled groups at once,
+    so a node there is ambiguous about which boundary owns it. WARNING for
+    ``flow``; raised to ERROR for ``landscape``, where the nested boundary
+    hierarchy is the primary device keeping a big as-built legible (v1.3.x)."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    if not bool(_geo.check_container_overlap(geo)):
+        return False
+    if (a.diagram_class or DIAGRAM_CLASS_FLOW).lower() == DIAGRAM_CLASS_LANDSCAPE:
+        return Severity.ERROR
+    return True
+
+
+def _check_edge_direction(a: Artifact):
+    """edge-direction: an edge breaks the exit-right/bottom, enter-left/top contract.
+
+    Every edge with explicit contact points must exit its source on the right or
+    bottom half and enter its target on the left or top half — the single
+    directional rule that removes most crossings on a dense diagram. WARNING for
+    ``flow``; raised to ERROR for ``landscape``, where a violated contact side is
+    a routing defect that must block publication of the as-built (v1.3.x)."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    if not bool(_geo.check_edge_direction(geo)):
+        return False
+    if (a.diagram_class or DIAGRAM_CLASS_FLOW).lower() == DIAGRAM_CLASS_LANDSCAPE:
+        return Severity.ERROR
+    return True
+
+
+def _check_text_padding(a: Artifact) -> bool:
+    """text-padding: a text/legend/note box lacks uniform inner padding (WARNING).
+
+    Every ``text;`` cell must set all four spacing* tokens so no line abuts the
+    border (borderless title cells are exempt). ``text_padding_offenders`` is the
+    list of offending styles harvested by the CLI parser; None means not parsed
+    (rule skipped)."""
+    if not _is_diagram(a):
+        return False
+    offenders = a.text_padding_offenders
+    if offenders is None:
+        return False
+    return bool(offenders)
+
+
+def _check_corridor_sharing(a: Artifact) -> bool:
+    """corridor-sharing: two long edges share one straight corridor (WARNING)."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    return bool(_geo.check_corridor_sharing(geo))
+
+
+def _check_exit_thirds(a: Artifact) -> bool:
+    """exit-thirds: same-side fan-out is not centred / even-thirds, or >3 exits (WARNING)."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    return bool(_geo.check_exit_thirds(geo))
+
+
+def _check_edge_crosses_label(a: Artifact) -> bool:
+    """edge-crosses-label: a routed edge polyline crosses another node's label band (WARNING)."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    return bool(_geo.check_edge_crosses_label(geo))
+
+
+def _check_edge_float(a: Artifact):
+    """edge-float: an edge declares no explicit exit/entry contact point.
+
+    WARNING for ``flow``; raised to ERROR for ``landscape``, where every edge
+    must fix its contact points so the directional contract is enforceable and
+    the perimeter router cannot drift a side (v1.3.x)."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    if not bool(_geo.check_edge_float(geo)):
+        return False
+    if (a.diagram_class or DIAGRAM_CLASS_FLOW).lower() == DIAGRAM_CLASS_LANDSCAPE:
+        return Severity.ERROR
+    return True
+
+
+def _stem_of(path_or_stem):
+    """Return the comparable stem of a path/stem reference (basename, no ext)."""
+    if not path_or_stem:
+        return ""
+    base = os.path.basename(str(path_or_stem).strip())
+    for ext in (".drawio", ".diagram.md", ".md"):
+        if base.endswith(ext):
+            base = base[: -len(ext)]
+            break
+    return base
+
+
+def _check_orphan_landscape(a: Artifact) -> bool:
+    """orphan-landscape: a landscape diagram has no valid flow-summary cross-link.
+
+    A ``landscape`` diagram must declare ``summary_of`` pointing at a sibling
+    ``flow`` summary (the <=12-node overview). A landscape with an empty or
+    missing ``summary_of`` is an ERROR — this encodes the "summary + detailed"
+    pair as a checked contract rather than a convention (v1.3.0). ``flow``
+    diagrams are unaffected.
+    """
+    if not _is_diagram(a):
+        return False
+    if (a.diagram_class or DIAGRAM_CLASS_FLOW).lower() != DIAGRAM_CLASS_LANDSCAPE:
+        return False
+    return not _stem_of(a.summary_of)
+
+
+def _check_overlay_legend_coverage(a: Artifact) -> bool:
+    """overlay-legend-coverage: an overlay marker is not covered by the Legend (WARNING).
+
+    When a diagram carries double-encoded overlay markers (findings / state,
+    e.g. "spec-required-not-deployed", "observability-overlay", change markers),
+    every marker term must be documented in the Legend. An uncovered marker is a
+    WARNING. Diagrams with no overlay markers are unaffected.
+    """
+    if not _is_diagram(a):
+        return False
+    if not a.overlay_markers:
+        return False
+    covered = {str(t).strip().lower() for t in a.legend_overlay_terms}
+    for marker in a.overlay_markers:
+        if str(marker).strip().lower() not in covered:
+            return True
+    return False
+
+
 # Ordered rule registry: (rule name, predicate). Order defines finding order.
 _RULES = (
     (RULE_NODE_COUNT, _check_node_count),
@@ -514,6 +749,15 @@ _RULES = (
     (RULE_EDGE_ROUTING, _check_edge_routing),
     (RULE_NODE_OVERLAP, _check_node_overlap),
     (RULE_ARROW_STYLE, _check_arrow_style),
+    (RULE_CONTAINER_OVERLAP, _check_container_overlap),
+    (RULE_EDGE_DIRECTION, _check_edge_direction),
+    (RULE_TEXT_PADDING, _check_text_padding),
+    (RULE_CORRIDOR_SHARING, _check_corridor_sharing),
+    (RULE_EDGE_FLOAT, _check_edge_float),
+    (RULE_EXIT_THIRDS, _check_exit_thirds),
+    (RULE_EDGE_CROSSES_LABEL, _check_edge_crosses_label),
+    (RULE_ORPHAN_LANDSCAPE, _check_orphan_landscape),
+    (RULE_OVERLAY_LEGEND_COVERAGE, _check_overlay_legend_coverage),
 )
 
 
@@ -697,10 +941,14 @@ def lint(artifact: Any) -> Dict[str, Any]:
 
     findings: List[Dict[str, str]] = []
     for rule_name, predicate in _RULES:
-        if predicate(art):
-            findings.append(
-                {"rule": rule_name, "severity": RULE_SEVERITIES[rule_name].value}
-            )
+        result = predicate(art)
+        if not result:
+            continue
+        # A predicate may return a bare True (use the rule's default severity
+        # from RULE_SEVERITIES) or an explicit Severity for class-dependent
+        # rules (e.g. node-count: ERROR for flow, WARNING/ERROR for landscape).
+        severity = result if isinstance(result, Severity) else RULE_SEVERITIES[rule_name]
+        findings.append({"rule": rule_name, "severity": severity.value})
 
     eligible = not any(
         Severity(f["severity"]) in _BLOCKING_SEVERITIES for f in findings
@@ -739,4 +987,16 @@ __all__ = [
     "RULE_ARROW_STYLE",
     "RULE_TITLE_VERSIONED",
     "RULE_MERMAID_TYPE",
+    "RULE_ORPHAN_LANDSCAPE",
+    "RULE_OVERLAY_LEGEND_COVERAGE",
+    "RULE_CONTAINER_OVERLAP",
+    "RULE_EDGE_DIRECTION",
+    "RULE_TEXT_PADDING",
+    "RULE_CORRIDOR_SHARING",
+    "RULE_EDGE_FLOAT",
+    "RULE_EXIT_THIRDS",
+    "LANDSCAPE_NODE_WARN",
+    "LANDSCAPE_NODE_ERROR",
+    "DIAGRAM_CLASS_FLOW",
+    "DIAGRAM_CLASS_LANDSCAPE",
 ]

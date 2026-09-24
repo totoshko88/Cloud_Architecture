@@ -1,0 +1,78 @@
+name: Bug report
+description: Report a problem with the Rule Engine — a wrong lint result, a broken icon, a crash, or an artifact that fails the gate.
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. Please search
+        [existing issues](https://github.com/totoshko88/Cloud_Architecture/issues)
+        first to avoid duplicates.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear and concise description of the bug and what you expected instead.
+      placeholder: The linter reported `edge-direction` ERROR on a valid landscape edge...
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: The exact command(s) and inputs so we can reproduce it.
+      placeholder: |
+        1. Run `rule-engine-lint --all --fail-on error,critical`
+        2. Against `examples/aws/02-aws-ha-multiregion-landscape.drawio`
+        3. See the finding ...
+      render: shell
+    validations:
+      required: true
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Provider profile
+      description: Which provider profile is involved (if any)?
+      options:
+        - Not provider-specific
+        - aws
+        - azure
+        - gcp
+        - oci
+        - generic
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `pip show rule-engine` version, or the git commit / tag.
+      placeholder: "1.4.1"
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      description: Output of `python --version` (the engine targets 3.14+).
+      placeholder: "3.14.0"
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output / logs
+      description: Paste any relevant terminal output. This is automatically formatted as code, so no backticks needed.
+      render: shell
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this is not a duplicate.
+          required: true
+        - label: I redacted any secrets, credentials, or private account identifiers from the report.
+          required: true

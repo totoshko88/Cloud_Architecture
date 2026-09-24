@@ -68,6 +68,53 @@ Arrange diagram lanes in this fixed order. For a **left → right** (flow/applic
 - When a system contains more than 12 nodes, split it into multiple diagrams so that each diagram holds at most 12 nodes, and produce one index document that references every split diagram.
 - A cross-cloud composition diagram is also capped at 12 nodes.
 
+## Diagram Class (flow vs landscape)
+
+Every diagram declares a **class** in its companion `.diagram.md` frontmatter
+via `diagram_class`, defaulting to `flow`. The class chooses the node-count and
+container rules the Linter applies (see `diagram-lint.md` → *Diagram Class*).
+
+- **`flow`** (default) — a narrative / data-flow view answering "how does a
+  request move end-to-end?". Keeps the 12-node cap and the numbered-flow-marker
+  convention. Use for summaries, request flows, and any diagram a reader follows
+  along a single ordered path.
+- **`landscape`** — an as-built / inventory view answering "what is actually
+  deployed, and how does it all relate at once?". The node cap is relaxed
+  (WARNING &gt; 30, ERROR &gt; 50); in exchange, **nested labelled containers are
+  mandatory** (Account → Region → VPC → tier), their padding is an **ERROR** not
+  a WARNING, and the diagram **must cross-link to a `flow` summary** of the same
+  system via `summary_of`.
+
+**The sanctioned pair.** A large system is documented as one `flow` summary
+(≤ 12 nodes, the shape) plus one `landscape` as-built (the full inventory),
+cross-linked:
+
+- the `landscape` companion frontmatter sets `summary_of: <NN-topic-summary>`;
+- the `flow` summary companion frontmatter may set `detailed_view: <NN-topic-landscape>`.
+
+The reviewer reads the summary to get the shape, then drills into the landscape
+to reason about specifics. Do **not** split a comprehensive as-built into
+several 12-node pages — that destroys the one thing it exists to show (how
+everything relates at once). Author it as a single `landscape` instead.
+
+## Overlay Vocabulary (findings / state)
+
+A diagram may carry an **optional** second layer of meaning — findings and
+state — encoded **redundantly** as shape *and* color *and* label so it survives
+grayscale printing and color-blindness. When any overlay marker is used, every
+overlay term must be documented in the Legend (`overlay-legend-coverage`
+WARNING). The canonical vocabulary:
+
+| Meaning | Shape | Color | Label token |
+| --- | --- | --- | --- |
+| Spec requires, not deployed | dashed rectangle overlay | red `#D64550` | `spec-required-not-deployed` |
+| Observability overlay | stroked box | blue `#0062AD` | `observability-overlay` |
+| New in version N | badge on node | — | 🆕 |
+| Changed in version N | badge on node | — | 🔄 |
+
+Overlay markers are additive: they annotate existing nodes/edges, never replace
+the node's own icon or the standard Legend/Flow blocks.
+
 ## Node Quoting Rule
 
 - Enclose a node name in double quotes whenever it contains a space character or any character outside the set of ASCII letters, ASCII digits, hyphen (`-`), and underscore (`_`). Allowed unquoted set: `[A-Za-z0-9_-]`.
@@ -90,26 +137,102 @@ When a diagram uses numbered flow markers, it includes a **Flow** legend cell pl
 
 The standard Legend block additionally documents the marker convention with the line `Numbered markers (1..N) = ordered data flow steps; see Flow list`.
 
+**Flow and Legend share one width, and each box fits its text without wrapping.** The two right-margin cells (`Flow` and `Legend`) use the **same width**, chosen so the **longest line across both** fits on one line — no wrapping. Height is sized to each box's own (unwrapped) line count plus the uniform inner padding, so the pair reads as one aligned block with a consistent left/right silhouette (widths equal; heights may differ per content). The shared builder computes this: `build_diagram` sets one `box_w` from the longest Flow/Legend line and applies it to both, and sizes each height from its line count — never a fixed width that wraps the long legend lines. Reserve enough right-margin page width for `legend_x + box_w`.
+
 ## Edge Routing
 
 Route edges so that no edge crosses through a node icon and no two edges overlap where it can be avoided. Use orthogonal routing (`edgeStyle=orthogonalEdgeStyle`) for `.drawio` sources. Fix connection points explicitly with `exitX/exitY` and `entryX/entryY` rather than relying on floating connections.
 
+**The directional contract (the one hard rule — stated first).** Every edge with explicit contact points **exits** its source on the **right or bottom** and **enters** its target on the **left or top**. In draw.io unit-square fractions: a valid exit leans right (`exitX >= 0.5`, which admits the right edge and the top-right / bottom-right corners) or sits on the bottom edge (`exitY == 1`); a valid entry leans left (`entryX <= 0.5`) or sits on the top edge (`entryY == 0`). A left-edge exit (`exitX=0`) or a right-edge entry (`entryX=1`) is the defect. This single rule removes most crossings on a dense diagram and is enforced by the `edge-direction` lint rule — WARNING for `flow`, **ERROR for `landscape`**. Exceptions are the documented corner-exit and back-edge patterns below (both still exit right/bottom, enter left/top).
+
+**No floating connections (pin every contact point).** Because the contract is checked from the contact points, every edge must actually **set** them (`exitX/exitY` + `entryX/entryY`) rather than float its connection to draw.io's perimeter router, which picks a side by geometry and drifts. An edge that sets neither an exit nor an entry point is an `edge-float` finding — WARNING for `flow`, **ERROR for `landscape`** (a dense as-built must pin every side).
+
+**One edge per corridor (no merged lines).** Two **unrelated** long edges must never run in the same straight corridor — same horizontal (or vertical) grid line with overlapping extent — because the two lines merge into one and cannot be told apart. Offset each parallel run by ≥ one grid step onto its own corridor via explicit `<mxPoint>` waypoints. Cross-region / cross-AZ long-haul edges each get their **own** dedicated corridor (e.g. a lane above the AZ boxes or in the inter-VPC gap), one lane each. A **shared trunk is exempt**: edges leaving the *same source* (or reaching the *same target*) may share their stub before branching in opposite directions. This is enforced by the `corridor-sharing` lint rule (WARNING).
+
+**Spine edges route via a side corridor, not down the node column.** A vertical "spine" hop between tiers in the same column (edge → router → app, app → data) should **not** drop straight down through the column even when source and target share an x — a straight in-column vertical visually collides with the icons and their labels stacked in that column. Instead **exit the source's right, drop in the gap corridor one grid column beside the column, and enter the target's left/top.** For the canonical HA layout that gap sits between the node column and the next (e.g. a load-balancer at column x routes down the corridor at `x + ½·COL_STEP` — the empty lane between the LB column and the cache column — then into the app node). This keeps the spine legible and leaves the node column clear for labels. (Distilled from a reviewer's hand-edit of the AWS landscape, 2026-09-23.)
+
+**Fan-out along a row: turn up into the target in the gap BEFORE it, not right after the source.** When one node fans out to several targets to its right on the same row (e.g. `app → cache`, `app → db`, `app → object-store`, where cache/db/obj sit two-plus columns away past intervening icons), each edge exits the source's right/bottom, runs along its **own** below-row lane, and makes its **vertical up-turn in the inter-column gap immediately to the LEFT of its target** — then enters the target's left face. Do **not** drop all the fan-out verticals right beside the source: that stacks them a few pixels apart so they read as one merged line, and forces every edge to run the full width under the row. Placing the up-turn in the gap just before each target (`target_x − ~½ gap`) instead spreads the verticals across the row (one per target, well separated) and keeps each horizontal run only as long as it must be. Pair this with **distinct below-row lanes** (each edge its own y, ≥ 1 grid step apart) so the horizontals never merge either. Net shape: a set of stepped "exit-right → own lane → up-turn just before the target → enter-left" edges that fan across the row cleanly, rather than a bundle of near-parallel lines hugging the source. (Distilled from the reviewer's `app→db` / `app→obj` routing on the AWS landscape, 2026-09-23.)
+
+**A back-edge's turn corridor sits one column beyond its SOURCE, not the canvas edge.** When an edge's target is far to the right (or a back-reference to the left), its first turn happens in the gap **one grid column beyond the source**, and it runs across in a reserved lane from there — it does **not** detour to a far/outer column first (that makes the longest, most border-crossing line on the canvas). Example: a `dns → passive-LB` standby edge turns at `dns_x + ~1 column` and crosses in a mid corridor, rather than travelling to the passive region's own column before turning. (Generalises the earlier "turn near the source" lesson to the spine edges.)
+
+**Never leave an edge endpoint detached.** Every edge's `source` and `target` must reference the **node cell id**, never a floating `<mxPoint>` coordinate. A hand-drag in draw.io can detach an arrowhead onto empty canvas (the edge then has no `source=`/`target=`); such an edge renders as a line to nowhere and trips `edge-float`. Re-attach both ends to their node ids. (This is why the generator sets `source`/`target` explicitly and never emits point-only endpoints.)
+
+**Step sideways before turning (stair, not an immediate right-angle at the glyph).** When an edge leaves a service's side and must then turn, take a short step **into the gap corridor first** and only **then** turn — the turn happens one grid column off the node, not glued to the node's border. Concretely, the first waypoint after a right exit sits at the gap-corridor x (e.g. `source_right + gap`), and the vertical drop happens there — never at the source's exact edge x. A right-angle bend flush against the glyph reads as a kink; a short lead-out step then the turn reads as a clean stair. (Distilled from a reviewer hand-edit, 2026-09-23.)
+
+**One turn at a time; no long vertical run parallel to a node column.** Minimise the number of turns an edge makes, and never run a long vertical **alongside a column of icons** (e.g. hugging the boundary's inner margin next to the app/api column) — it reads as a parallel rail and visually merges with the column. A tier-skipping vertical (e.g. LB → app in the second AZ) routes in an **inter-column gap corridor**, drops once, and enters the target's left/top with a single step-in — not a left-margin detour with a full-height vertical beside the nodes.
+
+**A tier-skip must not cross a fan-out; take the one clear corridor.** When a long tier-skipping edge (e.g. `LB → app-AZ2`) would have to cross the source-tier's fan-out lanes (the `app → cache/db/object-store` below-row corridors all sit to the *right* of the app column), route it instead down the **one reserved corridor that crosses none of them** — the gap on the side the fan-out does *not* occupy (here the left gap, `vpc_left..app_left`, centered), and enter the target's near face. Choosing the crossing-free lane beats a "prettier" central drop that cuts every fan-out horizontal. Verify the chosen corridor's x is outside every fan-out segment's x-range before committing it.
+
+**A bottom fan-out exits DOWN first, then steps (stair from the bottom).** In the rare case a bottom exit is used (target directly below, no label between — see *Label-safe exits*), the edge goes **straight down** into its lane first and only then turns sideways — it does not leave from a bottom corner and immediately veer. (Mirror of the side stair: side → step out then turn; bottom → drop then turn.)
+
+**Step out before turning up, too (not only down).** The stair rule is symmetric for upward turns: a cross-tier/cross-region edge that exits a node's right and must then rise into a corridor **steps sideways into the gap first, then turns up** — the vertical up-leg sits one grid column off the node, never glued to the node's right edge. Example: cross-region `db → db'` exits right, steps to `source_right + gap`, then rises into its corridor.
+
 Directional convention (matches the lane order and provider reference diagrams):
 
-- **Entry** into a node is on its **left** (`entryX=0`) or **top** (`entryY=0`).
-- **Exit** from a node is on its **right** (`exitX=1`) or **bottom** (`exitY=1`).
-- **Distinct contact points per edge**: when a single node has **more than one** edge on the same side, give each edge a different contact point along that side (for example `exitY=0.25`, `exitY=0.5`, `exitY=0.75`) so the edges fan out instead of stacking on one point. The same rule applies to multiple entries into one node.
-- **Separated parallel runs (grid-step spacing)**: two edges must never share the same horizontal or vertical corridor. When parallel orthogonal segments would otherwise overlap, offset each run by at least **one grid step** (the model `gridSize`, default `10`) so the lines step apart with a visible gap. Give such edges explicit routing waypoints (`<mxPoint>` entries inside `<Array as="points">`) on distinct grid columns or rows; do not rely on the auto-router to separate them. Adjacent parallel runs should differ by a whole multiple of the grid step (`10`, `20`, …), never by a fraction.
-- **No edge–node crossings**: an edge must not pass through any node it does not connect. Route the edge around intervening nodes using waypoints, or move the node out of the corridor. A line that visually overlaps an unrelated node icon is a defect.
-- **No edge–label / edge–legend crossings**: keep every edge clear of the right-side `Flow` and `Legend` cells; reserve the right margin for those blocks and route edges within the diagram body.
-- **Shared trunk, opposite branches (fan-out from one node)**: when a single source fans out to several targets stacked on the same side (for example a worker that writes to a store above it *and* a store below it), route the edges into **one shared vertical (or horizontal) trunk** just outside the source, then branch off it in **opposite directions** — one run goes up to the upper targets, the other goes down to the lower targets. Because the two branches leave the trunk in opposite directions they never overlap, the total ink and corner count stay low, and the picture reads as a clean tree rather than a bundle of near-parallel lines. Place the trunk one clear grid column (or row) beyond the source's edge, and keep any genuinely parallel branch on its own grid-step-separated corridor as above. Prefer this trunk-and-branch shape over giving every fan-out edge its own long detour corridor.
-- **Clean arrow start (exit slightly past the perimeter)**: so an arrow does not visually bite into the source glyph, start it just outside the icon border. Set the exit point a hair beyond the perimeter (for example `exitX=1.02` with `exitPerimeter=0`, or the matching `exitY`) rather than exactly on it. This keeps the stub clear of the icon while the arrowhead still lands cleanly on the target's entry point.
+- **Exit side priority (in order).** Choose the exit point by the first rule that fits: (1) **right, centred** (`exitX=1, exitY=0.5`) is the default; (2) **right, biased toward the run's direction** — nearer the top for a target above, nearer the bottom for a target below; (3) **straight down the bottom** (`exitY=1`) **only when that is the shortest path** and no label lies between source and target (see *Label-safe exits*); (4) a **second/third** edge repeats this priority, spread across the side by the even-thirds rule below. The right side is the default because a bottom/top stub crosses the node's own caption.
+- **Entry side by the incoming line, then centred.** The entry **side** is chosen by where the line arrives, not by a fixed left-before-top order: a line arriving **horizontally** enters the **left** (`entryX=0`), a line descending **vertically** enters the **top** (`entryY=0`). On that side the point is **centred** (`0.5`) by default. Only when a target takes **more than one** entry do the extra entries **shift off centre toward their own incoming line** (by the even-thirds rule) so each stub meets its line without doubling back. Never enter over the target's own label.
+- **Distinct same-side exits (straight line keeps the centre).** A node with **one** edge on a side uses that side's **centre** (`0.5`). When several edges share a side, an edge whose target sits **directly opposite** (same row → a straight horizontal; or directly below → a straight vertical) keeps the **centre** because a straight line is the most readable; the *other* edges spread around it. The only hard requirements are that the exits stay **distinct** (any two ≥ ~⅕ of the side apart, so they never merge into one doubled line at the glyph) and that a side carries **at most three** exits (a fourth means the node is over-connected — split or re-lane). This is deliberately looser than a rigid `0.25/0.5/0.75` grid, so `0.5` + a spread pair, or `0.33/0.66`, are all valid. Lint-checked (`exit-thirds`, WARNING — over-connected side, or two exits that merge).
+- **Step out one grid step before turning (exit and entry alike).** An exit runs one grid step straight out of its side before its first turn; an entry runs one grid step straight into its side after its last turn. The corner never sits flush against the glyph — it is one step off, in the gap corridor. This is the *stair* shape stated once for both ends.
+- **Clean arrow start (exit slightly past the perimeter).** Start the stub a hair beyond the icon border (`exitX=1.02` with `exitPerimeter=0`, or the matching `exitY`) so the arrow does not bite into the source glyph while the head still lands on the target's entry point.
+- **Route around obstacles clockwise.** When an edge must detour around an intervening node, a container border, or another line, go around it **clockwise** (obstacle kept on the edge's left). One fixed turn direction makes the detour deterministic — two agents routing the same edge produce the same path — and stops a detour from doubling back into what it just avoided.
+- **Any overlap (edge, or a container border) means step off by one grid step.** If a run would coincide with another edge's corridor **or with a boundary/container border**, offset it by at least one grid step onto its own lane via explicit `<mxPoint>` waypoints. A line riding along a box border reads as part of the border; a line riding another line merges into one. Both are the same fix: step off a step.
+- **When space is tight, widen — never narrow — the corridor.** If a corridor cannot hold every parallel run at one grid step apart, grow the gap (push nodes or the container out a step) rather than squeezing runs below one step. More padding is always better than a corridor too narrow to separate its lines. This is the tie-breaker whenever spacing and compactness conflict.
+- **No edge–node crossings.** An edge must not pass through any node it does not connect; route around it (clockwise, per above) with waypoints, or move the node out of the corridor. A line overlapping an unrelated icon is a defect.
+- **Corridors clear the label band (no line through a caption).** A horizontal corridor placed one grid step under an icon still runs through the **service caption** drawn beneath it (the label band, ~one line ≈ 30px below the icon). Every horizontal run therefore starts **below the source row's label band** (a below-row lane insets past `icon_bottom + LABEL_BAND`), and an over-row corridor insets past the **upper** row's label band. This keeps a fan-out or cross-region run off the names of the row it passes. Enforced by the `edge-crosses-label` lint rule (WARNING): a routed polyline that crosses an unrelated node's label band is flagged, so the icon-box geometry rules (which measure the bare icon) do not let a caption-crossing slip through.
+- **Bottom-exit is a last resort, only to remove a crossing.** The default is a right exit (a bottom stub crosses the node's own caption). A tier-skip to a target **strictly below in the same column** MAY exit the bottom **only when** doing so removes a crossing the right-exit route would make and introduces none — verified against the geometry oracle, never applied speculatively.
+- **No edge–label / edge–legend crossings.** Keep every edge clear of the right-side `Flow` and `Legend` cells; reserve the right margin for those blocks and route edges within the diagram body.
+- **Shared trunk, opposite branches (fan-out from one node).** When a single source fans out to targets stacked on the same side, route the edges into **one shared trunk** just outside the source (one clear grid column/row beyond its edge), then branch off it in **opposite directions** — up to the upper targets, down to the lower ones. The branches never overlap, ink and corner count stay low, and the picture reads as a clean tree. This is the one place edges may share a stub (the `corridor-sharing` exemption for a common source/target); prefer it over giving every fan-out edge its own long detour corridor.
 
 A node should not sit directly between two other nodes on a straight horizontal or vertical line that an edge must traverse; stagger nodes across lanes (vary the row) so edges route around icons rather than through them.
+
+### Named routing patterns (apply to both classes)
+
+These patterns are independent of node count and matter most on dense diagrams.
+They were distilled from building a 40-node as-built against this standard.
+
+- **Directional back-edge (exit-right / loop / enter-left).** When an edge's
+  target is to the **left** of its source (a back-reference, e.g.
+  `Bedrock → Aurora` where Aurora sits in an earlier column), it must **exit the
+  source's right, travel in a dedicated over/under corridor, and enter the
+  target's left** — never exit the same side it enters. Exiting left and
+  re-entering left makes the edge cross its own column. Give the back-edge its
+  own grid-step corridor above (or below) the node rows so it clears every icon.
+- **Longer clean detour over a short crossing.** When routing an edge either
+  short-but-through an unrelated icon, or longer-but-around it, always choose the
+  longer path that stays in declared corridors. A fan-out edge from a stacked
+  column must leave through a **side corridor** one grid column beyond the stack,
+  not straight through the middle icon of the stack. Ink economy never justifies
+  a crossing.
+- **Corridor before content.** Decide the horizontal/vertical gap corridors
+  *before* placing edges; assign each parallel run its own grid-step column/row
+  via explicit `<mxPoint>` waypoints. Do not rely on the auto-router to separate
+  parallel runs — it merges them.
 
 ## Container Padding
 
 A Boundary or Network Boundary container must leave a margin of at least **one grid step on every side** between the container edge and the nodes inside it, and between a nested container (for example a Network Boundary inside a Boundary) and its parent. Do not place a node flush against, or straddling, a container border. Size containers so their children plus this padding fit without the border clipping a node or its label.
+
+**A node's footprint includes its label.** A node cell is a 78×78 icon, but the service name renders in a caption band directly **below** the icon (`verticalLabelPosition=bottom`). That band collides with the next row and the container border exactly as the icon does, so *padding is measured against the footprint (icon + one label line, ~30px), not the bare icon box*. Sizing a container to the icon boxes alone leaves the labels crowding — or overflowing — the border, which reads as "no padding" even though the icons technically fit. The `container-padding` and `node-overlap` lint rules are label-aware for this reason.
+
+**Text-box padding (Flow / Legend / notes).** Every text box that draws a **visible box** (a concrete `fillColor` and `strokeColor`) reserves uniform inner padding on all four sides — `spacingLeft=spacingRight=spacingTop=spacingBottom=10` (one grid step) — so no line of text abuts the stroke, and is sized from its content **plus** that padding (one 12px line ≈ 16px of leading). Use the one project-wide value everywhere so every box breathes identically. The shared builder's `_TEXT_STYLE` carries these tokens and `build_diagram` auto-sizes the box height, so every generated Flow/Legend cell passes; a borderless title or free label (no concrete fill+stroke) has no box to pad and is exempt. Enforced by the `text-padding` lint rule (WARNING).
+
+## Container Nesting (proper nesting, no sibling overlap)
+
+Boundary containers form a **strict tree**: a child is *fully inside* its parent with padding (Account ⊃ Region/VPC ⊃ Availability Zone ⊃ tier). Two containers either nest (one fully contains the other) or are **disjoint siblings** — they must never *partially* overlap. Two overlapping peer boundaries (for example a primary-region VPC box bleeding into the passive-region VPC box) put shared canvas area under two labelled groups at once, so a node in that area is ambiguous about which boundary owns it. A sibling overlap is a `container-overlap` finding (WARNING for `flow`, **ERROR for `landscape`**).
+
+Practically: give each region/VPC its own horizontal band with a clear gap between peers, size each Availability-Zone box to sit fully inside its VPC with ≥ 1 grid step of padding, and never let two AZ boxes (or two VPC boxes) share an x- or y-corridor. **Sibling containers in the same row share a common top edge and height; in the same column, a common left edge and width** — absorb any padding correction by adjusting the non-shared dimension (width for a row, height for a column), so peer boundaries read as one banded row rather than a ragged step.
+
+**Balance the horizontal space: centre nodes in their boundary; keep sibling bands one consistent gap apart.** Do not leave a large dead gap between two region/VPC bands while the nodes hug one side of each. Nudge each band's nodes so they sit **centred within their boundary** (even left/right padding), pull sibling bands together so the inter-band gap is **one consistent step** (not a wide void), and size the enclosing parent (Account) to **wrap the bands snugly** with one grid step of padding — no trailing empty margin. All nudges are whole grid multiples so every origin stays on the grid; the right-margin Flow/Legend column then sits just past the tightened parent, not far out in dead space. (Distilled from a reviewer's space-optimisation of the AWS landscape, 2026-09-23.)
+
+**Sibling region bands are equal size, and their nodes sit centred on the grid.** Peer region containers (the primary and passive VPC, and their matching AZ boxes) must be the **same width** — a passive region is not drawn narrower than the active one. Widen both bands toward the shared centre so their outer edges stay put and their widths match. Within each band, the block of service nodes is **centred** in its VPC with equal left/right padding, and every node origin stays on the grid (a whole grid multiple). Centre the block as a whole (all nodes plus their edge waypoints move together) so routing is preserved; do not centre by eye. This keeps the two regions mirror-symmetric and readable. (Reviewer goal 2026-09-23.)
+
+**Reserve the right margin for Flow/Legend, clear of the cloud.** The `Flow` and `Legend` text blocks live in the right margin, their left edge at least one grid step **past the outermost container's right edge** — never overlapping the account/VPC boxes. When the diagram is wide, pin the blocks **narrow and let them wrap taller** rather than run wide into (or past) the diagram body; a narrow-and-tall Flow/Legend never collides with a node or a container border.
+
+**Size a parent's envelope from its deepest child's FOOTPRINT, not its top.** A parent container's bottom (and right) must clear its deepest/rightmost child by ≥ 1 grid step measured against that child's **footprint** (icon + label band), and the child container must clear ITS deepest node the same way. Grow the parent's height/width to satisfy this — never shrink a child box until its own node's label touches its border. Concretely: if the lowest node's footprint bottom is `B`, the enclosing AZ box bottom is ≥ `B + 30`, the VPC box bottom is ≥ `AZ_bottom + 30`, and the Account box bottom is ≥ `VPC_bottom + 30`; the page height follows the Account box. A nested box whose bottom coincides with its parent's bottom (flush) is a `container-padding` finding.
+
+## External actors and on-premises sit OUTSIDE the cloud boundaries
+
+An actor (lane `actors`) or an on-premises / external-datacenter node (lane `on-premises`) is **not** an account/region resource and must be placed **outside** the stack Boundary and Network Boundary containers. Only cloud resources live inside them. On-premises resources get their **own** boundary container (an On-premise group) drawn outside and separate from the cloud Account/Region boundary — never inside it, and never as a bare floating icon. The cross-boundary edge (a cloud tool → an on-prem server) then visibly crosses from the cloud boundary into the on-prem boundary, which is the point.
 
 ## Layout Geometry (canonical, all providers)
 
@@ -134,6 +257,18 @@ Every generated diagram uses one shared numeric layout so AWS, Azure, GCP, OCI, 
 **Edge routing on the grid.** Route every edge orthogonally (`edgeStyle=orthogonalEdgeStyle`), start stubs just past the source perimeter (`exitPerimeter=0`), and enter left/top, exit right/bottom. When two or more edges would share a corridor, give each explicit `<mxPoint>` waypoints on its own grid column/row, offset by ≥ 1 grid step, so no two lines overlap and no line crosses an unrelated icon or a legend block. When several nodes stack in one column, route edges among them through a side corridor (one grid column left or right of the stack) rather than straight through the middle icon.
 
 **Layout quality is now lint-enforced.** The linter parses the `.drawio` geometry and checks `grid-alignment` (node origins on the grid), `container-padding` (≥ 1 grid step inside every boundary), `node-overlap` (no icons drawn on top of each other), and `edge-routing` (orthogonal edges; a waypoint-free edge may not run straight through an unrelated node). These are advisory WARNINGs — they surface layout defects without blocking publication.
+
+## Icon Fidelity (one role per distinct service)
+
+A node's icon is only ever as correct as the **role** it is mapped to. A service that is semantically different from an existing role gets its **own role** with a per-provider icon — never a look-alike reused from another role. A CDN is not an object store; a DNS/traffic-manager is not a load balancer; a WAF is not a generic secrets store. The presentation roles beyond the nine neutral resource types (for example `cdn`, `dns`, `waf`, `lb`, `cache`) are declared in `mappings/roles.yaml` and resolved, per provider, into the committed `mappings/icon-index.json` by the init-time icon-set builder (`rule-engine-build-icon-sets`; see `asset-packs.md`). Diagram generators resolve a role→icon through that index rather than hand-writing an SVG path or stencil id.
+
+Provider specifics:
+
+- **AWS / Azure / GCP** resolve to an official pack file (or, for AWS, a built-in `mxgraph.aws4` `resIcon`). **GCP follows Google's own docs taxonomy**: a service with a dedicated 2025 product icon uses it; a service without one uses its **category** icon (product-first, category-fallback). Cloud CDN has no product glyph, so — exactly as `docs.cloud.google.com` does — it uses the **Networking category** icon. This is Google's convention, not a look-alike substitution.
+- **OCI** ships no built-in draw.io library: every OCI node renders via an **embedded stencil** (`OciStencilIcon`, slug from the 218 decoded stencils in `assets/vendor/oci-stencils/stencils.json`), the same mechanism as the OCI golden example. The OCI-red labelled-box form is a **last-resort fallback only when the stencil pack is absent**, never the default — a node that renders as an empty box is a defect.
+- **Never customise a pack icon** (no forced opaque `fillColor`, no recoloured stroke). Signal state with an overlay (red dashed ring + label, edge color, badge, legend entry), not by repainting the glyph.
+
+**Visual render check.** A name-only linter cannot see that a well-formed reference rendered as an empty box, so the pre-export checklist includes a visual pass: confirm every icon actually **renders** in the exported PNG, not merely that its id/path is spelled right. `rule-engine-verify-icon` resolves each reference against the committed index to catch a typo before export.
 
 ## Accessibility & Contrast
 
@@ -163,23 +298,22 @@ If any required output file for a diagram cannot be produced, return a generatio
 
 ## Raster Export Dimensions
 
-The exported `NN-topic.drawio.png` must stay readable and lightweight, aligned with AWS diagram conventions.
+The exported `NN-topic.drawio.png` must stay readable and lightweight, aligned with AWS diagram conventions. **The budget is class-aware**: a `flow` diagram fits a documentation column, so its raster is narrow; a `landscape` as-built exists to show a whole system on one canvas, so forcing it into a flow-width raster shrinks thirty-plus nodes until the icons are illegible (the exact defect the audit surfaced). A landscape therefore exports wider — the reference detailed as-built lands at ~3400px — and readability at that width is held by the container / padding / overlap / direction rules, not by a narrow cap.
 
-| Property | Target | Rationale |
-| --- | --- | --- |
-| Max export width | **≤ 1200px** | fits documentation columns without horizontal scroll |
-| Readable when scaled | legible at **700px** wide | thumbnails / embedded previews stay usable |
-| File size | **< 500KB** | fast page loads; avoids bloating the repo |
-| Resolution | **72–96 DPI** for web display | crisp on screen without oversizing |
-| Background | explicit **white** (`#FFFFFF`) | consistent rendering across viewers (see Accessibility & Contrast) |
-| Outside padding | **8px** on all sides, no visible outer border | clean framing per AWS convention |
+| Property | `flow` target | `landscape` target | Rationale |
+| --- | --- | --- | --- |
+| Max export width | **≤ 1600px** | **≤ 3600px** | flow fits a doc column (a touch wider for a two-region summary); a landscape needs far more |
+| File size | **< 500KB** | **< 2MB** | fast page loads; a wide as-built is inherently heavier |
+| Resolution | **72–96 DPI** | **72–96 DPI** | crisp on screen without oversizing |
+| Background | explicit **white** (`#FFFFFF`) | explicit **white** (`#FFFFFF`) | consistent rendering across viewers (see Accessibility & Contrast) |
+| Outside padding | **8px** all sides | **8px** all sides | clean framing per AWS convention |
 
 Rules:
 
-- Export the raster at an image width of **1200px or less** while preserving the source aspect ratio; the diagram must remain legible when that image is displayed at **700px** wide.
-- Keep the PNG under **500KB**. If a diagram cannot meet the size/width budget while staying readable, that is a signal it holds too much — **split it** (each split still capped at 12 nodes with an index document), rather than exporting an oversized raster.
-- The **model** canvas may be larger than 1200px (draw.io units); it is the **exported image** that carries the width/size budget. Choose an export scale that lands the image within the budget.
-- These export limits are **authoring guidance**, not a lint rule: the linter evaluates the `.drawio` source and the companion document, not the rendered PNG's pixel dimensions or byte size. Verify them at export time (the CI raster step is the place to add an automated width/size gate if desired).
+- A `flow` raster stays at **1600px or less** and **under 500KB**. If a flow diagram cannot meet that while staying readable, that is a signal it holds too much — **split it** (each split still capped at 12 nodes with an index document), rather than exporting an oversized raster.
+- A `landscape` raster may run up to **3600px** and **under 2MB** — do **not** split a comprehensive as-built to fit the flow width, since that destroys the one thing it exists to show. `scripts/export_raster.py` picks the export width from the diagram's `diagram_class` automatically (flow → 1600px, landscape → 3400px).
+- The **model** canvas may be larger than the export width (draw.io units); it is the **exported image** that carries the width/size budget. Choose an export scale that lands the image within its class budget.
+- The class-aware budget **is** enforced — by the raster gate (`rule-engine-check-rasters`), which reads each `.drawio`'s companion `diagram_class` and applies the matching width/size ceiling. (The linter still evaluates only the `.drawio` source and companion, not the PNG; the raster gate is the pixel/byte enforcement point.)
 
 ## Title Cell Format
 
@@ -243,12 +377,37 @@ endlegend
 - [ ] Every edge carries a non-empty label (numeric marker `N` counts)
 - [ ] Numbered flow markers used; prose moved to a right-side `Flow` legend
 - [ ] Orthogonal edge routing; no edge crosses an icon; entries left/top, exits right/bottom
-- [ ] Multiple edges on one node side use distinct contact points (fan out)
+- [ ] Exit priority: right-centre → right-biased → straight-down-if-shortest → repeat per thirds (never over a label)
+- [ ] Entry side follows the incoming line (horizontal→left, vertical→top), centred; extra entries shift toward their own line
+- [ ] Same-side exits stay distinct (never merge) and number ≤ 3; a straight-line edge keeps the centre
+- [ ] Step out one grid step before the first turn (exit AND entry); corner never flush against the glyph
+- [ ] Detours go clockwise around any obstacle (node, border, or line)
+- [ ] Any overlap with an edge OR a container border → step off by one grid step onto own lane
+- [ ] When spacing is tight, widen the corridor — never squeeze runs below one grid step
 - [ ] Parallel runs separated by ≥ 1 grid step via explicit waypoints (no shared corridor)
 - [ ] Fan-out from one node uses a shared trunk with branches in opposite directions
+- [ ] Back-edges exit right / loop / enter left — never exit the side they enter
+- [ ] Fan-out from a stacked column leaves via a side corridor, not through the middle icon
+- [ ] Row fan-out: each edge turns up in the gap just before its target (not stacked beside the source); own below-row lane per edge
+- [ ] Step sideways into the gap corridor before turning (stair) — no right-angle bend glued to the glyph edge; symmetric for up-turns (step out then rise)
+- [ ] Minimise turns; no long vertical run parallel to a node column; a tier-skip takes the one corridor that crosses no fan-out lane
+- [ ] Two+ edges leaving one node side use points ≥ a third apart (0.25/0.5/0.75); a third edge moves to another face (bottom)
+- [ ] Bottom fan-out exits DOWN first, then steps sideways (stair from the bottom)
+- [ ] Parent container bottom/right clears the deepest child footprint by ≥ 1 grid step (grow the parent, don't shrink the child); no flush borders
+- [ ] Flow and Legend boxes share one width sized tight to the longest line (no wrap); heights fit each box's text
+- [ ] Diagram class declared in companion frontmatter (`flow` default, or `landscape`)
+- [ ] `landscape` cross-links a ≤12-node `flow` summary via `summary_of`
+- [ ] Any overlay marker (findings/state) is documented in the Legend (shape+color+label)
 - [ ] Arrow stubs start just past the source perimeter (exitPerimeter=0), not into the glyph
 - [ ] No edge overlaps an unrelated node, a label, or the right-side Flow/Legend blocks
-- [ ] Containers pad ≥ 1 grid step around child nodes and nested containers
+- [ ] Containers pad ≥ 1 grid step around child nodes and nested containers (padding measured against the icon+label footprint, not the bare icon)
+- [ ] Sibling containers do not overlap — boundaries nest strictly or sit disjoint (no partial overlap); peers in a row share top+height, in a column share left+width
+- [ ] External actors and on-premises nodes sit OUTSIDE the cloud boundaries (on-prem in its own boundary)
+- [ ] Directional contract: every edge exits its source right/bottom and enters its target left/top (`edge-direction`)
+- [ ] Every edge pins explicit exit/entry contact points — no floating connections (`edge-float`)
+- [ ] One edge per corridor: no two unrelated long edges share a straight lane; cross-region runs get their own corridor; shared trunk exempt (`corridor-sharing`)
+- [ ] Text/Legend/note boxes set uniform inner padding (spacing*=10) and are sized to content + padding (`text-padding`)
+- [ ] One role per distinct service; icon resolved through `mappings/icon-index.json` (CDN≠object-store; GCP CDN→Networking category; OCI via embedded stencil); every icon actually renders in the PNG
 - [ ] Icons uniform 78×78 (aspect=fixed); label hugs the icon (footprint = icon size)
 - [ ] All on-diagram text ≥ 12px; text/line contrast ≥ 4.5:1; meaning never color-only
 - [ ] Edges use open arrowheads (endArrow=open;endFill=0) and ≥ 1pt stroke
@@ -256,7 +415,7 @@ endlegend
 - [ ] Grid layout: columns step 220, rows step 160; hub adjacent to the data column
 - [ ] Raster images carry non-empty alt text
 - [ ] Triple present: `.drawio` + `.drawio.png` + `.diagram.md`
-- [ ] Exported PNG ≤ 1200px wide, readable at 700px, < 500KB, white background, 8px padding
+- [ ] Exported PNG within its class budget: flow ≤ 1600px / < 500KB, landscape ≤ 3600px / < 2MB; white background, 8px padding
 - [ ] Title cell: `<provider> <workload> — <boundary id> / <region> | <date> | vN`
 - [ ] Legend block present with all line styles, colors, and change markers
 - [ ] Cross-cloud: C4 container, per-profile icons/boundaries, ≤ 12 nodes, labeled edges

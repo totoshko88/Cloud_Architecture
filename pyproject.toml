@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rule-engine"
-version = "1.2.0"
+version = "1.4.1"
 description = "Diagram & Inventory Rule Engine — a cloud-agnostic Kiro project for deterministic diagram and inventory generation."
 readme = "README.md"
 # Python 3.14 is intentional: Python 3.10 reaches end-of-life in October 2026,
@@ -44,6 +44,15 @@ rule-engine-check-asset-paths = "rule_engine.asset_paths_guard:main"
 # Raster gate: verify every exported .drawio.png stays within the D7 export
 # budget (<= 1200px wide, < 500KB). Used by the CI validate stage.
 rule-engine-check-rasters = "rule_engine.raster_gate:main"
+# Icon-reference verifier (v1.3.0): resolve every resIcon/grIcon/image path
+# in a .drawio against the provider's authoritative icon source, so a guessed
+# id (which renders as an empty box) is caught before publication.
+rule-engine-verify-icon = "rule_engine.verify_icon:main"
+
+# Init-time icon-set builder (v1.3.x): fetch the official provider icon packs and
+# build the committed mappings/icon-index.json (per-role resolved icon per
+# provider + pack summary). Run at installation; --check verifies it is current.
+rule-engine-build-icon-sets = "rule_engine.build_icon_sets_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

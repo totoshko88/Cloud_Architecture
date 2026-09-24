@@ -89,11 +89,70 @@ rule-engine-index-assets --root ./assets-src --aws aws-icons \
 
 ```
 
+## Committed Icon Index & Init-time Build (icon standardisation)
+
+Service icons are **standardised on the official bundles at initialisation**. The
+init-time builder `rule-engine-build-icon-sets` (`src/rule_engine/build_icon_sets_cli.py`,
+thin wrapper `scripts/build_icon_sets.py`):
+
+1. **fetches** every pack in `mappings/asset-sources.yaml` (via `scripts/fetch_assets.py`),
+   unpacking into the git-ignored `assets/vendor/` and decoding the OCI `<mxlibrary>`
+   into `oci-stencils/stencils.json` (**218** slugs, incl. `cdn`, `dns`, `waf`);
+2. **indexes** each pack's filename / library structure (`asset_index.build_icon_index`)
+   and writes the committed **`mappings/icon-index.json`** — a `pack_summary` (per-provider
+   slug count) plus a **`roles`** layer: each diagram role → its resolved official icon per
+   provider.
+
+Only the **index** is committed; the heavy vendor binaries stay uncommitted. So generators
+and CI resolve a role→icon and verify wiring **without** the packs present, and a new or
+renamed vendor icon is a **re-index** (`rule-engine-build-icon-sets`), not a code edit.
+`--check` fails if the committed index is stale (wired into CI after the asset fetch);
+`--no-fetch` indexes already-fetched packs; `--full` embeds the complete per-slug tables.
+
+**Roles.** `mappings/roles.yaml` is the single source of truth for role → per-provider
+service query. It covers the nine neutral resource types plus presentation-only roles
+(`cdn`, `dns`, `waf`, `lb`, `cache`). For GCP a role may declare `gcp` (product query,
+resolved against `gcp-core`) and/or `gcp_category` (category fallback, against
+`gcp-category`) — **product-first, category-fallback**, matching Google's docs taxonomy:
+`docs.cloud.google.com` shows a flagship product's own icon, and a service without one
+(e.g. **Cloud CDN**) its **category** icon (`categories/networking-color.svg`). OCI role
+queries are the literal library slugs. `cache` has no dedicated OCI glyph and falls back to
+the Autonomous DB family (a recorded gap).
+
+**OCI source.** Use the draw.io `<mxlibrary>` (`OCI-Style-Guide-for-Drawio.zip`), which
+carries an explicit `title` per stencil (the clean slugs) and embeds into `.drawio`. The
+`OCI_Icons.pptx` is a slide deck of anonymous embedded images with no reliable title→image
+mapping — a documented last-resort fallback only.
+
+### draw.io-internal stencil manifests (aws4 + azure2)
+
+AWS `mxgraph.aws4.*` ids and Azure `img/lib/azure2/*.svg` paths ship **inside the draw.io
+app** (`app.asar`), not in a fetched pack — so a well-formed but non-existent id/path
+(e.g. `img/lib/azure2/databases/Azure_Cache_Redis.svg` when the real file is
+`Cache_Redis.svg`) renders as an **empty/broken icon** that the linter's `icon-resolved`
+rule cannot see. Two committed manifests close this gap, extracted from a local draw.io
+`app.asar` by `rule-engine-build-icon-sets` (via `rule_engine.azure2_shapes`):
+
+- **`mappings/azure2-shapes.json`** — every valid `img/lib/azure2/*.svg` path.
+- **`mappings/aws4-icons.json`** — every valid `mxgraph.aws4.*` id (asar-extracted **∪**
+  the curated `aws-icons.yaml` ids, so ids the asar scan misses — `bedrock`,
+  `group_account`, `group_vpc2` — are still covered).
+
+`rule-engine-verify-icon` checks every `resIcon`/`grIcon` against `aws4-icons.json` and every
+`img/lib/azure2/*` path against `azure2-shapes.json`; an unknown id/path is `unresolved`
+(a broken icon), not skipped. Committing the *manifests* (not the app) lets CI verify without
+draw.io present. They refresh whenever `rule-engine-build-icon-sets` runs on a machine with
+draw.io installed; when the app is absent the existing manifests are kept. OCI embedded
+stencils carry no `image=`/`resIcon=` token, so the build-time `OciStencilIcon` slug lookup
+against `stencils.json` (a `KeyError` on a missing slug) is their verification point.
+
 ### Anti-patterns
 
 - Do **not** hand-write a `shape=mxgraph.<lib>.<guess>` id and hope it resolves; an unknown stencil renders as an empty box (`icon-resolved` ERROR). Verify the id exists, or fall back to an official asset.
-- Do **not** commit vendor icon binaries or the unpacked packs; index them from a local build directory instead.
+- Do **not** commit vendor icon binaries or the unpacked packs; index them from a local build directory instead. (The `mappings/icon-index.json` lookup table **is** committed; the binaries are not.)
 - Do **not** substitute a look-alike icon for a missing service; use the correct official asset or leave it `unresolved` and obtain the right one.
+- Do **not** hand-write an SVG path or OCI slug in a generator; resolve the role through `mappings/icon-index.json` so a wrong/missing icon is caught at index-build time.
+- Do **not** reuse a role for a semantically different service (CDN as object-store, DNS as load-balancer); add a new role in `roles.yaml` and re-index.
 
 ## Adding Coverage For A New Service
 
