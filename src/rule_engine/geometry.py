@@ -484,6 +484,46 @@ def check_edge_routing(geo: DiagramGeometry) -> List[Tuple[str, str]]:
     return out
 
 
+def check_edge_crosses_label(geo: DiagramGeometry, label_band: float = LABEL_BAND) -> List[Tuple[str, str]]:
+    """Return ``(edge_id, node_id)`` for edges whose routed polyline crosses an
+    unrelated node's **label band** — the caption strip drawn beneath the icon
+    (``verticalLabelPosition=bottom``), from the icon bottom down by
+    ``label_band``.
+
+    A run that clears every icon can still cut straight through a service caption
+    a row below it (the "line crosses the service names" defect). This samples
+    each edge's full polyline (its real contact points plus every ``<mxPoint>``
+    waypoint) against each non-endpoint node's label-band rectangle, using the
+    same :func:`segment_crosses_box` predicate the routers and ``check_edge_routing``
+    use, so router and validator agree. Advisory (WARNING): it flags a crossing
+    the geometry rules alone (which measure icon boxes) would miss."""
+    out: List[Tuple[str, str]] = []
+    nodes = geo.nodes
+    for e in geo.edges:
+        if e.source not in nodes or e.target not in nodes:
+            continue
+        s, t = nodes[e.source], nodes[e.target]
+        ex = e.exit[0] if e.exit[0] is not None else 1.0
+        ey = e.exit[1] if e.exit[1] is not None else 0.5
+        nx = e.entry[0] if e.entry[0] is not None else 0.0
+        ny = e.entry[1] if e.entry[1] is not None else 0.5
+        polyline = [(s.x + ex * s.w, s.y + ey * s.h)]
+        polyline += list(e.points)
+        polyline += [(t.x + nx * t.w, t.y + ny * t.h)]
+        for other, b in nodes.items():
+            if other in (e.source, e.target):
+                continue
+            # The label band is the strip BELOW the icon (icon bottom .. +band).
+            band = Box(other, b.x, b.bottom, b.w, label_band)
+            crossed = any(
+                segment_crosses_box(p, q, band)
+                for p, q in zip(polyline, polyline[1:])
+            )
+            if crossed:
+                out.append((e.id, other))
+    return sorted(set(out))
+
+
 _TEXT_CELL_RE = re.compile(r'<mxCell\b[^>]*\bstyle="([^"]*text;[^"]*)"[^>]*>', re.I)
 _SPACING_TOKENS = ("spacingleft", "spacingright", "spacingtop", "spacingbottom")
 

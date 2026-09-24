@@ -1,6 +1,6 @@
 <mxfile host="app.diagrams.net" agent="rule-engine golden-example" version="24.0.0">
   <diagram id="azure-ha-summary" name="azure-ha-multiregion-summary">
-    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1610" pageHeight="1128" math="0" shadow="0">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1500" pageHeight="738" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -10,125 +10,108 @@
         </mxCell>
 
         <mxCell id="nb_a" value="region-primary (eastus)" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#0062AD;fillColor=none;verticalAlign=top;fontColor=#0062AD;fontSize=12" vertex="1" parent="1">
-          <mxGeometry x="220" y="30" width="1018" height="328" as="geometry" />
+          <mxGeometry x="30" y="190" width="358" height="488" as="geometry" />
         </mxCell>
         <mxCell id="nb_b" value="region-passive (westus2)" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#0062AD;fillColor=none;verticalAlign=top;fontColor=#0062AD;fontSize=12" vertex="1" parent="1">
-          <mxGeometry x="220" y="740" width="1018" height="328" as="geometry" />
+          <mxGeometry x="770" y="190" width="358" height="488" as="geometry" />
         </mxCell>
 
         <mxCell id="dns" value="global-dns-failover" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/networking/Traffic_Manager_Profiles.svg" vertex="1" parent="1">
-          <mxGeometry x="30" y="60" width="78" height="78" as="geometry" />
+          <mxGeometry x="540" y="60" width="78" height="78" as="geometry" />
         </mxCell>
         <mxCell id="lb_a" value="lb-primary" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/networking/Load_Balancers.svg" vertex="1" parent="1">
-          <mxGeometry x="250" y="60" width="78" height="78" as="geometry" />
+          <mxGeometry x="60" y="220" width="78" height="78" as="geometry" />
         </mxCell>
         <mxCell id="app_a" value="app-primary" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/compute/Kubernetes_Services.svg" vertex="1" parent="1">
-          <mxGeometry x="690" y="60" width="78" height="78" as="geometry" />
+          <mxGeometry x="60" y="380" width="78" height="78" as="geometry" />
         </mxCell>
         <mxCell id="db_a" value="db-primary" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/databases/SQL_Database.svg" vertex="1" parent="1">
-          <mxGeometry x="1130" y="60" width="78" height="78" as="geometry" />
+          <mxGeometry x="60" y="540" width="78" height="78" as="geometry" />
         </mxCell>
         <mxCell id="obj_a" value="objstore-primary" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/storage/Storage_Accounts.svg" vertex="1" parent="1">
-          <mxGeometry x="1130" y="220" width="78" height="78" as="geometry" />
+          <mxGeometry x="280" y="540" width="78" height="78" as="geometry" />
         </mxCell>
         <mxCell id="lb_b" value="lb-passive" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/networking/Load_Balancers.svg" vertex="1" parent="1">
-          <mxGeometry x="250" y="770" width="78" height="78" as="geometry" />
+          <mxGeometry x="800" y="220" width="78" height="78" as="geometry" />
         </mxCell>
         <mxCell id="app_b" value="app-passive" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/compute/Kubernetes_Services.svg" vertex="1" parent="1">
-          <mxGeometry x="690" y="770" width="78" height="78" as="geometry" />
+          <mxGeometry x="800" y="380" width="78" height="78" as="geometry" />
         </mxCell>
         <mxCell id="db_b" value="db-passive" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/databases/SQL_Database.svg" vertex="1" parent="1">
-          <mxGeometry x="1130" y="770" width="78" height="78" as="geometry" />
+          <mxGeometry x="800" y="540" width="78" height="78" as="geometry" />
         </mxCell>
         <mxCell id="obj_b" value="objstore-passive" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/storage/Storage_Accounts.svg" vertex="1" parent="1">
-          <mxGeometry x="1130" y="930" width="78" height="78" as="geometry" />
+          <mxGeometry x="1020" y="540" width="78" height="78" as="geometry" />
         </mxCell>
 
-        <mxCell id="s1" value="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0;exitY=0.3;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="dns" target="lb_a">
+        <mxCell id="s1" value="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5128205128205128;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="dns" target="lb_a">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="630.00" y="100.00" />
+              <mxPoint x="630.00" y="180.00" />
+              <mxPoint x="100.00" y="180.00" />
+              <mxPoint x="100.00" y="220.00" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="s2" value="2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.5128205128205128;exitY=1.0256410256410255;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5128205128205128;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="lb_a" target="app_a">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="s2" value="2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0;exitY=0.66;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="lb_a" target="app_a">
+        <mxCell id="s3" value="3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.5128205128205128;exitY=1.0256410256410255;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5128205128205128;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="app_a" target="db_a">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s4" value="4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5128205128205128;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="app_a" target="obj_a">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="340.00" y="120.00" />
-              <mxPoint x="340.00" y="140.00" />
-              <mxPoint x="620.00" y="140.00" />
-              <mxPoint x="620.00" y="100.00" />
+              <mxPoint x="150.00" y="420.00" />
+              <mxPoint x="150.00" y="530.00" />
+              <mxPoint x="320.00" y="530.00" />
+              <mxPoint x="320.00" y="540.00" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="s3" value="3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0;exitY=0.3;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="app_a" target="db_a">
+        <mxCell id="s5" value="5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=1.0256410256410255;exitY=0.7692307692307693;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5128205128205128;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="dns" target="lb_b">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="780.00" y="90.00" />
-              <mxPoint x="780.00" y="140.00" />
-              <mxPoint x="1060.00" y="140.00" />
-              <mxPoint x="1060.00" y="100.00" />
+              <mxPoint x="650.00" y="120.00" />
+              <mxPoint x="650.00" y="210.00" />
+              <mxPoint x="840.00" y="210.00" />
+              <mxPoint x="840.00" y="220.00" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="s4" value="4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0;exitY=0.7;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="app_a" target="obj_a">
+        <mxCell id="s6" value="6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.5128205128205128;exitY=1.0256410256410255;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5128205128205128;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="lb_b" target="app_b">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s7" value="7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.5128205128205128;exitY=1.0256410256410255;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5128205128205128;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="app_b" target="db_b">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="s8" value="8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5128205128205128;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="app_b" target="obj_b">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="780.00" y="120.00" />
-              <mxPoint x="770.00" y="120.00" />
-              <mxPoint x="770.00" y="260.00" />
+              <mxPoint x="890.00" y="420.00" />
+              <mxPoint x="890.00" y="530.00" />
+              <mxPoint x="1060.00" y="530.00" />
+              <mxPoint x="1060.00" y="540.00" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="s5" value="5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=1.0;exitY=0.7;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="dns" target="lb_b">
+        <mxCell id="s9" value="9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="db_a" target="db_b">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="120.00" y="120.00" />
-              <mxPoint x="110.00" y="120.00" />
-              <mxPoint x="110.00" y="810.00" />
-            </Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="s6" value="6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0;exitY=0.66;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="lb_b" target="app_b">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="340.00" y="830.00" />
-              <mxPoint x="340.00" y="850.00" />
-              <mxPoint x="620.00" y="850.00" />
-              <mxPoint x="620.00" y="810.00" />
-            </Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="s7" value="7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0;exitY=0.3;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="app_b" target="db_b">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="780.00" y="800.00" />
-              <mxPoint x="780.00" y="850.00" />
-              <mxPoint x="1060.00" y="850.00" />
-              <mxPoint x="1060.00" y="810.00" />
-            </Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="s8" value="8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0;exitY=0.7;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="app_b" target="obj_b">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="780.00" y="830.00" />
-              <mxPoint x="770.00" y="830.00" />
-              <mxPoint x="770.00" y="970.00" />
-            </Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="s9" value="9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=1.0;exitY=0.66;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="db_a" target="db_b">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="1220.00" y="120.00" />
-              <mxPoint x="1210.00" y="120.00" />
-              <mxPoint x="1210.00" y="810.00" />
+              <mxPoint x="170.00" y="580.00" />
+              <mxPoint x="170.00" y="660.00" />
+              <mxPoint x="730.00" y="660.00" />
+              <mxPoint x="730.00" y="580.00" />
             </Array>
           </mxGeometry>
         </mxCell>
 
         <mxCell id="flow-legend" value="Flow&#10;1. DNS routes users to the active (primary) region&#10;2. Primary load balancer forwards to the app tier&#10;3. App tier reads/writes the primary database&#10;4. App tier stores objects in the primary object store&#10;5. DNS holds the passive region on standby (health-checked)&#10;6. Passive load balancer forwards to its app tier&#10;7. Passive app tier uses its regional database&#10;8. Passive app tier uses its regional object store&#10;9. Primary database replicates cross-region to the passive database" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF;spacingLeft=10;spacingRight=10;spacingTop=10;spacingBottom=10" vertex="1" parent="1">
-          <mxGeometry x="1270" y="120" width="280" height="292" as="geometry" />
+          <mxGeometry x="1160" y="120" width="280" height="292" as="geometry" />
         </mxCell>
         <mxCell id="legend" value="Legend&#10;Solid line = primary flow&#10;Dashed line = asynchronous / event-driven flow&#10;Red = blocked / missing / disabled&#10;🆕 = new in version N&#10;🔄 = changed in version N&#10;Dashed outer boundary = stack Boundary (profile brand color)&#10;Dashed inner boundary = Network Boundary (profile brand color)&#10;Numbered markers (1..N) = ordered data flow steps; see Flow list" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF;spacingLeft=10;spacingRight=10;spacingTop=10;spacingBottom=10" vertex="1" parent="1">
-          <mxGeometry x="1270" y="360" width="280" height="212" as="geometry" />
+          <mxGeometry x="1160" y="360" width="280" height="212" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>

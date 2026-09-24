@@ -111,6 +111,7 @@ def test_ha_parity_has_expected_shape():
 
 from rule_engine.diagram_layout import CONTAINER_PAD, GRID  # noqa: E402
 from rule_engine.geometry import LABEL_BAND  # noqa: E402
+from rule_engine.layout_engine import TITLE_BAND  # noqa: E402
 
 # The two VPC service rows (declared members of the VPC directly, not an AZ).
 _SERVICE_ROW = {
@@ -159,6 +160,99 @@ def _assert_landscape_shape(g: geo.DiagramGeometry) -> None:
                 and fp.right <= vpc.right and fp.bottom <= vpc.bottom
             ), f"{nid} not inside VPC {_VPC_BY_REGION[region]}"
 
+    # --- Within-band HORIZONTAL ordering (Req 12.6, the regression guard). ---
+    # Each tier band reads left→right, NOT stacked in one column. This is the
+    # exact defect the structural predicate previously missed: the VPC service
+    # row (lb/queue/worker/secrets) and each AZ main row (app/cache/db/obj) must
+    # spread across distinct columns on a shared row, not collapse into a single
+    # column of same-x nodes. Assert both: one shared y (a row) and strictly
+    # increasing, distinct x (columns) in lane order.
+    def _assert_horizontal_row(node_ids, label):
+        boxes = [g.nodes[nid] for nid in node_ids]
+        ys = {b.y for b in boxes}
+        assert len(ys) == 1, f"{label} is not one row (distinct y: {sorted(ys)})"
+        xs = [b.x for b in boxes]
+        assert len(set(xs)) == len(xs), f"{label} columns collapse (x: {xs})"
+        assert xs == sorted(xs), f"{label} not left→right ordered (x: {xs})"
+
+    for region, node_ids in _SERVICE_ROW.items():
+        _assert_horizontal_row(node_ids, f"service row {region}")
+    # AZ-1 main row (sub=0 nodes): app → cache → db → obj, left→right.
+    _AZ1_MAIN = {
+        "a": ("app_a1", "cache_a1", "db_a1", "obj_a1"),
+        "b": ("app_b1", "cache_b1", "db_b1", "obj_b1"),
+    }
+    for region, node_ids in _AZ1_MAIN.items():
+        _assert_horizontal_row(node_ids, f"az-1 main row {region}")
+
+    # --- Edge contact rules (hand-routed reference; the routing regression guard). ---
+    # Rule A: every edge exits the RIGHT face (fx >= 0.5), never the bottom
+    # (fy == 1) — a bottom stub would cross the node's own caption band.
+    for e in g.edges:
+        ex, ey = e.exit
+        if ex is None and ey is None:
+            continue  # floated (none in the landscape); direction rule owns it
+        assert not (ey is not None and ey >= 1.0), f"edge {e.id} exits the bottom"
+        assert ex is not None and ex >= 0.5, f"edge {e.id} does not exit right (exit={e.exit})"
+    # Rule C: the three cross-region hops enter the target's TOP face (entryY==0),
+    # descending from over the row rather than turning into the left side.
+    _CROSS_REGION = {"l2", "l10", "l11"}
+    for e in g.edges:
+        if e.id in _CROSS_REGION:
+            _ex, ny = e.entry
+            assert ny is not None and ny <= 0.0, (
+                f"cross-region edge {e.id} does not enter from the top (entry={e.entry})"
+            )
+
+    # --- No edge polyline segment crosses an UNRELATED icon (defect: edge 4
+    #     drawn through app-az2). check_edge_routing only samples waypoint-FREE
+    #     edges, so this samples every real segment (contact point → waypoints →
+    #     contact point) against every non-endpoint node box, catching a routed
+    #     edge that cuts a glyph it does not connect. ---
+    from rule_engine.geometry import segment_crosses_box as _seg_x
+    for e in g.edges:
+        if e.source not in g.nodes or e.target not in g.nodes:
+            continue
+        s, t = g.nodes[e.source], g.nodes[e.target]
+        sx = (s.x + (e.exit[0] if e.exit[0] is not None else 1.0) * s.w,
+              s.y + (e.exit[1] if e.exit[1] is not None else 0.5) * s.h)
+        tx = (t.x + (e.entry[0] if e.entry[0] is not None else 0.0) * t.w,
+              t.y + (e.entry[1] if e.entry[1] is not None else 0.5) * t.h)
+        polyline = [sx] + list(e.points) + [tx]
+        for other, nb in g.nodes.items():
+            if other in (e.source, e.target):
+                continue
+            for p, q in zip(polyline, polyline[1:]):
+                assert not _seg_x(p, q, nb), (
+                    f"edge {e.id} ({e.source}->{e.target}) crosses unrelated icon {other}"
+                )
+
+    # --- No edge crosses an unrelated node's LABEL BAND (Rule F). A corridor one
+    #     grid step under an icon would run through the service caption beneath
+    #     it; every horizontal corridor must clear the label band. Uses the same
+    #     check the linter runs (edge-crosses-label). ---
+    from rule_engine.geometry import check_edge_crosses_label as _crosses_label
+    assert _crosses_label(g) == [], (
+        f"edges cross a service label band: {_crosses_label(g)}"
+    )
+
+    # --- Corridor step-out: no vertical/horizontal run sits glued to an icon
+    #     edge; the first turn is >= one grid step off the source glyph. Sampled
+    #     as: the first waypoint of any routed edge is >= GRID off the source box
+    #     on the axis it steps out along. ---
+    for e in g.edges:
+        if not e.points or e.source not in g.nodes:
+            continue
+        s = g.nodes[e.source]
+        fx, fy = e.points[0]
+        # A right exit steps out along x: the first waypoint x must clear the
+        # source's right edge by >= one GRID step (the padding fix).
+        if e.exit[0] is not None and e.exit[0] >= 1.0:
+            assert fx >= s.x + s.w + GRID - 0.001, (
+                f"edge {e.id} first turn is glued to the source icon "
+                f"(x={fx}, source right={s.x + s.w})"
+            )
+
     # --- No AZ box contains any service-row node. ---
     service_nodes = [nid for ids in _SERVICE_ROW.values() for nid in ids]
     for aid in _ALL_AZ:
@@ -171,14 +265,15 @@ def _assert_landscape_shape(g: geo.DiagramGeometry) -> None:
             )
             assert not inside, f"service-row node {nid} sits inside AZ box {aid}"
 
-    # --- Non-negative, on-grid origins; min(x)==min(y)==CONTAINER_PAD. ---
+    # --- Non-negative, on-grid origins; min(x)==CONTAINER_PAD, min(y) reserves
+    #     the title band (CONTAINER_PAD + TITLE_BAND) above the top container. ---
     origins = [(b.x, b.y) for b in g.nodes.values()]
     origins += [(b.x, b.y) for b in g.containers.values()]
     for x, y in origins:
         assert x >= 0 and y >= 0, f"negative origin ({x}, {y})"
         assert x % GRID == 0 and y % GRID == 0, f"off-grid origin ({x}, {y})"
     assert min(x for x, _ in origins) == CONTAINER_PAD, "min x != CONTAINER_PAD"
-    assert min(y for _, y in origins) == CONTAINER_PAD, "min y != CONTAINER_PAD"
+    assert min(y for _, y in origins) == CONTAINER_PAD + TITLE_BAND, "min y != title band"
 
 
 @pytest.mark.parametrize("provider", PROVIDERS)

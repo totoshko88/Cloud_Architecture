@@ -55,6 +55,7 @@ every applicable rule against every artifact.
 | `text-padding` | A filled+stroked text/legend/note box does not set uniform inner padding (`spacing{Left,Right,Top,Bottom}`). | WARNING | diagram-standards Text-box Padding |
 | `corridor-sharing` | Two unrelated long edges run in the same straight horizontal/vertical corridor (same grid line, overlapping extent). | WARNING | diagram-standards Edge Routing (one edge per corridor) |
 | `edge-float` | An edge declares no explicit exit/entry contact point (floats its connection to the perimeter router). Raised to ERROR for `landscape`. | WARNING/ERROR | diagram-standards Edge Routing (no-float on landscape) |
+| `edge-crosses-label` | A routed edge's polyline crosses an **unrelated node's label band** (the caption strip drawn beneath the icon), i.e. a corridor runs through a service name. | WARNING | diagram-standards Edge Routing (corridors clear the label band) |
 
 ### Rule Detail
 
@@ -195,6 +196,17 @@ every applicable rule against every artifact.
   checkable and the perimeter router cannot drift a side. An edge that sets
   **neither** an exit nor an entry point floats its connection. WARNING for `flow`;
   **ERROR for `landscape`**, where a dense diagram must pin every contact side.
+- **`edge-crosses-label` (WARNING)** — *Geometry-enforced.* A node's service name
+  renders in a caption band **below** its icon (`verticalLabelPosition=bottom`).
+  A horizontal corridor placed one grid step under an icon runs straight through
+  that caption even though it clears the icon box. This samples each edge's full
+  polyline (its real contact points plus every `<mxPoint>` waypoint) against every
+  **unrelated** node's label-band rectangle (icon bottom … +one label line) with
+  the same `segment_crosses_box` predicate the routers and `edge-routing` use, so
+  a run cutting through a service name is flagged even when the icon-box rules
+  pass. The router avoids it by insetting every horizontal corridor past the
+  source (or upper) row's label band; a hand-authored edge that ignores the band
+  trips the rule. Advisory (WARNING) for both classes.
 - **`min-font-size` (WARNING)** — Every piece of on-diagram text (node labels, edge
   labels, boundary captions, title cell, and the `Flow`/`Legend` cells) must render at
   **12px or larger**, the accessibility floor from published AWS diagram conventions. A

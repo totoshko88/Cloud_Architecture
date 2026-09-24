@@ -129,8 +129,13 @@ def export_one(
         export_input = str(source)
         tmp: Optional[str] = None
     else:
-        fd, tmp = tempfile.mkstemp(suffix=".drawio")
-        os.close(fd)
+        # Write the inlined copy NEXT TO the source (inside the repo), not in
+        # /tmp: a snap/AppArmor-confined draw.io CLI cannot read /tmp, so a
+        # temp file there fails with "input file/directory not found". The repo
+        # dir is already readable by the CLI (it reads the source from here).
+        # ponytail: repo-local temp file (ceiling: assumes the source dir is
+        # writable; upgrade path: honor $TMPDIR if a sandbox ever allows it).
+        tmp = str(source.with_name(f".{source.stem}.inlined.drawio"))
         Path(tmp).write_text(inlined, encoding="utf-8")
         export_input = tmp
 

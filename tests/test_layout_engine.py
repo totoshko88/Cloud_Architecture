@@ -760,39 +760,41 @@ def test_select_contacts_right_centre_for_adjacent_same_row_target():
     assert entry_pt == (0.0, 0.5)     # left-centre
 
 
-def test_select_contacts_bottom_centre_for_target_directly_below():
-    # Req 5.1 branch 2: target directly below, nothing between → straight down.
+def test_select_contacts_right_centre_for_target_directly_below():
+    # Rule A: a target directly below is reached by exiting the RIGHT face (never
+    # the bottom — a bottom stub crosses the node's own caption) and descending
+    # via a side corridor into the target's TOP.
     placed = _two_node_placed((100, 100), (100, 100 + le.ROW_STEP))
     exit_pt, entry_pt = select_contacts(_edge(), placed)
-    assert exit_pt == (0.5, 1.0)      # bottom-centre
-    assert entry_pt == (0.5, 0.0)     # top-centre
+    assert exit_pt == (1.0, 0.5)      # right-centre (Rule A: never bottom)
+    assert entry_pt == (0.5, 0.0)     # top-centre (descends into the target)
 
 
-def test_select_contacts_right_biased_upper_third_for_target_above():
-    # Req 5.1 branch 3: not opposite/below → right face biased toward target.
-    # Target above and to the right (different row, not adjacent same-row).
+def test_select_contacts_single_exit_is_right_CENTRE_regardless_of_target_dir():
+    # A single edge always exits the right CENTRE (0.5). The off-centre quarter
+    # is applied later, only when 2+ edges share the side (spread_contacts) —
+    # select_contacts no longer pre-shifts.
+    # Target ABOVE (arrives horizontally) → enter the LEFT-centre.
     placed = _two_node_placed((100, 400), (100 + 3 * le.COL_STEP, 100))
     exit_pt, entry_pt = select_contacts(_edge(), placed)
-    assert exit_pt == (1.0, le._UPPER_THIRD)
+    assert exit_pt == (1.0, 0.5)
     assert entry_pt == (0.0, 0.5)
-
-
-def test_select_contacts_right_biased_lower_third_for_target_below():
-    # Req 5.1 branch 3: target below and to the right (not same column).
+    # Target BELOW (arrives descending) → enter the TOP-centre, so the run drops
+    # into the lower target rather than running along its row's centre line.
     placed = _two_node_placed((100, 100), (100 + 3 * le.COL_STEP, 400))
     exit_pt, entry_pt = select_contacts(_edge(), placed)
-    assert exit_pt == (1.0, le._LOWER_THIRD)
-    assert entry_pt == (0.0, 0.5)
+    assert exit_pt == (1.0, 0.5)
+    assert entry_pt == (0.5, 0.0)
 
 
-def test_select_contacts_below_but_obstructed_falls_through_to_right_biased():
-    # An obstacle in the vertical corridor blocks the straight-down branch, so
-    # the ladder falls through to the right-biased exit.
+def test_select_contacts_never_exits_bottom_even_when_obstructed():
+    # Rule A holds regardless of obstacles: the exit is always the right face,
+    # never a bottom stub. A single edge keeps the right CENTRE.
     placed = _two_node_placed((100, 100), (100, 100 + 2 * le.ROW_STEP))
-    # Obstacle sitting between s and t in the same column band.
     placed["obs"] = Box("obs", 100, 100 + le.ROW_STEP, le.ICON_SIZE, le.ICON_SIZE)
     exit_pt, _ = select_contacts(_edge(), placed)
-    assert exit_pt == (1.0, le._LOWER_THIRD)   # target below → lower third
+    assert exit_pt[0] == 1.0                    # right face, never bottom
+    assert exit_pt == (1.0, 0.5)                # single edge → centre
 
 
 # --- Every emitted contact obeys the directional contract + is explicit -----
@@ -899,10 +901,11 @@ from rule_engine.layout_engine import (
 
 def test_corridor_lines_are_grid_aligned_and_inside_the_gap():
     # Req 6.2: every corridor line is a whole GRID multiple, strictly inside the
-    # gap. A column gap between x=100 and x=100+COL_STEP is (100+ICON_SIZE, 320).
+    # gap. A column gap between x=100 and x=100+COL_STEP is inset one GRID off the
+    # left glyph → (100+ICON_SIZE+GRID, 320) so the first lane clears the icon.
     alloc = CorridorAllocator()
     low, high = alloc.column_gap(100, 100 + le.COL_STEP)
-    assert (low, high) == (100 + le.ICON_SIZE, 100 + le.COL_STEP)
+    assert (low, high) == (100 + le.ICON_SIZE + le.GRID, 100 + le.COL_STEP)
     cap = alloc.register_gap("col:0-1", low, high)
     assert cap >= 2
     lines = [alloc.allocate("col:0-1", low, high) for _ in range(cap)]
@@ -950,7 +953,9 @@ def test_row_gap_allocates_grid_aligned_horizontal_corridors():
     # Req 6.1/6.2 on the inter-row axis (over/under-row corridors).
     alloc = CorridorAllocator()
     low, high = alloc.row_gap(200, 200 + le.ROW_STEP)
-    assert (low, high) == (200 + le.ICON_SIZE, 200 + le.ROW_STEP)
+    # The gap low is inset by one GRID off the icon edge so the first lane clears
+    # the glyph (the step-out padding fix).
+    assert (low, high) == (200 + le.ICON_SIZE + le.GRID, 200 + le.ROW_STEP)
     y0 = alloc.allocate("row:edge-router", low, high)
     y1 = alloc.allocate("row:edge-router", low, high)
     assert y0 % le.GRID == 0 and y1 % le.GRID == 0
@@ -1526,7 +1531,10 @@ def test_ha_specs_encode_the_shipped_topology():
     assert len(SUMMARY_SPEC.nodes) == 9
     assert {e.id for e in SUMMARY_SPEC.edges} == {f"s{i}" for i in range(1, 10)}
     assert {c.id for c in SUMMARY_SPEC.containers} == {"nb_a", "nb_b"}
-    assert SUMMARY_SPEC.axis == "left-right"
+    # The summary is a compact north-south flow: regions side-by-side, the flow
+    # reading DOWN each region column (matching the hand-drawn summary reference).
+    assert SUMMARY_SPEC.axis == "north-south"
+    assert SUMMARY_SPEC.compact is True
 
     assert len(LANDSCAPE_SPEC.nodes) == 34
     assert {e.id for e in LANDSCAPE_SPEC.edges} == {f"l{i}" for i in range(1, 13)}
@@ -1578,14 +1586,16 @@ def _all_origin_boxes(pd: le.PlacedDiagram):
 
 
 def test_normalise_origins_are_non_negative_and_at_container_pad():
-    # Req 12.4: after layout, every node and container origin is non-negative and
-    # the layout's minimum x/y is exactly CONTAINER_PAD from the origin.
+    # Req 12.4: after layout, every node and container origin is non-negative,
+    # the layout's minimum x is exactly CONTAINER_PAD from the left, and its
+    # minimum y is CONTAINER_PAD + TITLE_BAND — a title band is reserved above the
+    # top container so the diagram title never overlaps the container border.
     for spec in (SUMMARY_SPEC, LANDSCAPE_SPEC):
         pd = le.layout(spec)
         boxes = _all_origin_boxes(pd)
         assert all(b.x >= 0 and b.y >= 0 for b in boxes), spec.diagram_id
         assert min(b.x for b in boxes) == le.CONTAINER_PAD, spec.diagram_id
-        assert min(b.y for b in boxes) == le.CONTAINER_PAD, spec.diagram_id
+        assert min(b.y for b in boxes) == le.CONTAINER_PAD + le.TITLE_BAND, spec.diagram_id
 
 
 def test_normalise_keeps_all_edge_waypoints_non_negative():
@@ -1649,10 +1659,12 @@ def test_normalise_is_a_pure_translation_preserving_relative_geometry():
 
 
 def test_normalise_is_idempotent_and_no_op_when_already_at_pad():
-    # A layout already anchored at CONTAINER_PAD is unchanged by a second pass.
+    # A layout already anchored at its margins is unchanged by a second pass with
+    # the SAME margins (layout() reserves a title band above the top container).
+    margins = (le.CONTAINER_PAD, le.CONTAINER_PAD + le.TITLE_BAND)
     for spec in (SUMMARY_SPEC, LANDSCAPE_SPEC):
         once = le.layout(spec)
-        twice = le._normalise_origin(once)
+        twice = le._normalise_origin(once, margins)
         assert {i: (b.x, b.y) for i, b in twice.nodes.items()} == {
             i: (b.x, b.y) for i, b in once.nodes.items()
         }, spec.diagram_id

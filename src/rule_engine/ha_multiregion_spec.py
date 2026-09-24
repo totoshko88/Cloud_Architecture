@@ -110,12 +110,20 @@ _SUMMARY_FLOW = (
 SUMMARY_SPEC = DiagramSpec(
     diagram_id="ha-summary",
     diagram_name="ha-multiregion-summary",
-    axis="left-right",
+    # North–south: the flow reads DOWN each region column (lb → app → db) with
+    # the two regions side-by-side and DNS centred above them — the composition
+    # of the hand-drawn summary reference. (Was left-right, which laid the regions
+    # out as full-width horizontal bands.)
+    axis="north-south",
     nodes=_SUMMARY_NODES,
     edges=_SUMMARY_EDGES,
     containers=_SUMMARY_CONTAINERS,
     flow_lines=_SUMMARY_FLOW,
     title="ha-multiregion-summary | 2026-09-23 | v1",
+    # Compact the flow: lb → app → db sit on three adjacent rows (no empty tier
+    # bands between router/workers/data), matching the tight vertical columns of
+    # the summary reference.
+    compact=True,
 )
 
 
@@ -155,14 +163,18 @@ _LANDSCAPE_NODES = (
     NodeSpec(id="db_a1", role="sql", lane="data", region="a", slot=0, container="boundary-az-a1"),
     NodeSpec(id="obj_a1", role="obj", lane="data", region="a", slot=1, container="boundary-az-a1"),
     NodeSpec(id="app_a1", role="k8s", lane="workers", region="a", slot=1, container="boundary-az-a1"),
-    NodeSpec(id="api_a1", role="k8s", lane="workers", region="a", slot=2, container="boundary-az-a1"),
+    # api / observability form the AZ's SECOND row (sub=1): the engine lays each
+    # band out horizontally (one column per lane) and drops sub=1 nodes to a
+    # sub-row beneath the main row, reproducing the reference's app/cache/db/obj
+    # main row + api/mon sub-row (see layout_engine._place_base north-south).
+    NodeSpec(id="api_a1", role="k8s", lane="workers", region="a", slot=2, sub=1, container="boundary-az-a1"),
     NodeSpec(id="cache_a1", role="cache", lane="platform", region="a", slot=1, container="boundary-az-a1"),
-    NodeSpec(id="mon_a", role="fn", lane="platform", region="a", slot=2, container="boundary-az-a1"),
+    NodeSpec(id="mon_a", role="fn", lane="platform", region="a", slot=2, sub=1, container="boundary-az-a1"),
     # region A — AZ-2 (same slots as AZ-1; distinguished by its lower tier band).
     NodeSpec(id="db_a2", role="sql", lane="data", region="a", slot=0, container="boundary-az-a2"),
     NodeSpec(id="obj_a2", role="obj", lane="data", region="a", slot=1, container="boundary-az-a2"),
     NodeSpec(id="app_a2", role="k8s", lane="workers", region="a", slot=1, container="boundary-az-a2"),
-    NodeSpec(id="api_a2", role="k8s", lane="workers", region="a", slot=2, container="boundary-az-a2"),
+    NodeSpec(id="api_a2", role="k8s", lane="workers", region="a", slot=2, sub=1, container="boundary-az-a2"),
     NodeSpec(id="cache_a2", role="cache", lane="platform", region="a", slot=1, container="boundary-az-a2"),
     # region B — VPC service row.
     NodeSpec(id="lb_b", role="lb", lane="router", region="b", slot=0, container="boundary-vpc-b"),
@@ -173,20 +185,26 @@ _LANDSCAPE_NODES = (
     NodeSpec(id="db_b1", role="sql", lane="data", region="b", slot=0, container="boundary-az-b1"),
     NodeSpec(id="obj_b1", role="obj", lane="data", region="b", slot=1, container="boundary-az-b1"),
     NodeSpec(id="app_b1", role="k8s", lane="workers", region="b", slot=1, container="boundary-az-b1"),
-    NodeSpec(id="api_b1", role="k8s", lane="workers", region="b", slot=2, container="boundary-az-b1"),
+    NodeSpec(id="api_b1", role="k8s", lane="workers", region="b", slot=2, sub=1, container="boundary-az-b1"),
     NodeSpec(id="cache_b1", role="cache", lane="platform", region="b", slot=1, container="boundary-az-b1"),
-    NodeSpec(id="mon_b", role="fn", lane="platform", region="b", slot=2, container="boundary-az-b1"),
+    NodeSpec(id="mon_b", role="fn", lane="platform", region="b", slot=2, sub=1, container="boundary-az-b1"),
     # region B — AZ-2 (same slots as AZ-1; distinguished by its lower tier band).
     NodeSpec(id="db_b2", role="sql", lane="data", region="b", slot=0, container="boundary-az-b2"),
     NodeSpec(id="obj_b2", role="obj", lane="data", region="b", slot=1, container="boundary-az-b2"),
     NodeSpec(id="app_b2", role="k8s", lane="workers", region="b", slot=1, container="boundary-az-b2"),
-    NodeSpec(id="api_b2", role="k8s", lane="workers", region="b", slot=2, container="boundary-az-b2"),
+    NodeSpec(id="api_b2", role="k8s", lane="workers", region="b", slot=2, sub=1, container="boundary-az-b2"),
     NodeSpec(id="cache_b2", role="cache", lane="platform", region="b", slot=1, container="boundary-az-b2"),
 )
 
 _LANDSCAPE_EDGES = (
     EdgeSpec(id="l1", source="dns", target="lb_a", marker="1"),
-    EdgeSpec(id="l2", source="dns", target="lb_b", marker="2", dashed=True),
+    # Cross-region A→B hops are declared via kind_hint: region membership is a
+    # spec fact, not something geometry can read from box coordinates (region B's
+    # absolute offset is content-derived), and a 4-column-wide AZ band makes an
+    # in-region fan-out span the same raw dx as the old cross-region threshold.
+    # Hinting the three genuine cross-region edges keeps classify_edge's geometric
+    # fallback for everything else (diagram-standards: no guessed route).
+    EdgeSpec(id="l2", source="dns", target="lb_b", marker="2", dashed=True, kind_hint="cross-region"),
     EdgeSpec(id="l3", source="lb_a", target="app_a1", marker="3"),
     EdgeSpec(id="l4", source="lb_a", target="app_a2", marker="4"),
     EdgeSpec(id="l5", source="app_a1", target="db_a1", marker="5"),
@@ -194,8 +212,8 @@ _LANDSCAPE_EDGES = (
     EdgeSpec(id="l7", source="db_a1", target="db_a2", marker="7", dashed=True),
     EdgeSpec(id="l8", source="app_a1", target="obj_a1", marker="8"),
     EdgeSpec(id="l9", source="lb_b", target="app_b1", marker="9"),
-    EdgeSpec(id="l10", source="db_a1", target="db_b1", marker="10", dashed=True),
-    EdgeSpec(id="l11", source="obj_a1", target="obj_b1", marker="11", dashed=True),
+    EdgeSpec(id="l10", source="db_a1", target="db_b1", marker="10", dashed=True, kind_hint="cross-region"),
+    EdgeSpec(id="l11", source="obj_a1", target="obj_b1", marker="11", dashed=True, kind_hint="cross-region"),
     EdgeSpec(id="l12", source="queue_a", target="fn_a", marker="12", dashed=True),
 )
 

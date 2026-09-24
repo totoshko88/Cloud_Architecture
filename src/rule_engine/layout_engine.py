@@ -143,6 +143,14 @@ class DiagramSpec:
     containers: Tuple[ContainerSpec, ...]
     flow_lines: Tuple[str, ...]
     title: str
+    #: Compact the primary axis for a small flow diagram: place the *occupied*
+    #: lanes at **consecutive** steps rather than at their absolute lane index,
+    #: so a ``lb → app → db`` chain reads as three adjacent rows with no empty
+    #: tier bands between them (the hand-drawn summary composition). Off by
+    #: default so the landscape and every synthetic spec keep absolute-lane
+    #: placement byte-unchanged. Only affects **non-banded** nodes (a compact
+    #: flow declares no az/vpc container membership).
+    compact: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -266,6 +274,14 @@ SUB_STEP = ROW_STEP // 2  # 80, a whole GRID multiple
 #: node's slot / lane index step out from it. Region B = this + REGION_STEP.
 _ORIGIN = (CONTAINER_PAD, CONTAINER_PAD)  # (30, 30), both GRID multiples
 
+#: Vertical band reserved ABOVE the top container for the diagram title cell.
+#: ``diagram_layout.build_diagram`` draws the title at y=20 height=30 (bottom at
+#: 50); the outermost container top is lifted to ``CONTAINER_PAD + TITLE_BAND``
+#: (60) so the title never overlaps the container border or its top-left badge
+#: (the AWS ``group_account`` glyph) — matching the reference, whose account box
+#: starts at y=60. A whole GRID multiple.
+TITLE_BAND = 30
+
 
 def _snap(value: float, grid: int = GRID) -> int:
     """Round ``value`` to the nearest whole ``grid`` multiple (Req 3.2)."""
@@ -380,6 +396,41 @@ def _az_band_step(spec: DiagramSpec) -> int:
     return ordered[1] - ordered[0]
 
 
+def _band_within(spec: DiagramSpec) -> Dict[str, Tuple[int, int]]:
+    """Map each **banded** node id → its ``(column, sub_row)`` within its band.
+
+    A north-south landscape reads each tier band **horizontally**: one column per
+    node, ordered left→right by ``(lane, slot)``, so the VPC service row is
+    ``lb → queue → worker → secrets`` across and each AZ is
+    ``app → cache → db → obj`` across — not a vertical stack of same-slot nodes
+    (the regression this fixes). A node's ``sub`` selects the row *within* the
+    band (main row ``sub=0``; api/observability drop to ``sub=1``). Columns are
+    ranked **per sub-row** so both the main row and the sub-row pack from column
+    0. Regions ``a``/``b`` share the same band structure, so the ranking is done
+    per ``(band, region, sub)`` group and is mirror-symmetric by construction.
+
+    Only banded nodes (declared members of an ``az`` or region ``vpc``) get an
+    entry; non-banded nodes (the account-level edge row, synthetic-spec nodes)
+    keep the absolute-lane placement in :func:`_place_base` unchanged.
+    """
+    band_of = _node_az_band(spec)
+    kind_of = {c.id: c.kind for c in spec.containers}
+    banded_kinds = {"az", "vpc"}
+    # Group banded nodes by (band, region, sub); within each group, rank by
+    # (lane, slot) to assign the column. Region is part of the key so A and B
+    # rank independently (identical structure → identical ranks → symmetric).
+    groups: Dict[Tuple[int, str, int], list] = {}
+    for n in spec.nodes:
+        if n.container is not None and kind_of.get(n.container) in banded_kinds:
+            key = (band_of[n.id], n.region, n.sub)
+            groups.setdefault(key, []).append(n)
+    within: Dict[str, Tuple[int, int]] = {}
+    for (_band, _region, sub), members in groups.items():
+        for col, n in enumerate(sorted(members, key=lambda m: (LANE_INDEX[m.lane], m.slot))):
+            within[n.id] = (col, sub)
+    return within
+
+
 def _band_packing(spec: DiagramSpec) -> Tuple[Dict[int, int], Dict[int, int]]:
     """Return ``(band_start, band_min_lane)`` for per-band primary-axis packing.
 
@@ -433,11 +484,17 @@ def _band_packing(spec: DiagramSpec) -> Tuple[Dict[int, int], Dict[int, int]]:
     # service-row band has NO box of its own (it lives loose in the VPC above the
     # AZ boxes), so it contributes no box padding to an inter-band gap.
     band_has_box: Dict[int, bool] = {}
+    #: max sub-row index per band — a horizontal band is one row per ``sub``
+    #: (main row sub=0, api/observability sub=1), so a band's vertical extent is
+    #: driven by its sub-row count, NOT by how many lanes it spans (lanes now read
+    #: horizontally across the band; see :func:`_band_within`).
+    sub_rows_by_band: Dict[int, int] = {}
     for n in spec.nodes:
         if n.container is not None and kind_of.get(n.container) in banded_kinds:
             b = band_of[n.id]
             lanes_by_band.setdefault(b, []).append(LANE_INDEX[n.lane])
             band_has_box[b] = band_has_box.get(b, False) or kind_of.get(n.container) == "az"
+            sub_rows_by_band[b] = max(sub_rows_by_band.get(b, 0), n.sub)
 
     band_min_lane: Dict[int, int] = {}
     band_start: Dict[int, int] = {}
@@ -454,8 +511,9 @@ def _band_packing(spec: DiagramSpec) -> Tuple[Dict[int, int], Dict[int, int]]:
         band_min_lane[band] = lo
         has_box = band_has_box.get(band, False)
         if not band_start:
-            # Anchor the first band at its top lane's absolute primary position
-            # so the banded region content sits BELOW the account-level edge row.
+            # Anchor the first banded band at its top lane's natural tier row so
+            # the banded region content sits BELOW the account-level edge row
+            # (which is placed at its own absolute lane index, edge lane = row 1).
             start = _snap(lo * ROW_STEP)
         else:
             # The gap between the previous band's content bottom and this band's
@@ -473,7 +531,10 @@ def _band_packing(spec: DiagramSpec) -> Tuple[Dict[int, int], Dict[int, int]]:
                 gap += CONTAINER_PAD
             start = _snap(prev_end + gap)
         band_start[band] = start
-        content_height = (hi - lo) * ROW_STEP + ICON_SIZE + LABEL_BAND
+        # A horizontal band is (max_sub_row + 1) rows tall (main row + any
+        # sub-rows), each ROW_STEP apart, plus the icon + label footprint.
+        rows = sub_rows_by_band.get(band, 0)
+        content_height = rows * ROW_STEP + ICON_SIZE + LABEL_BAND
         prev_end = start + content_height
         prev_has_box = has_box
     return band_start, band_min_lane
@@ -488,53 +549,66 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
     here; :func:`place_nodes` then translates region B off along the secondary
     axis by the content-derived step.
 
-    **Per-band packing (Task 20).** A banded node (an AZ node, or a VPC-direct
-    service-row node) is placed via :func:`_band_packing`: its primary-axis
-    coordinate is ``base_primary + band_start[band] + (lane_i - band_min_lane[band])
-    * ROW_STEP``. ``band_start`` packs each tier flush to the previous band's real
-    content bottom + one grid-padded gap (no global uniform step), and the
-    *relative* lane index (``lane_i - band_min_lane``) makes the band flush to its
-    own top (no empty lanes reserved above it). This both packs the tiers tight
-    and removes the empty-lanes-above reservation (Req 12.5).
+    **Horizontal bands (North–South landscape).** A banded node (an AZ node, or
+    a VPC-direct service-row node) reads **across** its tier band, not down it:
+    :func:`_band_within` gives its ``(column, sub_row)`` within the band, so its
+    ``x = base_x + column·COL_STEP`` and its ``y = base_y + band_start[band] +
+    sub_row·ROW_STEP``. ``band_start`` (:func:`_band_packing`) stacks the tier
+    bands down the primary (y) axis, packed flush to the previous band's real
+    content bottom + one grid-padded gap. This is the fix for the vertical-stack
+    regression: same-slot service-row nodes (lb/queue/worker/secrets) used to
+    collapse into one column because lane drove the row; they now spread across
+    columns by ``(lane, slot)`` order and the band is one horizontal row.
 
     A **non-banded** node — an account-level ("") edge node, or any node in a
-    container-free synthetic spec — is placed at its **absolute** lane index with
-    no band offset (``band 0``, ``band_start[0] == 0``, ``band_min_lane[0] == 0``),
-    so its placement is byte-unchanged."""
+    container-free synthetic spec — keeps the original absolute-lane placement
+    (lane → primary axis, slot → secondary axis, ``sub`` nudges the secondary),
+    byte-unchanged. The account edge row is a single lane at distinct slots, so
+    absolute-lane placement already lays it out horizontally.
+    """
     az_band = _node_az_band(spec)
-    band_start, band_min_lane = _band_packing(spec)
+    band_start, _band_min_lane = _band_packing(spec)
+    band_within = _band_within(spec)
     kind_of = {c.id: c.kind for c in spec.containers}
     banded_kinds = {"az", "vpc"}
     # The primary axis (the one lanes/tiers step along) is y (ROW_STEP) for a
-    # North–South diagram and x (COL_STEP) for a left→right diagram. Band packing
-    # is defined in ROW_STEP units and is only ever used by the North–South
-    # landscape; a non-banded node on either axis keeps its absolute-lane
-    # placement at the axis-appropriate primary step.
+    # North–South diagram and x (COL_STEP) for a left→right diagram.
     primary_step = ROW_STEP if spec.axis == "north-south" else COL_STEP
+    # Compact mode (small flow): map each OCCUPIED lane to a consecutive rank so
+    # the flow's tiers sit on adjacent rows with no empty lane bands between them
+    # (e.g. router/workers/data → ranks 0/1/2). Shared across regions so peers
+    # stay mirror-symmetric. Absolute lane index otherwise (byte-unchanged).
+    compact_rank: Dict[int, int] = {}
+    if spec.compact:
+        occupied = sorted({LANE_INDEX[n.lane] for n in spec.nodes})
+        compact_rank = {li: r for r, li in enumerate(occupied)}
     placed: Dict[str, Box] = {}
     for node in spec.nodes:
         lane_i = LANE_INDEX[node.lane]
         banded = node.container is not None and kind_of.get(node.container) in banded_kinds
-        if banded:
+        if banded and spec.axis == "north-south":
+            # Horizontal band: column across (x), tier band + sub-row down (y).
             band = az_band[node.id]
-            primary_offset = band_start[band] + (lane_i - band_min_lane[band]) * primary_step
+            col, sub_row = band_within[node.id]
+            x = base_x + col * COL_STEP
+            y = base_y + band_start[band] + sub_row * ROW_STEP
         else:
-            # Non-banded (account-level edge row, synthetic-spec nodes): absolute
-            # lane index, no band packing — placement unchanged.
-            primary_offset = lane_i * primary_step
-        if spec.axis == "north-south":
-            # lane index → row (primary, y); slot → column (secondary, x).
-            x = base_x + node.slot * COL_STEP + node.sub * SUB_STEP
-            y = base_y + primary_offset
-        elif spec.axis == "left-right":
-            # lane index → column (primary, x); slot → row (secondary, y).
-            x = base_x + primary_offset
-            y = base_y + node.slot * ROW_STEP + node.sub * SUB_STEP
-        else:
-            raise SpecError(
-                f"diagram {spec.diagram_id!r} declares unknown axis "
-                f"{spec.axis!r}; axis must be 'north-south' or 'left-right'"
-            )
+            # Non-banded, or the left→right axis: lane → primary, slot →
+            # secondary, sub nudges secondary. In compact mode the lane's
+            # consecutive rank replaces its absolute index on the primary axis.
+            eff_lane = compact_rank.get(lane_i, lane_i) if spec.compact else lane_i
+            primary_offset = eff_lane * primary_step
+            if spec.axis == "north-south":
+                x = base_x + node.slot * COL_STEP + node.sub * SUB_STEP
+                y = base_y + primary_offset
+            elif spec.axis == "left-right":
+                x = base_x + primary_offset
+                y = base_y + node.slot * ROW_STEP + node.sub * SUB_STEP
+            else:
+                raise SpecError(
+                    f"diagram {spec.diagram_id!r} declares unknown axis "
+                    f"{spec.axis!r}; axis must be 'north-south' or 'left-right'"
+                )
         placed[node.id] = Box(node.id, _snap(x), _snap(y), ICON_SIZE, ICON_SIZE)
     return placed
 
@@ -610,6 +684,24 @@ def place_nodes(spec: DiagramSpec) -> Dict[str, Box]:
             low, size = _extent(box, secondary)
             box = _with_extent(box, secondary, _snap(low + offset), size)
         placed[node.id] = box
+
+    # Compact flow only: centre each account-level ("") node over the SECONDARY
+    # span of the region blocks, so a DNS that fans to both regions sits above
+    # their midpoint rather than hugging region A's column (the summary
+    # reference's top-centred DNS). Scoped to compact so the landscape edge row
+    # — which the reference pins at the top-left — is unchanged.
+    if spec.compact:
+        region_boxes = [placed[n.id] for n in spec.nodes if n.region in ("a", "b")]
+        acct_nodes = [n for n in spec.nodes if n.region == ""]
+        if region_boxes and acct_nodes:
+            lo = min(_extent(b, secondary)[0] for b in region_boxes)
+            hi = max(_extent(b, secondary)[0] + _extent(b, secondary)[1] for b in region_boxes)
+            span_centre = (lo + hi) / 2.0
+            for n in acct_nodes:
+                box = placed[n.id]
+                _low, size = _extent(box, secondary)
+                new_low = _snap(span_centre - size / 2.0)
+                placed[n.id] = _with_extent(box, secondary, new_low, size)
     return placed
 
 
@@ -691,16 +783,21 @@ def _assign_nodes_to_leaves(
       az-2 the lower). This preserves the behavior every synthetic-spec test
       relies on (those specs declare no containers).
 
-    Region "" (account-level, e.g. the top edge row) is never wrapped by a
-    vpc/az — those nodes sit outside the region bands (diagram-standards:
-    external/actor/edge rows sit above the region VPCs), so they are assigned to
-    no container here.
+    Region "" (account-level) nodes are **account-scoped cloud services** — the
+    top edge row (waf / dns / cdn / audit) — so they are wrapped by the
+    **account** container (inside the Account boundary, above the region VPCs),
+    matching the reference where the edge row sits at the top of the Account box.
+    The exceptions are the ``actors`` and ``on-premises`` lanes: those are
+    genuinely external (diagram-standards: external actors / on-premises sit
+    OUTSIDE the cloud boundaries), so they are assigned to no container.
     """
     primary, _ = _container_axes(spec)
     leaves = _leaf_region_containers(spec)
     box_of = {n.id: placed[n.id] for n in spec.nodes}
     region_of = {n.id: n.region for n in spec.nodes}
     declared_of = {n.id: n.container for n in spec.nodes}
+    account_id = next((c.id for c in spec.containers if c.kind == "account"), None)
+    external_lanes = {"actors", "on-premises"}
 
     assignment: Dict[str, list] = {c.id: [] for c in spec.containers}
 
@@ -708,6 +805,18 @@ def _assign_nodes_to_leaves(
     for n in spec.nodes:
         if n.container is not None:
             assignment[n.container].append(n.id)
+
+    # 1b. Account-level (region "") cloud services are wrapped by the account
+    #     envelope so it contains its own top edge row — except the genuinely
+    #     external actors / on-premises lanes, which stay outside every boundary.
+    if account_id is not None:
+        for n in spec.nodes:
+            if (
+                n.region == ""
+                and n.container is None
+                and n.lane not in external_lanes
+            ):
+                assignment[account_id].append(n.id)
 
     # 2. Geometric fallback for region-scoped nodes that declare no container.
     for region, leaf_list in leaves.items():
@@ -1026,11 +1135,14 @@ MERGE_THRESHOLD = 0.2
 #: and :func:`spread_contacts` raises rather than emit a fourth contact point.
 MAX_SIDE_EXITS = 3
 
-#: The right-face band coordinate biased toward a target *above* the source
-#: (upper third) and *below* it (lower third). The centre (0.5) is reserved for
-#: a directly-opposite, same-row target (the straight-line case).
-_UPPER_THIRD = 0.33
-_LOWER_THIRD = 0.66
+#: The right-face band coordinate for a biased (second/third) exit: toward the
+#: **free** side — the upper quarter when the target is above (or the upper
+#: corridor is the clear one), the lower quarter otherwise. The centre (0.5) is
+#: reserved for the first / straight-line exit. These match the hand-routed
+#: reference (a second right-exit sits at 0.25, not 0.66), and stay
+#: >= MERGE_THRESHOLD (0.2) from the centre so two same-side exits never merge.
+_UPPER_QUARTER = 0.25
+_LOWER_QUARTER = 0.75
 
 
 class OverConnectedError(ValueError):
@@ -1080,52 +1192,68 @@ def select_contacts(
 ) -> Tuple[Contact, Contact]:
     """Return ``(exit, entry)`` contact points for ``edge`` via the ladder (Req 5).
 
-    **Exit priority ladder** (Req 5.1), applied in order against the source and
-    target boxes:
+    **Rule A — always exit RIGHT, never the bottom.** The service name renders
+    in a caption band *below* the icon (``verticalLabelPosition=bottom``), so a
+    bottom exit crosses the node's own label. Every edge therefore leaves the
+    **right** face; a target that sits directly below is reached by exiting
+    right, stepping into a side corridor, and descending — not by a bottom stub.
+    This is the hand-routed reference's rule (edges 3/7/9 exit right, not bottom).
 
-    1. **right-centre** ``(1.0, 0.5)`` — the target sits directly opposite on the
-       same row and is adjacent (a straight-line run keeps the centre);
-    2. **bottom-centre** ``(0.5, 1.0)`` — the target sits directly below in the
-       same column and nothing lies between (a straight-down run is the shortest
-       path and no label is crossed);
-    3. **right, biased** ``(1.0, 0.33|0.66)`` — otherwise exit the right face
-       biased toward the target's vertical direction (upper third for a target
-       above, lower third for a target below).
+    **Exit ladder** (right face only):
 
-    **Entry rule** (Req 5.2): the entry side is chosen by the incoming segment's
-    orientation — a run arriving horizontally enters the **left** ``(0.0, 0.5)``,
-    a run descending vertically enters the **top** ``(0.5, 0.0)`` — centred.
+    1. **right-centre** ``(1.0, 0.5)`` — the first exit from a side (and the
+       straight-line case: a same-row adjacent target, or a target directly
+       below reached via the side corridor). A single edge always keeps the
+       centre.
+    2. **right, biased toward the FREE side** ``(1.0, 0.25|0.75)`` (Rule B) — a
+       second/third exit leans toward the side with fewer crossings: the **upper**
+       quarter when the target is above the source (or level), the **lower**
+       quarter when it is clearly below. :func:`spread_contacts` then finalises
+       the exact bands so several same-side exits stay distinct.
+
+    **Entry rule** (Req 5.2): a run arriving **horizontally** enters the target's
+    **left** ``(0.0, 0.5)``; a run **descending** into a target below (the spine
+    case) enters its **top** ``(0.5, 0.0)``. Cross-region / long over-row entries
+    are set to the top by their router (Rule C), overriding this default.
 
     Both contact points are always explicitly set (never ``None``), so
-    ``check_edge_float`` is clean, and every branch leans right/bottom on exit
-    and left/top on entry, so ``check_edge_direction`` is clean (Req 5.5).
+    ``check_edge_float`` is clean; every exit leans right and every entry leans
+    left/top, so ``check_edge_direction`` is clean (Req 5.5).
     """
     src = placed[edge.source]
     tgt = placed[edge.target]
     others = [b for nid, b in placed.items() if nid not in (edge.source, edge.target)]
 
-    # --- Exit ladder -------------------------------------------------------
-    if _boxes_adjacent(src, tgt):
-        exit_pt: Contact = (1.0, 0.5)          # right-centre (straight line)
-        vertical_entry = False
-    elif _box_directly_below(src, tgt, others):
-        exit_pt = (0.5, 1.0)                    # bottom-centre (straight down)
-        vertical_entry = True
-    else:
-        # Right face, biased toward the target's vertical direction.
-        if tgt.center()[1] < src.center()[1]:   # target above
-            exit_pt = (1.0, _UPPER_THIRD)
-        else:                                    # target below or level
-            exit_pt = (1.0, _LOWER_THIRD)
-        vertical_entry = False
+    directly_below = _box_directly_below(src, tgt, others)
+    # A target in the SAME COLUMN and lower — even when an intermediate node
+    # blocks the straight drop (so ``_box_directly_below`` is False). The run
+    # descends in a side corridor and must enter the target's TOP: entering the
+    # LEFT would force the corridor (which is right of the column) to cross the
+    # target's own glyph to reach its left face (the "edge through app-az2"
+    # defect). Same-column ⇒ top entry, obstacle or not.
+    same_column_below = (src.x == tgt.x) and (tgt.y > src.y)
 
-    # --- Entry rule --------------------------------------------------------
-    # A run that leaves the bottom of the source descends vertically into the
-    # target's top; every other exit runs horizontally into the target's left.
-    if vertical_entry:
-        entry_pt: Contact = (0.5, 0.0)          # top-centre
-    else:
-        entry_pt = (0.0, 0.5)                   # left-centre
+    # --- Exit: ALWAYS the right-CENTRE face (Rule A). --------------------------
+    # The exit is centred here regardless of how many edges leave this side; the
+    # spread pass (:func:`spread_contacts`, driven by edge-marker order in
+    # :func:`_place_and_route`) keeps the FIRST edge centred and shifts only the
+    # 2nd/3rd off-centre (Rule B). Returning a pre-shifted 0.25/0.75 here was the
+    # defect that pushed even a single/first exit off-centre and made its stub
+    # cross the node's own caption.
+    exit_pt: Contact = (1.0, 0.5)
+
+    # --- Entry: CENTRE of the chosen face. ------------------------------------
+    # A target that sits BELOW the source is descended into from its TOP-centre
+    # (the run arrives vertically): a directly-below spine, a same-column chain,
+    # OR a below-and-to-the-side spine (e.g. app→objstore one row down). Entering
+    # the top of a lower target keeps the run off that row's centre line, where a
+    # sibling edge (e.g. db→db' replication) also runs — avoiding an overlap
+    # (the summary's s4×s9 corridor share). A SAME-ROW target (arriving
+    # horizontally) enters the LEFT-centre. Cross-region / back-edge routers
+    # override to a top entry (Rules C/G). The spread pass shifts a shared face
+    # off-centre; the first stays centred.
+    below_target = tgt.y > src.y
+    entry_pt: Contact = (0.5, 0.0) if (directly_below or same_column_below or below_target) else (0.0, 0.5)
 
     return exit_pt, entry_pt
 
@@ -1158,20 +1286,65 @@ def _with_band(exit_pt: Contact, side: str, coord: float) -> Contact:
     return (fx, coord)
 
 
+def _entry_face(entry_pt: Contact) -> str:
+    """Classify an entry contact point's face: ``left`` (entryX<=0) or ``top``
+    (entryY<=0). The band coordinate varies along the face (entryY on the left
+    face, entryX on the top face)."""
+    fx, fy = entry_pt
+    if fy is not None and fy <= 0.0:
+        return "top"
+    return "left"
+
+
+def _entry_band(entry_pt: Contact, face: str) -> float:
+    fx, fy = entry_pt
+    return (fx if fx is not None else 0.5) if face == "top" else (fy if fy is not None else 0.5)
+
+
+def _with_entry_band(entry_pt: Contact, face: str, coord: float) -> Contact:
+    fx, fy = entry_pt
+    return (coord, fy) if face == "top" else (fx, coord)
+
+
+def spread_entries(edges_on_face: list) -> list:
+    """Spread several arrivals on ONE target face to distinct band coordinates.
+
+    Mirror of :func:`spread_contacts` for the entry side: the FIRST edge (marker
+    order) keeps the face centre (0.5), the 2nd/3rd shift to the quarters, each
+    ≥ :data:`MERGE_THRESHOLD` apart, so multiple lines entering one face don't
+    stack on a single point. The face (left/top) is preserved."""
+    if not edges_on_face:
+        return []
+    face = _entry_face(edges_on_face[0][1])
+    if len(edges_on_face) == 1:
+        eid, pt = edges_on_face[0]
+        return [(eid, _with_entry_band(pt, face, 0.5))]
+    if len(edges_on_face) > MAX_SIDE_EXITS:
+        raise OverConnectedError(
+            f"node has {len(edges_on_face)} edges on its {face!r} entry face "
+            f"(max {MAX_SIDE_EXITS}); split or re-lane the diagram"
+        )
+    n = len(edges_on_face)
+    bands = [0.5, _LOWER_QUARTER] if n == 2 else [0.5, _UPPER_QUARTER, _LOWER_QUARTER]
+    return [
+        (eid, _with_entry_band(pt, face, band))
+        for (eid, pt), band in zip(edges_on_face, bands)
+    ]
+
+
 def spread_contacts(edges_on_side: list) -> list:
     """Spread several same-side exits to distinct band coordinates (Req 5.3, 5.4).
 
-    ``edges_on_side`` is an ordered list of ``(edge_id, exit_pt)`` pairs that all
-    leave the *same* node on the *same* side (as classified by
-    :func:`_exit_side`). It returns a list of ``(edge_id, exit_pt)`` with the
-    band coordinates reassigned so that:
+    ``edges_on_side`` is a list of ``(edge_id, exit_pt)`` pairs that all leave
+    the *same* node on the *same* side, **in edge-marker order** (the caller
+    sorts them). It returns a list of ``(edge_id, exit_pt)`` with the band
+    coordinates reassigned so that:
 
-    * every pair of coordinates is at least :data:`MERGE_THRESHOLD` apart, so no
-      two lines merge into one doubled line at the glyph (``check_exit_thirds``
-      clean);
-    * an edge whose original exit sits on the **centre** (0.5) — the
-      straight-line case from the ladder — keeps the centre, and the others
-      spread around it;
+    * the **FIRST** edge (index 0, the lowest marker) keeps the face **centre**
+      (0.5) — "перший вихід по середині"; only the 2nd/3rd are shifted off it;
+    * the others spread to the quarters (0.25 / 0.75), each ≥
+      :data:`MERGE_THRESHOLD` from its neighbours so no two lines merge at the
+      glyph (``check_exit_thirds`` clean);
     * the exit *face* is preserved (a right exit stays ``fx=1.0``; only its
       ``fy`` band moves), so the directional contract still holds.
 
@@ -1184,7 +1357,9 @@ def spread_contacts(edges_on_side: list) -> list:
 
     side = _exit_side(edges_on_side[0][1])
     if len(edges_on_side) == 1:
-        return list(edges_on_side)
+        # A single edge on a side always keeps the CENTRE (never a quarter).
+        eid, pt = edges_on_side[0]
+        return [(eid, _with_band(pt, side, 0.5))]
     if len(edges_on_side) > MAX_SIDE_EXITS:
         raise OverConnectedError(
             f"node has {len(edges_on_side)} edges on its {side!r} side "
@@ -1192,43 +1367,18 @@ def spread_contacts(edges_on_side: list) -> list:
         )
 
     n = len(edges_on_side)
-    keep_centre = any(
-        abs(_band_coord(pt, side) - 0.5) < 1e-9 for _, pt in edges_on_side
-    )
-
-    # Choose n distinct, ordered band targets that are all >= MERGE_THRESHOLD
-    # apart and centred within the face. When a straight-line edge is present,
-    # one of the bands is exactly 0.5 (it keeps the centre) and the rest spread
-    # symmetrically around it.
+    # The first edge (marker order) keeps the centre; the rest take the quarters.
+    # n==2 → [0.5, 0.75]; n==3 → [0.5, 0.25, 0.75]. Every pair is ≥ 0.25 apart
+    # (>= MERGE_THRESHOLD), and the first is always exactly centred.
     if n == 2:
-        bands = [0.5 - MERGE_THRESHOLD, 0.5 + MERGE_THRESHOLD]
+        bands = [0.5, _LOWER_QUARTER]
     else:  # n == 3
-        bands = [0.5 - 2 * MERGE_THRESHOLD, 0.5, 0.5 + 2 * MERGE_THRESHOLD]
+        bands = [0.5, _UPPER_QUARTER, _LOWER_QUARTER]
 
-    # Assign bands to edges in their incoming order. If a straight-line (centre)
-    # edge exists, pin it to the 0.5 band and fill the remaining bands around it.
-    result: list = [None] * n
-    order = list(range(n))
-    if keep_centre and 0.5 in bands:
-        centre_idx = next(
-            i for i, (_, pt) in enumerate(edges_on_side)
-            if abs(_band_coord(pt, side) - 0.5) < 1e-9
-        )
-        centre_band_i = bands.index(0.5)
-        result[centre_idx] = (
-            edges_on_side[centre_idx][0],
-            _with_band(edges_on_side[centre_idx][1], side, 0.5),
-        )
-        order.remove(centre_idx)
-        remaining_bands = [b for i, b in enumerate(bands) if i != centre_band_i]
-    else:
-        remaining_bands = list(bands)
-
-    for idx, band in zip(order, remaining_bands):
-        eid, pt = edges_on_side[idx]
-        result[idx] = (eid, _with_band(pt, side, band))
-
-    return result
+    return [
+        (eid, _with_band(pt, side, band))
+        for (eid, pt), band in zip(edges_on_side, bands)
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -1282,8 +1432,15 @@ class CorridorAllocator:
     the caller (e.g. ``"col:2-3"`` or ``"row:edge-router:a"``).
     """
 
-    def __init__(self, grid: int = GRID):
+    def __init__(self, grid: int = GRID, stride: int = 2 * GRID):
         self._grid = grid
+        #: Spacing between successive corridor lines in a gap (Rule D). A
+        #: ``2·GRID`` stride keeps two parallel long runs visibly apart on the
+        #: raster — one grid step reads as a single doubled line when scaled down
+        #: — matching the hand-routed reference (edges 7/10 sit two steps apart,
+        #: not one). Lines stay whole ``GRID`` multiples; the stride only widens
+        #: the gap between chosen lanes (diagram-standards: widen, never narrow).
+        self._stride = stride
         #: gap id -> (low, high) span registered for that gap.
         self._spans: Dict[str, Tuple[float, float]] = {}
         #: gap id -> ordered list of the free grid lines still available.
@@ -1298,34 +1455,39 @@ class CorridorAllocator:
         """Return the ``(low, high)`` span of the gap between two node columns.
 
         The gap is the clear plane between the **right edge** of the left column
-        icon and the **left edge** of the right column icon: ``left_col_x +
-        ICON_SIZE`` … ``right_col_x``. For the canonical rhythm (``COL_STEP``
-        apart) this is ``COL_STEP - ICON_SIZE`` wide."""
-        return (left_col_x + ICON_SIZE, right_col_x)
+        icon and the **left edge** of the right column icon, INSET by one
+        ``GRID`` step off the left glyph so the first corridor lane is a clean
+        step away from the icon (not glued 0–2px to its edge — the "no step-out"
+        defect): ``left_col_x + ICON_SIZE + GRID`` … ``right_col_x``."""
+        return (left_col_x + ICON_SIZE + GRID, right_col_x)
 
     @staticmethod
     def row_gap(top_row_y: float, bottom_row_y: float) -> Tuple[float, float]:
         """Return the ``(low, high)`` span of the gap between two node rows.
 
         The plane between the **bottom edge** of the upper row icon and the
-        **top edge** of the lower row icon: ``top_row_y + ICON_SIZE`` …
-        ``bottom_row_y``."""
-        return (top_row_y + ICON_SIZE, bottom_row_y)
+        **top edge** of the lower row icon, INSET by one ``GRID`` step off the
+        upper glyph so the first lane clears the icon: ``top_row_y + ICON_SIZE +
+        GRID`` … ``bottom_row_y``."""
+        return (top_row_y + ICON_SIZE + GRID, bottom_row_y)
 
     # -- allocation ---------------------------------------------------------
 
     def _grid_lines(self, low: float, high: float) -> list:
-        """Return the whole ``GRID`` multiples strictly inside ``(low, high)``.
+        """Return the corridor lines strictly inside ``(low, high)``.
 
-        Corridor lines are ``ceil(low/GRID + 1)*GRID`` … below ``high`` — every
-        line is a whole ``GRID`` multiple (Req 6.2) and offset from the gap
-        edges (and from each other) by ≥ one ``GRID`` step (Req 6.1)."""
+        Lines start at ``ceil(low/GRID + 1)*GRID`` and step by ``self._stride``
+        (default ``2·GRID``, Rule D) below ``high`` — every line is a whole
+        ``GRID`` multiple (Req 6.2), offset from the gap edges by ≥ one ``GRID``
+        step and from each other by the stride so two parallel runs stay visibly
+        separate (Req 6.1). A gap too narrow for a stride-spaced line still
+        yields at least the single first line when one fits."""
         first_k = int(math.floor(low / self._grid)) + 1
         lines: list = []
         line = first_k * self._grid
         while line < high:
             lines.append(int(line))
-            line += self._grid
+            line += self._stride
         return lines
 
     def register_gap(self, gap_id: str, low: float, high: float) -> int:
@@ -1382,11 +1544,14 @@ Point = Tuple[float, float]
 EDGE_KINDS = ("straight", "spine", "fan-out-row", "cross-region", "back-edge")
 
 #: A rightward source→target separation at or beyond this distance reads as a
-#: *cross-region* hop (A→B) rather than an in-region same-row fan-out. Region B
-#: is a whole :data:`REGION_STEP` (= 3·COL_STEP) block away from region A, so a
-#: target that far to the right sits in the peer region; a nearer same-row
-#: target (a later column in the *same* region) is a fan-out-row instead.
-CROSS_REGION_SPAN = REGION_STEP
+#: *cross-region* hop (A→B) rather than an in-region same-row fan-out. It must
+#: sit **above** the widest in-region fan-out span and **below** the region-B
+#: offset: with 4-column bands an in-region fan-out spans up to 3·COL_STEP (660),
+#: while region B is region-A-extent + REGION_GAP away (~1180). ``REGION_GAP +
+#: 2·COL_STEP`` (880) lands cleanly between them, so a 3-column in-region fan-out
+#: (e.g. app→objstore) is NOT mistaken for a cross-region hop. Genuine
+#: cross-region edges are additionally declared via ``kind_hint`` in the spec.
+CROSS_REGION_SPAN = REGION_GAP + 2 * COL_STEP
 
 
 class UnclassifiableEdgeError(ValueError):
@@ -1479,6 +1644,25 @@ def _contact_point(box: Box, contact: Contact) -> Point:
     return (box.x + fx * box.w, box.y + fy * box.h)
 
 
+def _grid_contact(box: Box, contact: Contact) -> Contact:
+    """Return ``contact`` adjusted so its ABSOLUTE point lands on the grid.
+
+    An icon is 78px, so a face-centre fraction (0.5) resolves to ``x0+39`` — off
+    the 10-grid — while routed waypoints are grid-snapped. That 1px mismatch is
+    what skewed every arrowhead. Snapping the *fraction* so the absolute contact
+    equals ``_snap(x0 + f·78)`` makes the arrow land exactly where the final
+    grid-aligned waypoint sits: no kink, and every waypoint stays on the grid.
+    The fraction is nudged by at most ~half a grid step, so the contact stays on
+    the same face band (0.5 → ~0.513), preserving the directional contract and
+    the distinct-exit spread."""
+    fx, fy = contact
+    ax = box.x + fx * box.w
+    ay = box.y + fy * box.h
+    nfx = (_snap(ax) - box.x) / box.w if box.w else fx
+    nfy = (_snap(ay) - box.y) / box.h if box.h else fy
+    return (nfx, nfy)
+
+
 def _obstacles_between(
     p: Point, q: Point, obstacles: List[Box]
 ) -> List[Box]:
@@ -1516,18 +1700,38 @@ def route_straight(
 def _stair_first_waypoint(
     src: Box, exit_pt: Contact, toward_down: bool
 ) -> Point:
-    """Return the first stair waypoint: one ``GRID`` into the gap, both axes moved.
+    """Return the first stair waypoint: a PURELY HORIZONTAL step off the exit.
 
-    The stair rule (Req 7.7 / diagram-standards): the first waypoint steps one
-    ``GRID`` step **into the gap corridor** before any turn, and it must change
-    **both** axes off the exit point — a waypoint on the exit's own axis
-    collapses the edge (design.md → "Integration points & risks"). So from a
-    right exit we step right by one ``GRID`` (x moves) *and* nudge y by one
-    ``GRID`` toward the run direction (y moves), guaranteeing neither axis stays
-    put."""
+    The stair rule (diagram-standards): step one grid corridor off the glyph
+    **before** turning. The step-out must be **horizontal only** — it keeps the
+    exit's own ``y`` and moves ``x`` right — so the first segment leaves the
+    right face straight (not a diagonal), and the arrow/stub is not skewed at the
+    glyph (the "перекошена стрілка" defect). The *next* waypoint (the corridor
+    drop, set by each router) then moves ``y``, so the two waypoints together
+    form a clean right-angle stair with neither axis collapsing.
+
+    ``toward_down`` is retained for signature stability but no longer nudges
+    ``y`` (that nudge is what skewed the stub); the vertical turn happens at the
+    router's corridor waypoint instead. The exit ``y`` is grid-aligned because
+    the contact fraction is grid-resolving (:func:`_grid_contact`), so the
+    horizontal step-out is level and stays on the grid."""
     ex, ey = _contact_point(src, exit_pt)
-    step_y = GRID if toward_down else -GRID
-    return (_snap(ex + GRID), _snap(ey + step_y))
+    return (_snap(ex + GRID), _snap(ey))
+
+
+def _gap_column_x(allocator: "CorridorAllocator", src: Box, edge_id: str) -> float:
+    """Allocate a distinct vertical-corridor x in the gap right of ``src``.
+
+    Every vertical leg (a spine drop, or a fan-out / cross-region step-out) that
+    runs in the gap immediately right of a source column takes a line from the
+    SAME physical gap namespace (``vcol:<gap-left-x>``), so unrelated vertical
+    runs in one gap land on DISTINCT grid lines instead of all defaulting to
+    ``src_right + GRID`` and merging. This is what keeps a tier-skipping spine
+    (e.g. lb→app-az2) off the fan-out step-out lanes in the same gap without any
+    repair pass (``check_corridor_sharing`` clean by construction)."""
+    gap_left = int(src.right)
+    gap_low, gap_high = allocator.column_gap(src.x, src.x + COL_STEP)
+    return _snap(_allocate_or_first(allocator, f"vcol:{gap_left}", gap_low, gap_high))
 
 
 def route_spine(
@@ -1543,23 +1747,47 @@ def route_spine(
     (the stair), drop in a corridor **beside** the node column (never straight
     down the column), then turn into the target's near (top) face. The vertical
     drop x is an allocated corridor line in the gap immediately right of the
-    source column, so the run clears the icons stacked in that column."""
+    source column, so the run clears the icons stacked in that column and stays
+    distinct from any fan-out step-out sharing that gap."""
     src = obstacle_box(edge.source, obstacles)
     tgt = obstacle_box(edge.target, obstacles)
     others = _relevant_obstacles(edge, obstacles)
+
+    # Straight vertical drop (Exception I, compact flow): a bottom-centre exit
+    # into a top-centre entry on the same column is a single clean vertical —
+    # no side corridor, no hook. draw.io draws the orthogonal segment between the
+    # two pinned contacts, so no interior waypoints are needed.
+    if exit_pt[1] >= 1.0 and entry_pt[1] <= 0.0 and abs(src.x - tgt.x) < 1e-9:
+        return []
 
     entry = _contact_point(tgt, entry_pt)
     down = tgt.y >= src.y
     first = _stair_first_waypoint(src, exit_pt, toward_down=down)
 
-    # Side corridor x: an allocated grid line in the gap right of the source.
-    gap_low, gap_high = allocator.column_gap(src.x, src.x + COL_STEP)
-    corridor_x = _allocate_or_first(allocator, f"spine:{edge.id}", gap_low, gap_high)
-    corridor_x = _snap(corridor_x)
+    # Side corridor x: an allocated grid line in the gap right of the source,
+    # shared with every other vertical leg in that gap (see _gap_column_x).
+    corridor_x = _gap_column_x(allocator, src, edge.id)
+    # The stair's first waypoint moves onto the same allocated corridor x, so the
+    # vertical leg and its step-out are one line (no doubled stub).
+    first = (corridor_x, first[1])
 
-    # Drop down the side corridor to the target's entry row, then across into it.
-    turn_y = _snap(entry[1])
-    waypoints = [first, (corridor_x, first[1]), (corridor_x, turn_y)]
+    # Rule E: step INTO the target's corridor before entering its face — mirror
+    # of the exit stair. A TOP entry (spine descending into a target below):
+    # drop the corridor to one grid step above the target, step across to the
+    # target's centre x, then descend into the top. A LEFT entry: drop to the
+    # entry row, then run across into the left face.
+    top_entry = entry_pt[1] <= 0.0
+    if top_entry:
+        step_y = _snap(entry[1] - GRID)         # one grid step above the top face
+        waypoints = [
+            first,
+            (corridor_x, step_y),               # drop in the side corridor
+            (_snap(entry[0]), step_y),          # step across above the target
+            (_snap(entry[0]), _snap(entry[1])), # descend into the top face
+        ]
+    else:
+        turn_y = _snap(entry[1])
+        waypoints = [first, (corridor_x, first[1]), (corridor_x, turn_y)]
     waypoints = _dedupe_axis_collapse(waypoints, first)
 
     route = [_contact_point(src, exit_pt)] + waypoints + [entry]
@@ -1588,9 +1816,21 @@ def route_fan_out_row(
     entry = _contact_point(tgt, entry_pt)
     first = _stair_first_waypoint(src, exit_pt, toward_down=True)
 
-    # Below-row lane: an allocated grid line in the row gap under the source.
-    row_low, row_high = allocator.row_gap(src.y, src.y + ROW_STEP)
-    lane_y = _snap(_allocate_or_first(allocator, f"fanout:{edge.id}", row_low, row_high))
+    # Step-out vertical leg: an allocated column line in the gap right of the
+    # source, shared with every other vertical leg in that gap (see
+    # _gap_column_x), so the fan-out step-out never coincides with a spine drop.
+    step_x = _gap_column_x(allocator, src, edge.id)
+    first = (step_x, first[1])
+
+    # Below-row lane: an allocated grid line in the row gap under the source,
+    # starting BELOW the source's LABEL BAND (Rule F). A fan-out run one grid step
+    # under the icon would cross the service caption drawn beneath it; insetting
+    # the lane past ``ICON_SIZE + LABEL_BAND`` keeps the run clear of every
+    # caption in the row. Keyed by the physical row band so several fan-out edges
+    # from the same row get distinct below-row lanes rather than merging on one.
+    row_low = src.y + ICON_SIZE + LABEL_BAND + GRID
+    row_high = src.y + ROW_STEP
+    lane_y = _snap(_allocate_or_first(allocator, f"fanout-row:{int(src.y)}", row_low, row_high))
 
     # Turn up in the gap just LEFT of the target (target_x - ~half a gap).
     up_x = _snap(tgt.x - (COL_STEP - ICON_SIZE) // 2)
@@ -1625,11 +1865,42 @@ def route_cross_region(
     others = _relevant_obstacles(edge, obstacles)
 
     entry = _contact_point(tgt, entry_pt)
-    first = _stair_first_waypoint(src, exit_pt, toward_down=False)
+    # Choose the horizontal corridor side: above the source by default, but
+    # BELOW when the source is in the top band (no room above → the run would
+    # leave the canvas / rise above the account box) or the target sits clearly
+    # below the source (a downward hop like dns→passive-region-LB reads better
+    # routed below). This keeps the corridor on the grid and inside the account.
+    below = (src.y - ROW_STEP) <= CONTAINER_PAD or tgt.y >= src.y + ROW_STEP
+    first = _stair_first_waypoint(src, exit_pt, toward_down=below)
+    # Vertical leg in the gap right of the source, distinct per gap.
+    rise_x = _gap_column_x(allocator, src, edge.id)
+    first = (rise_x, first[1])
 
-    # Over-row corridor: an allocated grid line in the row gap ABOVE the source.
-    row_low, row_high = allocator.row_gap(src.y - ROW_STEP, src.y)
-    over_y = _snap(_allocate_or_first(allocator, f"xregion:{edge.id}", row_low, row_high))
+    # Cross-region corridor: an allocated grid line in the row gap above (default)
+    # or below (top-band / downward hop) the source. Keyed by the physical row
+    # band + side, so two cross-region runs leaving the same source row (e.g.
+    # db_a1->db_b1 and obj_a1->obj_b1) get DISTINCT lanes from the shared
+    # allocator instead of merging (the corridor-sharing regression this fixes).
+    if below:
+        # A BELOW corridor must clear the source's LABEL BAND (Rule F), else the
+        # horizontal run crosses the caption drawn under the source icon (edge 1
+        # crossing the dns / waf caption).
+        row_low = src.y + ICON_SIZE + LABEL_BAND + GRID
+        row_high = src.y + ROW_STEP
+        side = "below"
+    else:
+        # An ABOVE corridor sits in the gap between the row above and the source
+        # row; it must clear the UPPER row's LABEL BAND (Rule F), else it runs
+        # along that row's captions (edge 10 over the service-row labels).
+        row_low = (src.y - ROW_STEP) + ICON_SIZE + LABEL_BAND + GRID
+        row_high = src.y
+        side = "above"
+    # Shared horizontal-corridor namespace (``hcorr``) keyed by the physical band
+    # + side, so ANY long horizontal run in this band (cross-region OR back-edge)
+    # gets a DISTINCT lane from the shared allocator — two edges in different
+    # per-class namespaces used to both grab the first line and merge (e.g. edge
+    # 1 back-edge and edge 2 cross-region both leaving dns).
+    over_y = _snap(_allocate_or_first(allocator, f"hcorr-{side}:{int(src.y)}", row_low, row_high))
 
     across_x = _snap(entry[0])
     waypoints = [
@@ -1663,21 +1934,54 @@ def route_back_edge(
     others = _relevant_obstacles(edge, obstacles)
 
     entry = _contact_point(tgt, entry_pt)
-    first = _stair_first_waypoint(src, exit_pt, toward_down=False)
+    # Loop corridor above the source by default, but BELOW when the source is in
+    # the top band (no room above → the loop would rise above the account box),
+    # mirroring route_cross_region so a top-row back-edge stays inside the canvas.
+    below = (src.y - ROW_STEP) <= CONTAINER_PAD
+    first = _stair_first_waypoint(src, exit_pt, toward_down=below)
+    # Vertical leg in the gap right of the source, distinct per gap.
+    rise_x = _gap_column_x(allocator, src, edge.id)
+    first = (rise_x, first[1])
 
-    # Dedicated loop corridor in the row gap above the source row.
-    row_low, row_high = allocator.row_gap(src.y - ROW_STEP, src.y)
-    loop_y = _snap(_allocate_or_first(allocator, f"back:{edge.id}", row_low, row_high))
+    # Dedicated loop corridor in the row gap above (default) or below (top-band)
+    # the source row, keyed by the physical row band + side so parallel back-edges
+    # from the same row get distinct loop lanes rather than merging on one.
+    if below:
+        # Clear the source LABEL BAND (Rule F) so the loop run doesn't cross the
+        # caption under the source icon.
+        row_low = src.y + ICON_SIZE + LABEL_BAND + GRID
+        row_high = src.y + ROW_STEP
+        side = "below"
+    else:
+        # Clear the UPPER row's LABEL BAND (Rule F) so the loop doesn't run along
+        # the captions of the row above.
+        row_low = (src.y - ROW_STEP) + ICON_SIZE + LABEL_BAND + GRID
+        row_high = src.y
+        side = "above"
+    # Shared horizontal-corridor namespace (see route_cross_region): a back-edge
+    # and a cross-region run in the same band+side get distinct lanes.
+    loop_y = _snap(_allocate_or_first(allocator, f"hcorr-{side}:{int(src.y)}", row_low, row_high))
 
-    # Run left in the loop corridor to the gap just left of the target, then drop.
-    left_x = _snap(tgt.x - (COL_STEP - ICON_SIZE) // 2)
-
-    waypoints = [
-        first,
-        (first[0], loop_y),
-        (left_x, loop_y),
-        (left_x, _snap(entry[1])),
-    ]
+    if entry_pt[1] <= 0.0:
+        # TOP entry (Rule G: the target has no left gap — set by the pipeline):
+        # run the loop corridor to above the target centre and drop into the top.
+        across = _snap(entry[0])
+        waypoints = [
+            first,
+            (first[0], loop_y),
+            (across, loop_y),
+            (across, _snap(entry[1])),
+        ]
+    else:
+        # LEFT entry: run left in the loop corridor to the gap just left of the
+        # target, then drop into its left face. Clamp so the turn stays on-canvas.
+        left_x = _snap(max(tgt.x - (COL_STEP - ICON_SIZE) // 2, CONTAINER_PAD))
+        waypoints = [
+            first,
+            (first[0], loop_y),
+            (left_x, loop_y),
+            (left_x, _snap(entry[1])),
+        ]
     waypoints = _dedupe_axis_collapse(waypoints, first)
     route = [_contact_point(src, exit_pt)] + waypoints + [entry]
     _detour_clockwise_if_blocked(route, others)
@@ -2148,16 +2452,102 @@ def _place_and_route(spec: DiagramSpec) -> "PlacedDiagram":
         exits[edge.id] = ex
         entries[edge.id] = en
 
-    # 2. Spread same-side exits per source so a fan-out stays distinct (Req 5.3).
-    #    Group by (source, exit-face); spread within each group in declared order.
-    by_side: Dict[Tuple[str, str], List[Tuple[str, Contact]]] = {}
+    # 1b. Rule C: a cross-region hop runs over (or under) the row and descends
+    #     into the target from ABOVE, so it enters the target's TOP face, not its
+    #     left. Override the entry here where the edge class is known; the router
+    #     (route_cross_region) then lands the final vertical on the top face.
+    #     Rule G: a back-edge whose target sits against the canvas left (no room
+    #     for a >= 1-grid-step gap to its left) also enters the TOP — a left
+    #     entry there would land on the target's own edge with no offset.
+    obstacles_all = list(placed.values())
+    for edge in spec.edges:
+        kind = classify_edge(edge, placed)
+        if kind == "cross-region":
+            entries[edge.id] = (0.5, 0.0)       # top-centre
+        elif kind == "back-edge":
+            tgt = placed[edge.target]
+            left_gap_x = tgt.x - (COL_STEP - ICON_SIZE) // 2
+            if left_gap_x < CONTAINER_PAD + GRID:
+                entries[edge.id] = (0.5, 0.0)   # no left gap → top-centre (Rule G)
+        elif kind == "spine" and spec.compact:
+            # Exception I (compact flow only): a spine to a target DIRECTLY BELOW
+            # in the same column with nothing between (the summary's lb→app→db
+            # vertical chain) drops STRAIGHT — bottom-centre exit into top-centre
+            # entry — instead of the exit-right → side-corridor → step-back-left
+            # hook. A straight drop removes the excessive hook (a crossing-like
+            # defect) and only grazes the source's OWN caption, which reads clean
+            # at the summary's wide tier spacing. Scoped to ``compact`` so the
+            # dense landscape keeps its caption-avoiding side corridor.
+            src = placed[edge.source]
+            tgt = placed[edge.target]
+            others = [b for nid, b in placed.items()
+                      if nid not in (edge.source, edge.target)]
+            if _box_directly_below(src, tgt, others):
+                exits[edge.id] = (0.5, 1.0)     # bottom-centre
+                entries[edge.id] = (0.5, 0.0)   # top-centre → straight drop
+
+    # 2. Spread same-side exits per source in EDGE-MARKER order: the first edge
+    #    (lowest marker) keeps the face centre, the 2nd/3rd shift to the quarters
+    #    (Req 5.3, "перший по центру"). Group by (source, exit-face).
+    order_of = {e.id: i for i, e in enumerate(spec.edges)}
+    marker_key = {e.id: e.marker for e in spec.edges}
+    def _mk(eid: str):
+        m = marker_key[eid]
+        return (0, int(m)) if m.isdigit() else (1, m)  # numeric markers first, in order
+    by_side: Dict[Tuple[str, str], List[str]] = {}
     for edge in spec.edges:
         side = _exit_side(exits[edge.id])
-        by_side.setdefault((edge.source, side), []).append((edge.id, exits[edge.id]))
-    for group in by_side.values():
-        if len(group) > 1:
-            for eid, pt in spread_contacts(group):
-                exits[eid] = pt
+        by_side.setdefault((edge.source, side), []).append(edge.id)
+    for eids in by_side.values():
+        eids_sorted = sorted(eids, key=_mk)
+        group = [(eid, exits[eid]) for eid in eids_sorted]
+        for eid, pt in spread_contacts(group):
+            exits[eid] = pt
+
+    # 2b. Spread shared ENTRY faces per target the same way: the first edge (by
+    #     marker) entering a given target face keeps its centre, the rest shift
+    #     off it, so several arrivals on one face don't stack on one point.
+    by_entry: Dict[Tuple[str, str], List[str]] = {}
+    for edge in spec.edges:
+        face = _entry_face(entries[edge.id])
+        by_entry.setdefault((edge.target, face), []).append(edge.id)
+    for eids in by_entry.values():
+        if len(eids) < 2:
+            continue
+        eids_sorted = sorted(eids, key=_mk)
+        group = [(eid, entries[eid]) for eid in eids_sorted]
+        for eid, pt in spread_entries(group):
+            entries[eid] = pt
+
+    # 2b2. Rule H — for a long-haul exit that the spread ALREADY shifted OFF the
+    #     centre (a 2nd/3rd edge on the side), choose WHICH quarter by its
+    #     corridor side: a run rising into an ABOVE-row corridor takes the UPPER
+    #     quarter, one dropping into a BELOW-row corridor the LOWER quarter, so
+    #     its stub leaves toward the corridor it will run in and two long runs
+    #     from one row don't cross each other's stubs (edge 2 "exit higher").
+    #     The FIRST edge on the side (kept at centre 0.5 by the spread) is left
+    #     untouched — "перший по центру" (edge 1 stays centred).
+    for edge in spec.edges:
+        kind = classify_edge(edge, placed)
+        if kind not in ("cross-region", "back-edge"):
+            continue
+        ex, ey = exits[edge.id]
+        if abs(ey - 0.5) < 1e-9:
+            continue  # this is the centred first edge on its side — don't move it
+        # A shifted long-haul exit leaves the UPPER quarter ("вийти вище") so its
+        # stub sits clear ABOVE the centred first edge's down-path, then it drops
+        # into its own (lower/over) corridor lane — the two stubs no longer merge
+        # at the glyph (edge 2 above edge 1).
+        exits[edge.id] = (ex, _UPPER_QUARTER)
+
+    # 2c. Snap every contact FRACTION so its absolute point lands on the grid
+    #     (icon centre 0.5 → x0+39 is off-grid; a grid-snapped waypoint would
+    #     then meet it with a 1px kink that skews the arrowhead). After this the
+    #     arrow lands exactly on the final grid waypoint — no skew, waypoints
+    #     stay on the grid.
+    for edge in spec.edges:
+        exits[edge.id] = _grid_contact(placed[edge.source], exits[edge.id])
+        entries[edge.id] = _grid_contact(placed[edge.target], entries[edge.id])
 
     # 3. Route every edge on its class, sharing one corridor allocator so no two
     #    runs collide by construction (Req 6).
@@ -2195,8 +2585,18 @@ def _place_and_route(spec: DiagramSpec) -> "PlacedDiagram":
     )
 
 
-def _normalise_origin(placed: "PlacedDiagram") -> "PlacedDiagram":
-    """Translate the whole placed layout so ``min(x) == min(y) == CONTAINER_PAD`` (Req 12.4).
+def _normalise_origin(
+    placed: "PlacedDiagram",
+    margins: Tuple[int, int] = (CONTAINER_PAD, CONTAINER_PAD),
+) -> "PlacedDiagram":
+    """Translate the whole placed layout so its top-left sits at ``margins`` (Req 12.4).
+
+    ``margins`` is ``(left_margin, top_margin)``; both default to
+    :data:`CONTAINER_PAD` (the historical behaviour — ``min(x) == min(y) ==
+    CONTAINER_PAD``, preserved for synthetic specs and callers that pass no
+    margins). :func:`layout` passes a larger ``top_margin`` (``CONTAINER_PAD +
+    TITLE_BAND``) so the outermost container clears the diagram title band drawn
+    above it, matching the reference.
 
     The account-level edge row (region ``""``) is placed at the base origin and
     then centred / spread relative to the region bands, so a container band or an
@@ -2226,6 +2626,7 @@ def _normalise_origin(placed: "PlacedDiagram") -> "PlacedDiagram":
     if not boxes:  # a degenerate spec with no nodes/containers
         return placed
 
+    left_margin, top_margin = margins
     box_min_x = min(b.x for b in boxes)
     box_min_y = min(b.y for b in boxes)
 
@@ -2238,10 +2639,10 @@ def _normalise_origin(placed: "PlacedDiagram") -> "PlacedDiagram":
             all_min_x = min(all_min_x, px)
             all_min_y = min(all_min_y, py)
 
-    # Anchor on the box origins (so their min == CONTAINER_PAD), but never less than
-    # the shift needed to keep the leftmost/topmost waypoint non-negative.
-    dx = _snap(max(CONTAINER_PAD - box_min_x, -all_min_x))
-    dy = _snap(max(CONTAINER_PAD - box_min_y, -all_min_y))
+    # Anchor on the box origins (so their min == the requested margin), but never
+    # less than the shift needed to keep the leftmost/topmost waypoint non-negative.
+    dx = _snap(max(left_margin - box_min_x, -all_min_x))
+    dy = _snap(max(top_margin - box_min_y, -all_min_y))
     if dx == 0 and dy == 0:
         return placed  # already at the origin margin — nothing to translate
 
@@ -2304,15 +2705,19 @@ def layout(spec: DiagramSpec) -> "PlacedDiagram":
             f"diagram must be split or re-laned: {exc}"
         ) from exc
 
+    # Reserve a title band above the top container so the diagram title never
+    # overlaps the container border / its top-left badge (Req 12.4 + title cell).
+    margins = (CONTAINER_PAD, CONTAINER_PAD + TITLE_BAND)
+
     findings = _run_oracle(candidate)
     for _ in range(MAX_REPAIR_ITERS):
         if findings.clean:
-            return _normalise_origin(candidate)
+            return _normalise_origin(candidate, margins)
         candidate = _repair(candidate, findings)
         findings = _run_oracle(candidate)
 
     if findings.clean:
-        return _normalise_origin(candidate)
+        return _normalise_origin(candidate, margins)
     rule, payload = findings.first_unresolved  # type: ignore[misc]
     raise LayoutError(
         f"layout({spec.diagram_id!r}) still has blocking finding {rule!r} on "
@@ -2326,6 +2731,7 @@ __all__ = [
     "COL_STEP",
     "ROW_STEP",
     "CONTAINER_PAD",
+    "TITLE_BAND",
     "REGION_STEP",
     "REGION_GAP",
     "SUB_STEP",
