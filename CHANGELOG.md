@@ -2,6 +2,23 @@
 
 All notable changes to the Rule Engine are recorded here, per released version, in reverse chronological order.
 
+## [1.5.4] - 2026-09-25
+
+**Theme: the linter now catches a waypointed edge whose real orthogonal path cuts an unrelated icon.** A from-scratch test install (a fresh AWS `eu-central-1` diagram) surfaced a routing defect the gate waved through: edge 8 (EC2→S3) carried explicit waypoints, and `check_edge_routing` trusted any waypointed edge entirely on the icon-crossing criterion — so a diagram that visibly ran flow marker 8 straight through the RDS glyph, and along the VPC top border, linted clean. This release closes that gap and reroutes the test artifact.
+
+### Fixed
+
+- **`edge-routing` now samples a waypointed edge's real orthogonal *knee* path, not its raw diagonal** (`geometry.check_edge_routing`, new `geometry._orthogonal_knee`). An `orthogonalEdgeStyle` edge never draws a diagonal between two points: it renders an L — **horizontal first**, then vertical. The pre-1.5.4 check sampled the straight diagonal between contact points and waypoints, which (a) correctly avoided false-flagging a validly routed edge that draw.io steps around a node, but (b) also stepped cleanly *over* an icon that the real L-shaped leg slices through. The devoxx `e8` edge exited EC2 on the right face at y≈216 and its first waypoint sat up-and-right, so draw.io drew a horizontal leg at y≈216 straight through the RDS icon before turning up — a crossing the diagonal sample missed. The fix expands every diagonal leg to its horizontal-first axis-aligned segments and samples those with the same `segment_crosses_box` predicate, emitting `knee-through-<node>`. That reason matches the existing `*-through-*` escalation in `linter._check_edge_routing`, so an orthogonal-knee icon crossing is an **ERROR** on any class (it blocks publication), exactly like a waypoint-free `straight-through-<node>`. The H-first knee model was calibrated against the exported golden PNGs — `e5` on the GCP/OCI goldens routes horizontal-to-waypoint-x then vertical, clear of `vertex-ai`/`generative-ai`; `e8` routes horizontal-at-exit-y, into `rds` — so all twelve golden `.drawio` examples stay clean while the genuine crossing trips. The `edge-routing` rule detail in both steering copies (`diagram-lint.md`) documents the new knee case (d) so the rule and its description no longer drift.
+
+### Changed
+
+- **Rebuilt the test AWS `eu-central-1` diagram (test artifact).** Edge 8 (EC2→S3) is rerouted: it rises in the narrow gap immediately right of the EC2 node (clear of the RDS icon), runs across an over-the-top corridor that sits *above* the VPC boundary and inside the Account (so it never rides the VPC caption band), and drops into S3's top. The old routing — verified by reconstructing it against the fixed linter — now yields a `knee-through-rds` ERROR.
+
+### Tests
+
+- Regression tests (`tests/test_geometry_hard_rules.py`): a waypointed edge whose H-first orthogonal knee cuts an unrelated icon is flagged `knee-through-<node>`; the same crossing escalates `edge-routing` to ERROR in the linter; the same edge rerouted to clear the icon is clean; a waypointed edge whose legs are already axis-aligned and clear is clean.
+- **Corrected `tests/test_review_fixes.py::test_geometry_edge_with_waypoints_not_flagged`.** Its old geometry stacked the intervening node directly in the source→target column and asserted the waypointed edge was clean — but draw.io would have drawn the knee straight through that node, so the premise was the very false-negative 1.5.4 closes. The node is moved out of the column so the route is *genuinely* clear, preserving the test's intent (a deliberately routed waypointed edge that truly clears an obstacle is not flagged).
+
 ## [1.5.3] - 2026-09-25
 
 **Theme: a Power install stops erroring on hooks, and the linter now catches a node that spilled out the bottom of its container.** Test-installing the Power from git and generating an AWS `eu-central-1` diagram surfaced three problems: (1) installing the hooks failed with **"Hook has invalid data structure"**; (2) an inventory-driven diagram shipped with a node drawn *below* its VPC border that the gate reported clean; (3) the diagram omitted the instance type on the EC2 nodes and the auto scaling group, and drew S3 (a regional service) inside the VPC. This release fixes the hook packaging and the linter gap, and rebuilds the example.

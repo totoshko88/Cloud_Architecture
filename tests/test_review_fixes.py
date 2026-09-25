@@ -225,17 +225,27 @@ def test_geometry_edge_routing_flags_nonorthogonal_and_straight_through():
 
 
 def test_geometry_edge_with_waypoints_not_flagged():
-    """A waypoint-carrying orthogonal edge is deliberate routing — not flagged
-    on the crossing criterion (guards the GCP/OCI golden e5 case)."""
+    """A waypoint-carrying orthogonal edge that is *deliberately routed clear* of
+    the intervening node is not flagged (guards the GCP/OCI golden e5 case).
+
+    v1.5.4: this now samples the real orthogonal KNEE path, so the geometry must
+    describe a route that genuinely clears ``b`` — exactly as the golden e5 does,
+    by pulling its waypoint OUT of ``b``'s column (``b`` here sits off to the
+    side at x=300, not stacked in the a→c column). The pre-1.5.4 version stacked
+    ``b`` at x=0 directly between ``a`` and ``c`` and asserted clean, but draw.io
+    would have drawn the knee straight through ``b`` — the test's premise was the
+    very false-negative 1.5.4 closes, so its geometry is corrected to a route
+    that is actually clear rather than one that only *looked* clear to the old
+    diagonal sampler."""
     from rule_engine import geometry as g
     geo = g.build_geometry(
         '<mxGraphModel><root><mxCell id="1"/>'
         '<mxCell id="e" edge="1" parent="1" source="a" target="c" '
-        'style="edgeStyle=orthogonalEdgeStyle;exitX=0.25;exitY=1;entryX=0;entryY=0.5">'
+        'style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.5;entryY=0">'
         '<mxGeometry relative="1" as="geometry"><Array as="points">'
-        '<mxPoint x="40" y="200"/></Array></mxGeometry></mxCell>'
+        '<mxPoint x="39" y="200"/></Array></mxGeometry></mxCell>'
         '<mxCell id="a" vertex="1" parent="1" style="shape=x"><mxGeometry x="0" y="0" width="78" height="78"/></mxCell>'
-        '<mxCell id="b" vertex="1" parent="1" style="shape=x"><mxGeometry x="0" y="150" width="78" height="78"/></mxCell>'
+        '<mxCell id="b" vertex="1" parent="1" style="shape=x"><mxGeometry x="300" y="150" width="78" height="78"/></mxCell>'
         '<mxCell id="c" vertex="1" parent="1" style="shape=x"><mxGeometry x="0" y="300" width="78" height="78"/></mxCell>'
         '</root></mxGraphModel>'
     )

@@ -693,8 +693,27 @@ def check_edge_routing(geo: DiagramGeometry) -> List[Tuple[str, str]]:
     * a non-orthogonal edge is always flagged (``not-orthogonal``);
     * a **waypoint-free** edge whose straight run between its real contact
       points passes through an unrelated node is flagged
-      (``straight-through-<node>``). An edge with explicit waypoints is assumed
-      deliberately routed and is not flagged on the crossing criterion.
+      (``straight-through-<node>``);
+    * a **waypointed** edge whose real *orthogonal* path (the axis-aligned knees
+      draw.io actually draws, not the raw diagonals between points) runs through
+      an unrelated node is flagged (``knee-through-<node>``, v1.5.4).
+
+    **v1.5.4 — the orthogonal-knee gap.** Before this release a waypointed edge
+    was trusted entirely on the crossing criterion, because sampling the raw
+    diagonal between two points false-flagged a validly routed edge (draw.io
+    routes orthogonally around nodes — the GCP/OCI golden ``e5`` case). But
+    trusting the *diagonal* also missed the opposite defect: a waypointed edge
+    whose real drawn path is an L-shaped knee whose horizontal (or vertical) leg
+    slices an unrelated icon. The devoxx ``e8`` edge (EC2→S3, exit on the right
+    face at y≈216, first waypoint up-and-right) leaves horizontally at y≈216 and
+    runs straight through the RDS icon before turning up — a crossing the diagonal
+    sample stepped cleanly over. The fix samples the **knee path** draw.io draws:
+    each leg between consecutive polyline points is expanded to its horizontal-
+    first axis-aligned segments (``_orthogonal_knee``), matching what an
+    orthogonal edge renders (verified against the exported golden PNGs — ``e5``
+    routes horizontal-to-waypoint-x then vertical, clear of ``vertex-ai``; ``e8``
+    routes horizontal-at-exit-y, into ``rds``). All twelve golden examples stay
+    clean under the knee model; only a genuine icon crossing trips it.
     """
     out: List[Tuple[str, str]] = []
     nodes = geo.nodes
@@ -726,24 +745,65 @@ def check_edge_routing(geo: DiagramGeometry) -> List[Tuple[str, str]]:
         if pierce:
             out.append((e.id, f"pierces-target-{e.target}"))
             continue
-        # (2) A waypoint-free edge's straight run cuts an UNRELATED node. An edge
-        #     with explicit waypoints is deliberate routing and is not judged on
-        #     the straight-line criterion (draw.io routes orthogonally around
-        #     nodes; sampling raw segments false-flags a validly routed edge —
-        #     the GCP/OCI golden e5 case). The self-pierce check above already
-        #     covers the target; label-band crossings are owned by
-        #     ``check_edge_crosses_label``.
-        if e.points:
+        # (2) A run that cuts an UNRELATED node icon.
+        #
+        #   * **waypoint-free** edge — sample its straight source→target run
+        #     (``straight-through-<node>``). Reason unchanged.
+        #   * **waypointed** edge (v1.5.4) — sample the *orthogonal knee* path
+        #     draw.io actually draws, not the raw diagonals between the points.
+        #     A waypointed edge used to be trusted entirely here (draw.io routes
+        #     orthogonally around nodes, so sampling the raw diagonal
+        #     false-flagged the validly routed golden ``e5``). But the drawn path
+        #     is L-shaped knees, and a knee's leg can slice an icon the diagonal
+        #     skips over — the devoxx ``e8`` horizontal stub cutting ``rds``. We
+        #     expand each leg to its horizontal-first axis-aligned segments
+        #     (``_orthogonal_knee``) and sample those (``knee-through-<node>``).
+        if not e.points:
+            for other, b in nodes.items():
+                if other in (e.source, e.target):
+                    continue
+                # Sample the straight segment; a 2px inset means a mere graze of
+                # a border does not count as a crossing.
+                if segment_crosses_box(p, q, b):
+                    out.append((e.id, f"straight-through-{other}"))
+                    break
             continue
-        for other, b in nodes.items():
+
+        # Waypointed: build the full polyline (real contacts + waypoints) and
+        # expand every diagonal leg into the horizontal-first knee draw.io draws.
+        polyline = [p] + list(e.points) + [q]
+        knee_pts: List[Tuple[float, float]] = [polyline[0]]
+        for a, b in zip(polyline, polyline[1:]):
+            knee_pts.extend(_orthogonal_knee(a, b)[1:])
+        for other, box in nodes.items():
             if other in (e.source, e.target):
                 continue
-            # Sample the straight segment; a 2px inset means a mere graze of a
-            # border does not count as a crossing.
-            if segment_crosses_box(p, q, b):
-                out.append((e.id, f"straight-through-{other}"))
+            if any(
+                segment_crosses_box(seg_a, seg_b, box)
+                for seg_a, seg_b in zip(knee_pts, knee_pts[1:])
+            ):
+                out.append((e.id, f"knee-through-{other}"))
                 break
     return out
+
+
+def _orthogonal_knee(
+    a: Tuple[float, float], b: Tuple[float, float]
+) -> List[Tuple[float, float]]:
+    """Return the axis-aligned vertices draw.io draws for the leg ``a``→``b``.
+
+    An ``orthogonalEdgeStyle`` edge never draws a diagonal: a leg between two
+    points that differ on both axes renders as an L — **horizontal first**, then
+    vertical. That horizontal-first choice is what the exported golden PNGs show
+    (``e5`` runs horizontal to the waypoint's x then drops vertically, clear of
+    ``vertex-ai``; the devoxx ``e8`` runs horizontal at the exit's y, into
+    ``rds``), so modelling the knee as H-first reproduces the real render and
+    keeps all twelve goldens clean while catching the ``e8`` crossing. A leg that
+    is already axis-aligned (shares an x or a y within 1px) is returned as-is."""
+    (x0, y0), (x1, y1) = a, b
+    if abs(x1 - x0) < 1 or abs(y1 - y0) < 1:
+        return [a, b]
+    return [a, (x1, y0), b]
 
 
 def _approach_pierces_target(
