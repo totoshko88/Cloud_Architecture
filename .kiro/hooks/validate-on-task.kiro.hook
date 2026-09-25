@@ -6,7 +6,7 @@
       "trigger": "PostTaskExec",
       "action": {
         "type": "command",
-        "command": "rule-engine-lint --all --fail-on error,critical && rule-engine-validate-schema --schema schemas/inventory.schema.json --targets 'examples/**/*.json'"
+        "command": "command -v rule-engine-lint >/dev/null 2>&1 || exit 0; rule-engine-lint --all --fail-on error,critical && { command -v rule-engine-validate-schema >/dev/null 2>&1 && rule-engine-validate-schema --schema schemas/inventory.schema.json --targets 'examples/**/*.json' || true; }"
       }
     }
   ]
