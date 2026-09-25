@@ -2,6 +2,29 @@
 
 All notable changes to the Rule Engine are recorded here, per released version, in reverse chronological order.
 
+## [1.5.2] - 2026-09-25
+
+**Theme: `container-padding` now measures a nested boundary against its parent, not just a node against its boundary.** A VPC boundary sharing an edge with its Account boundary (zero padding) linted clean because the check only ever iterated nodes-in-containers — the nested-container case was claimed in diagram-standards and the docstring but never implemented.
+
+### Fixed
+
+- **Nested container-in-container padding is enforced** (`geometry.check_container_padding`, new `geometry._tightest_enclosing`). Each container is measured against its **tightest** enclosing parent; a four-side gap below one grid step is a finding. Sides are measured symmetrically against the same pad floor a node gets, so the check agrees with `size_containers`. The `inside` predicate uses `<=` on the far edges, so a child sharing an edge exactly with its parent (`right == right`) reads as inside-with-zero-padding (a finding), not a disjoint sibling. Severity unchanged: WARNING for `flow`, ERROR for `landscape`.
+- All twelve shipped `.drawio` examples stay clean — including the multi-region landscapes with `Account ⊃ VPC ⊃ AZ` nesting (triple nests measure against the immediate parent). No false positives.
+
+### Changed
+
+- **Golden companions declare `diagram_class` explicitly** (audit D3). The six that relied on the implicit `flow` default — `aws/01`, `azure/01`, `gcp/01`, `oci/01`, `cross-cloud`, `generic` — now set `diagram_class: flow`. Behavior is unchanged (the linter already reads the class from the companion when linting the `.drawio`); the reference set now teaches the class instead of leaning on the default.
+
+### Housekeeping
+
+- **Removed git-ignored cruft** (audit G1/G2): five draw.io autosave backups (`.$….drawio.bkp`, incl. the hand-duplicated "копія") and three `.DS_Store`. All already `.gitignore`d — a local-tree tidy, no repository or behavior impact.
+
+### Tests
+
+- Regression tests (`tests/test_geometry_hard_rules.py`): shared-edge child flagged; well-padded child clean; top-flush child flagged; triple nest measured against its immediate parent.
+
+> **Deferred (see `~/Downloads/rule-engine-followups.md`).** The audit's headline finding — `node-connectivity` (D1: ~20 edge-less nodes per HA landscape) — is out of scope for a hotfix: it needs the golden landscapes re-connected first. Tracked with D2/D4 and the A/P refactors in the follow-up plan.
+
 ## [1.5.1] - 2026-09-25
 
 **Theme: a git/Power install uses the packaged resources, and the linter blocks

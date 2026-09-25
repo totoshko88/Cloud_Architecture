@@ -290,15 +290,31 @@ def check_node_overlap(
 def check_container_padding(
     geo: DiagramGeometry, pad: int = GRID, label_band: float = LABEL_BAND
 ) -> List[Tuple[str, str, float]]:
-    """Return ``(node_id, container_id, min_pad)`` where a node inside a
-    container leaves less than ``pad`` on some side (or straddles the border).
+    """Return ``(inner_id, container_id, min_pad)`` where a node **or a nested
+    container** inside a container leaves less than ``pad`` on some side (or
+    straddles the border).
 
-    The node is measured by its **footprint** (icon + caption band), so a label
-    that reaches the container border is caught even when the icon clears it. A
-    node is considered "inside" a container when its footprint sits within the
-    container region; the smallest of the four side gaps is compared to
-    ``pad``."""
+    Two kinds of finding are produced, both against the same ``pad`` floor:
+
+    * **node-in-container** — a node's **footprint** (icon + caption band) must
+      clear its enclosing boundary by ``pad`` on all four sides, so a label that
+      reaches the container border is caught even when the icon clears it.
+    * **container-in-container** (v1.5.2) — a *nested* boundary must clear its
+      **parent** boundary by ``pad`` on every side too. diagram-standards
+      Container Padding requires "≥ 1 grid step ... between a nested container
+      (for example a Network Boundary inside a Boundary) and its parent". The
+      four sides are measured symmetrically against ``pad`` — the same convention
+      the node-in-container loop uses — so the check agrees with what
+      ``size_containers`` produces. Before v1.5.2 this loop only measured nodes,
+      so a VPC box sharing an edge with its Account box (zero padding) was never
+      evaluated — the exact defect this closes.
+
+    In both cases the ``inside`` predicate uses ``<`` on the far edges so that a
+    child sharing an edge *exactly* with its parent (``right == right``) is still
+    treated as inside-with-zero-padding (a finding), not as "not inside"."""
     out: List[Tuple[str, str, float]] = []
+
+    # --- node-in-container -------------------------------------------------- #
     for ncid, node in geo.nodes.items():
         n = node.footprint(label_band)
         for ccid, c in geo.containers.items():
@@ -314,7 +330,59 @@ def check_container_padding(
             min_pad = min(n.x - c.x, n.y - c.y, c.right - n.right, c.bottom - n.bottom)
             if min_pad < pad:
                 out.append((ncid, ccid, float(min_pad)))
+
+    # --- container-in-container (nested boundaries) ------------------------- #
+    # A child boundary must clear its parent by ``pad`` on every side. We pick,
+    # for each container, the *smallest* enclosing container as its parent so a
+    # triple nest (Account ⊃ VPC ⊃ AZ) is measured against the immediate parent,
+    # not the grandparent. The four gaps are measured symmetrically against plain
+    # ``pad`` — the same convention the node-in-container loop above uses (a
+    # parent's top caption shares the child's top padding, exactly as it shares a
+    # top-row node's padding), so the check agrees with what ``size_containers``
+    # produces and does not demand a stricter top rule than nodes get.
+    boxes = list(geo.containers.values())
+    for child in boxes:
+        parent = _tightest_enclosing(child, boxes)
+        if parent is None:
+            continue
+        left = child.x - parent.x
+        right = parent.right - child.right
+        top = child.y - parent.y
+        bottom = parent.bottom - child.bottom
+        min_pad = min(left, right, top, bottom)
+        if min_pad < pad:
+            out.append((child.id, parent.id, float(min_pad)))
+
     return out
+
+
+def _tightest_enclosing(child: "Box", boxes: List["Box"]) -> Optional["Box"]:
+    """Return the smallest container that strictly encloses ``child``.
+
+    "Encloses" allows a shared edge (``<=``), because a child sharing a border
+    with a candidate parent is still that parent's child (with zero padding, a
+    finding) — not a disjoint sibling. Among all enclosing candidates the one
+    with the smallest area is the *immediate* parent, so a grandparent never
+    masks the tighter parent for the padding measurement."""
+    best: Optional["Box"] = None
+    best_area = float("inf")
+    for cand in boxes:
+        if cand.id == child.id:
+            continue
+        encloses = (
+            cand.x <= child.x
+            and cand.y <= child.y
+            and child.right <= cand.right
+            and child.bottom <= cand.bottom
+        )
+        if not encloses:
+            continue
+        area = cand.w * cand.h
+        # Skip a candidate identical in area (same box) to avoid ties on a
+        # duplicate; strictly-larger-or-tighter wins.
+        if area < best_area:
+            best, best_area = cand, area
+    return best
 
 
 def check_container_overlap(geo: DiagramGeometry) -> List[Tuple[str, str]]:

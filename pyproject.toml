@@ -9,7 +9,7 @@ backend-path = ["."]
 
 [project]
 name = "rule-engine"
-version = "1.5.1"
+version = "1.5.2"
 description = "Diagram & Inventory Rule Engine — a cloud-agnostic Kiro project for deterministic diagram and inventory generation."
 readme = "README.md"
 # Python 3.14 is intentional: Python 3.10 reaches end-of-life in October 2026,
