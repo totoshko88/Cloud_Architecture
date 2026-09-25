@@ -29,6 +29,26 @@ from ha_multiregion_common import build_summary, build_landscape  # noqa: E402
 
 PROVIDERS = ("aws", "azure", "gcp", "oci")
 
+# OCI renders via embedded stencils decoded into assets/vendor/oci-stencils/
+# stencils.json, which is git-ignored and fetched on demand (rule-engine-init
+# --with-assets). It is present on a dev machine that has fetched the packs but
+# ABSENT in a bare CI checkout, so building the OCI skin raises FileNotFoundError
+# there. That is an environment prerequisite, not a code defect — skip the
+# OCI-dependent parametrisations when the stencils file is missing, so CI does
+# not fail spuriously on an unfetched asset. Geometry parity itself is
+# skin-independent (box coordinates come from ``layout()``, not the icons), so
+# the aws/azure/gcp comparison still exercises the shared engine.
+_OCI_STENCILS = os.path.join(
+    HERE, "assets", "vendor", "oci-stencils", "stencils.json"
+)
+_OCI_ASSETS_PRESENT = os.path.isfile(_OCI_STENCILS)
+
+# Providers whose skin can be built in the current environment (OCI only when its
+# stencils are fetched).
+_BUILDABLE_PROVIDERS = tuple(
+    p for p in PROVIDERS if p != "oci" or _OCI_ASSETS_PRESENT
+)
+
 
 def _skin(provider: str):
     """Load the per-provider ``SKIN`` from its build_*_ha_example.py script."""
@@ -60,13 +80,16 @@ def _geometry_triple(text: str):
                          ids=["summary", "landscape"])
 def test_ha_geometry_identical_across_providers(builder):
     """Node boxes, container boxes, and edge contact points/waypoints are
-    identical across all four providers for a given diagram class."""
-    triples = {p: _geometry_triple(builder(_skin(p))) for p in PROVIDERS}
+    identical across the buildable providers for a given diagram class. OCI is
+    included only when its stencils are fetched (skipped in a bare CI checkout);
+    geometry parity is skin-independent, so the aws/azure/gcp comparison still
+    exercises the shared engine."""
+    triples = {p: _geometry_triple(builder(_skin(p))) for p in _BUILDABLE_PROVIDERS}
 
-    ref_provider = PROVIDERS[0]
+    ref_provider = _BUILDABLE_PROVIDERS[0]
     ref_nodes, ref_containers, ref_edges = triples[ref_provider]
 
-    for p in PROVIDERS[1:]:
+    for p in _BUILDABLE_PROVIDERS[1:]:
         nodes, containers, edges = triples[p]
         assert nodes == ref_nodes, f"node geometry differs: {p} vs {ref_provider}"
         assert containers == ref_containers, (
@@ -185,23 +208,42 @@ def _assert_landscape_shape(g: geo.DiagramGeometry) -> None:
     for region, node_ids in _AZ1_MAIN.items():
         _assert_horizontal_row(node_ids, f"az-1 main row {region}")
 
-    # --- Edge contact rules (hand-routed reference; the routing regression guard). ---
-    # Rule A: every edge exits the RIGHT face (fx >= 0.5), never the bottom
-    # (fy == 1) — a bottom stub would cross the node's own caption band.
+    # --- Edge contact rules (directional contract; the routing regression guard). ---
+    # Every edge must exit a CONTRACT-LEGAL face: the RIGHT (fx >= 0.5) OR the
+    # BOTTOM (fy == 1). v1.5.1 (variant A) lets a SOURCE fan-out route its
+    # straight-down branch out the bottom — a clean vertical drop into a
+    # directly-below target, exactly like the compact summary — instead of
+    # cramming every branch onto the right face and looping the vertical one. A
+    # bottom exit is legal under the directional contract (`edge-direction`
+    # admits exitX>=0.5 OR exitY==1), so the guard now accepts either face and
+    # only rejects the true defects: a LEFT exit (fx < 0.5, not on the bottom) or
+    # a TOP exit (fy == 0).
     for e in g.edges:
         ex, ey = e.exit
         if ex is None and ey is None:
             continue  # floated (none in the landscape); direction rule owns it
-        assert not (ey is not None and ey >= 1.0), f"edge {e.id} exits the bottom"
-        assert ex is not None and ex >= 0.5, f"edge {e.id} does not exit right (exit={e.exit})"
-    # Rule C: the three cross-region hops enter the target's TOP face (entryY==0),
-    # descending from over the row rather than turning into the left side.
+        exits_right = ex is not None and ex >= 0.5
+        exits_bottom = ey is not None and ey >= 1.0
+        assert exits_right or exits_bottom, (
+            f"edge {e.id} exits neither right nor bottom (exit={e.exit})"
+        )
+        # A top exit is never valid (a stub up crosses the row above).
+        assert not (ey is not None and ey <= 0.0), f"edge {e.id} exits the top"
+    # The three cross-region hops enter a CONTRACT-LEGAL near face — the target's
+    # TOP (entryY==0) OR its LEFT (entryX==0). v1.5.1 routes a hop whose target
+    # has a clear left approach in the inter-row gap + LEFT entry (the reviewer's
+    # l11 route), avoiding an over-row corridor on the target AZ's caption; a hop
+    # to a target with a left neighbour still enters from the TOP (Rule C). Both
+    # are valid; the defect the guard rejects is a right/bottom entry.
     _CROSS_REGION = {"l2", "l10", "l11"}
     for e in g.edges:
         if e.id in _CROSS_REGION:
-            _ex, ny = e.entry
-            assert ny is not None and ny <= 0.0, (
-                f"cross-region edge {e.id} does not enter from the top (entry={e.entry})"
+            nx, ny = e.entry
+            enters_top = ny is not None and ny <= 0.0
+            enters_left = nx is not None and nx <= 0.0
+            assert enters_top or enters_left, (
+                f"cross-region edge {e.id} does not enter from the top or left "
+                f"(entry={e.entry})"
             )
 
     # --- No edge polyline segment crosses an UNRELATED icon (defect: edge 4
@@ -234,6 +276,15 @@ def _assert_landscape_shape(g: geo.DiagramGeometry) -> None:
     from rule_engine.geometry import check_edge_crosses_label as _crosses_label
     assert _crosses_label(g) == [], (
         f"edges cross a service label band: {_crosses_label(g)}"
+    )
+
+    # --- No edge crosses a CONTAINER's top caption band (v1.5.1). A cross-region
+    #     corridor along a VPC top edge would slice its ``vpc-...`` label (edge 2);
+    #     a fan-out side corridor down a wide AZ box must clear its short caption
+    #     (edge 4). Uses the same check the linter runs. ---
+    from rule_engine.geometry import check_edge_crosses_container_label as _crosses_clabel
+    assert _crosses_clabel(g) == [], (
+        f"edges cross a container caption band: {_crosses_clabel(g)}"
     )
 
     # --- Corridor step-out: no vertical/horizontal run sits glued to an icon
@@ -276,10 +327,11 @@ def _assert_landscape_shape(g: geo.DiagramGeometry) -> None:
     assert min(y for _, y in origins) == CONTAINER_PAD + TITLE_BAND, "min y != title band"
 
 
-@pytest.mark.parametrize("provider", PROVIDERS)
+@pytest.mark.parametrize("provider", _BUILDABLE_PROVIDERS)
 def test_landscape_reproduces_reference_shape(provider):
     """The generated landscape reproduces the reference's structural shape for
-    every provider: stacked equal-width AZs, a distinct VPC service-row tier
-    above the zones, and non-negative on-grid origins (Requirement 12.6)."""
+    every buildable provider: stacked equal-width AZs, a distinct VPC service-row
+    tier above the zones, and non-negative on-grid origins (Requirement 12.6).
+    OCI is exercised only when its stencils are fetched (skipped otherwise)."""
     g = geo.build_geometry(build_landscape(_skin(provider)))
     _assert_landscape_shape(g)

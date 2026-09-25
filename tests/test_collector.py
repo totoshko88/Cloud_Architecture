@@ -417,7 +417,7 @@ def test_redact_secrets_strips_pem_under_benign_key_delivered_as_bytes() -> None
 
 def test_manifest_redacts_a_credentialed_caller_identity(tmp_path) -> None:
     """00-MANIFEST.md is a snapshot file, so a caller_identity carrying an inline
-    token must be redacted there too (inventory-standards §6)."""
+    token must be redacted there too (inventory-standards §7)."""
     result = collect(
         provider="aws",
         boundary_id="123456789012",

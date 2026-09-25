@@ -31,9 +31,13 @@ import struct
 from pathlib import Path
 from typing import List, Optional, Set
 
-# Committed manifest location (repo root: this file is
-# src/rule_engine/azure2_shapes.py -> ... -> root).
-DEFAULT_MANIFEST = Path(__file__).resolve().parents[2] / "mappings" / "azure2-shapes.json"
+from rule_engine.constants import resolve_bundled_dir
+
+# Committed manifest location. Resolved through the shared repo →
+# bundled-package-payload → CWD helper (v1.5.1): on a pip/Power install
+# ``parents[2]`` is NOT the repo root, so a bare ``parents[2] / "mappings"``
+# missed the committed manifest and icon verification silently degraded.
+DEFAULT_MANIFEST = resolve_bundled_dir("mappings") / "azure2-shapes.json"
 
 # Default draw.io desktop asar locations by platform (best-effort).
 _ASAR_CANDIDATES = (
@@ -142,7 +146,7 @@ def write_manifest(paths: List[str], out: str | Path = DEFAULT_MANIFEST) -> None
 
 import re as _re
 
-AWS4_MANIFEST = Path(__file__).resolve().parents[2] / "mappings" / "aws4-icons.json"
+AWS4_MANIFEST = resolve_bundled_dir("mappings") / "aws4-icons.json"
 
 
 def extract_aws4_ids(asar_path: str | Path) -> List[str]:
@@ -160,23 +164,29 @@ def extract_aws4_ids(asar_path: str | Path) -> List[str]:
     return sorted(set(_re.findall(r"mxgraph\.aws4\.([A-Za-z0-9_]+)", data)))
 
 
-def _curated_aws4_ids(repo_root: Path) -> Set[str]:
-    """The verified aws4 ids listed in the curated mappings/aws-icons.yaml."""
-    mapping = repo_root / "mappings" / "aws-icons.yaml"
+def _curated_aws4_ids(mappings_dir: Optional[Path] = None) -> Set[str]:
+    """The verified aws4 ids listed in the curated mappings/aws-icons.yaml.
+
+    ``mappings_dir`` defaults to the shared repo → bundled-payload → CWD
+    resolution (v1.5.1) so the curated ids are found on a pip/Power install too,
+    not only in a repo checkout."""
+    mdir = mappings_dir or resolve_bundled_dir("mappings")
+    mapping = Path(mdir) / "aws-icons.yaml"
     if not mapping.is_file():
         return set()
     text = mapping.read_text(encoding="utf-8")
     return set(_re.findall(r"mxgraph\.aws4\.([A-Za-z0-9_]+)", text))
 
 
-def build_aws4_manifest(asar_path: str | Path, repo_root: Optional[Path] = None) -> List[str]:
+def build_aws4_manifest(asar_path: str | Path, mappings_dir: Optional[Path] = None) -> List[str]:
     """Return the union of asar-extracted and curated aws4 ids (sorted).
 
     The union covers ids the asar scan misses (e.g. ``bedrock``, ``group_account``,
-    ``group_vpc2`` are constructed dynamically) but the repository has verified."""
-    repo_root = repo_root or Path(__file__).resolve().parents[2]
+    ``group_vpc2`` are constructed dynamically) but the repository has verified.
+    ``mappings_dir`` is resolved through the shared bundled-payload helper when
+    omitted (v1.5.1)."""
     extracted = set(extract_aws4_ids(asar_path))
-    curated = _curated_aws4_ids(repo_root)
+    curated = _curated_aws4_ids(mappings_dir)
     return sorted(extracted | curated)
 
 

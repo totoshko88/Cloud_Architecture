@@ -80,7 +80,9 @@ RULE_TEXT_PADDING = "text-padding"
 RULE_CORRIDOR_SHARING = "corridor-sharing"
 RULE_EDGE_FLOAT = "edge-float"
 RULE_EXIT_THIRDS = "exit-thirds"
+RULE_ENTRY_THIRDS = "entry-thirds"
 RULE_EDGE_CROSSES_LABEL = "edge-crosses-label"
+RULE_EDGE_CROSSES_CONTAINER_LABEL = "edge-crosses-container-label"
 
 # Severity assigned to each rule when its condition holds (authoritative table).
 RULE_SEVERITIES: Dict[str, Severity] = {
@@ -118,10 +120,20 @@ RULE_SEVERITIES: Dict[str, Severity] = {
     # carry at most three exits (diagram-standards → Label-safe exits). A WARNING
     # for both classes: it surfaces cramped or lopsided fan-outs without blocking.
     RULE_EXIT_THIRDS: Severity.WARNING,
+    # entry-thirds (v1.5.1): the entry-side mirror of exit-thirds — several edges
+    # arriving on one target face at the same/merged contact point. WARNING for
+    # flow; raised to ERROR for landscape (see the predicate), matching the other
+    # routing-family escalations.
+    RULE_ENTRY_THIRDS: Severity.WARNING,
     # An edge whose routed polyline crosses another node's label band (caption
     # strip below the icon). Advisory WARNING for both classes: it catches a run
     # cutting through a service name that the icon-box geometry rules miss.
     RULE_EDGE_CROSSES_LABEL: Severity.WARNING,
+    # edge-crosses-container-label (v1.5.1): a routed edge whose polyline runs
+    # through a Boundary container's top caption band (e.g. a cross-region
+    # corridor slicing the ``vpc-passive`` label). Advisory WARNING for both
+    # classes — the mirror of edge-crosses-label for container captions.
+    RULE_EDGE_CROSSES_CONTAINER_LABEL: Severity.WARNING,
 }
 
 # Maximum node count for a single diagram (Requirement 1 AC4 / 7 AC4).
@@ -560,13 +572,29 @@ def _check_container_padding(a: Artifact):
     return True
 
 
-def _check_edge_routing(a: Artifact) -> bool:
-    """edge-routing: a non-orthogonal edge, or a waypoint-free edge crossing a node (WARNING)."""
+def _check_edge_routing(a: Artifact):
+    """edge-routing: a non-orthogonal edge, or an edge whose run crosses a node.
+
+    v1.5.1: an edge whose polyline passes through an unrelated node icon
+    (``*-through-*``) is a hard routing defect on ANY class — a line drawn over
+    an icon it does not connect (the ALB→S3 corridor cutting the S3 glyph). That
+    escalates to ERROR so it blocks publication, not merely warns. A
+    non-orthogonal edge with no node crossing stays a WARNING (a style nit, not a
+    correctness failure)."""
     geo = _geometry_of(a)
     if geo is None:
         return False
     from rule_engine import geometry as _geo
-    return bool(_geo.check_edge_routing(geo))
+    findings = _geo.check_edge_routing(geo)
+    if not findings:
+        return False
+    # A run cutting through a node icon — an unrelated node (``*-through-*``) or
+    # the edge's own target reached from the wrong side (``pierces-target-*``) —
+    # is a hard routing defect and blocks publication. A bare non-orthogonal
+    # edge (no crossing) stays a WARNING.
+    if any(("through-" in r) or ("pierces-" in r) for _eid, r in findings):
+        return Severity.ERROR
+    return True
 
 
 def _check_node_overlap(a: Artifact) -> bool:
@@ -667,6 +695,35 @@ def _check_edge_crosses_label(a: Artifact) -> bool:
     return bool(_geo.check_edge_crosses_label(geo))
 
 
+def _check_edge_crosses_container_label(a: Artifact) -> bool:
+    """edge-crosses-container-label: a routed edge crosses a container's top caption (WARNING)."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    return bool(_geo.check_edge_crosses_container_label(geo))
+
+
+def _check_entry_thirds(a: Artifact):
+    """entry-thirds: several edges arrive on one target face at merged/duplicate points.
+
+    The entry-side mirror of ``exit-thirds`` (v1.5.1). Two edges landing on one
+    target face at the same contact point read as a single doubled line at the
+    glyph (the buggy example's two ``EC2 → RDS`` edges both at ``entryX=0,
+    entryY=0.5``). WARNING for ``flow``; raised to ERROR for ``landscape``, where
+    a dense as-built must keep every arrival distinct — matching how the other
+    routing-family rules (``edge-direction``/``edge-float``) escalate."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    if not bool(_geo.check_entry_thirds(geo)):
+        return False
+    if (a.diagram_class or DIAGRAM_CLASS_FLOW).lower() == DIAGRAM_CLASS_LANDSCAPE:
+        return Severity.ERROR
+    return True
+
+
 def _check_edge_float(a: Artifact):
     """edge-float: an edge declares no explicit exit/entry contact point.
 
@@ -755,7 +812,9 @@ _RULES = (
     (RULE_CORRIDOR_SHARING, _check_corridor_sharing),
     (RULE_EDGE_FLOAT, _check_edge_float),
     (RULE_EXIT_THIRDS, _check_exit_thirds),
+    (RULE_ENTRY_THIRDS, _check_entry_thirds),
     (RULE_EDGE_CROSSES_LABEL, _check_edge_crosses_label),
+    (RULE_EDGE_CROSSES_CONTAINER_LABEL, _check_edge_crosses_container_label),
     (RULE_ORPHAN_LANDSCAPE, _check_orphan_landscape),
     (RULE_OVERLAY_LEGEND_COVERAGE, _check_overlay_legend_coverage),
 )
@@ -844,6 +903,19 @@ def find_ruleset(
         here = Path(__file__).resolve()
         for parent in here.parents:
             candidates.append(str(parent / RULESET_RELATIVE_PATH))
+        # Bundled-payload fallback (v1.5.1): a pip/Power install ships the
+        # steering rules inside the package at ``rule_engine/_bootstrap`` — but
+        # ``parents[2]`` is NOT the repo root there, so the upward walk above
+        # misses them, and the linter fail-closed on a correctly-installed
+        # package that had not yet run ``rule-engine-init``. Because setuptools
+        # drops dot-directories, the payload stores ``.kiro`` dot-free as
+        # ``kiro/``; probe both so the ruleset resolves with no workspace
+        # bootstrap.
+        bootstrap = Path(__file__).resolve().parent / "_bootstrap"
+        candidates.append(str(bootstrap / RULESET_RELATIVE_PATH))
+        candidates.append(
+            str(bootstrap / "kiro" / "steering" / "diagram-lint.md")
+        )
 
     for candidate in candidates:
         try:
@@ -995,6 +1067,8 @@ __all__ = [
     "RULE_CORRIDOR_SHARING",
     "RULE_EDGE_FLOAT",
     "RULE_EXIT_THIRDS",
+    "RULE_ENTRY_THIRDS",
+    "RULE_EDGE_CROSSES_CONTAINER_LABEL",
     "LANDSCAPE_NODE_WARN",
     "LANDSCAPE_NODE_ERROR",
     "DIAGRAM_CLASS_FLOW",

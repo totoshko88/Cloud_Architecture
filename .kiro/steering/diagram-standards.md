@@ -97,6 +97,65 @@ to reason about specifics. Do **not** split a comprehensive as-built into
 several 12-node pages — that destroys the one thing it exists to show (how
 everything relates at once). Author it as a single `landscape` instead.
 
+## Choosing the diagram type after inventory (simple / summary / landscape)
+
+After an inventory run, **offer the user a choice of diagram type before
+generating** — do not silently pick one. There are three user-facing types; the
+first two are the `flow` lint class and the third is the `landscape` class, so
+the choice maps onto the two classes above:
+
+| User choice | Lint class | When to offer it | Node budget |
+| --- | --- | --- | --- |
+| **simple** | `flow` | A single focused view of one workload / request path. The everyday default when the inventory is small or the user wants one clear picture. | ≤ 12 |
+| **summary** | `flow` | The ≤12-node *shape* of a large system, paired with a landscape. Sets `detailed_view:` to its landscape; the landscape sets `summary_of:` back. | ≤ 12 |
+| **landscape** | `landscape` | The full as-built / inventory view — everything that was enumerated, on one canvas. Required when the inventory is large or the user asks "show everything". Cross-links a `summary` via `summary_of`. | > 12 (WARNING > 30, ERROR > 50) |
+
+Rules:
+
+- **Always present the three options** once inventory is collected, with a short
+  recommendation: **simple** for a small account or a single-flow question;
+  **summary + landscape** (the sanctioned pair) for a large account, so the
+  reader gets both the shape and the full detail.
+- **simple** and **summary** are both authored as `diagram_class: flow`; they
+  differ only in intent and cross-linking (a `summary` names its `detailed_view`;
+  a standalone `simple` names neither). **landscape** is `diagram_class:
+  landscape` and MUST cross-link a `flow` summary via `summary_of`
+  (`orphan-landscape` ERROR otherwise).
+- When the user picks **landscape** for a large system, produce the **pair**: one
+  `summary` (≤ 12 nodes, the shape) and one `landscape` (the full as-built),
+  cross-linked. Do not split a landscape into several 12-node pages.
+- Whichever type is chosen, **every enumerated resource that has a role must
+  appear** on the landscape (or on the simple/summary when it is in scope) — see
+  *Inventory completeness → diagram* below.
+
+## Inventory completeness → diagram (draw what was enumerated)
+
+When a diagram is generated **from an inventory snapshot**, it MUST represent
+every enumerated resource that resolves to a diagram role
+(`mappings/roles.yaml` — the nine neutral types plus the presentation roles
+`cdn`, `dns`, `waf`, `lb`, `cache`, `compute_instance`, `file_system`).
+
+- On a **landscape** (the as-built), coverage is **total**: every enumerated,
+  role-resolvable resource is a node. Omitting one is a completeness defect — the
+  EFS filesystem that existed in `eu-central-1` but was left off the diagram is
+  the canonical failure this rule prevents.
+- On a **simple** / **summary** (`flow`, ≤ 12 nodes), coverage is **scoped**: the
+  diagram shows the workload or flow in question, so it need not carry every
+  resource — but it MUST NOT silently drop a resource that is part of the flow it
+  claims to show. If the in-scope resource set exceeds 12 nodes, that is the
+  signal to offer a `landscape` (or split), not to quietly omit resources.
+- A resource is **only** legitimately absent when it has no role at all. In that
+  case add a role to `roles.yaml` and re-run `rule-engine-build-icon-sets` — do
+  **not** drop the resource and do **not** substitute a look-alike icon (see
+  *Icon Fidelity — one role per distinct service*). A storage service is a
+  concrete example: an `object_store` (bucket) and a `file_system` (EFS / Files /
+  Filestore / OCI File Storage) are **distinct** roles with distinct icons; a
+  file system is never folded into the bucket node.
+- Before publishing an inventory-driven diagram, reconcile the node set against
+  the snapshot's per-domain JSON (`storage.json`, `compute.json`, …): every
+  role-resolvable resource in the snapshot is either drawn or, for a
+  simple/summary, consciously out of scope. An unexplained gap is a defect.
+
 ## Overlay Vocabulary (findings / state)
 
 A diagram may carry an **optional** second layer of meaning — findings and
@@ -149,7 +208,19 @@ Route edges so that no edge crosses through a node icon and no two edges overlap
 
 **One edge per corridor (no merged lines).** Two **unrelated** long edges must never run in the same straight corridor — same horizontal (or vertical) grid line with overlapping extent — because the two lines merge into one and cannot be told apart. Offset each parallel run by ≥ one grid step onto its own corridor via explicit `<mxPoint>` waypoints. Cross-region / cross-AZ long-haul edges each get their **own** dedicated corridor (e.g. a lane above the AZ boxes or in the inter-VPC gap), one lane each. A **shared trunk is exempt**: edges leaving the *same source* (or reaching the *same target*) may share their stub before branching in opposite directions. This is enforced by the `corridor-sharing` lint rule (WARNING).
 
-**Spine edges route via a side corridor, not down the node column.** A vertical "spine" hop between tiers in the same column (edge → router → app, app → data) should **not** drop straight down through the column even when source and target share an x — a straight in-column vertical visually collides with the icons and their labels stacked in that column. Instead **exit the source's right, drop in the gap corridor one grid column beside the column, and enter the target's left/top.** For the canonical HA layout that gap sits between the node column and the next (e.g. a load-balancer at column x routes down the corridor at `x + ½·COL_STEP` — the empty lane between the LB column and the cache column — then into the app node). This keeps the spine legible and leaves the node column clear for labels. (Distilled from a reviewer's hand-edit of the AWS landscape, 2026-09-23.)
+**Route in the nearest FREE corridor and enter the face that corridor meets (adaptive routing).** A tier-skip or cross-region run does not always take "right corridor → enter top." It picks the nearest **free** corridor and enters the target's face that corridor reaches — all faces used stay contract-legal (exit right/bottom, enter left/top):
+
+- **Tier-skip past an intermediate node, same column, LEFT gap free** → drop in the column's **left** corridor and enter the target's **left** face (the load-balancer→lower-AZ-app case). Cleaner than a right corridor that must step back across the column. Taken only when the enclosing container leaves ≥ 1 grid step to the column's left and no icon sits in that gap; otherwise fall back to the right corridor + top entry.
+- **Cross-region hop, target has a clear left approach** (row-rightmost, left face free) → route in the **inter-row gap** between the source row and the row below, then enter the target's **left** face — never along an AZ/VPC top caption. A target with a left neighbour is still reached from the **top**.
+- **Free-corridor predicate.** Before choosing a side, verify the corridor lane is empty and the target face has a clear approach (≥ 1 grid step to its neighbour / container edge). This makes a hand-tuned route reproducible for any layout rather than hard-coding coordinates. `edge-crosses-container-label` (below) is the regression gate.
+
+**Overflow valve: spill a crowded fan-out onto the bottom face.** A node's right face holds only so many distinct fan-out lanes before their below-row corridors tangle with each other and with an adjacent target's straight stub (the `app → cache / db / obj` case: three right exits whose corridors crossed). When a source has **more than two** right-going fan-out edges, spill the surplus onto the **bottom** face, farthest target first (largest dx, declared-order tiebreak): the spilled edge drops straight from the source bottom into its **own** below-row corridor and enters the target's left face, so the right face keeps at most two clean exits. Deterministic and scoped to genuinely over-connected right faces (≤ 2 right edges are untouched); both faces stay contract-legal, so `edge-direction` is unaffected.
+
+**A left-corridor fan-out branch exits bottom-LEFT, the straight branch bottom-centre.** When a fan-out source sends one branch down the **left** corridor and another straight down the column, the left branch must leave from the **bottom-left** band and the straight branch keep the **bottom-centre** — otherwise the left branch's immediate leftward step crosses the centre branch's drop at the glyph (edge 4 crossing edge 3). Biasing the left-corridor branch to the left band makes the two bottom stubs diverge from the start with no crossing.
+
+**A source that fans out downward may leave from TWO faces (right + bottom).** When a node is the *start* of several downward flows — a load balancer or DNS branching to two app tiers / two AZs — it reads more naturally leaving from **two contract-legal faces** than cramming every branch onto the right and looping the straight-down one. The rule (v1.5.1, generator-applied): for a source with **≥ 2 downward edges**, the branch whose target is **directly below in the same column** exits the **bottom** (a clean vertical drop into the target's top, exactly like the compact summary's `lb → app` chain); the sibling branches keep the **right** face. This needs no change to `edge-direction` — bottom (`exitY==1`) and right (`exitX>=0.5`) are both legal exits — it only widens which allowed face the engine picks for the straight-down branch. It triggers only when exactly one branch is the clean directly-below drop, so a single-edge source or a fan-out with no vertical branch is unchanged.
+
+**Spine edges route via a side corridor, not down the node column.** A vertical "spine" hop between tiers in the same column (edge → router → app, app → data) should **not** drop straight down through the column even when source and target share an x — a straight in-column vertical visually collides with the icons and their labels stacked in that column. Instead **exit the source's right, drop in the gap corridor one grid column beside the column, and enter the target's left/top.** (The exception is the fan-out-source bottom branch above: a *directly-below* target with a clear column is reached by a straight bottom drop, since there is no intervening icon to collide with.) For the canonical HA layout that gap sits between the node column and the next (e.g. a load-balancer at column x routes down the corridor at `x + ½·COL_STEP` — the empty lane between the LB column and the cache column — then into the app node). This keeps the spine legible and leaves the node column clear for labels. (Distilled from a reviewer's hand-edit of the AWS landscape, 2026-09-23.)
 
 **Fan-out along a row: turn up into the target in the gap BEFORE it, not right after the source.** When one node fans out to several targets to its right on the same row (e.g. `app → cache`, `app → db`, `app → object-store`, where cache/db/obj sit two-plus columns away past intervening icons), each edge exits the source's right/bottom, runs along its **own** below-row lane, and makes its **vertical up-turn in the inter-column gap immediately to the LEFT of its target** — then enters the target's left face. Do **not** drop all the fan-out verticals right beside the source: that stacks them a few pixels apart so they read as one merged line, and forces every edge to run the full width under the row. Placing the up-turn in the gap just before each target (`target_x − ~½ gap`) instead spreads the verticals across the row (one per target, well separated) and keeps each horizontal run only as long as it must be. Pair this with **distinct below-row lanes** (each edge its own y, ≥ 1 grid step apart) so the horizontals never merge either. Net shape: a set of stepped "exit-right → own lane → up-turn just before the target → enter-left" edges that fan across the row cleanly, rather than a bundle of near-parallel lines hugging the source. (Distilled from the reviewer's `app→db` / `app→obj` routing on the AWS landscape, 2026-09-23.)
 

@@ -24,8 +24,19 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from setuptools import build_meta as _orig
-from setuptools.build_meta import *  # noqa: F401,F403  (re-export PEP 517 hooks)
+# setuptools is a BUILD-time dependency (declared in [build-system].requires), so
+# it is always present when a build frontend invokes the PEP 517 hooks below.
+# It is NOT a runtime dependency, so it may be absent when this module is merely
+# IMPORTED for its constants (e.g. the payload-sync tests read ``_PAYLOAD``). Guard
+# the import so importing the module never requires setuptools; the hooks that
+# actually need it fail clearly only if called without it.
+try:
+    from setuptools import build_meta as _orig
+    from setuptools.build_meta import *  # noqa: F401,F403  (re-export PEP 517 hooks)
+    _HAVE_SETUPTOOLS = True
+except ModuleNotFoundError:  # pragma: no cover - only when imported without setuptools
+    _orig = None  # type: ignore[assignment]
+    _HAVE_SETUPTOOLS = False
 
 _ROOT = Path(__file__).resolve().parent
 _BOOTSTRAP = _ROOT / "src" / "rule_engine" / "_bootstrap"

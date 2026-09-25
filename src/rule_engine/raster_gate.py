@@ -45,6 +45,21 @@ from typing import List, Optional, Sequence
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+
+def _default_workspace_root() -> Path:
+    """Return the workspace root whose ``examples/`` this gate should check (v1.5.1).
+
+    The raster gate operates on a WORKSPACE's exported diagrams, not on package
+    data. On a pip/Power install ``parents[2]`` is NOT the repo root, so prefer
+    the current directory when it looks like a workspace (it has an ``examples/``
+    tree); otherwise fall back to ``REPO_ROOT`` (the dev / repo-checkout case).
+    """
+    cwd = Path.cwd()
+    if (cwd / "examples").is_dir():
+        return cwd
+    return REPO_ROOT
+
+
 # Budget from diagram-standards.md → Raster Export Dimensions.
 #
 # Class-aware (v1.3.x). A ``flow`` diagram fits a documentation column, so its
@@ -220,8 +235,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         prog="raster-gate",
         description="Enforce the exported .drawio.png width/size budget (D7).",
     )
-    parser.add_argument("--examples", default=str(REPO_ROOT / "examples"))
-    parser.add_argument("--repo-root", default=str(REPO_ROOT))
+    default_root = _default_workspace_root()
+    parser.add_argument("--examples", default=str(default_root / "examples"))
+    parser.add_argument("--repo-root", default=str(default_root))
     parser.add_argument(
         "--allow-missing",
         action="store_true",

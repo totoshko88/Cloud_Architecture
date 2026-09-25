@@ -424,3 +424,323 @@ def test_golden_landscapes_eligible_for_publication():
         result = lint(art)
         # Only the relaxed node-count WARNING is expected; nothing blocking.
         assert result["eligible_for_publication"] is True, (path, result["findings"])
+
+
+# --------------------------------------------------------------------------- #
+# entry-thirds (v1.5.1) — arrivals on one target face must stay distinct
+# --------------------------------------------------------------------------- #
+
+
+def test_entry_thirds_two_identical_left_entries_flagged():
+    """Two edges arriving on one target's LEFT face at the same point read as one
+    doubled line — the buggy AWS example's two EC2->RDS edges at (0,0.5)."""
+    g = DiagramGeometry(edges=[
+        _edge_id("e1", "a", "rds", (1.0, 0.5), (0.0, 0.5)),
+        _edge_id("e2", "b", "rds", (1.0, 0.5), (0.0, 0.5)),
+    ])
+    hits = geo.check_entry_thirds(g)
+    assert any(node == "rds" and "merge" in reason for node, reason in hits)
+
+
+def test_entry_thirds_two_distinct_left_entries_clean():
+    """Distinct entries on one face (0.33/0.66) do not merge — clean."""
+    g = DiagramGeometry(edges=[
+        _edge_id("e1", "a", "rds", (1.0, 0.5), (0.0, 0.33)),
+        _edge_id("e2", "b", "rds", (1.0, 0.5), (0.0, 0.66)),
+    ])
+    assert geo.check_entry_thirds(g) == []
+
+
+def test_entry_thirds_single_entry_clean():
+    """One arrival on a face is always fine."""
+    g = DiagramGeometry(edges=[_edge_id("e1", "a", "rds", (1.0, 0.5), (0.0, 0.5))])
+    assert geo.check_entry_thirds(g) == []
+
+
+def test_entry_thirds_over_connected_face_flagged():
+    """A fourth arrival on one face is over-connected."""
+    g = DiagramGeometry(edges=[
+        _edge_id("e1", "a", "t", (1.0, 0.5), (0.0, 0.2)),
+        _edge_id("e2", "b", "t", (1.0, 0.5), (0.0, 0.4)),
+        _edge_id("e3", "c", "t", (1.0, 0.5), (0.0, 0.6)),
+        _edge_id("e4", "d", "t", (1.0, 0.5), (0.0, 0.8)),
+    ])
+    hits = geo.check_entry_thirds(g)
+    assert any("over-connected" in reason for _, reason in hits)
+
+
+def test_entry_thirds_landscape_is_error_flow_is_warning():
+    """entry-thirds is WARNING for flow, ERROR for landscape (routing-family
+    escalation, matching edge-direction/edge-float)."""
+    g = DiagramGeometry(edges=[
+        _edge_id("e1", "a", "rds", (1.0, 0.5), (0.0, 0.5)),
+        _edge_id("e2", "b", "rds", (1.0, 0.5), (0.0, 0.5)),
+    ])
+    flow = Artifact(kind="diagram", node_names=["rds"], geometry=g, diagram_class="flow")
+    land = Artifact(kind="diagram", node_names=["rds"], geometry=g, diagram_class="landscape")
+    assert _sev(lint(flow), "entry-thirds") == Severity.WARNING.value
+    assert _sev(lint(land), "entry-thirds") == Severity.ERROR.value
+
+
+# --------------------------------------------------------------------------- #
+# edge-routing (v1.5.1) — an edge must not pierce its own target's icon
+# --------------------------------------------------------------------------- #
+
+
+def _box(id_, x, y):
+    return Box(id_, x, y, 78, 78)
+
+
+def test_edge_routing_pierces_target_top_entry_from_below_flagged():
+    """A TOP entry approached from a corridor BELOW the icon pierces the target
+    glyph — the buggy ALB->S3 edge (enters the icon instead of from the top)."""
+    tgt = _box("s3", 320, 620)
+    src = _box("alb", 520, 320)
+    # Final waypoint sits below the icon (y=690), entry pinned to top-centre.
+    e = EdgeGeom(
+        id="e7", source="alb", target="s3", orthogonal=True,
+        exit=(0.5, 1.0), entry=(0.5, 0.0),
+        points=[(559.0, 690.0), (359.0, 690.0)],
+    )
+    g = DiagramGeometry(nodes={"s3": tgt, "alb": src}, edges=[e])
+    hits = geo.check_edge_routing(g)
+    assert any(reason == "pierces-target-s3" for _eid, reason in hits)
+
+
+def test_edge_routing_top_entry_from_above_clean():
+    """The same top entry approached correctly from ABOVE is clean."""
+    tgt = _box("s3", 320, 620)
+    src = _box("alb", 320, 320)
+    e = EdgeGeom(
+        id="e", source="alb", target="s3", orthogonal=True,
+        exit=(0.5, 1.0), entry=(0.5, 0.0),
+        points=[(359.0, 560.0)],  # above the icon top (y=620)
+    )
+    g = DiagramGeometry(nodes={"s3": tgt, "alb": src}, edges=[e])
+    assert geo.check_edge_routing(g) == []
+
+
+def test_edge_routing_pierce_is_error_in_linter():
+    """A target pierce escalates edge-routing to ERROR (blocks publication)."""
+    tgt = _box("s3", 320, 620)
+    src = _box("alb", 520, 320)
+    e = EdgeGeom(
+        id="e7", source="alb", target="s3", orthogonal=True,
+        exit=(0.5, 1.0), entry=(0.5, 0.0),
+        points=[(559.0, 690.0), (359.0, 690.0)],
+    )
+    g = DiagramGeometry(nodes={"s3": tgt, "alb": src}, edges=[e])
+    art = Artifact(kind="diagram", node_names=["s3", "alb"], geometry=g)
+    assert _sev(lint(art), "edge-routing") == Severity.ERROR.value
+
+
+# --------------------------------------------------------------------------- #
+# edge-crosses-container-label (v1.5.1) — a corridor must clear a VPC caption
+# --------------------------------------------------------------------------- #
+
+
+def _container(cid, x, y, w, h):
+    return Box(cid, x, y, w, h)
+
+
+def test_container_label_flags_run_through_vpc_caption():
+    """A horizontal corridor along a VPC's top edge slices its caption."""
+    g = DiagramGeometry(
+        nodes={
+            "src": Box("src", 100, 90, 78, 78),   # outside the VPC (above)
+            "tgt": Box("tgt", 1300, 250, 78, 78),  # inside the VPC
+        },
+        containers={"vpc": _container("vpc", 1240, 220, 860, 900)},
+        container_labels={"vpc": "vpc-passive us-west-2"},
+        edges=[
+            EdgeGeom(
+                id="e", source="src", target="tgt", orthogonal=True,
+                exit=(1.0, 0.5), entry=(0.5, 0.0),
+                # corridor runs at y=230, INSIDE the VPC top caption band (220..250)
+                points=[(450.0, 230.0), (1340.0, 230.0)],
+            )
+        ],
+    )
+    hits = geo.check_edge_crosses_container_label(g)
+    assert any(cid == "vpc" for _eid, cid in hits)
+
+
+def test_container_label_clear_run_above_vpc_top_is_ok():
+    """The same run lifted ABOVE the VPC top edge (y=210) clears the caption."""
+    g = DiagramGeometry(
+        nodes={
+            "src": Box("src", 100, 90, 78, 78),
+            "tgt": Box("tgt", 1300, 250, 78, 78),
+        },
+        containers={"vpc": _container("vpc", 1240, 220, 860, 900)},
+        container_labels={"vpc": "vpc-passive us-west-2"},
+        edges=[
+            EdgeGeom(
+                id="e", source="src", target="tgt", orthogonal=True,
+                exit=(1.0, 0.5), entry=(0.5, 0.0),
+                points=[(450.0, 210.0), (1340.0, 210.0)],  # above the VPC top
+            )
+        ],
+    )
+    assert geo.check_edge_crosses_container_label(g) == []
+
+
+def test_container_label_short_caption_not_flagged_on_right_corridor():
+    """A vertical corridor on the RIGHT of a wide AZ box clears a SHORT caption
+    ('az-a1'), so it is not flagged (per-caption width, not full box width)."""
+    g = DiagramGeometry(
+        nodes={
+            "src": Box("src", 120, 250, 78, 78),   # above the AZ
+            "tgt": Box("tgt", 120, 780, 78, 78),   # below the AZ
+        },
+        containers={"az": _container("az", 90, 390, 800, 328)},
+        container_labels={"az": "az-a1"},
+        edges=[
+            EdgeGeom(
+                id="e", source="src", target="tgt", orthogonal=True,
+                exit=(1.0, 0.5), entry=(0.5, 0.0),
+                # corridor at x=210 — right of the short 'az-a1' caption (~x<170)
+                points=[(210.0, 290.0), (210.0, 770.0), (160.0, 770.0)],
+            )
+        ],
+    )
+    assert geo.check_edge_crosses_container_label(g) == []
+
+
+def test_container_label_lint_rule_is_warning():
+    from rule_engine.linter import RULE_EDGE_CROSSES_CONTAINER_LABEL, RULE_SEVERITIES, Severity
+    assert RULE_SEVERITIES[RULE_EDGE_CROSSES_CONTAINER_LABEL] == Severity.WARNING
+
+
+def test_all_golden_landscapes_clear_container_labels():
+    """Every shipped HA landscape keeps its edges clear of container captions."""
+    import glob
+    for path in sorted(glob.glob(os.path.join(HERE, "examples", "*", "02-*-landscape.drawio"))):
+        g = geo.build_geometry(open(path, encoding="utf-8").read())
+        assert geo.check_edge_crosses_container_label(g) == [], path
+
+
+# --------------------------------------------------------------------------- #
+# adaptive corridor routing (v1.5.1) — generalising the reviewer's hand-route
+# --------------------------------------------------------------------------- #
+
+
+def test_free_left_corridor_used_for_same_column_tier_skip():
+    """A spine to a same-column target past an intermediate node routes down the
+    LEFT gap and enters the target's LEFT face (edge 4: lb->app-az2), not a
+    right corridor looping back-left."""
+    import sys, os as _os
+    sys.path.insert(0, _os.path.join(HERE, "src"))
+    sys.path.insert(0, _os.path.join(HERE, "scripts"))
+    from ha_multiregion_common import build_landscape
+    import importlib
+    skin = importlib.import_module("build_aws_ha_example").SKIN
+    g = geo.build_geometry(build_landscape(skin))
+    l4 = next(e for e in g.edges if e.id == "l4")
+    # Enters app_a2 from the LEFT (entryX == 0), exits the source bottom.
+    assert l4.entry[0] is not None and l4.entry[0] <= 0.0, f"l4 entry {l4.entry}"
+    assert l4.exit[1] is not None and l4.exit[1] >= 1.0, f"l4 exit {l4.exit}"
+    # The vertical corridor runs LEFT of the source column (x < lb_a.x).
+    lb_a = g.nodes["lb_a"]
+    xs = [p[0] for p in l4.points]
+    assert min(xs) < lb_a.x, f"l4 corridor not left of the column: {l4.points}"
+    # And it crosses no unrelated icon (app_a1 sits in the column between them).
+    from rule_engine.geometry import segment_crosses_box as _sx
+    poly = [(g.nodes["lb_a"].x + l4.exit[0] * 78, g.nodes["lb_a"].y + l4.exit[1] * 78)] \
+        + list(l4.points) \
+        + [(g.nodes["app_a2"].x + l4.entry[0] * 78, g.nodes["app_a2"].y + l4.entry[1] * 78)]
+    app_a1 = g.nodes["app_a1"]
+    assert not any(_sx(p, q, app_a1) for p, q in zip(poly, poly[1:])), "l4 crosses app_a1"
+
+
+def test_cross_region_uses_inter_row_corridor_and_left_entry():
+    """A cross-region hop whose target has a free left approach routes in the
+    inter-row gap and enters the target's LEFT face (edge 11: obj_a1->obj_b1),
+    clearing the target AZ's top caption."""
+    import sys, os as _os
+    sys.path.insert(0, _os.path.join(HERE, "src"))
+    sys.path.insert(0, _os.path.join(HERE, "scripts"))
+    from ha_multiregion_common import build_landscape
+    import importlib
+    skin = importlib.import_module("build_aws_ha_example").SKIN
+    g = geo.build_geometry(build_landscape(skin))
+    l11 = next(e for e in g.edges if e.id == "l11")
+    assert l11.entry[0] is not None and l11.entry[0] <= 0.0, f"l11 entry {l11.entry}"
+    # No part of l11 crosses the az-b1 container caption band.
+    assert ("l11", "boundary-az-b1") not in geo.check_edge_crosses_container_label(g)
+    # And l11 does not pierce its own target.
+    assert not any(r.startswith("pierces") for _e, r in geo.check_edge_routing(g))
+
+
+# --------------------------------------------------------------------------- #
+# fan-out crossing fixes (v1.5.1): bottom-LEFT left-corridor branch; overflow
+# valve spilling the farthest right fan-out edge onto the bottom face.
+# --------------------------------------------------------------------------- #
+
+
+def _aws_landscape_geo():
+    import sys, os as _os
+    sys.path.insert(0, _os.path.join(HERE, "src"))
+    sys.path.insert(0, _os.path.join(HERE, "scripts"))
+    from ha_multiregion_common import build_landscape
+    import importlib
+    skin = importlib.import_module("build_aws_ha_example").SKIN
+    return geo.build_geometry(build_landscape(skin))
+
+
+def _seg_list(g, e):
+    s, t = g.nodes[e.source], g.nodes[e.target]
+    sx = (s.x + (e.exit[0] if e.exit[0] is not None else 1.0) * s.w,
+          s.y + (e.exit[1] if e.exit[1] is not None else 0.5) * s.h)
+    tx = (t.x + (e.entry[0] if e.entry[0] is not None else 0.0) * t.w,
+          t.y + (e.entry[1] if e.entry[1] is not None else 0.5) * t.h)
+    p = [sx] + list(e.points) + [tx]
+    return list(zip(p, p[1:]))
+
+
+def _seg_intersect(a, b):
+    (x1, y1), (x2, y2) = a
+    (x3, y3), (x4, y4) = b
+    def rng(u, v):
+        return (min(u, v), max(u, v))
+    ax, ay = rng(x1, x2), rng(y1, y2)
+    bx, by = rng(x3, x4), rng(y3, y4)
+    return (max(ax[0], bx[0]) <= min(ax[1], bx[1])
+            and max(ay[0], by[0]) <= min(ay[1], by[1]))
+
+
+def test_fanout_source_branches_do_not_cross():
+    """lb->app-az1/az2 (l3/l4) and app->cache/db/obj (l6/l5/l8) fan-outs have no
+    pairwise segment crossings on the AWS landscape (v1.5.1 #1 + #2)."""
+    import itertools
+    g = _aws_landscape_geo()
+    E = {e.id: e for e in g.edges}
+    for a, b in itertools.combinations(("l3", "l4", "l5", "l6", "l8"), 2):
+        crosses = sum(
+            1 for sa in _seg_list(g, E[a]) for sb in _seg_list(g, E[b])
+            if _seg_intersect(sa, sb)
+        )
+        assert crosses == 0, f"{a}x{b} crosses ({crosses})"
+
+
+def test_left_corridor_branch_exits_bottom_left():
+    """The left-corridor fan-out branch (l4) exits the source bottom-LEFT
+    (exitX < 0.5) so it does not cross the centre straight-down branch (l3)."""
+    g = _aws_landscape_geo()
+    l4 = next(e for e in g.edges if e.id == "l4")
+    assert l4.exit[1] is not None and l4.exit[1] >= 1.0, f"l4 not a bottom exit: {l4.exit}"
+    assert l4.exit[0] is not None and l4.exit[0] < 0.5, f"l4 not bottom-LEFT: {l4.exit}"
+
+
+def test_overflow_valve_spills_farthest_fanout_to_bottom():
+    """app_a1 has 3 right fan-out targets (cache/db/obj); the farthest (obj, l8)
+    spills onto the BOTTOM face, leaving <=2 exits on the right (v1.5.1 #2)."""
+    g = _aws_landscape_geo()
+    l8 = next(e for e in g.edges if e.id == "l8")
+    assert l8.exit[1] is not None and l8.exit[1] >= 1.0, f"l8 not spilled to bottom: {l8.exit}"
+    # The two kept right-face edges (l5 db, l6 cache) still exit right.
+    for eid in ("l5", "l6"):
+        e = next(x for x in g.edges if x.id == eid)
+        assert e.exit[0] is not None and e.exit[0] >= 0.5, f"{eid} not right: {e.exit}"
+    # All contract-legal + no crossings already covered by the check above.
+    assert geo.check_edge_direction(g) == []

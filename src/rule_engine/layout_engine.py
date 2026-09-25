@@ -31,7 +31,7 @@ try:  # package-relative import when used as ``rule_engine.layout_engine``
         ROW_STEP,
         CONTAINER_PAD,
     )
-    from .geometry import Box, LABEL_BAND, segment_crosses_box
+    from .geometry import Box, LABEL_BAND, CONTAINER_LABEL_BAND, segment_crosses_box
 except ImportError:  # pragma: no cover - fallback for flat-module execution
     from diagram_layout import (  # type: ignore[no-redef]
         ICON_SIZE,
@@ -40,7 +40,7 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
         ROW_STEP,
         CONTAINER_PAD,
     )
-    from geometry import Box, LABEL_BAND, segment_crosses_box  # type: ignore[no-redef]
+    from geometry import Box, LABEL_BAND, CONTAINER_LABEL_BAND, segment_crosses_box  # type: ignore[no-redef]
 
 from typing import List
 
@@ -1715,21 +1715,93 @@ def _gap_column_x(allocator: "CorridorAllocator", src: Box, edge_id: str) -> flo
     return _snap(_allocate_or_first(allocator, f"vcol:{gap_left}", gap_low, gap_high))
 
 
+def _enclosing_container(box: Box, containers: Optional[Dict[str, Box]]) -> Optional[Box]:
+    """Return the SMALLEST container that fully encloses ``box`` (or ``None``)."""
+    if not containers:
+        return None
+    best: Optional[Box] = None
+    for c in containers.values():
+        if c.x <= box.x and c.y <= box.y and box.right <= c.right and box.bottom <= c.bottom:
+            if best is None or (c.right - c.x) < (best.right - best.x):
+                best = c
+    return best
+
+
+def _free_left_corridor_x(
+    src: Box,
+    tgt: Box,
+    obstacles: List[Box],
+    containers: Optional[Dict[str, Box]],
+    edge_id: str,
+) -> Optional[float]:
+    """Return a LEFT-side corridor x for a vertical tier-skip, or ``None``.
+
+    Generalises the reviewer's hand-route (edge 4): when a source fans down to a
+    target in the SAME COLUMN but past an intermediate node, route the vertical
+    in the gap to the **left** of the column and enter the target's LEFT face —
+    shorter and cleaner than a right corridor that must step back across the
+    column. Only returned when that left gap is genuinely usable:
+
+    * source and target share a column (``src.x == tgt.x``);
+    * the enclosing container leaves >= one GRID step between its left edge and
+      the column (``col_x - container_left >= 2*GRID``, room for a corridor with
+      padding);
+    * no OTHER node occupies that corridor's vertical span in the left gap.
+
+    The corridor x is placed midway in the left gap, snapped to the grid. When
+    any condition fails (no room, an obstacle in the gap, no container) it
+    returns ``None`` and the caller falls back to the default right corridor +
+    top entry — so a dense/edge-hugging layout is never forced into a left rail."""
+    if abs(src.x - tgt.x) > 1e-9:
+        return None
+    # Use the SOURCE's enclosing container: the corridor runs from the source
+    # (in the VPC service row, above the AZ boxes) down into the target, so it
+    # must live in the VPC's left gap — the widest usable gap — not a narrow AZ
+    # inset. Fall back to the target's container, then the canvas.
+    container = _enclosing_container(src, containers) or _enclosing_container(tgt, containers)
+    left_edge = container.x if container is not None else 0.0
+    gap = src.x - left_edge
+    if gap < 2 * GRID:
+        return None  # no room for a left corridor with padding
+    # Place the corridor one GRID step left of the column (nearest clean lane),
+    # clamped to stay >= one GRID inside the container left edge.
+    corridor_x = _snap(max(src.x - GRID, left_edge + GRID))
+    # The corridor must clear every OTHER node's box: reject only when a node's
+    # actual box (not a padded halo) sits on the corridor line within the run.
+    lo, hi = min(src.y, tgt.y), max(src.bottom, tgt.bottom)
+    for b in obstacles:
+        if b.id in (src.id, tgt.id):
+            continue
+        if b.x <= corridor_x <= b.right and not (b.bottom < lo or b.y > hi):
+            return None  # an icon actually sits on the left corridor's path
+    return corridor_x
+
+
 def route_spine(
     edge: EdgeSpec,
     exit_pt: Contact,
     entry_pt: Contact,
     allocator: "CorridorAllocator",
     obstacles: List[Box],
+    containers: Optional[Dict[str, Box]] = None,
 ) -> List[Point]:
     """Route a ``spine`` tier hop through a side corridor beside the column (Req 7.3).
 
     Shape: exit the source's right, step one ``GRID`` into the inter-column gap
     (the stair), drop in a corridor **beside** the node column (never straight
-    down the column), then turn into the target's near (top) face. The vertical
-    drop x is an allocated corridor line in the gap immediately right of the
-    source column, so the run clears the icons stacked in that column and stays
-    distinct from any fan-out step-out sharing that gap."""
+    down the column), then turn into the target's near face. The vertical drop x
+    is an allocated corridor line in the gap immediately right of the source
+    column, so the run clears the icons stacked in that column and stays distinct
+    from any fan-out step-out sharing that gap.
+
+    **Adaptive left corridor (v1.5.1).** When the target sits in the SAME COLUMN
+    past an intermediate node and the column's LEFT gap is free
+    (:func:`_free_left_corridor_x`), the run instead drops in the **left**
+    corridor and enters the target's **LEFT** face — the reviewer's hand-route
+    for edge 4 (lb→app-az2), shorter than a right corridor that must step back
+    across the column. Both a left entry and a top entry are contract-legal, so
+    ``edge-direction`` is unaffected; the left route is taken only when the gap
+    is genuinely usable, else it falls back to the right-corridor + top entry."""
     src = obstacle_box(edge.source, obstacles)
     tgt = obstacle_box(edge.target, obstacles)
     others = _relevant_obstacles(edge, obstacles)
@@ -1740,6 +1812,30 @@ def route_spine(
     # two pinned contacts, so no interior waypoints are needed.
     if exit_pt[1] >= 1.0 and entry_pt[1] <= 0.0 and abs(src.x - tgt.x) < 1e-9:
         return []
+
+    # Adaptive LEFT corridor for a same-column tier-skip past an intermediate
+    # node (edge-4 generalisation). The caller (_place_and_route) pins a bottom
+    # exit + LEFT entry when the left gap is free; honour that here by dropping
+    # in the left corridor into the target's left face. Guarded on the pinned
+    # contacts AND a re-check that the left gap is usable, so a caller that did
+    # not set this shape falls through to the default right-corridor route.
+    bottom_exit = exit_pt[1] >= 1.0
+    left_entry = entry_pt[0] is not None and entry_pt[0] <= 0.0
+    left_x = _free_left_corridor_x(src, tgt, others, containers, edge.id)
+    if bottom_exit and left_entry and left_x is not None:
+        exit_src = _contact_point(src, exit_pt)
+        entry_left = _contact_point(tgt, entry_pt)
+        turn_y = _snap(entry_left[1])
+        waypoints = [
+            (_snap(exit_src[0]), _snap(src.bottom + GRID)),  # step down off the glyph
+            (left_x, _snap(src.bottom + GRID)),              # into the left corridor
+            (left_x, turn_y),                                # drop to the target row
+            (_snap(entry_left[0] - GRID), turn_y),           # step in to the left face
+        ]
+        waypoints = _dedupe_axis_collapse(waypoints, waypoints[0])
+        route = [exit_src] + waypoints + [entry_left]
+        route = _detour_clockwise_if_blocked(route, others)
+        return _interior_waypoints(route)
 
     entry = _contact_point(tgt, entry_pt)
     down = tgt.y >= src.y
@@ -1785,23 +1881,31 @@ def route_fan_out_row(
 ) -> List[Point]:
     """Route a ``fan-out-row`` edge in its own below-row lane (Req 7.4).
 
-    Shape: exit the source right (the stair moves both axes), drop one ``GRID``
-    into a below-row corridor allocated for this edge, run across **below the
-    row** to the gap immediately left of the target, then turn **up** into the
-    target's left face. Each fan-out edge takes its own below-row lane so
-    parallel runs never merge (``check_corridor_sharing`` clean)."""
+    Shape (right exit, the default): exit the source right (the stair moves both
+    axes), drop one ``GRID`` into a below-row corridor allocated for this edge,
+    run across **below the row** to the gap immediately left of the target, then
+    turn **up** into the target's left face. Each fan-out edge takes its own
+    below-row lane so parallel runs never merge (``check_corridor_sharing``
+    clean).
+
+    Shape (BOTTOM exit — the overflow-valve spill, v1.5.1): when the source's
+    RIGHT face is over-connected, the pipeline (:func:`_place_and_route` step 1d)
+    spills the farthest fan-out edge(s) onto the source's **bottom** face
+    (``exit_pt[1] >= 1.0``) so the right face keeps at most two clean lanes.
+    A bottom-exit fan-out honours that exit: it drops **straight down** from the
+    bottom contact into its OWN below-row lane (no right-side stair — the stair
+    would run rightward across the row and re-tangle with the right-face
+    siblings, the exact defect the valve exists to remove), then proceeds like
+    the normal fan-out — across below the row, up into the target's left face.
+    The drawn polyline therefore starts by going *down* from the pinned bottom
+    contact, so the stored ``exit`` matches where the polyline actually begins
+    (no exit/route mismatch)."""
     src = obstacle_box(edge.source, obstacles)
     tgt = obstacle_box(edge.target, obstacles)
     others = _relevant_obstacles(edge, obstacles)
 
     entry = _contact_point(tgt, entry_pt)
-    first = _stair_first_waypoint(src, exit_pt, toward_down=True)
-
-    # Step-out vertical leg: an allocated column line in the gap right of the
-    # source, shared with every other vertical leg in that gap (see
-    # _gap_column_x), so the fan-out step-out never coincides with a spine drop.
-    step_x = _gap_column_x(allocator, src, edge.id)
-    first = (step_x, first[1])
+    exit_abs = _contact_point(src, exit_pt)
 
     # Below-row lane: an allocated grid line in the row gap under the source,
     # starting BELOW the source's LABEL BAND (Rule F). A fan-out run one grid step
@@ -1816,6 +1920,33 @@ def route_fan_out_row(
     # Turn up in the gap just LEFT of the target (target_x - ~half a gap).
     up_x = _snap(tgt.x - (COL_STEP - ICON_SIZE) // 2)
 
+    bottom_exit = exit_pt[1] is not None and exit_pt[1] >= 1.0
+    if bottom_exit:
+        # Honour the bottom exit: drop STRAIGHT DOWN from the bottom contact into
+        # this edge's own below-row lane, then run across and up into the target
+        # left. No gap-column step-out and no right-side stair, so the run leaves
+        # the source going down (matching the pinned bottom exit) and never runs
+        # rightward across the source row where it would re-cross the right-face
+        # siblings the valve spilled it away from.
+        drop_x = _snap(exit_abs[0])
+        waypoints = [
+            (drop_x, lane_y),               # straight drop into the below-row lane
+            (up_x, lane_y),                 # run across below the row
+            (up_x, _snap(entry[1])),        # turn up into the target's left face
+        ]
+        waypoints = _dedupe_axis_collapse(waypoints, waypoints[0])
+        route = [exit_abs] + waypoints + [entry]
+        route = _detour_clockwise_if_blocked(route, others)
+        return _interior_waypoints(route)
+
+    first = _stair_first_waypoint(src, exit_pt, toward_down=True)
+
+    # Step-out vertical leg: an allocated column line in the gap right of the
+    # source, shared with every other vertical leg in that gap (see
+    # _gap_column_x), so the fan-out step-out never coincides with a spine drop.
+    step_x = _gap_column_x(allocator, src, edge.id)
+    first = (step_x, first[1])
+
     waypoints = [
         first,
         (first[0], lane_y),
@@ -1828,12 +1959,52 @@ def route_fan_out_row(
     return _interior_waypoints(route)
 
 
+def _has_free_left_approach(tgt: Box, obstacles: List[Box]) -> bool:
+    """True when the target's LEFT face has a clear horizontal approach.
+
+    A cross-region run can enter the target's LEFT face (instead of dropping into
+    its TOP over the AZ caption) when no other node sits immediately to the
+    target's left on its row — i.e. the target is the leftmost-reachable in its
+    row from the left, with >= one grid step of clear approach. Used to decide
+    whether a cross-region hop routes below-row + left-entry (the reviewer's l11
+    route) rather than over-row + top-entry."""
+    for b in obstacles:
+        if b.id == tgt.id:
+            continue
+        same_row = abs(b.y - tgt.y) < tgt.h
+        to_left = b.right <= tgt.x and (tgt.x - b.right) < 2 * GRID
+        if same_row and to_left:
+            return False
+    return True
+
+
+def _target_container_top(
+    edge: EdgeSpec, containers: Optional[Dict[str, Box]], tgt: Box
+) -> Optional[float]:
+    """Return the top y of the SMALLEST container enclosing the target box.
+
+    A long-haul corridor that drops into a target inside a VPC must not run
+    along that VPC's top caption band. This returns the enclosing container's
+    top edge so the router can keep its horizontal corridor ABOVE it (a
+    ``below``-side corridor caps its ``row_high`` at this y). ``None`` when there
+    are no containers (synthetic specs) or the target sits in none."""
+    if not containers:
+        return None
+    best: Optional[Box] = None
+    for c in containers.values():
+        if c.x <= tgt.x and c.y <= tgt.y and tgt.right <= c.right and tgt.bottom <= c.bottom:
+            if best is None or (c.right - c.x) < (best.right - best.x):
+                best = c
+    return best.y if best is not None else None
+
+
 def route_cross_region(
     edge: EdgeSpec,
     exit_pt: Contact,
     entry_pt: Contact,
     allocator: "CorridorAllocator",
     obstacles: List[Box],
+    containers: Optional[Dict[str, Box]] = None,
 ) -> List[Point]:
     """Route a ``cross-region`` A→B hop through its own over-row corridor (Req 7.5).
 
@@ -1846,6 +2017,37 @@ def route_cross_region(
     others = _relevant_obstacles(edge, obstacles)
 
     entry = _contact_point(tgt, entry_pt)
+
+    # Adaptive INTER-ROW corridor + LEFT entry (v1.5.1, edge-11 generalisation).
+    # A same-tier cross-region hop whose target has a clear LEFT approach
+    # (:func:`_has_free_left_approach`) routes in the inter-row gap BELOW the
+    # source row and enters the target's LEFT face — the reviewer's l11 route.
+    # This keeps the long run in the empty band between two rows rather than on
+    # an AZ/VPC top caption (the caption-slice + top-entry pierce the over-row
+    # route caused), and a left entry into a row-rightmost target is clean. Taken
+    # only when the caller pinned a LEFT entry AND the approach is free; else the
+    # default over/below-row + top-entry route stands.
+    left_entry = entry_pt[0] is not None and entry_pt[0] <= 0.0
+    if left_entry and _has_free_left_approach(tgt, others):
+        # Below-row corridor: the gap under the source row, past its label band.
+        row_low = src.y + ICON_SIZE + LABEL_BAND + GRID
+        row_high = src.y + ROW_STEP
+        lane_y = _snap(_allocate_or_first(allocator, f"xregion-below:{int(src.y)}", row_low, row_high))
+        rise_x = _gap_column_x(allocator, src, edge.id)
+        exit_abs = _contact_point(src, exit_pt)
+        entry_left = _contact_point(tgt, entry_pt)
+        left_of_tgt = _snap(tgt.x - GRID)   # step in to the left face
+        waypoints = [
+            (rise_x, _snap(exit_abs[1])),       # step out into the gap right of src
+            (rise_x, lane_y),                   # drop into the below-row lane
+            (left_of_tgt, lane_y),              # run across in the inter-row gap
+            (left_of_tgt, _snap(entry_left[1])),# rise/settle to the entry row
+        ]
+        waypoints = _dedupe_axis_collapse(waypoints, waypoints[0])
+        route = [exit_abs] + waypoints + [entry_left]
+        route = _detour_clockwise_if_blocked(route, others)
+        return _interior_waypoints(route)
+
     # Choose the horizontal corridor side: above the source by default, but
     # BELOW when the source is in the top band (no room above → the run would
     # leave the canvas / rise above the account box) or the target sits clearly
@@ -1869,6 +2071,19 @@ def route_cross_region(
         row_low = src.y + ICON_SIZE + LABEL_BAND + GRID
         row_high = src.y + ROW_STEP
         side = "below"
+        # v1.5.1: when the target sits inside a VPC, keep the corridor ABOVE the
+        # VPC's TOP EDGE so the horizontal run does not slice the VPC's top
+        # caption (the edge-2 → ``vpc-passive`` label defect). The clean lane is
+        # the gap between the source row's own captions (``row_low``, already
+        # past the source LABEL_BAND) and the VPC top edge (``ceil``): cap
+        # ``row_high`` at the VPC top, NOT at the caption band below it — the
+        # corridor sits in [row_low, vpc_top), e.g. y=210 between the account
+        # row captions (~198) and the VPC top (220). Only apply when that lane is
+        # non-degenerate; if the VPC top is at/below row_low there is no clean
+        # lane, so leave the default (the container-label WARNING then flags it).
+        ceil = _target_container_top(edge, containers, tgt)
+        if ceil is not None and row_low < ceil < row_high:
+            row_high = _snap(ceil)
     else:
         # An ABOVE corridor sits in the gap between the row above and the source
         # row; it must clear the UPPER row's LABEL BAND (Rule F), else it runs
@@ -1876,6 +2091,13 @@ def route_cross_region(
         row_low = (src.y - ROW_STEP) + ICON_SIZE + LABEL_BAND + GRID
         row_high = src.y
         side = "above"
+        # v1.5.1: when the target sits inside an AZ/VPC whose TOP edge falls
+        # inside this corridor band, cap the corridor above that top so the run
+        # does not lie along the target container's caption (the cross-region
+        # obj_a1→obj_b1 rep line slicing the ``az-b1`` caption at y≈400).
+        ceil = _target_container_top(edge, containers, tgt)
+        if ceil is not None and row_low < ceil < row_high:
+            row_high = _snap(ceil)
     # Shared horizontal-corridor namespace (``hcorr``) keyed by the physical band
     # + side, so ANY long horizontal run in this band (cross-region OR back-edge)
     # gets a DISTINCT lane from the shared allocator — two edges in different
@@ -1902,6 +2124,7 @@ def route_back_edge(
     entry_pt: Contact,
     allocator: "CorridorAllocator",
     obstacles: List[Box],
+    containers: Optional[Dict[str, Box]] = None,
 ) -> List[Point]:
     """Route a ``back-edge`` (target left of source) out the right and back (Req 7.6).
 
@@ -2027,14 +2250,22 @@ def route_edge(
     entry_pt: Contact,
     allocator: "CorridorAllocator",
     obstacles: List[Box],
+    containers: Optional[Dict[str, Box]] = None,
 ) -> List[Point]:
     """Classify ``edge`` and dispatch to the matching ``route_<kind>`` router.
 
     A thin convenience over :func:`classify_edge` + :data:`ROUTERS`. Raises
     :class:`UnclassifiableEdgeError` (via :func:`classify_edge`) for an edge that
-    matches no class — the engine never guesses a route (Req 7.1)."""
+    matches no class — the engine never guesses a route (Req 7.1).
+
+    ``containers`` (optional) lets the long-haul routers (cross-region,
+    back-edge) keep their over-row corridor clear of a target VPC's top caption
+    band (v1.5.1). It is only consulted by those two routers; the others ignore
+    it, so synthetic specs that pass no containers are byte-unchanged."""
     placed = {b.id: b for b in obstacles}
     kind = classify_edge(edge, placed)
+    if kind in ("cross-region", "back-edge", "spine"):
+        return ROUTERS[kind](edge, exit_pt, entry_pt, allocator, obstacles, containers)
     return ROUTERS[kind](edge, exit_pt, entry_pt, allocator, obstacles)
 
 
@@ -2507,7 +2738,18 @@ def _place_and_route(spec: DiagramSpec) -> "PlacedDiagram":
     for edge in spec.edges:
         kind = classify_edge(edge, placed)
         if kind == "cross-region":
-            entries[edge.id] = (0.5, 0.0)       # top-centre
+            # Prefer a LEFT entry when the target has a clear left approach: the
+            # router then routes the hop in the inter-row gap + left entry (the
+            # reviewer's l11 route), avoiding an over-row corridor on the target
+            # AZ's caption. Otherwise keep the TOP entry (Rule C) — a target with
+            # a neighbour on its left is reached from above.
+            tgt = placed[edge.target]
+            others = [b for nid, b in placed.items()
+                      if nid not in (edge.source, edge.target)]
+            if _has_free_left_approach(tgt, others):
+                entries[edge.id] = (0.0, 0.5)   # left face → inter-row route
+            else:
+                entries[edge.id] = (0.5, 0.0)   # top-centre (Rule C)
         elif kind == "back-edge":
             tgt = placed[edge.target]
             left_gap_x = tgt.x - (COL_STEP - ICON_SIZE) // 2
@@ -2529,6 +2771,114 @@ def _place_and_route(spec: DiagramSpec) -> "PlacedDiagram":
             if _box_directly_below(src, tgt, others):
                 exits[edge.id] = (0.5, 1.0)     # bottom-centre
                 entries[edge.id] = (0.5, 0.0)   # top-centre → straight drop
+        elif kind == "spine":
+            # Adaptive LEFT corridor (v1.5.1, edge-4 generalisation). A spine to
+            # a target in the SAME COLUMN but PAST an intermediate node (so the
+            # straight drop is blocked) routes down the column's LEFT gap and
+            # enters the target's LEFT face — WHEN that gap is free
+            # (_free_left_corridor_x). Pin the bottom exit + left entry here so
+            # the stored contacts match the route the spine router then draws;
+            # both faces are contract-legal, so edge-direction is unaffected. When
+            # the left gap is not usable this does nothing and the default
+            # right-corridor + top-entry route stands.
+            src = placed[edge.source]
+            tgt = placed[edge.target]
+            others = [b for nid, b in placed.items()
+                      if nid not in (edge.source, edge.target)]
+            same_column_blocked = (
+                abs(src.x - tgt.x) < 1e-9
+                and tgt.y > src.y
+                and not _box_directly_below(src, tgt, others)
+            )
+            if same_column_blocked and _free_left_corridor_x(
+                src, tgt, others, containers, edge.id
+            ) is not None:
+                exits[edge.id] = (0.5, 1.0)     # bottom-centre → into the left gap
+                entries[edge.id] = (0.0, 0.5)   # target LEFT face
+
+    # 1c. Two-sided fan-out for a SOURCE node (v1.5.1, variant A). A node that is
+    #     the *start* of several downward flows — a load balancer or DNS that
+    #     fans out to two app tiers / two regions — reads more naturally when it
+    #     leaves from TWO faces (right AND bottom) instead of cramming every
+    #     branch onto the right face and looping the straight-down one. Both
+    #     right and bottom are contract-legal exits (``edge-direction`` admits
+    #     ``exitX>=0.5`` OR ``exitY==1``), so this needs NO change to the linter —
+    #     it only widens which allowed face the engine picks.
+    #
+    #     Scope, deliberately narrow so it never regresses a good layout:
+    #       * the source has >= 2 downward edges (a genuine fan-out), and
+    #       * exactly one of them goes to a target DIRECTLY BELOW in the same
+    #         column with nothing between (the straight-down branch).
+    #     That straight-down branch takes the BOTTOM face (a clean vertical drop,
+    #     exactly like the compact summary's lb→app chain); the sibling branches
+    #     keep the right face. A single-edge source, or a fan-out with no
+    #     directly-below branch, is untouched (stays all-right), so every existing
+    #     diagram is byte-unchanged unless it has this precise shape.
+    order_index = {e.id: i for i, e in enumerate(spec.edges)}
+    down_by_src: Dict[str, List[str]] = {}
+    for edge in spec.edges:
+        s, t = placed[edge.source], placed[edge.target]
+        if t.y > s.y:                            # a downward edge
+            down_by_src.setdefault(edge.source, []).append(edge.id)
+    for src_id, eids in down_by_src.items():
+        if len(eids) < 2:
+            continue                             # not a fan-out → leave as right
+        src = placed[src_id]
+        # Find the branch(es) whose target is directly below in the same column.
+        straight = [
+            eid for eid in eids
+            if _box_directly_below(
+                src, placed[spec.edges[order_index[eid]].target],
+                [b for nid, b in placed.items()
+                 if nid not in (src_id, spec.edges[order_index[eid]].target)],
+            )
+        ]
+        # Only act when EXACTLY one branch is the clean straight-down drop, so we
+        # never have to choose between two bottom stubs (which would re-crowd the
+        # bottom face and cross the caption).
+        if len(straight) == 1:
+            eid = straight[0]
+            exits[eid] = (0.5, 1.0)              # bottom-centre → straight drop
+            entries[eid] = (0.5, 0.0)            # into the target's top-centre
+
+    # 1d. Overflow valve (v1.5.1). A node's RIGHT face has room for only so many
+    #     distinct fan-out lanes before their below-row corridors start crossing
+    #     one another and the straight stub of an adjacent target (app→cache/db/obj:
+    #     three right exits whose corridors tangled — l5×l6, l5×l8). When a source
+    #     has MORE THAN TWO right-going edges, spill the surplus onto the BOTTOM
+    #     face: the farthest targets (largest dx) leave the bottom and drop into
+    #     their own fan-out corridor + enter the target's LEFT face, so the right
+    #     face keeps at most two distinct exits. Deterministic — ordered by
+    #     (dx desc, marker) so the SAME inputs always spill the same edges — and
+    #     scoped to genuine over-connected right faces, so a node with <=2 right
+    #     edges is byte-unchanged. Both faces are contract-legal (exit right OR
+    #     bottom; enter left), so edge-direction is unaffected.
+    right_by_src: Dict[str, List[str]] = {}
+    for edge in spec.edges:
+        ex, ey = exits[edge.id]
+        is_right = ex is not None and ex >= 0.5 and (ey is None or ey < 1.0)
+        s, t = placed[edge.source], placed[edge.target]
+        if is_right and t.x > s.x:               # a right-going fan-out edge
+            right_by_src.setdefault(edge.source, []).append(edge.id)
+    for src_id, eids in right_by_src.items():
+        if len(eids) <= MAX_SIDE_EXITS - 1:      # <= 2 right exits → no overflow
+            continue
+        src = placed[src_id]
+        # Keep the two NEAREST targets on the right face; spill the rest (farthest
+        # first). "Adjacent" straight targets (a same-row neighbour) are always
+        # kept — they read as a clean short horizontal — so rank only the
+        # non-adjacent fan-out-row edges for spilling.
+        def _dx(eid: str) -> float:
+            return placed[spec.edges[order_index[eid]].target].x - src.x
+        spillable = sorted(
+            (eid for eid in eids
+             if classify_edge(spec.edges[order_index[eid]], placed) == "fan-out-row"),
+            key=lambda e: (-_dx(e), order_index[e]),  # farthest first; declared order tiebreak
+        )
+        keep = max(0, len(eids) - (MAX_SIDE_EXITS - 1))  # how many to spill
+        for eid in spillable[:keep]:
+            exits[eid] = (0.5, 1.0)              # bottom face → own fan-out corridor
+            entries[eid] = (0.0, 0.5)            # enter the target's LEFT face
 
     # 2. Spread same-side exits per source in EDGE-MARKER order: the first edge
     #    (lowest marker) keeps the face centre, the 2nd/3rd shift to the quarters
@@ -2542,8 +2892,25 @@ def _place_and_route(spec: DiagramSpec) -> "PlacedDiagram":
     for edge in spec.edges:
         side = _exit_side(exits[edge.id])
         by_side.setdefault((edge.source, side), []).append(edge.id)
-    for eids in by_side.values():
-        eids_sorted = sorted(eids, key=_mk)
+    for (src_id, side), eids in by_side.items():
+        # On the RIGHT face, an ADJACENT ``straight`` edge is drawn as a clean
+        # level horizontal to its neighbour, so it must keep the face CENTRE
+        # (band 0.5). A ``fan-out-row`` sibling instead exits and then STAIRS
+        # DOWN into a below-row lane, so if the straight edge were pushed to the
+        # lower band its level run would cross the fan-out edge's drop leg just
+        # past the source (the l5×l6 tangle). Rank straight edges ahead of the
+        # rest here (marker order within each class) so the spread hands the
+        # centre to the straight edge and the offset band to the stair-dropping
+        # fan-out edge. Only the right face is reordered; every other side keeps
+        # pure marker order, so no other diagram shape changes.
+        def _spread_key(eid: str):
+            k = classify_edge(spec.edges[order_index[eid]], placed)
+            straight_first = 0 if k == "straight" else 1
+            return (straight_first, _mk(eid))
+        if side == "right" and len(eids) > 1:
+            eids_sorted = sorted(eids, key=_spread_key)
+        else:
+            eids_sorted = sorted(eids, key=_mk)
         group = [(eid, exits[eid]) for eid in eids_sorted]
         for eid, pt in spread_contacts(group):
             exits[eid] = pt
@@ -2584,6 +2951,24 @@ def _place_and_route(spec: DiagramSpec) -> "PlacedDiagram":
         # at the glyph (edge 2 above edge 1).
         exits[edge.id] = (ex, _UPPER_QUARTER)
 
+    # 2b3. Rule H-bottom (v1.5.1): a BOTTOM-face fan-out branch that turns toward
+    #     the LEFT corridor (its entry is the target's LEFT face) must leave from
+    #     the bottom-LEFT band, and the straight-down sibling (entry TOP) keeps
+    #     the bottom-CENTRE. Otherwise the spread hands the later-marker left
+    #     branch the LOWER/right quarter, so its immediate leftward step crosses
+    #     the centre straight-down branch at the glyph (l4 crossing l3). Biasing
+    #     the left-corridor branch to the left band makes the two bottom stubs
+    #     diverge from the start — the straight one drops centre, the left one
+    #     steps out left — with no crossing. Only touches bottom exits whose
+    #     entry is a left face; a top-entry straight drop is left centred.
+    for edge in spec.edges:
+        ex, ey = exits[edge.id]
+        if ey is None or ey < 1.0:
+            continue  # not a bottom exit
+        nx, _ny = entries[edge.id]
+        if nx is not None and nx <= 0.0:          # left-corridor branch
+            exits[edge.id] = (_UPPER_QUARTER, ey)  # bottom-LEFT band (0.25)
+
     # 2c. Snap every contact FRACTION so its absolute point lands on the grid
     #     (icon centre 0.5 → x0+39 is off-grid; a grid-snapped waypoint would
     #     then meet it with a 1px kink that skews the arrowhead). After this the
@@ -2598,7 +2983,7 @@ def _place_and_route(spec: DiagramSpec) -> "PlacedDiagram":
     allocator = CorridorAllocator()
     placed_edges: List[PlacedEdge] = []
     for edge in spec.edges:
-        pts = route_edge(edge, exits[edge.id], entries[edge.id], allocator, obstacles)
+        pts = route_edge(edge, exits[edge.id], entries[edge.id], allocator, obstacles, containers)
         placed_edges.append(
             PlacedEdge(spec=edge, exit=exits[edge.id], entry=entries[edge.id], points=list(pts))
         )

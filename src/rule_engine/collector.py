@@ -116,7 +116,7 @@ _SEGMENT_RE = re.compile(r"[A-Za-z][a-z0-9]*|[A-Z]+(?![a-z])|[0-9]+")
 
 
 # ---------------------------------------------------------------------------
-# Secret-safety redaction (inventory-standards.md §6; secret-safety)
+# Secret-safety redaction (inventory-standards.md §7; secret-safety)
 # ---------------------------------------------------------------------------
 
 # Key-name substrings that mark a value as secret material. Matching is
@@ -151,7 +151,7 @@ REDACTED = "[REDACTED]"
 # under a benign key name (e.g. ``{"note": "-----BEGIN PRIVATE KEY-----..."}``,
 # a SecureString payload, or an inline ``password=...`` assignment). This closes
 # the gap where key-name redaction alone leaks a secret carried in the value
-# (inventory-standards §6 secret-safety). Matching is case-insensitive and
+# (inventory-standards §7 secret-safety). Matching is case-insensitive and
 # deliberately conservative — anchored markers, not broad words — so ordinary
 # metadata (a region, an ARN, a description) is not over-redacted.
 _SECRET_CONTENT_RE = re.compile(
@@ -197,7 +197,7 @@ def redact_secrets(value: Any) -> Any:
     """Recursively strip secret values from resource metadata.
 
     Two complementary redactions are applied, so a snapshot file never carries
-    secret material (inventory-standards §6):
+    secret material (inventory-standards §7):
 
     * **by key name** — any mapping entry whose *key* matches a secret marker
       (``password``/``secret``/``key``/``token``/``securestring`` and friends)
@@ -575,7 +575,7 @@ def collect(
     if cost_note is not None:
         manifest["cost"] = cost_note
 
-    # Secret-safety (§6) covers EVERY snapshot file, and 00-MANIFEST.md is one:
+    # Secret-safety (§7) covers EVERY snapshot file, and 00-MANIFEST.md is one:
     # a credentialed caller_identity or a cost endpoint carrying an inline token
     # must not land in the manifest verbatim. Run the manifest through the same
     # redaction as resource metadata before rendering.

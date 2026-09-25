@@ -47,7 +47,14 @@ def _build_parser() -> argparse.ArgumentParser:
         prog="rule-engine-index-assets",
         description="Index official provider icon packs and resolve service icons.",
     )
-    p.add_argument("--root", default=".", help="base directory containing the unpacked packs")
+    p.add_argument(
+        "--root",
+        default=None,
+        help="base directory containing the unpacked packs (REQUIRED). Previously "
+             "defaulted to the CWD ('.'), which silently indexed whatever packs "
+             "happened to be under the current directory on a pip/Power install; "
+             "it is now explicit (v1.5.1).",
+    )
     for prov in _PROVIDER_FLAGS:
         p.add_argument(
             f"--{prov}",
@@ -78,6 +85,18 @@ def _pack_roots(args: argparse.Namespace) -> Dict[str, str]:
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
+
+    # --root is required (v1.5.1): the old default of "." silently indexed the
+    # CWD, so a pip/Power install could pick up unrelated packs from wherever it
+    # was invoked. Fail with a clear usage message instead of scanning the CWD.
+    if args.root is None:
+        print(
+            "rule-engine-index-assets: error: --root is required (the directory "
+            "containing the unpacked provider packs); it no longer defaults to "
+            "the current directory.",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
 
     roots = _pack_roots(args)
     if not roots:

@@ -120,7 +120,8 @@ jobs:
         # Rebuild mappings/icon-index.json from the fetched packs and confirm the
         # committed file is byte-identical (no stale role->icon wiring). Skips
         # gracefully if a pack failed to fetch.
-        run: rule-engine-build-icon-sets --check --no-fetch || echo "WARNING: icon-index check skipped (packs incomplete) or STALE — see log"
+        run: |
+          rule-engine-build-icon-sets --check --no-fetch || echo "WARNING: icon-index check skipped (packs incomplete) or STALE — see log"
       - name: Verify every diagram icon reference resolves (incl. azure2 img/lib paths)
         # A well-formed-but-nonexistent id/path renders as an empty/broken icon
         # the linter cannot see. Checks aws4 ids, azure2 img/lib paths (against
