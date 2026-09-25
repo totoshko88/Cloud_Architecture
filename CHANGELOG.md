@@ -2,6 +2,23 @@
 
 All notable changes to the Rule Engine are recorded here, per released version, in reverse chronological order.
 
+## [1.5.3] - 2026-09-25
+
+**Theme: a Power install stops erroring on hooks, and the linter now catches a node that spilled out the bottom of its container.** Test-installing the Power from git and generating an AWS `eu-central-1` diagram surfaced three problems: (1) installing the hooks failed with **"Hook has invalid data structure"**; (2) an inventory-driven diagram shipped with a node drawn *below* its VPC border that the gate reported clean; (3) the diagram omitted the instance type on the EC2 nodes and the auto scaling group, and drew S3 (a regional service) inside the VPC. This release fixes the hook packaging and the linter gap, and rebuilds the example.
+
+### Fixed
+
+- **Hook files no longer use the legacy `.kiro.hook` extension** (`.kiro/hooks/*`, `src/rule_engine/_bootstrap/kiro/hooks/*`). The bundled hooks carried the current `{"version":"v1","hooks":[…]}` schema but were named `*.kiro.hook`, and Kiro validates that extension against the *legacy* `when`/`then` schema — so the install rejected them with "Hook has invalid data structure". All six sources are renamed to `.json`; `init_workspace` and `build_backend` copy whole directories, so no code change was needed. Docs updated (`INSTALL.md`, `docs/ARCHITECTURE.md`, `docs/KIRO-UNIVERSITY-COMPLIANCE.md`), including a note on why the `.kiro.hook` extension must not be paired with the `version`/`hooks` body.
+- **`container-padding` now flags a node spilled past a container's top/bottom border** (`geometry.check_container_padding`, new `geometry._SPILL_REACH`). The check previously recognised only *inside* (pad measured) or a *straddle* overlapping on **both** axes. A node in the container's x-band but sitting entirely *below* its bottom edge (the EC2-az-c / S3 defect in the inventory-driven AWS diagram) overlapped on one axis only, so it was neither inside nor a straddle and the diagram linted clean. Spill detection is deliberately narrow to avoid false positives: it fires only for an **orphaned** node (housed by no container), whose projection is **fully within** the container's x-band, that has slid at most one row-step (`160`) past the top/bottom border. **Horizontal** spill is intentionally not flagged — an external actor sits to the left of the boundary by design — so all twelve golden examples stay clean. The `container-padding` rule detail in both steering copies (`diagram-lint.md`, `diagram-standards.md`) documents the spill case so the rule and its steering description no longer drift.
+
+### Changed
+
+- **Rebuilt `examples`-style AWS `eu-central-1` diagram (test artifact).** EC2 nodes now carry the instance type in the label, the `devoxx-green-asg` auto scaling group is drawn as a dashed group boundary around the two EC2 instances, and S3 (a regional service) was moved out of the VPC's column into its own Account-level column outside the VPC. Node labels are slugged into the `node-quote`-clean set.
+
+### Tests
+
+- Regression tests (`tests/test_geometry_hard_rules.py`): a node spilled below its container is flagged; the mirror spill above the top edge is flagged; a node housed by a sibling container sharing this one's x-band is **not** flagged; an external actor to the left of a boundary is **not** flagged; a node more than one row-step below the border is **not** flagged.
+
 ## [1.5.2] - 2026-09-25
 
 **Theme: `container-padding` now measures a nested boundary against its parent, not just a node against its boundary.** A VPC boundary sharing an edge with its Account boundary (zero padding) linted clean because the check only ever iterated nodes-in-containers — the nested-container case was claimed in diagram-standards and the docstring but never implemented.

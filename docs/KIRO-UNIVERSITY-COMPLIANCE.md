@@ -14,7 +14,7 @@ purpose-built custom agents**, and a **packaged Kiro power**.
 | --- | --- | --- | --- |
 | 1 | Spec-driven development | ✅ | `.kiro/specs/multicloud-diagram-inventory/` |
 | 2 | Steering documents | ✅ | `.kiro/steering/*.md` (6 files) |
-| 3 | Hooks | ✅ | `.kiro/hooks/*.hook` (2 files) |
+| 3 | Hooks | ✅ | `.kiro/hooks/*.json` (3 files) |
 | 4 | Property-based testing | ✅ | `tests/test_*_propert*.py` (15 files) |
 | 5 | Powers / Skills | ✅ | `.kiro/skills/rule-engine-artifacts/SKILL.md` |
 | 6 | Model Context Protocol (MCP) | ✅ | `.kiro/settings/mcp.json` (AWS docs) |
@@ -71,12 +71,12 @@ intent being that any conforming agent produces the same review-passing output.
 
 Two hooks in `.kiro/hooks/` automate the quality gates:
 
-- `lint-on-save.kiro.hook` — trigger `PostFileSave`, matcher `\.(drawio|md)$`,
+- `lint-on-save.json` — trigger `PostFileSave`, matcher `\.(drawio|md)$`,
   action lints the saved file with `rule-engine-lint --file <path> --fail-on
   error,critical`. The saved path comes from the hook's stdin JSON (falling back
   to `$KIRO_FILE_PATH`); the action **skips silently** when the CLI is not
   installed, so it never errors in a Power-only workspace.
-- `validate-on-task.kiro.hook` — trigger `PostTaskExec`, action runs
+- `validate-on-task.json` — trigger `PostTaskExec`, action runs
   `rule-engine-lint --all` **and** `rule-engine-validate-schema` (also guarded on
   the CLI being present), so completing a spec task re-checks the workspace.
 
@@ -256,8 +256,8 @@ ls .kiro/specs/multicloud-diagram-inventory/
 # Lesson 2: six always-on steering docs
 ls .kiro/steering/
 
-# Lesson 3: two hooks
-ls .kiro/hooks/*.hook
+# Lesson 3: the hooks
+ls .kiro/hooks/*.json
 
 # Lesson 4: fifteen property-based test files, all green
 ls tests/*propert*.py | wc -l

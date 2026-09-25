@@ -62,6 +62,14 @@ GRID = 10
 # conservative floor, not a per-string measurement.
 LABEL_BAND = 30
 
+# How far past a container border a node may spill and still be attributed to
+# THAT container (v1.5.3 spill detection in ``check_container_padding``). A node
+# that shares a container's column/row but has slid at most one row-step (the
+# canonical 160px row rhythm) past its border is read as "fell out of this
+# container", not "belongs to a container a tier away". Kept at one row-step so a
+# node genuinely inside a sibling/parent tier further off is never mis-attributed.
+_SPILL_REACH = 160
+
 _CELL_RE = re.compile(r"<mxCell\b[^>]*?(?:/>|>.*?</mxCell>)", re.S)
 _GEOM_RE = re.compile(r"<mxGeometry\b[^>]*?(?:/>|>.*?</mxGeometry>)", re.S)
 _POINT_RE = re.compile(r'<mxPoint x="([-0-9.]+)" y="([-0-9.]+)"')
@@ -314,18 +322,77 @@ def check_container_padding(
     treated as inside-with-zero-padding (a finding), not as "not inside"."""
     out: List[Tuple[str, str, float]] = []
 
+    # A node fully contained by SOME container is on its home turf; the spill
+    # check below must not fire on it just because it also shares a band with a
+    # neighbouring container a tier away. Precompute the set of "housed" nodes so
+    # spill is reserved for genuinely orphaned nodes (in no container at all).
+    housed: set = set()
+    for ncid, node in geo.nodes.items():
+        n = node.footprint(label_band)
+        for c in geo.containers.values():
+            if c.x <= n.x and c.y <= n.y and n.right <= c.right and n.bottom <= c.bottom:
+                housed.add(ncid)
+                break
+
     # --- node-in-container -------------------------------------------------- #
     for ncid, node in geo.nodes.items():
         n = node.footprint(label_band)
         for ccid, c in geo.containers.items():
             inside = c.x <= n.x and c.y <= n.y and n.right <= c.right and n.bottom <= c.bottom
             if not inside:
-                # Straddling: overlaps the container region but not fully inside.
-                straddles = (
-                    n.x < c.right and c.x < n.right and n.y < c.bottom and c.y < n.bottom
-                )
-                if straddles:
-                    out.append((ncid, ccid, 0.0))
+                # A node not fully inside is a finding when it *conflicts* with
+                # the container border. Two conflict shapes are caught:
+                #
+                #  * **Straddle** — the boxes overlap on BOTH axes, so the node
+                #    sits half in / half out (a corner or edge overlap).
+                #  * **Spill** (v1.5.3) — the node's projection is fully contained
+                #    in the container's band on ONE axis (it shares the
+                #    container's column, or its row), yet it has slid just past
+                #    the container's border on the other axis. This is a node
+                #    that lines up with the container's contents but is drawn
+                #    outside the box — the EC2-az-c / S3 defect in the
+                #    inventory-driven AWS diagram, where a node in the VPC's
+                #    x-band fell below the VPC's bottom edge. The pre-1.5.3 check
+                #    required overlap on BOTH axes, so that node was neither
+                #    "inside" nor "straddle" and slipped through as clean.
+                #
+                # Spill is deliberately narrow to avoid false positives:
+                #   0. the node is ORPHANED — no container fully contains it. A
+                #      node housed by some other container (a sibling AZ / the
+                #      parent Account) legitimately shares a band with THIS one
+                #      and must never be read as spilled out of it (an edge-tier
+                #      node above the VPC, a second-AZ node below the first AZ).
+                #   1. the node's band on the containment axis is FULLY within
+                #      the container's band (``contained_x`` / ``contained_y``) —
+                #      a mere partial overlap is not a spill; and
+                #   2. the overflow past the border on the other axis is within
+                #      one row/column step (``_SPILL_REACH``) — a node many steps
+                #      away is unrelated, not spilled out of this one.
+                # A node disjoint on BOTH axes (an external actor drawn to the
+                # left of and above/below the boundary, e.g. the internet user)
+                # is neither straddle nor spill and is correctly NOT flagged.
+                overlaps_x = n.x < c.right and c.x < n.right
+                overlaps_y = n.y < c.bottom and c.y < n.bottom
+                if overlaps_x and overlaps_y:
+                    out.append((ncid, ccid, 0.0))  # straddle
+                elif ncid not in housed:
+                    contained_x = c.x <= n.x and n.right <= c.right
+                    # Only VERTICAL spill is flagged (a node in the container's
+                    # x-band that slid past its top/bottom border). Horizontal
+                    # spill is deliberately NOT flagged: an external actor
+                    # (lane `actors`/`on-premises`) is drawn just to the LEFT of
+                    # the boundary by design (diagram-standards: actors sit
+                    # OUTSIDE the cloud boundaries), and geometry alone cannot
+                    # tell that legitimate placement from a node that slid out
+                    # the side. A row that does not fit the container's HEIGHT,
+                    # by contrast, is unambiguously a spilled tier — the
+                    # canonical EC2-az-c / S3 "fell below the VPC" defect.
+                    vert_spill = contained_x and (
+                        0 < n.y - c.bottom <= _SPILL_REACH
+                        or 0 < c.y - n.bottom <= _SPILL_REACH
+                    )
+                    if vert_spill:
+                        out.append((ncid, ccid, 0.0))  # spill past top/bottom
                 continue
             min_pad = min(n.x - c.x, n.y - c.y, c.right - n.right, c.bottom - n.bottom)
             if min_pad < pad:
