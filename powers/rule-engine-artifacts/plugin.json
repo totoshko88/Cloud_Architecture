@@ -19,5 +19,10 @@
     "linter",
     "icons",
     "rule-engine"
-  ]
+  ],
+  "extensions": {
+    "dev.kiro": {
+      "icon": "icon.png"
+    }
+  }
 }

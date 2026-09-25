@@ -10,7 +10,10 @@ linter, raster gate, and icon verifier as the publication gate.
 
 - **`plugin.json`** — the power manifest (name, version, description, author,
   keywords). Skills and MCP servers are **not** declared here — Kiro discovers
-  them by file/directory convention (see below).
+  them by file/directory convention (see below). A power logo is referenced via
+  the schema's `extensions."dev.kiro".icon` namespace (→ `icon.png`), the only
+  schema-valid place for client-specific manifest data.
+- **`icon.png`** — the power logo (640×640 PNG).
 - **`mcp.json`** — the read-only AWS-docs MCP server, declared under
   `mcpServers` per the `mcp.schema.json` schema (Kiro loads MCP servers from
   this sibling file, not from `plugin.json`).
