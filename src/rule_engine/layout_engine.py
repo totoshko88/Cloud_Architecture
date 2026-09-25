@@ -2077,6 +2077,37 @@ def _dedupe_axis_collapse(waypoints: List[Point], first: Point) -> List[Point]:
     return out
 
 
+def _corner_detour(p: Point, q: Point, obstacles: List[Box]) -> List[Point]:
+    """Return the detour waypoint(s) that route a blocked ``p``→``q`` run around.
+
+    A straight segment with no interior vertex is bent into an orthogonal detour
+    that steps **off the blocked line** clockwise (up for a horizontal run, right
+    for a vertical run), just past the blocking obstacles' band, then back to the
+    far endpoint. Returns:
+
+    * a single **L-corner** (share p.x/q.y or q.x/p.y) when one clears both legs
+      — the ordinary case where the endpoints are not collinear;
+    * a **two-waypoint** staple (off-line, across, back) when the run is
+      axis-collinear with its endpoints (both on the blocked line), since a
+      single corner would stay on that line.
+
+    Endpoints are never returned, so the edge stays pinned to both node faces."""
+    blockers = _obstacles_between(p, q, obstacles)
+    for corner in ((_snap(p[0]), _snap(q[1])), (_snap(q[0]), _snap(p[1]))):
+        if corner not in (p, q) and not _obstacles_between(
+            p, corner, obstacles
+        ) and not _obstacles_between(corner, q, obstacles):
+            return [corner]
+    # Collinear run: a two-waypoint staple past the blockers' band, clockwise.
+    if abs(p[1] - q[1]) <= 1 and blockers:  # horizontal → lift up
+        off = _snap(min(b.y for b in blockers) - GRID)
+        return [(_snap(p[0]), off), (_snap(q[0]), off)]
+    if abs(p[0] - q[0]) <= 1 and blockers:  # vertical → shift right
+        off = _snap(max(b.x + b.w for b in blockers) + GRID)
+        return [(off, _snap(p[1])), (off, _snap(q[1]))]
+    return [(_snap(p[0]), _snap(q[1]))]
+
+
 def _detour_clockwise_if_blocked(route: List[Point], obstacles: List[Box]) -> List[Point]:
     """Nudge any blocked straight segment clockwise by one corridor, in place.
 
@@ -2091,7 +2122,14 @@ def _detour_clockwise_if_blocked(route: List[Point], obstacles: List[Box]) -> Li
     detoured polyline. The pinned endpoints (``route[0]`` exit contact,
     ``route[-1]`` entry contact) are never moved — only the interior corridor
     waypoints shift — so the edge stays attached to both nodes; the caller reads
-    the detoured interior back with :func:`_interior_waypoints`."""
+    the detoured interior back with :func:`_interior_waypoints`.
+
+    A **two-point** route (``[exit, entry]``, no interior) whose single straight
+    segment is blocked has no interior vertex to shift, so an L-shaped corner
+    waypoint is inserted (clockwise) once — turning the blocked straight run into
+    a two-leg detour around the obstacle without moving either pinned end."""
+    if len(route) == 2 and _obstacles_between(route[0], route[1], obstacles):
+        route[1:1] = _corner_detour(route[0], route[1], obstacles)
     for i in range(len(route) - 1):
         for _ in range(4):  # bounded clockwise nudges
             blocked = _obstacles_between(route[i], route[i + 1], obstacles)

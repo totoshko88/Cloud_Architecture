@@ -14,9 +14,13 @@ from typing import Any
 
 from jsonschema import Draft202012Validator
 
-# schemas/inventory.schema.json lives at the repository root, three parents up
-# from this file: src/rule_engine/schema.py -> src/rule_engine -> src -> root.
-_SCHEMA_PATH = Path(__file__).resolve().parents[2] / "schemas" / "inventory.schema.json"
+from rule_engine.constants import resolve_bundled_dir
+
+# schemas/inventory.schema.json. Resolved from the repo root (dev), the bundled
+# package payload (pip / Kiro-Power install), or the CWD (bootstrapped
+# workspace) — so the schema loads in every install shape, not just a repo
+# checkout.
+_SCHEMA_PATH = resolve_bundled_dir("schemas") / "inventory.schema.json"
 
 
 class ResourceValidationError(ValueError):

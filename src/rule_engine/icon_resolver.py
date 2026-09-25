@@ -33,6 +33,7 @@ import yaml
 
 from rule_engine.constants import CONTAINER_KINDS, ICON_SOURCES, PROVIDERS
 from rule_engine.constants import NEUTRAL_RESOURCE_TYPES as RESOURCE_TYPES
+from rule_engine.constants import resolve_bundled_dir
 
 # ---------------------------------------------------------------------------
 # Domain constants (re-exported from rule_engine.constants, the single source)
@@ -41,9 +42,11 @@ from rule_engine.constants import NEUTRAL_RESOURCE_TYPES as RESOURCE_TYPES
 #: A brand color must be a single ``#`` followed by exactly six hex digits.
 _HEX_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
-# mappings/<provider>-icons.yaml lives at the repository root, three parents up
-# from this file: src/rule_engine/icon_resolver.py -> src/rule_engine -> src -> root.
-_MAPPINGS_DIR = Path(__file__).resolve().parents[2] / "mappings"
+# mappings/<provider>-icons.yaml. Resolved from the repo root (dev), the bundled
+# package payload (pip / Kiro-Power install), or the CWD (bootstrapped
+# workspace) — so icons resolve to the real mapping in every install shape,
+# not just a repo checkout.
+_MAPPINGS_DIR = resolve_bundled_dir("mappings")
 
 
 # ---------------------------------------------------------------------------

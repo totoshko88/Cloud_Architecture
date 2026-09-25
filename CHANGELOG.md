@@ -2,43 +2,138 @@
 
 All notable changes to the Rule Engine are recorded here, per released version, in reverse chronological order.
 
-## [1.5.0] - Unreleased
+## [1.5.0] - 2026-09-25
 
-Closes the gap that let a diagram generated **in a fresh workspace through the Kiro Power ignore the rules**. A Power carries only the skill + MCP, not the always-on steering documents or the icon/role mappings — so in an empty directory the linter never ran and the agent guessed icon colors and boundary placement (EFS drawn Compute-orange instead of Storage-green, external users drawn inside the VPC). This adds a workspace bootstrap step and the two missing AWS presentation roles so a first-time user gets correct output.
+**Theme: a fresh workspace produces correct output.** A Kiro Power carries only
+the skill + MCP — not the always-on steering, the icon/role mappings, or the
+icon binaries. So in an empty directory the linter never ran and the agent
+guessed (EFS drawn Compute-orange instead of Storage-green, external users drawn
+inside the VPC). This release makes the engine self-bootstrapping in every
+install shape (repo, pip, Power) and closes a batch of correctness, security,
+and layout gaps found in the pre-release review (see `docs/REVIEW.md`).
 
 ### Added
 
-- **`rule-engine-init` workspace bootstrap** (`src/rule_engine/init_workspace.py`, `pyproject.toml` console script): copies the always-on `.kiro/steering/`, the `mappings/` tree (role table, per-provider icon maps, committed `icon-index.json`), and `schemas/` from the installed engine (or the cloned power repo at `~/.kiro/powers/repos/rule-engine-artifacts`) into a target workspace, idempotently. `--check` reports what is missing (exit 1) without writing; `--force` overwrites. This is the fix for "rules are present in one workspace but empty in another": the rules are workspace files, and the Power does not carry them, so the skill's new **STEP 0** runs `rule-engine-init` before generating anything.
-- **`compute_instance` and `file_system` AWS presentation roles** (`mappings/roles.yaml`, `mappings/aws-icons.yaml` new `presentation:` section, rebuilt `mappings/icon-index.json` — 16 roles): EC2 and EFS were absent from the mappings, so a generator had no resolved icon/color and guessed. They now resolve through the mapping like every other node, each with its correct AWS service-family color — EC2 Compute orange `#ED7100`, **EFS Storage green `#7AA116`** (not orange), load balancer / CDN / DNS Networking purple `#8C4FFF` — and verified `resIcon` ids (`ec2`, `elastic_file_system`, `application_load_balancer`, `cloudfront`, `route_53`). All four providers resolve for the two new roles (Azure VM/Files, GCP Compute/Storage categories, OCI Compute/File Storage stencils).
-- **Power activation-time setup guidance + workspace bootstrap check** (`powers/rule-engine-artifacts/dev.kiro/steering/rule-engine-setup.md`, `.kiro/hooks/check-workspace-init.kiro.hook`, README logo): the power now ships an always-on `dev.kiro/` steering file — the documented power activation mechanism — that reminds the agent to run `rule-engine-init --check` / `rule-engine-init --with-assets` before generating artifacts (Kiro Powers cannot bundle hooks, so `dev.kiro/` steering is the sanctioned activation-time instruction surface). A workspace-level `SessionStart` hook runs `rule-engine-init --check` and, when the rules/mappings are missing, prints the bootstrap guidance (including that GCP/OCI need `--with-assets`). `rule-engine-init` now also copies `.kiro/hooks/` into the target so the check + lint-on-save + validate-on-task automation travels with the workspace. The README gains the power logo (`powers/rule-engine-artifacts/icon.png`).
-- **Installed-package asset fetcher + `rule-engine-init --with-assets`** (`src/rule_engine/fetch_assets.py`, `scripts/fetch_assets.py` reduced to a thin wrapper, `rule-engine-fetch-assets` console script, `init_workspace._fetch_assets_into`): closes the second half of the empty-workspace gap — **the icon binaries never reached the user**. AWS/Azure icons ship inside the draw.io app, but GCP (file-path SVGs) and OCI (embedded stencils) resolve to files under `assets/vendor/`, which are git-ignored and therefore not carried by the repo, the pip package, or the Power; `icon-index.json` only records their *paths*. So a GCP/OCI diagram in a fresh workspace rendered empty boxes. The fetch logic now lives in the installed package (operating on any workspace root, not a hard-coded repo root), and `rule-engine-init --with-assets` downloads the official packs into the target `assets/vendor/` and rebuilds that workspace's `icon-index.json` against them — verified end-to-end that every GCP/OCI role then resolves to a real on-disk file.
-
-- **Self-contained power install: bundled bootstrap payload + one-step helper** (`build_backend.py`, `pyproject.toml` build-system + `package-data`, `src/rule_engine/init_workspace.py`, `powers/rule-engine-artifacts/skills/rule-engine-artifacts/scripts/bootstrap.sh`): closes the last gap that stopped a **power-only** install from self-configuring. Two facts broke the chain for a new user who installed *only* the Kiro Power: (1) `rule-engine-init` is a `pyproject.toml` console script, and installing a power does not run pip, so the CLI was never on `PATH`; (2) even if it were, `resolve_source()` needed a tree holding both `.kiro/steering` and `mappings/`, which the power directory does not carry. Now an in-tree PEP 517 backend (`build_backend.py`) copies `.kiro/steering/`, `.kiro/hooks/`, `mappings/`, and `schemas/` into `src/rule_engine/_bootstrap/` at build time so they ship as package data in every wheel/sdist (the source tree keeps a single top-level source of truth; `_bootstrap/` is git-ignored). Because setuptools' package-data collection drops **dot-directories**, the bundle stores the `.kiro` trees under dot-free names (`kiro/steering`, `kiro/hooks`) and `init_workspace` reconstructs the dot-prefixed workspace path at copy time (`_BUNDLE_MAP`, `_source_subdir`). `resolve_source()` resolves that **bundled payload first**, so `rule-engine-init` bootstraps a fresh workspace with no repo checkout. Verified end-to-end: a wheel installed into a clean venv (no repo present) puts `rule-engine-init` on PATH and materializes `.kiro/steering` + `.kiro/hooks` + `mappings` + `schemas` into a fresh workspace. The power's skill now ships `scripts/bootstrap.sh`, which `pip install`s the `rule-engine` package when the CLI is missing (override via `RULE_ENGINE_SPEC` / `PIP`), then runs `rule-engine-init` (`--with-assets` for GCP/OCI) against the current workspace — the one step the `dev.kiro/` steering tells the agent to run before generating anything.
+- **`rule-engine-init` — workspace bootstrap.** Copies the always-on
+  `.kiro/steering/`, `.kiro/hooks/`, the `mappings/` tree (roles, per-provider
+  icon maps, committed `icon-index.json`), `schemas/`, and `profiles/` into a
+  target workspace, idempotently. `--check` reports what is missing (exit 1)
+  without writing; `--force` overwrites; `--with-assets` also downloads the
+  official icon packs and rebuilds that workspace's `icon-index.json` (needed for
+  GCP/OCI, whose icons resolve to on-disk files). The skill's new **STEP 0** runs
+  it before generating anything. (`init_workspace.py`, `fetch_assets.py`, console
+  scripts `rule-engine-init` / `rule-engine-fetch-assets`.)
+- **Bundled bootstrap payload — a power-only install self-configures.** Installing
+  a Power does not run pip, and the Power directory carries neither the CLI nor
+  the rule/mapping trees. An in-tree PEP 517 backend (`build_backend.py`) now
+  copies `.kiro/steering/`, `.kiro/hooks/`, `mappings/`, `schemas/`, and
+  `profiles/` into `src/rule_engine/_bootstrap/` at build time, so they ship as
+  package data in every wheel/sdist (top level stays the single source of truth;
+  `_bootstrap/` is git-ignored). Because setuptools drops dot-directories, the
+  `.kiro` trees are stored dot-free (`kiro/steering`) and reconstructed on copy
+  (`_BUNDLE_MAP`). The Power's skill ships `scripts/bootstrap.sh`, which
+  `pip install`s the package when the CLI is missing, then runs `rule-engine-init`.
+- **`compute_instance` and `file_system` presentation roles** (`roles.yaml`,
+  `aws-icons.yaml` `presentation:` section, rebuilt `icon-index.json` — 16 roles).
+  EC2 and EFS had no mapping, so a generator guessed. They now resolve like every
+  other node with the correct AWS service-family color — EC2 Compute orange
+  `#ED7100`, **EFS Storage green `#7AA116`**, LB/CDN/DNS Networking purple
+  `#8C4FFF` — for all four providers.
+- **`docs/REVIEW.md` — the architecture-review findings register.** The stable
+  finding codes (`C*`/`D*`/`U*`/`G*`) cited throughout the code, CI, and steering
+  now have their authoritative home: each finding, its status, and where it lives.
+  Previously those ~20 citations pointed at a document that did not exist.
 
 ### Changed
 
-- **Skill: mandatory STEP 0 bootstrap + hardened anti-patterns** (`.kiro/skills/rule-engine-artifacts/SKILL.md` and the mirrored `powers/rule-engine-artifacts/skills/rule-engine-artifacts/SKILL.md`): the skill now tells the agent to run `rule-engine-init --check` / `rule-engine-init` (and `--with-assets` for GCP/OCI) FIRST in any workspace, take the whole `style:` string (id + fillColor) from `mappings/<provider>-icons.yaml` and **never hand-write a `fillColor` hex** or guess an id, add a new role + re-run `rule-engine-build-icon-sets` when a service has none (never a look-alike), and keep **external actors and on-premises nodes OUTSIDE the cloud boundaries** (a regional service like S3 sits in the Account but outside the VPC). Documents that AWS/Azure icons are built into draw.io while GCP/OCI need the fetched packs.
-- **`icon-index.json` build tolerates an out-of-repo output path** (`build_icon_sets_cli`): the "Wrote …" line no longer assumes the output is under the repo root, so rebuilding into a target workspace (via `--with-assets`) does not raise.
-- **Bootstrap driven by steering/skill, not the SessionStart hook** (`powers/rule-engine-artifacts/dev.kiro/steering/rule-engine-setup.md`, both `SKILL.md` copies, `powers/rule-engine-artifacts/README.md`, `INSTALL.md`): a Kiro Power cannot ship hooks, so a power-installed workspace has no `check-workspace-init` hook — the steering now states this explicitly and points the agent at `scripts/bootstrap.sh` first, documenting the install-does-not-run-pip fact and the bundled-package source resolution. The workspace-local `.kiro/hooks/check-workspace-init.kiro.hook` stays as a convenience for repo/pip installs (it is guarded by `command -v rule-engine-init`). The power README gains a "First run" section and `INSTALL.md` step 10 gains a power-only bootstrap path.
+- **Skill: mandatory STEP 0 bootstrap + hardened anti-patterns** (both `SKILL.md`
+  copies): run `rule-engine-init` first in any workspace; take the whole `style:`
+  string from `mappings/<provider>-icons.yaml` and never hand-write a `fillColor`
+  or guess an id; add a role + re-run `rule-engine-build-icon-sets` when a service
+  has none (never a look-alike); keep external actors and on-premises nodes
+  OUTSIDE the cloud boundaries.
+- **Power activation via `dev.kiro/` steering** (`rule-engine-setup.md`,
+  `INSTALL.md`, power `README.md`): a Power cannot ship hooks, so an always-on
+  `dev.kiro/` steering file is the activation surface that points the agent at
+  `bootstrap.sh` first. The workspace-local `check-workspace-init` `SessionStart`
+  hook (guarded by `command -v rule-engine-init`) stays for repo/pip installs.
 - **Version bumped to 1.5.0** (`VERSION`, `pyproject.toml`).
 
 ### Fixed
 
-- **Power-only install: every CLI now imports on a fresh machine** (`build_backend.py`, `src/rule_engine/init_workspace.py`, `src/rule_engine/constants.py`, `VERSION`): the bundled bootstrap payload copied `.kiro/steering/`, `.kiro/hooks/`, `mappings/`, and `schemas/` but **not** `profiles/terminology.yaml` — the terminology source of truth that `rule_engine.constants` loads at import time to build the brand palette. So on a power-only install `rule-engine-lint`, `rule-engine-verify-icon`, `rule-engine-index-assets`, and `rule-engine-build-icon-sets` (4 of the 8 console scripts, including the core lint/icon gate) crashed on import with `FileNotFoundError: .../profiles/terminology.yaml`, because the installed package resolved the path to `<site-packages>/../../profiles/…` which does not exist. `profiles/` is now part of the build-time payload (`build_backend._PAYLOAD`) and the `rule-engine-init` copy set (`_BOOTSTRAP_DIRS`), and `constants._resolve_terminology_path()` resolves the file from the repo root, then the bundled package payload, then the workspace CWD — so the engine loads it in every install shape. Also syncs `VERSION` to `1.5.0` (CI overwrites it from the release tag, but a manual bundle no longer mislabels itself `1.4.2`). Verified end-to-end: a wheel installed into a clean venv with **no repo and no workspace** now imports and runs all 8 CLIs, and `rule-engine-lint` reports a golden diagram clean in a freshly bootstrapped workspace.
-- **Linter no longer false-positives on steering docs / build output** (`src/rule_engine/cli.py`): the KB `frontmatter` rule (CRITICAL, the 12 required keys) was being applied to the power's `powers/rule-engine-artifacts/dev.kiro/steering/rule-engine-setup.md`, which is a Kiro **steering** file using `inclusion:` frontmatter — not a generated KB document. It blocked the whole `--all` gate. The repo's own `.kiro/steering/*.md` were spared only because `.kiro` is pruned from the walk, but a power ships steering under `dev.kiro/steering` (walked normally). `_is_generated_markdown` now exempts any file under a `*.kiro/steering/` (or dot-free `kiro/steering`) segment via a new `_is_steering_markdown` predicate — the single point both the `--all` scan and the `--file` lint-on-save hook use — so real KB docs (`*.diagram.md`, versioned inventory/KB) are unaffected. Discovery also now prunes `build/`, `dist/`, and the bundled `_bootstrap/` payload so build-time copies of the rules are never linted. Regression tests in `tests/test_cli_handauthored_exclusion.py`.
-- **Router obstacle-avoidance was dead — the clockwise detour is now applied** (`src/rule_engine/layout_engine.py`): all four per-class routers (`route_spine` / `route_fan_out_row` / `route_cross_region` / `route_back_edge`) built a `route` polyline, called `_detour_clockwise_if_blocked(route, …)` to nudge a blocked segment onto the next corridor, and then `return waypoints` — the *un-detoured* interior — so the computed detour was silently discarded and edges could cut an unrelated icon (Req 7.7 was a no-op). `_detour_clockwise_if_blocked` now returns the mutated route (never moving the pinned endpoints), and each router returns `_interior_waypoints(route)` so the detour reaches the emitted geometry. The shipped HA examples regenerate byte-identical (no current edge was actually blocked), so this corrects the dead code without changing published output. Tests in `tests/test_router_detour.py`.
-- **Generation gate now fail-closes when the ruleset is missing** (`src/rule_engine/contract.py`): the contract's publication gate called the unguarded `linter.lint(...)`, so a diagram/document generated with the authoritative `diagram-lint.md` **absent** was still judged "eligible for publication" — contradicting Requirement 7 AC14, which the CLI enforces. A new `_lint_guarded` routes both generated-artifact checks through `linter.lint_with_ruleset(...)` (implicit ruleset discovery, as the CLI uses), so a missing ruleset blocks generation with `ContractGenerationError`. Test `test_generation_blocks_when_ruleset_unavailable`.
-- **Snapshot secret-safety now redacts secret *values*, not only secret key names** (`src/rule_engine/collector.py`): `redact_secrets` masked a value only when its **key** matched a secret marker, so a secret hidden under a benign key (`{"note": "-----BEGIN PRIVATE KEY-----…"}`, a `SecureString` payload, an inline `password=…`) was written to the snapshot verbatim — a gap in the inventory-standards §6 contract. A conservative, anchored content scan (`_SECRET_CONTENT_RE` / `_value_is_secret`) now redacts such values regardless of key name, and the dead `endswith("key")` branch in `_key_is_secret` (which never affected the result) was removed. Five new redaction tests in `tests/test_collector.py`.
-- **`check_edge_direction` no longer false-flags a single-axis contact pin** (`src/rule_engine/geometry.py`): an edge pinning only one contact axis on the correct side (e.g. `exitX=1.0` with `exitY` unset) was wrongly reported as a direction defect because the rule required the complementary axis. It now flags only a **pinned wrong-side** axis that no correct-side pin rescues, so a genuine left-edge exit (`exitX=0.0`) is still caught while a valid one-axis pin passes. `check_grid_alignment` compares coordinates after `round()` so sub-pixel float drift is not a false misalignment. New cases in `tests/test_geometry_hard_rules.py`.
-- **Obstacle sampling density is constant on wide diagrams** (`src/rule_engine/geometry.py`): `segment_crosses_box` sampled a fixed 61 points regardless of length, so on a multi-thousand-pixel landscape run the spacing exceeded a 78px icon and a thin obstacle between two samples was missed (false-negative crossing). It now samples at a fixed spatial step (`_SEGMENT_SAMPLE_STEP`, ≪ an icon) with a 61-sample floor, so the density holds on both a short stub and a wide run. Test in `tests/test_layout_engine.py`.
-- **Silent collisions are now surfaced** (`src/rule_engine/asset_index.py`, `src/rule_engine/delta.py`): two different services whose names normalize to one slug (a shadowed icon dropped from the index) and two resources sharing one `(provider, resource_type, identity)` tuple in a snapshot (a resource dropped from the delta) were both overwritten with no trace. Both now emit a `WARNING` (last-writer-wins retained for compatibility) — the icon-index build already reported a real Azure `Service Groups`/`Groups` collision that was previously invisible. Tests in `tests/test_asset_index.py` and `tests/test_delta_duplicate_identity.py`.
+- **Every CLI imports on a repo-less machine** (`constants.py`, `build_backend.py`).
+  `profiles/terminology.yaml` — loaded at import time to build the brand palette —
+  was absent from the payload, so 4 of the 8 console scripts crashed with
+  `FileNotFoundError` on a power-only install. `profiles/` is now bundled, and
+  `constants._resolve_terminology_path()` resolves it from the repo root, the
+  bundled payload, then the CWD.
+- **Icons and schema resolve in a repo-less workspace too** (`icon_resolver.py`,
+  `schema.py`, `constants.py`). Both still hard-coded the repo-root path
+  (`parents[2]`), so a pip/Power-only install silently degraded every icon to a
+  generic box. A shared `constants.resolve_bundled_dir()` now gives `mappings/`
+  and `schemas/` the same repo → bundled-payload → CWD resolution the terminology
+  path already had.
+- **Snapshot secret-safety redacts secret *values*, not only key names**
+  (`collector.py`). A secret under a benign key (a PEM block, a `SecureString`
+  payload, an inline `password=…`) was written verbatim. A conservative anchored
+  content scan now redacts by value regardless of key name — including a value
+  delivered as `bytes` — and the manifest (`00-MANIFEST.md`) is run through the
+  same redaction, since it is a snapshot file too.
+- **Generation gate fail-closes when the ruleset is missing** (`contract.py`).
+  The publication gate called the unguarded `lint(...)`, so an artifact generated
+  with `diagram-lint.md` absent was judged eligible — contradicting Req 7 AC14. It
+  now routes through `lint_with_ruleset(...)`, so a missing ruleset blocks
+  generation.
+- **Router obstacle-avoidance is now applied** (`layout_engine.py`). The four
+  per-class routers computed a clockwise detour into a local `route` and then
+  returned the *un-detoured* interior — so the detour was discarded and an edge
+  could cut an unrelated icon (Req 7.7 was a no-op). They now read the detoured
+  interior back. The detour also handles a **two-point route** (a blocked
+  straight run with no interior waypoint) by inserting an orthogonal staple around
+  the obstacle rather than silently emitting the crossing. The shipped HA examples
+  regenerate byte-identical (no current edge was blocked).
+- **`check_edge_direction` no longer false-flags a single-axis contact pin**
+  (`geometry.py`). An edge pinning one axis on the correct side (`exitX=1.0`,
+  `exitY` unset) was wrongly flagged; it now flags only a pinned wrong-side axis
+  that no correct-side pin rescues. `check_grid_alignment` compares after
+  `round()` so sub-pixel float drift is not a false misalignment.
+- **Obstacle sampling density is constant on wide diagrams** (`geometry.py`).
+  `segment_crosses_box` sampled a fixed count, so on a multi-thousand-pixel run a
+  thin obstacle between two samples was missed. It now samples at a fixed spatial
+  step with a 61-sample floor.
+- **`_unpack` rejects zip-slip** (`fetch_assets.py`). ZIP entries are now checked
+  to stay within the asset root before extraction, so a tampered pack cannot write
+  outside it.
+- **Linter no longer false-positives on steering docs / build output** (`cli.py`).
+  The KB `frontmatter` CRITICAL rule was applied to the Power's `dev.kiro/steering`
+  file (a steering doc, not a generated KB doc), blocking the `--all` gate.
+  `_is_generated_markdown` now exempts any `*.kiro/steering/` file, and discovery
+  prunes `build/`, `dist/`, and `_bootstrap/`.
+- **Silent collisions are surfaced** (`asset_index.py`, `delta.py`). Two services
+  whose names normalize to one slug, and two resources sharing one
+  `(provider, resource_type, identity)` tuple, were overwritten with no trace.
+  Both now emit a WARNING (last-writer-wins retained for compatibility).
 
 ### Maintenance
 
-- **Raster-budget documentation reconciled with the enforced value** (`src/rule_engine/raster_gate.py`, `scripts/export_raster.py`, `pyproject.toml`, `.gitlab-ci.yml`, `.github/workflows/ci.yml`): the code enforces the class-aware budget (flow ≤ 1600px / < 500KB, landscape ≤ 3600px / < 2MB) but several docstrings, the `pyproject` console-script comment, and the two CI echo/comment strings still claimed the pre-1.3.0 "≤ 1200px". The prose now matches the enforced value. `raster_gate._diagram_class_of` also tolerates a quoted / trailing-comment `diagram_class` value (it previously fell back to the flow budget on `diagram_class: "landscape"`), kept stdlib-only.
-- **HA generator wrappers de-duplicated** (`scripts/ha_multiregion_common.py`, `scripts/build_{aws,azure,gcp,oci}_ha_example.py`): the four wrappers' near-identical `main()` / argparse blocks collapse into one shared `run_cli(...)` in the common module, and the dead `builtin_icon` / `image_icon` imports (masked by `# noqa: E402`) were removed. Regeneration stays byte-identical and `--stdout-summary` / `--stdout-landscape` are unchanged.
-- **CI exercises the declared console scripts and the workspace bootstrap** (`.gitlab-ci.yml`, `.github/workflows/ci.yml`): the validate stage now calls the packaged `rule-engine-check-asset-paths` / `rule-engine-check-rasters` entry points (instead of `python -m …`, so a broken `[project.scripts]` mapping is caught), replaces the non-recursive `examples/**/*.drawio` shell glob (which silently matched only one directory level) with `find`, and adds a bootstrap smoke test that runs `rule-engine-init` into a fresh temp workspace then `--check`s it — regression-guarding the `build_backend._PAYLOAD` ↔ `init_workspace._BUNDLE_MAP` sync (also asserted directly by `tests/test_bootstrap_payload_sync.py`).
-- **Repeated disk reads cached; dead code and stale comments removed** (`src/rule_engine/schema.py`, `src/rule_engine/icon_resolver.py`, `src/rule_engine/layout_engine.py`, `src/rule_engine/diagram_layout.py`, `src/rule_engine/ha_multiregion_spec.py`): the Normalized-Resource schema + its `Draft202012Validator`, and each provider's icon mapping, were re-read and re-parsed from disk on **every** validated resource / resolved node; both are now `lru_cache`d behind a deep-copy-returning public API (the static files back a hot path). Removed the unused `_az_band_step` alias, added a degenerate-scale guard to the OCI stencil embedder's caption-based fallback, and fixed stale comments (the `builtin_icon` "AWS/Azure/GCP" docstring, the summary-axis "left→right" comments now north-south, and a `6.6px`-vs-`5.6px` glyph-width comment).
+- **AWS HA generator uses the mapped LB icon** (`build_aws_ha_example.py`). It
+  hand-wrote `resIcon=elastic_load_balancing` where the `lb` role maps to
+  `application_load_balancer`; aligned to the mapping and regenerated the AWS HA
+  triple.
+- **Repeated disk reads cached** (`schema.py`, `icon_resolver.py`). The schema +
+  its `Draft202012Validator` and each provider's icon mapping were re-parsed on
+  every validated resource / resolved node; both are now `lru_cache`d behind a
+  deep-copy-returning API.
+- **HA generator wrappers de-duplicated** (`ha_multiregion_common.py` +
+  the four `build_*_ha_example.py`). The near-identical `main()`/argparse blocks
+  collapse into one shared `run_cli(...)`; regeneration stays byte-identical.
+- **Raster-budget docs reconciled with the enforced value** (`raster_gate.py`,
+  `export_raster.py`, CI). Stale "≤ 1200px" prose now matches the enforced
+  class-aware budget (flow ≤ 1600px / < 500KB, landscape ≤ 3600px / < 2MB).
+- **CI exercises the console scripts and the bootstrap** (`.gitlab-ci.yml`,
+  `.github/workflows/ci.yml`). The validate stage calls the packaged
+  `rule-engine-check-asset-paths` / `rule-engine-check-rasters` entry points, uses
+  `find` instead of a non-recursive glob, and adds a `rule-engine-init` smoke test.
 
 ## [1.4.1] - 2026-09-24
 

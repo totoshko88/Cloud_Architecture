@@ -38,7 +38,7 @@ RENDERERS = {
     "dns": _res("route_53", "#8C4FFF"),
     "cdn": _res("cloudfront", "#8C4FFF"),
     "waf": _res("waf", "#DD344C"),
-    "lb": _res("elastic_load_balancing", "#8C4FFF"),
+    "lb": _res("application_load_balancer", "#8C4FFF"),  # matches mappings/aws-icons.yaml `lb`
     "k8s": _res("eks", "#ED7100"),
     "sql": _res("rds", "#527FFF"),
     "obj": _res("s3", "#7AA116"),

@@ -185,6 +185,14 @@ def _value_is_secret(value: str) -> bool:
     return bool(_SECRET_CONTENT_RE.search(value))
 
 
+def _decode_bytes(value: bytes) -> str | None:
+    """Best-effort UTF-8 decode of a byte value for the content scan (else None)."""
+    try:
+        return value.decode("utf-8")
+    except UnicodeDecodeError:
+        return None
+
+
 def redact_secrets(value: Any) -> Any:
     """Recursively strip secret values from resource metadata.
 
@@ -214,6 +222,10 @@ def redact_secrets(value: Any) -> Any:
         return [redact_secrets(item) for item in value]
     if isinstance(value, str) and _value_is_secret(value):
         return REDACTED
+    if isinstance(value, bytes):
+        decoded = _decode_bytes(value)
+        if decoded is not None and _value_is_secret(decoded):
+            return REDACTED
     return value
 
 
@@ -562,6 +574,12 @@ def collect(
     }
     if cost_note is not None:
         manifest["cost"] = cost_note
+
+    # Secret-safety (§6) covers EVERY snapshot file, and 00-MANIFEST.md is one:
+    # a credentialed caller_identity or a cost endpoint carrying an inline token
+    # must not land in the manifest verbatim. Run the manifest through the same
+    # redaction as resource metadata before rendering.
+    manifest = redact_secrets(manifest)
 
     # Write 00-MANIFEST.md at the snapshot root.
     (snapshot_dir / "00-MANIFEST.md").write_text(

@@ -404,3 +404,32 @@ def test_key_is_secret_boundary_words_not_redacted_by_bare_key() -> None:
     assert out["sortkey"] == "z"
     assert out["key"] == REDACTED
     assert out["api_key"] == REDACTED
+
+
+def test_redact_secrets_strips_pem_under_benign_key_delivered_as_bytes() -> None:
+    """A PEM block delivered as *bytes* under a benign key is content-scanned
+    and redacted (a str-only scan would let it through)."""
+    pem = b"-----BEGIN PRIVATE KEY-----\nMIIBVwIBADANBg...\n-----END PRIVATE KEY-----"
+    out = redact_secrets({"blob": pem, "region": "us-east-1"})
+    assert out["blob"] == REDACTED
+    assert out["region"] == "us-east-1"
+
+
+def test_manifest_redacts_a_credentialed_caller_identity(tmp_path) -> None:
+    """00-MANIFEST.md is a snapshot file, so a caller_identity carrying an inline
+    token must be redacted there too (inventory-standards §6)."""
+    result = collect(
+        provider="aws",
+        boundary_id="123456789012",
+        region="us-east-1",
+        enumerators=[],
+        output_root=tmp_path,
+        caller_identity="reader token=supersecret123",
+        tool_versions={"aws-cli": "2.15.0"},
+        started_at=FIXED_START,
+    )
+    manifest_md = (
+        tmp_path / result["snapshot_folder"].split("/")[-1] / "00-MANIFEST.md"
+    ).read_text(encoding="utf-8")
+    assert "supersecret123" not in manifest_md
+    assert REDACTED in manifest_md

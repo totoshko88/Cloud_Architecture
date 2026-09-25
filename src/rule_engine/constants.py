@@ -164,6 +164,29 @@ def _resolve_terminology_path() -> Path:
 TERMINOLOGY_PATH: Path = _resolve_terminology_path()
 
 
+def resolve_bundled_dir(name: str) -> Path:
+    """Locate a bundled data directory (``mappings`` / ``schemas``) in any install.
+
+    Same resolution order as :func:`_resolve_terminology_path`, for the data
+    dirs the icon resolver and schema loader read: the repo root (dev), the
+    package payload bundled by ``build_backend`` (pip / Kiro-Power install), then
+    the CWD (a bootstrapped workspace). Falls back to the repo-root path so a
+    later "not found" names the expected location. This is the single home for
+    the repo→bundle→cwd lookup so ``icon_resolver`` and ``schema`` do not each
+    re-hard-code ``parents[2]`` (which broke icon/schema resolution in a
+    repo-less install).
+    """
+    here = Path(__file__).resolve()
+    for candidate in (
+        here.parents[2] / name,          # repo checkout
+        here.parent / "_bootstrap" / name,  # bundled package payload
+        Path.cwd() / name,               # bootstrapped workspace
+    ):
+        if candidate.is_dir():
+            return candidate
+    return here.parents[2] / name
+
+
 @functools.lru_cache(maxsize=1)
 def load_terminology() -> Dict[str, Any]:
     """Load and cache ``profiles/terminology.yaml``.

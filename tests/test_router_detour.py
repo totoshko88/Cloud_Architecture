@@ -45,6 +45,28 @@ def test_detour_shifts_blocked_interior_and_keeps_endpoints():
     assert not _blocks(result, obstacle)
 
 
+def test_detour_inserts_corner_for_blocked_two_point_route():
+    # A two-point route [exit, entry] — no interior waypoint — whose single
+    # straight segment runs through an obstacle. Before the fix this route could
+    # not be detoured at all (neither pinned end may move, and there is no
+    # interior vertex to shift), so the blocked run was emitted verbatim.
+    obstacle = Box("blocker", x=80.0, y=80.0, w=40.0, h=40.0)  # covers y=100
+    exit_pt = (0.0, 100.0)
+    entry_pt = (200.0, 100.0)
+
+    result = _detour_clockwise_if_blocked([exit_pt, entry_pt], [obstacle])
+
+    # Endpoints stay pinned; at least one detour waypoint was inserted between.
+    assert result[0] == exit_pt
+    assert result[-1] == entry_pt
+    assert len(result) > 2
+    # The detour now clears the obstacle...
+    assert not _blocks(result, obstacle)
+    # ...and every leg is axis-aligned (orthogonal routing preserved).
+    for a, b in zip(result, result[1:]):
+        assert a[0] == b[0] or a[1] == b[1], f"non-orthogonal leg {a}->{b}"
+
+
 def test_detour_leaves_clear_route_untouched():
     obstacle = Box("blocker", x=80.0, y=80.0, w=40.0, h=40.0)
     # A route well below the obstacle: nothing to detour.

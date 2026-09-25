@@ -72,13 +72,21 @@ def _download(url: str, dest: Path, *, timeout: int = 120) -> None:
 
 
 def _unpack(zip_path: Path, out_dir: Path) -> int:
-    """Unpack ``zip_path`` into ``out_dir``, skipping mac cruft. Returns file count."""
+    """Unpack ``zip_path`` into ``out_dir``, skipping mac cruft. Returns file count.
+
+    Rejects any entry whose resolved path escapes ``out_dir`` (zip-slip), so a
+    tampered or malicious pack cannot write outside the asset root.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
+    root = out_dir.resolve()
     count = 0
     with zipfile.ZipFile(zip_path) as zf:
         for name in zf.namelist():
             if "__MACOSX" in name or name.endswith(".DS_Store") or name.endswith("/"):
                 continue
+            target = (out_dir / name).resolve()
+            if root != target and root not in target.parents:
+                raise ValueError(f"{zip_path}: entry {name!r} escapes {out_dir}")
             zf.extract(name, out_dir)
             count += 1
     return count

@@ -19,7 +19,7 @@
         <mxCell id="dns" value="global-dns-failover" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.route_53;fillColor=#8C4FFF;strokeColor=#ffffff;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12;fontStyle=0" vertex="1" parent="1">
           <mxGeometry x="540" y="60" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="lb_a" value="lb-primary" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.elastic_load_balancing;fillColor=#8C4FFF;strokeColor=#ffffff;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12;fontStyle=0" vertex="1" parent="1">
+        <mxCell id="lb_a" value="lb-primary" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.application_load_balancer;fillColor=#8C4FFF;strokeColor=#ffffff;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12;fontStyle=0" vertex="1" parent="1">
           <mxGeometry x="60" y="220" width="78" height="78" as="geometry" />
         </mxCell>
         <mxCell id="app_a" value="app-primary" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.eks;fillColor=#ED7100;strokeColor=#ffffff;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12;fontStyle=0" vertex="1" parent="1">
@@ -31,7 +31,7 @@
         <mxCell id="obj_a" value="objstore-primary" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.s3;fillColor=#7AA116;strokeColor=#ffffff;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12;fontStyle=0" vertex="1" parent="1">
           <mxGeometry x="280" y="540" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="lb_b" value="lb-passive" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.elastic_load_balancing;fillColor=#8C4FFF;strokeColor=#ffffff;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12;fontStyle=0" vertex="1" parent="1">
+        <mxCell id="lb_b" value="lb-passive" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.application_load_balancer;fillColor=#8C4FFF;strokeColor=#ffffff;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12;fontStyle=0" vertex="1" parent="1">
           <mxGeometry x="800" y="220" width="78" height="78" as="geometry" />
         </mxCell>
         <mxCell id="app_b" value="app-passive" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.eks;fillColor=#ED7100;strokeColor=#ffffff;aspect=fixed;html=1;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12;fontStyle=0" vertex="1" parent="1">
