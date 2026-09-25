@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rule-engine"
-version = "1.4.2"
+version = "1.5.0"
 description = "Diagram & Inventory Rule Engine — a cloud-agnostic Kiro project for deterministic diagram and inventory generation."
 readme = "README.md"
 # Python 3.14 is intentional: Python 3.10 reaches end-of-life in October 2026,
@@ -53,7 +53,12 @@ rule-engine-verify-icon = "rule_engine.verify_icon:main"
 # build the committed mappings/icon-index.json (per-role resolved icon per
 # provider + pack summary). Run at installation; --check verifies it is current.
 rule-engine-build-icon-sets = "rule_engine.build_icon_sets_cli:main"
-# Workspace bootstrap (v1.4.2): copy the always-on steering rules, icon mappings,
+# Asset fetcher (v1.5.0): download & unpack the official provider icon packs into
+# a target workspace's assets/vendor (and decode the OCI stencils). Importable
+# from the installed package so a pip/Power install can materialize the GCP/OCI
+# icon files without the repo's scripts/ dir. --workspace selects the target root.
+rule-engine-fetch-assets = "rule_engine.fetch_assets:main"
+# Workspace bootstrap (v1.5.0): copy the always-on steering rules, icon mappings,
 # and schema into a target workspace so an agent running the power/skill in a
 # fresh directory inherits the rules and resolves icons through the mappings —
 # instead of guessing colors and boundary placement. --check reports what is

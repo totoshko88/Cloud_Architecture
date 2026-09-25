@@ -32,6 +32,7 @@ rules. Run:
 ```bash
 rule-engine-init --check            # reports missing rule files (exit 1 if any)
 rule-engine-init                    # copies steering + mappings + schema in
+rule-engine-init --with-assets      # AND download the GCP/OCI icon packs (below)
 ```
 
 `rule-engine-init` copies `.kiro/steering/`, `mappings/`, and `schemas/` from the
@@ -41,6 +42,17 @@ idempotently. Do not skip this step and do not hand-copy a subset — the whole
 `mappings/` tree (including `icon-index.json`, `aws-icons.yaml`, `roles.yaml`) is
 required for correct icon resolution. Only after the workspace is bootstrapped do
 the always-on steering rules apply and the gate commands below work.
+
+**Icons: AWS/Azure are built in; GCP/OCI need the packs fetched.** AWS
+(`mxgraph.aws4.*`) and Azure (`img/lib/azure2/*`) icons ship inside the draw.io
+app, so they render with no download. **GCP** (official file-path SVGs) and
+**OCI** (embedded stencils) resolve to files under `assets/vendor/` that are
+**not committed** — `icon-index.json` only carries their *paths*. In a fresh
+workspace those files are absent, so a GCP or OCI diagram renders empty boxes.
+Run `rule-engine-init --with-assets` (once, needs network) to download the
+official packs into `assets/vendor/` and rebuild the workspace `icon-index.json`
+against them. If you are only producing AWS/Azure diagrams you can skip
+`--with-assets`; for GCP/OCI it is required.
 
 ## When to use
 

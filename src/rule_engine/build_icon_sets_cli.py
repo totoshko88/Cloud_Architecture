@@ -57,7 +57,16 @@ def _pack_roots(asset_root: Path) -> Dict[str, str]:
 
 
 def _load_fetch_assets():
-    """Import scripts/fetch_assets.py by path (it is not an installed module)."""
+    """Return the asset fetcher module.
+
+    Prefer the installed-package fetcher (``rule_engine.fetch_assets``) so a
+    pip/Power install works without the repo's ``scripts/`` directory; fall back
+    to importing ``scripts/fetch_assets.py`` by path for older layouts."""
+    try:
+        from rule_engine import fetch_assets as _fa  # installed-package form
+        return _fa
+    except Exception:  # noqa: BLE001 - fall back to the scripts/ wrapper
+        pass
     fa_path = REPO_ROOT / "scripts" / "fetch_assets.py"
     if not fa_path.is_file():
         return None
@@ -151,7 +160,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(text, encoding="utf-8")
-    print(f"Wrote {out_path.relative_to(REPO_ROOT)} — {len(payload['roles'])} roles; packs {packs}.")
+    # out_path may live outside REPO_ROOT (e.g. rule-engine-init --with-assets
+    # writing into a target workspace), so relative_to would raise — print a
+    # repo-relative path when possible, else the absolute path.
+    try:
+        shown = out_path.relative_to(REPO_ROOT)
+    except ValueError:
+        shown = out_path
+    print(f"Wrote {shown} — {len(payload['roles'])} roles; packs {packs}.")
 
     # Refresh the Azure azure2 shape manifest when a local draw.io app.asar is
     # available (the azure2 shapes ship inside draw.io, not in a fetched pack).

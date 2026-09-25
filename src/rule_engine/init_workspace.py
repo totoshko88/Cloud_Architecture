@@ -133,6 +133,13 @@ def main(argv: Optional[list[str]] = None) -> int:
         "--check", action="store_true",
         help="Report what is missing without writing anything.",
     )
+    parser.add_argument(
+        "--with-assets", action="store_true",
+        help="After copying, download the official provider icon packs into the "
+        "target workspace (assets/vendor) and rebuild its icon-index.json. "
+        "Required for GCP/OCI icons to actually render (AWS/Azure are built into "
+        "draw.io; GCP/OCI icons are file/stencil assets that are not committed).",
+    )
     args = parser.parse_args(argv)
 
     source = resolve_source(args.source)
@@ -176,7 +183,68 @@ def main(argv: Optional[list[str]] = None) -> int:
         if len(written) > 12:
             print(f"  … and {len(written) - 12} more")
     print("Done. The .kiro/steering rules are now always-on in this workspace.")
+
+    if args.with_assets:
+        rc = _fetch_assets_into(target)
+        if rc != EXIT_OK:
+            return rc
+
     return EXIT_OK
+
+
+def _fetch_assets_into(target: Path) -> int:
+    """Download the official icon packs into ``target`` and rebuild its index.
+
+    AWS/Azure icons ship inside the draw.io app, but GCP (file-path SVGs) and OCI
+    (embedded stencils) resolve to files under ``assets/vendor`` — which are NOT
+    committed (git-ignored). Without them a GCP/OCI diagram renders empty boxes in
+    a fresh workspace. This fetches the packs into the target and rebuilds the
+    target's ``mappings/icon-index.json`` so those references resolve on disk.
+    """
+    try:
+        from rule_engine import fetch_assets
+    except Exception as exc:  # noqa: BLE001
+        print(f"rule-engine-init: --with-assets unavailable ({exc}).", file=sys.stderr)
+        return EXIT_FAIL
+
+    if not _sources_path(target).is_file():
+        print("rule-engine-init: --with-assets needs mappings/asset-sources.yaml "
+              "in the target (was the copy step skipped?).", file=sys.stderr)
+        return EXIT_FAIL
+
+    print("rule-engine-init: fetching official icon packs into "
+          f"{target / 'assets' / 'vendor'} (GCP/OCI icons)...")
+    try:
+        failures = fetch_assets.fetch_all(target)
+    except Exception as exc:  # noqa: BLE001
+        print(f"rule-engine-init: asset fetch failed: {exc}", file=sys.stderr)
+        return EXIT_FAIL
+    if failures:
+        print(f"rule-engine-init: {len(failures)} provider pack(s) failed: "
+              f"{', '.join(failures)} (check network access).", file=sys.stderr)
+        return EXIT_FAIL
+
+    # Rebuild the target's icon-index against the freshly-fetched packs.
+    try:
+        from rule_engine import build_icon_sets_cli
+    except Exception as exc:  # noqa: BLE001
+        print(f"rule-engine-init: icon-index rebuild unavailable ({exc}).", file=sys.stderr)
+        return EXIT_FAIL
+    asset_root = target / "assets" / "vendor"
+    out = target / "mappings" / "icon-index.json"
+    rc = build_icon_sets_cli.main([
+        "--no-fetch", "--asset-root", str(asset_root), "--out", str(out),
+    ])
+    if rc != 0:
+        print("rule-engine-init: icon-index rebuild failed.", file=sys.stderr)
+        return EXIT_FAIL
+    print("rule-engine-init: assets fetched and icon-index rebuilt. GCP/OCI icons "
+          "now resolve in this workspace.")
+    return EXIT_OK
+
+
+def _sources_path(root: Path) -> Path:
+    return root / "mappings" / "asset-sources.yaml"
 
 
 if __name__ == "__main__":
