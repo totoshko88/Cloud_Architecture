@@ -33,6 +33,7 @@ from rule_engine.collector import (
     collect,
     is_mutating_verb,
     is_read_only_verb,
+    redact_secrets,
     snapshot_folder_name,
 )
 
@@ -348,3 +349,58 @@ def test_snapshot_folder_name_and_content_layout(tmp_path) -> None:
     assert len(subfolders) == 3
     for sub in subfolders:
         assert (resources_dir / sub / "resource.json").exists()
+
+
+# ---------------------------------------------------------------------------
+# 3.8 — value-level secret redaction (secret under a benign key name)
+# ---------------------------------------------------------------------------
+
+
+def test_redact_secrets_strips_pem_private_key_under_benign_key() -> None:
+    """A PEM private-key block hidden under a non-secret key ("note") is
+    redacted by value-content scanning, not just by key name."""
+    pem = "-----BEGIN PRIVATE KEY-----\nMIIBVwIBADANBg...\n-----END PRIVATE KEY-----"
+    out = redact_secrets({"note": pem, "region": "us-east-1"})
+    assert out["note"] == REDACTED
+    assert out["region"] == "us-east-1"  # ordinary metadata untouched
+
+
+def test_redact_secrets_strips_inline_assignment_and_securestring() -> None:
+    out = redact_secrets(
+        {
+            "description": "connect with password=hunter2 then retry",
+            "payload": "SecureString:AQICAHhwm...",
+            "arn": "arn:aws:iam::123456789012:role/app",
+        }
+    )
+    assert out["description"] == REDACTED
+    assert out["payload"] == REDACTED
+    # An ARN is not a secret and must survive.
+    assert out["arn"].startswith("arn:aws:iam::")
+
+
+def test_redact_secrets_does_not_over_redact_ordinary_values() -> None:
+    out = redact_secrets(
+        {"name": "prod-bucket", "note": "the primary region", "count": 3}
+    )
+    assert out == {"name": "prod-bucket", "note": "the primary region", "count": 3}
+
+
+def test_redact_secrets_recurses_into_nested_values() -> None:
+    out = redact_secrets(
+        {"config": {"items": [{"note": "token=abc123def"}]}, "ok": "value"}
+    )
+    assert out["config"]["items"][0]["note"] == REDACTED
+    assert out["ok"] == "value"
+
+
+def test_key_is_secret_boundary_words_not_redacted_by_bare_key() -> None:
+    """A benign compound word ending in "key" (monkey/sortkey) is not redacted
+    by the bare-key rule; genuine key names still are."""
+    out = redact_secrets(
+        {"monkey": "george", "sortkey": "z", "key": "AKIA...", "api_key": "x"}
+    )
+    assert out["monkey"] == "george"
+    assert out["sortkey"] == "z"
+    assert out["key"] == REDACTED
+    assert out["api_key"] == REDACTED

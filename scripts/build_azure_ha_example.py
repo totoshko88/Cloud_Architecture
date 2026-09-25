@@ -16,17 +16,16 @@ Usage::
 
 from __future__ import annotations
 
-import argparse
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from rule_engine.diagram_layout import builtin_icon, image_icon  # noqa: E402
+from rule_engine.diagram_layout import image_icon  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ha_multiregion_common import (  # noqa: E402
-    ProviderSkin, build_summary, build_landscape, write_pair, index_renderer,
+    ProviderSkin, run_cli, index_renderer,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -58,18 +57,7 @@ OUT_DIR = REPO_ROOT / "examples" / "azure"
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(prog="build_azure_ha_example")
-    ap.add_argument("--stdout-summary", action="store_true")
-    ap.add_argument("--stdout-landscape", action="store_true")
-    args = ap.parse_args(argv)
-    if args.stdout_summary:
-        sys.stdout.write(build_summary(SKIN)); return 0
-    if args.stdout_landscape:
-        sys.stdout.write(build_landscape(SKIN)); return 0
-    paths = write_pair(SKIN, OUT_DIR, STEM)
-    for p in paths:
-        print("build_azure_ha_example: wrote " + str(p))
-    return 0
+    return run_cli(SKIN, OUT_DIR, STEM, prog="build_azure_ha_example", argv=argv)
 
 
 if __name__ == "__main__":

@@ -31,8 +31,11 @@ versioned document and the diagram Change Markers from one source of truth.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "CLASSIFICATIONS",
@@ -254,7 +257,20 @@ def _index_snapshot(
     index: dict[tuple[str, str, str], dict[str, Any]] = {}
     for entry in snapshot:
         identity = identity_of(entry, snapshot=name)
-        index[identity.as_tuple()] = entry  # type: ignore[assignment]
+        key = identity.as_tuple()
+        if key in index:
+            # Two resources sharing (provider, resource_type, identity) — e.g.
+            # duplicate ids, or two resources both keyed by the same name — would
+            # otherwise SILENTLY overwrite one another, dropping a resource from
+            # the delta with no trace. Surface the collision so the input can be
+            # fixed; last-writer-wins is retained for backward compatibility.
+            logger.warning(
+                "duplicate identity %s in %s snapshot: a second resource with the "
+                "same (provider, resource_type, identity) overwrites the first in "
+                "the delta index",
+                key, name,
+            )
+        index[key] = entry  # type: ignore[assignment]
     return index
 
 

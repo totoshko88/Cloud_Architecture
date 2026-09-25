@@ -715,7 +715,7 @@ def _lint_diagram(
         is_drawio=True,
         has_companion_doc=True,
     )
-    _raise_if_blocked(str(drawio_path), linter_mod.lint(artifact))
+    _raise_if_blocked(str(drawio_path), _lint_guarded(artifact, drawio_path))
 
 
 def _lint_document(path: Path, frontmatter: Mapping[str, Any]) -> None:
@@ -726,7 +726,28 @@ def _lint_document(path: Path, frontmatter: Mapping[str, Any]) -> None:
         is_markdown=True,
         frontmatter=dict(frontmatter),
     )
-    _raise_if_blocked(str(path), linter_mod.lint(artifact))
+    _raise_if_blocked(str(path), _lint_guarded(artifact, path))
+
+
+def _lint_guarded(artifact: Any, artifact_path: Path) -> Mapping[str, Any]:
+    """Lint through the ruleset-guarded path so the generation gate fail-closes.
+
+    Requirement 7 AC14: when the authoritative ``diagram-lint.md`` ruleset is
+    missing or unreadable, every artifact must be reported as blocked from
+    publication. The contract must honor this exactly as the CLI does, so it
+    routes through :func:`linter.lint_with_ruleset` (not the unguarded
+    :func:`linter.lint`).
+
+    The ruleset is located by ``find_ruleset``'s **implicit** discovery (the same
+    the CLI uses): the ``RULE_ENGINE_RULESET`` env var, then ``<cwd>/.kiro/…``,
+    then a walk up from the installed package tree. Implicit mode is used
+    deliberately — passing an explicit ``workspace_root`` would restrict the
+    search to a single directory (the artifact's output folder, which need not
+    hold the steering tree). When no ruleset can be found, ``lint_with_ruleset``
+    returns a blocked result and ``_raise_if_blocked`` raises
+    ``ContractGenerationError``. ``artifact_path`` is accepted for signature
+    symmetry with the callers and to keep the intent explicit at the call site."""
+    return linter_mod.lint_with_ruleset(artifact)
 
 
 def _raise_if_blocked(path: str, result: Mapping[str, Any]) -> None:

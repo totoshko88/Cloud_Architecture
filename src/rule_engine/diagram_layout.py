@@ -149,7 +149,12 @@ IconRenderer = Callable[[Node, str], str]
 
 
 def builtin_icon(shape_style: str) -> IconRenderer:
-    """Renderer for a built-in draw.io stencil node (AWS/Azure/GCP).
+    """Renderer for a built-in draw.io stencil node (AWS ``mxgraph.aws4.*``).
+
+    Azure and GCP resolve to **file-path image shapes** (see :func:`image_icon`)
+    and OCI to an **embedded stencil** (see :class:`OciStencilIcon`), so this
+    built-in-stencil renderer is used by AWS (and any other provider whose icon
+    is a genuine built-in ``mxgraph.*`` stencil), not by Azure/GCP/OCI.
 
     ``shape_style`` is the provider style prefix, e.g.
     ``"shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;fillColor=#ED7100;strokeColor=#ffffff;aspect=fixed;html=1"``.
@@ -323,8 +328,18 @@ def embed_oci_stencil(
         icon_h = gy1 - gy0
     else:
         # Fallback to the caption-based estimate if no shape cells were measured.
+        # ``icon_bottom`` is the caption's top y, used as a proxy for the icon
+        # height (the icon sits above the caption). Guard against a degenerate
+        # proxy: a caption sitting near the TOP of the stencil would make
+        # ``icon_bottom`` tiny, and ``scale = box / icon_h`` would then blow the
+        # glyph far outside the box. Only trust the proxy when it is a plausible
+        # fraction of the declared height (>= half); otherwise fall back to the
+        # full declared height.
         icon_w = stencil_w
-        icon_h = icon_bottom if icon_bottom and icon_bottom > 0 else stencil_h
+        if icon_bottom and icon_bottom >= 0.5 * stencil_h:
+            icon_h = icon_bottom
+        else:
+            icon_h = stencil_h
         gx0 = gy0 = 0.0
 
     scale = min(box / icon_w, box / icon_h) if icon_w and icon_h else 1.0
@@ -557,7 +572,7 @@ def build_diagram(
     # one grid step of padding top and bottom. Width: wide enough that the
     # LONGEST line across BOTH the Flow and Legend boxes fits WITHOUT wrapping,
     # then the SAME width is applied to both so the pair reads as one aligned
-    # block (diagram-standards → Legend/Flow furniture). ~6.6px per 12px glyph +
+    # block (diagram-standards → Legend/Flow furniture). ~5.6px per 12px glyph +
     # 2× the grid-step inner padding, rounded up to the grid.
     #: usable characters per line at a given box width (glyph ~5.6px + padding).
     def _chars_per_line(width: int) -> int:

@@ -377,25 +377,6 @@ def _node_az_band(spec: DiagramSpec) -> Dict[str, int]:
     return band
 
 
-def _az_band_step(spec: DiagramSpec) -> int:
-    """Deprecated alias retained for back-compat — see :func:`_band_packing`.
-
-    Task 20 replaced the single uniform inter-band step with **per-band
-    packing** (:func:`_band_packing`): each band starts at the previous band's
-    real content bottom + one grid-padded gap, and within a band a node is placed
-    at its lane index *relative to that band's own minimum lane* so the band is
-    flush to its own top. There is therefore no longer one global step. This
-    thin wrapper returns the delta between the first two bands' starts (the step
-    that used to be uniform), so any external caller still gets a representative
-    grid-aligned value; internal placement no longer uses it.
-    """
-    band_start, _ = _band_packing(spec)
-    if len(band_start) < 2:
-        return _snap(ICON_SIZE + LABEL_BAND + ROW_STEP)
-    ordered = [band_start[b] for b in sorted(band_start)]
-    return ordered[1] - ordered[0]
-
-
 def _band_within(spec: DiagramSpec) -> Dict[str, Tuple[int, int]]:
     """Map each **banded** node id → its ``(column, sub_row)`` within its band.
 
@@ -1791,8 +1772,8 @@ def route_spine(
     waypoints = _dedupe_axis_collapse(waypoints, first)
 
     route = [_contact_point(src, exit_pt)] + waypoints + [entry]
-    _detour_clockwise_if_blocked(route, others)
-    return waypoints
+    route = _detour_clockwise_if_blocked(route, others)
+    return _interior_waypoints(route)
 
 
 def route_fan_out_row(
@@ -1843,8 +1824,8 @@ def route_fan_out_row(
     ]
     waypoints = _dedupe_axis_collapse(waypoints, first)
     route = [_contact_point(src, exit_pt)] + waypoints + [entry]
-    _detour_clockwise_if_blocked(route, others)
-    return waypoints
+    route = _detour_clockwise_if_blocked(route, others)
+    return _interior_waypoints(route)
 
 
 def route_cross_region(
@@ -1911,8 +1892,8 @@ def route_cross_region(
     ]
     waypoints = _dedupe_axis_collapse(waypoints, first)
     route = [_contact_point(src, exit_pt)] + waypoints + [entry]
-    _detour_clockwise_if_blocked(route, others)
-    return waypoints
+    route = _detour_clockwise_if_blocked(route, others)
+    return _interior_waypoints(route)
 
 
 def route_back_edge(
@@ -1984,8 +1965,8 @@ def route_back_edge(
         ]
     waypoints = _dedupe_axis_collapse(waypoints, first)
     route = [_contact_point(src, exit_pt)] + waypoints + [entry]
-    _detour_clockwise_if_blocked(route, others)
-    return waypoints
+    route = _detour_clockwise_if_blocked(route, others)
+    return _interior_waypoints(route)
 
 
 # ---------------------------------------------------------------------------
@@ -2096,7 +2077,7 @@ def _dedupe_axis_collapse(waypoints: List[Point], first: Point) -> List[Point]:
     return out
 
 
-def _detour_clockwise_if_blocked(route: List[Point], obstacles: List[Box]) -> None:
+def _detour_clockwise_if_blocked(route: List[Point], obstacles: List[Box]) -> List[Point]:
     """Nudge any blocked straight segment clockwise by one corridor, in place.
 
     Walks the emitted polyline; where a segment would cut an unrelated obstacle
@@ -2104,7 +2085,13 @@ def _detour_clockwise_if_blocked(route: List[Point], obstacles: List[Box]) -> No
     validator uses), it shifts the segment's free axis by one ``GRID`` step
     clockwise (obstacle kept on the edge's left) and retries, up to a small
     bound. Deterministic: a fixed turn direction means two agents routing the
-    same edge produce the same detour (Req 7.7)."""
+    same edge produce the same detour (Req 7.7).
+
+    Mutates ``route`` in place AND returns it, so a caller can capture the
+    detoured polyline. The pinned endpoints (``route[0]`` exit contact,
+    ``route[-1]`` entry contact) are never moved — only the interior corridor
+    waypoints shift — so the edge stays attached to both nodes; the caller reads
+    the detoured interior back with :func:`_interior_waypoints`."""
     for i in range(len(route) - 1):
         for _ in range(4):  # bounded clockwise nudges
             blocked = _obstacles_between(route[i], route[i + 1], obstacles)
@@ -2112,12 +2099,31 @@ def _detour_clockwise_if_blocked(route: List[Point], obstacles: List[Box]) -> No
                 break
             x0, y0 = route[i]
             x1, y1 = route[i + 1]
+            # Never move the pinned endpoints (exit/entry contact points); only
+            # an interior vertex of a blocked segment may shift onto the next
+            # corridor lane, so the edge remains connected to both node faces.
             if abs(x1 - x0) <= 1:  # vertical segment → shift x clockwise (right)
-                route[i] = (_snap(x0 + GRID), y0)
-                route[i + 1] = (_snap(x1 + GRID), y1)
+                if 0 < i:
+                    route[i] = (_snap(x0 + GRID), y0)
+                if i + 1 < len(route) - 1:
+                    route[i + 1] = (_snap(x1 + GRID), y1)
             else:  # horizontal segment → shift y clockwise (up)
-                route[i] = (x0, _snap(y0 - GRID))
-                route[i + 1] = (x1, _snap(y1 - GRID))
+                if 0 < i:
+                    route[i] = (x0, _snap(y0 - GRID))
+                if i + 1 < len(route) - 1:
+                    route[i + 1] = (x1, _snap(y1 - GRID))
+    return route
+
+
+def _interior_waypoints(route: List[Point]) -> List[Point]:
+    """Return a route's interior corridor waypoints (drop the pinned endpoints).
+
+    A router emits ``[exit_contact] + waypoints + [entry_contact]`` and stores
+    only the interior ``waypoints`` on the edge (draw.io re-derives the two
+    contact points from ``exitX/entryX``). After :func:`_detour_clockwise_if_blocked`
+    shifts a blocked interior vertex, this reads the corrected interior back so
+    the detour actually reaches the emitted geometry."""
+    return list(route[1:-1])
 
 
 # ---------------------------------------------------------------------------

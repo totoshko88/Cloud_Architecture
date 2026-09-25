@@ -32,9 +32,10 @@ declares ``diagram_class: flow`` + ``detailed_view``, the landscape declares
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
-from typing import Callable, Dict, List
+from typing import Callable, Dict, List, Optional, Sequence
 
 # Make the package importable when run as a plain script (mirrors the other
 # build_*_example.py scripts).
@@ -287,3 +288,31 @@ def write_pair(skin: ProviderSkin, out_dir: Path, stem: str) -> List[Path]:
     sp.write_text(build_summary(skin), encoding="utf-8")
     lp.write_text(build_landscape(skin), encoding="utf-8")
     return [sp, lp]
+
+
+def run_cli(
+    skin: ProviderSkin,
+    out_dir: Path,
+    stem: str,
+    prog: str,
+    argv: Optional[Sequence[str]] = None,
+) -> int:
+    """Shared CLI for every ``build_<provider>_ha_example.py`` wrapper.
+
+    The four per-provider wrappers differ only in their ``ProviderSkin``, output
+    directory, stem, and program name — the argument parsing, the two
+    ``--stdout-*`` shortcuts, and the write-both-files path are identical, so
+    they live here once instead of being copy-pasted four times."""
+    ap = argparse.ArgumentParser(prog=prog)
+    ap.add_argument("--stdout-summary", action="store_true")
+    ap.add_argument("--stdout-landscape", action="store_true")
+    args = ap.parse_args(argv)
+    if args.stdout_summary:
+        sys.stdout.write(build_summary(skin))
+        return 0
+    if args.stdout_landscape:
+        sys.stdout.write(build_landscape(skin))
+        return 0
+    for p in write_pair(skin, out_dir, stem):
+        print(f"{prog}: wrote {p}")
+    return 0

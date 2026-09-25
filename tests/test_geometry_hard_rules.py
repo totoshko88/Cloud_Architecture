@@ -149,6 +149,42 @@ def test_top_right_corner_exit_clean():
     assert geo.check_edge_direction(g) == []
 
 
+def test_single_axis_exit_on_right_face_not_flagged():
+    """An exit that pins only exitX on the right face (exitY unset) is valid and
+    must not be flagged for the unset complementary axis (contract relaxation)."""
+    g = DiagramGeometry(edges=[_edge("a", "b", (1.0, None), (0.0, 0.5))])
+    assert geo.check_edge_direction(g) == []
+
+
+def test_single_axis_entry_on_left_face_not_flagged():
+    g = DiagramGeometry(edges=[_edge("a", "b", (1.0, 0.5), (0.0, None))])
+    assert geo.check_edge_direction(g) == []
+
+
+def test_single_axis_left_exit_still_flagged():
+    """A pinned left-edge exit (exitX < 0.5, exitY unset) is still a defect."""
+    g = DiagramGeometry(edges=[_edge("a", "b", (0.0, None), (0.0, 0.5))])
+    assert geo.check_edge_direction(g)  # exit-not-right-or-bottom
+
+
+def test_single_axis_bottom_entry_still_flagged():
+    """A pinned bottom-edge entry (entryY == 1, entryX unset) is still a defect."""
+    g = DiagramGeometry(edges=[_edge("a", "b", (1.0, 0.5), (None, 1.0))])
+    assert geo.check_edge_direction(g)  # enter-not-left-or-top
+
+
+def test_grid_alignment_tolerates_float_noise():
+    """A coordinate carrying sub-pixel float drift is judged against its rounded
+    integer origin, not the raw float (no false misalignment)."""
+    g = DiagramGeometry(nodes={"n": Box("n", 219.9999999, 160.0000001, 78, 78)})
+    assert geo.check_grid_alignment(g) == []
+
+
+def test_grid_alignment_flags_genuine_off_grid():
+    g = DiagramGeometry(nodes={"n": Box("n", 225, 160, 78, 78)})
+    assert geo.check_grid_alignment(g) == ["n"]
+
+
 # --------------------------------------------------------------------------- #
 # class-aware severity through the linter
 # --------------------------------------------------------------------------- #

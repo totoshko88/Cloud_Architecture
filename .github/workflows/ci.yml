@@ -113,7 +113,9 @@ jobs:
         run: |
           python scripts/fetch_assets.py --only gcp_category gcp_core azure aws oci || echo "WARNING: asset fetch failed; asset-paths guard will skip"
       - name: Verify every mapping icon file path exists under the asset root
-        run: python -m rule_engine.asset_paths_guard
+        # Call the declared console script (not python -m) so a broken
+        # [project.scripts] entry-point mapping is caught by CI too.
+        run: rule-engine-check-asset-paths
       - name: Verify the committed icon index is current with the official packs
         # Rebuild mappings/icon-index.json from the fetched packs and confirm the
         # committed file is byte-identical (no stale role->icon wiring). Skips
@@ -123,14 +125,28 @@ jobs:
         # A well-formed-but-nonexistent id/path renders as an empty/broken icon
         # the linter cannot see. Checks aws4 ids, azure2 img/lib paths (against
         # mappings/azure2-shapes.json), GCP asset paths, and OCI slugs.
+        # ``find`` recurses reliably; a bare ``examples/**/*.drawio`` glob is
+        # NOT recursive in default bash (no globstar) and would silently only
+        # match one directory level, skipping any nested example.
         run: |
           rc=0
-          for f in examples/**/*.drawio; do
+          while IFS= read -r f; do
             rule-engine-verify-icon --file "$f" || rc=1
-          done
+          done < <(find examples -name '*.drawio' -type f)
           [ "$rc" -eq 0 ] || { echo "BLOCKING: unresolved icon reference(s)"; exit 1; }
       - name: Enforce the exported .drawio.png export budget (D7)
-        # The committed golden-example rasters must stay <=1200px wide and <500KB.
+        # Class-aware budget: flow rasters <=1600px/<500KB, landscape <=3600px/<2MB.
         # The linter checks the .drawio source + companion, not the rendered PNG,
-        # so this guard closes that gap.
-        run: python -m rule_engine.raster_gate
+        # so this guard closes that gap. Call the declared console script so a
+        # broken [project.scripts] mapping is caught.
+        run: rule-engine-check-rasters
+      - name: Verify the workspace bootstrap works from the installed package
+        # Regression guard for the build_backend _PAYLOAD / init _BUNDLE_MAP sync:
+        # bootstrap a FRESH empty workspace from the installed engine, then
+        # --check must report it complete. Running against an empty dir (not the
+        # repo) genuinely exercises the package -> workspace copy path, so a
+        # payload that ships incompletely in the wheel is caught here.
+        run: |
+          ws="$(mktemp -d)"
+          rule-engine-init "$ws"
+          rule-engine-init --check "$ws"

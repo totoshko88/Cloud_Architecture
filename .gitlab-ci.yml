@@ -125,7 +125,9 @@ validate:
     - echo "Fetching official icon packs so file-path icon references can be verified"
     - python scripts/fetch_assets.py --only gcp_category gcp_core azure aws oci || echo "WARNING: asset fetch failed; asset-paths guard will skip"
     - echo "Verifying every mapping icon file path exists under the asset root"
-    - python -m rule_engine.asset_paths_guard
+    # Call the declared console script (not python -m) so a broken
+    # [project.scripts] entry-point mapping is caught by CI too.
+    - rule-engine-check-asset-paths
     - echo "Verifying the committed icon index is current with the official packs"
     # Icon-set index (v1.3.x): rebuild from the fetched packs and confirm the
     # committed mappings/icon-index.json is byte-identical (no stale role→icon
@@ -136,17 +138,29 @@ validate:
     # empty/broken icon that the linter's icon-resolved rule cannot see. This
     # checks aws4 ids, azure2 img/lib paths (against mappings/azure2-shapes.json),
     # GCP asset paths, and OCI slugs. Fail-honest: skips a source not present.
+    # ``find`` recurses reliably; a bare ``examples/**/*.drawio`` glob is NOT
+    # recursive under a POSIX shell (no globstar) and would silently only match
+    # one directory level, skipping any nested example.
     - |
       rc=0
-      for f in examples/**/*.drawio; do
+      for f in $(find examples -name '*.drawio' -type f); do
         rule-engine-verify-icon --file "$f" || rc=1
       done
       [ "$rc" -eq 0 ] || { echo "BLOCKING: unresolved icon reference(s) — see above"; exit 1; }
-    - echo "Enforcing the exported .drawio.png export budget (<=1200px wide, <500KB)"
+    - echo "Enforcing the class-aware exported .drawio.png budget (flow <=1600px/<500KB, landscape <=3600px/<2MB)"
     # Raster gate (REVIEW.md D7): the linter checks the .drawio source + companion
     # document, not the rendered PNG, so this guard fails-closed on an oversized or
-    # oversize raster. The committed golden-example rasters must stay within budget.
-    - python -m rule_engine.raster_gate
+    # oversize raster. Call the declared console script so a broken
+    # [project.scripts] mapping is caught. Rasters must stay within budget.
+    - rule-engine-check-rasters
+    - echo "Verifying the workspace bootstrap works from the installed package"
+    # Bootstrap a fresh workspace from the installed engine, then --check it: a
+    # payload that ships incompletely in the wheel (build_backend._PAYLOAD /
+    # init _BUNDLE_MAP drift) is caught here rather than by a user.
+    - |
+      ws="$(mktemp -d)"
+      rule-engine-init "$ws"
+      rule-engine-init --check "$ws"
 
 # ---------------------------------------------------------------------------
 # Stage: version-guard

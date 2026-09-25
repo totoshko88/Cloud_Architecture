@@ -23,7 +23,9 @@ a ``containers`` table keyed by container kind (``boundary`` /
 
 from __future__ import annotations
 
+import copy
 import re
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict
 
@@ -99,11 +101,20 @@ def _mapping_path(provider: str) -> Path:
 def load_mapping(provider: str) -> Dict[str, Any]:
     """Load and return the parsed icon mapping for ``provider``.
 
+    Returns a fresh deep copy each call (so a caller cannot corrupt the cache),
+    backed by a cached file read + parse — the mapping file is static at runtime
+    and was otherwise re-read and re-parsed once per resolved node/resource.
+
     Raises :class:`AssetSourceError` (naming the provider) when the provider is
     not a member of :data:`PROVIDERS`, when the mapping file is missing or
     unreadable, or when the parsed mapping is malformed (not a mapping, or
     missing the top-level ``icon_source`` / ``asset_pack`` provenance keys).
     """
+    return copy.deepcopy(_load_mapping_cached(provider))
+
+
+@lru_cache(maxsize=len(PROVIDERS) or None)
+def _load_mapping_cached(provider: str) -> Dict[str, Any]:
     if provider not in PROVIDERS:
         raise AssetSourceError(
             provider,

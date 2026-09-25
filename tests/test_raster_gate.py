@@ -168,6 +168,23 @@ def test_landscape_companion_raises_the_budget(tmp_path):
     assert main(["--examples", str(repo / "examples"), "--repo-root", str(repo)]) == 0
 
 
+def test_quoted_and_commented_diagram_class_parsed_as_landscape(tmp_path):
+    """A quoted ``diagram_class`` value with a trailing comment must still be read
+    as landscape (a bare regex would miss it and wrongly apply the flow budget,
+    failing a legitimately-wide as-built)."""
+    repo = tmp_path
+    _write_text(str(repo / "examples/aws/02-q-landscape.drawio"), "<mxfile/>")
+    _write_text(
+        str(repo / "examples/aws/02-q-landscape.diagram.md"),
+        '---\ndiagram_class: "landscape"   # as-built\nsummary_of: 02-q-summary\n---\n# x\n',
+    )
+    _write_bytes(str(repo / "examples/aws/02-q-landscape.drawio.png"), _png_bytes(3000))
+
+    refs = check_rasters(repo / "examples", repo)
+    assert refs[0].diagram_class == "landscape"
+    assert refs[0].width_ok is True  # 3000 <= 3600 landscape budget
+
+
 def test_landscape_still_capped_at_its_wider_limit(tmp_path):
     """Even a landscape has a ceiling — 4000px exceeds the 3600px landscape budget."""
     repo = tmp_path

@@ -3,8 +3,8 @@
 The diagram standards (``.kiro/steering/diagram-standards.md`` → *Raster Export
 Dimensions*) define a budget for every exported ``NN-topic.drawio.png``:
 
-* width  ≤ **1200px** (fits documentation columns without horizontal scroll),
-* file size < **500KB** (fast page loads; avoids bloating the repo).
+* width  ≤ **1600px** for a ``flow`` diagram / ≤ **3600px** for a ``landscape``,
+* file size < **500KB** (flow) / < **2MB** (landscape); fast page loads.
 
 The linter deliberately evaluates the ``.drawio`` source and the companion
 document, **not** the rendered PNG's pixel dimensions or byte size — so nothing
@@ -48,8 +48,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # Budget from diagram-standards.md → Raster Export Dimensions.
 #
 # Class-aware (v1.3.x). A ``flow`` diagram fits a documentation column, so its
-# raster stays small (≤ 1200px / < 500KB). A ``landscape`` as-built exists to
-# show a whole system on one canvas; forcing it into 1200px shrinks 30-plus
+# raster stays small (≤ 1600px / < 500KB). A ``landscape`` as-built exists to
+# show a whole system on one canvas; forcing it into the flow width shrinks 30-plus
 # nodes until the icons are illegible (the exact defect the audit surfaced —
 # the reference detailed as-built exports at ~3400px). The landscape budget is
 # therefore wider and heavier, matching the reference; readability at that width
@@ -80,7 +80,16 @@ def _diagram_class_of(source: str | Path) -> str:
         text = companion.read_text(encoding="utf-8")
     except OSError:
         return "flow"
-    m = re.search(r"^diagram_class:\s*([A-Za-z_]+)\s*$", text, re.MULTILINE)
+    # Tolerate a quoted value (``diagram_class: "landscape"`` / ``'landscape'``)
+    # and a trailing ``# comment`` — a bare ``[A-Za-z_]+`` match would miss the
+    # quoted form and silently fall back to the flow budget, then wrongly fail a
+    # legitimately-wide landscape. Kept as a small regex so the gate stays
+    # dependency-free (stdlib only, no PyYAML).
+    m = re.search(
+        r"""^diagram_class:\s*['"]?([A-Za-z_]+)['"]?\s*(?:\#.*)?$""",
+        text,
+        re.MULTILINE,
+    )
     return m.group(1).strip().lower() if m else "flow"
 
 EXIT_OK = 0

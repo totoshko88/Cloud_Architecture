@@ -46,8 +46,9 @@ rule-engine-index-assets = "rule_engine.asset_index_cli:main"
 # Asset-path guard: verify every mapping icon file path (image=<path>) exists
 # under the fetched asset root. Used by the CI validate stage after fetch_assets.
 rule-engine-check-asset-paths = "rule_engine.asset_paths_guard:main"
-# Raster gate: verify every exported .drawio.png stays within the D7 export
-# budget (<= 1200px wide, < 500KB). Used by the CI validate stage.
+# Raster gate: verify every exported .drawio.png stays within the class-aware D7
+# export budget (flow <= 1600px / < 500KB, landscape <= 3600px / < 2MB). Used by
+# the CI validate stage.
 rule-engine-check-rasters = "rule_engine.raster_gate:main"
 # Icon-reference verifier (v1.3.0): resolve every resIcon/grIcon/image path
 # in a .drawio against the provider's authoritative icon source, so a guessed

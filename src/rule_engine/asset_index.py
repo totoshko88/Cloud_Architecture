@@ -37,6 +37,7 @@ never committed; it is produced on demand and lives outside version control.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from dataclasses import dataclass, asdict, field
@@ -44,6 +45,8 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from rule_engine.constants import PROVIDERS  # single source of truth
+
+logger = logging.getLogger(__name__)
 
 # Preferred asset formats, best first. SVG is vector (scales cleanly in draw.io);
 # PNG is the raster fallback.
@@ -272,8 +275,28 @@ def index_provider(provider: str, pack_root: str) -> Dict[str, AssetEntry]:
             category=_category_from_path(root, path),
         )
         existing = index.get(slug)
-        if existing is None or ext_rank[ext] > ext_rank[existing.ext]:
+        if existing is None:
             index[slug] = entry
+        elif ext_rank[ext] > ext_rank[existing.ext]:
+            # Higher-ranked format (SVG over PNG) for the SAME service is a
+            # legitimate upgrade, not a collision. Only warn when the display
+            # names differ — that means two DIFFERENT services normalized to one
+            # slug and one is being shadowed (a silent-loss bug otherwise).
+            if existing.display_name != entry.display_name:
+                logger.warning(
+                    "slug collision for %s %r: %r replaces %r (both normalize to "
+                    "the same slug; the shadowed service is dropped from the index)",
+                    provider, slug, entry.display_name, existing.display_name,
+                )
+            index[slug] = entry
+        elif existing.display_name != entry.display_name:
+            # The incoming entry loses the ext-rank tie/comparison but is a
+            # DIFFERENT service — it is being silently dropped. Surface it.
+            logger.warning(
+                "slug collision for %s %r: %r is shadowed by %r (both normalize "
+                "to the same slug; the incoming service is dropped)",
+                provider, slug, entry.display_name, existing.display_name,
+            )
     return index
 
 

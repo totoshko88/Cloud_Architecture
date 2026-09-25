@@ -19,7 +19,8 @@ Topology fidelity (must match ``ha_multiregion_common.py``):
 * **Summary** — 9 nodes: ``dns`` (account-level) fanning out to two mirror
   regions, each ``lb → app → db`` with an ``obj`` object store, plus the
   cross-region DB replication edge. Two network-boundary frames (``nb_a`` /
-  ``nb_b``). Edges ``s1``..``s9``. Class ``flow`` → left→right axis.
+  ``nb_b``). Edges ``s1``..``s9``. Class ``flow``, north-south axis (the flow
+  reads DOWN each region column, the two regions side-by-side, DNS centred above).
 * **Landscape** — 34 nodes: an account-level edge row (waf / dns / cdn / audit)
   above two mirror region VPCs, each VPC carrying a service row and two
   availability zones (main row + api/mon sub-row). Containers
@@ -51,11 +52,12 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
 
 
 # ---------------------------------------------------------------------------
-# SUMMARY (flow class, 9 nodes) — left→right axis.
+# SUMMARY (flow class, 9 nodes) — north-south axis.
 # ---------------------------------------------------------------------------
 # dns is account-level (region "") and fans out to two mirror regions. Within a
-# region the tier progression lb → app → db reads left→right along the lane
-# order (router → workers → data); the object store shares the data lane at a
+# region the tier progression lb → app → db reads DOWN the column (the lane
+# order router → workers → data maps to top→bottom on the north-south axis);
+# the object store shares the data lane at a
 # distinct slot. The two network-boundary frames (nb_a / nb_b) are the region
 # VPC containers. Roles match the tables: dns→dns, lb→lb, app→k8s (managed_k8s),
 # db→sql (managed_sql), obj→obj (object_store).

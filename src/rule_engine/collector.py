@@ -147,26 +147,60 @@ _SECRET_KEY_MARKERS = (
 REDACTED = "[REDACTED]"
 
 
+# Content patterns that mark a *value* as secret material even when it sits
+# under a benign key name (e.g. ``{"note": "-----BEGIN PRIVATE KEY-----..."}``,
+# a SecureString payload, or an inline ``password=...`` assignment). This closes
+# the gap where key-name redaction alone leaks a secret carried in the value
+# (inventory-standards §6 secret-safety). Matching is case-insensitive and
+# deliberately conservative — anchored markers, not broad words — so ordinary
+# metadata (a region, an ARN, a description) is not over-redacted.
+_SECRET_CONTENT_RE = re.compile(
+    r"""
+    -----BEGIN[ ][A-Z ]*PRIVATE[ ]KEY-----   # PEM private-key block
+    | -----BEGIN[ ]OPENSSH[ ]PRIVATE[ ]KEY-----
+    | \bsecurestring\b                        # SSM SecureString payload marker
+    | \b(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|
+        session[_-]?token|client[_-]?secret)\s*[:=]\s*\S   # inline assignment
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
+
+
 def _key_is_secret(key: str) -> bool:
     lowered = key.lower()
-    if "key" == lowered or lowered.endswith("_key") or lowered.endswith("key"):
-        # ``key`` alone / *_key is treated as key material. Avoid matching benign
-        # words like "monkey" by requiring a boundary or exact match.
-        if lowered in {"key", "keys"} or lowered.endswith("_key"):
-            return True
+    # ``key``/``keys`` alone, or any ``*_key`` name, is key material. A bare
+    # trailing "key" in a compound word (e.g. "monkey", "sortkey") is NOT a
+    # secret on its own — only the exact/boundary forms count, plus the explicit
+    # marker substrings below (``privatekey``/``apikey``/…).
+    if lowered in {"key", "keys"} or lowered.endswith("_key"):
+        return True
     return any(marker in lowered for marker in _SECRET_KEY_MARKERS)
+
+
+def _value_is_secret(value: str) -> bool:
+    """Return True when a string *value* carries embedded secret material.
+
+    Catches a secret hiding under a benign key — the case key-name redaction
+    misses — using the conservative anchored :data:`_SECRET_CONTENT_RE`."""
+    return bool(_SECRET_CONTENT_RE.search(value))
 
 
 def redact_secrets(value: Any) -> Any:
     """Recursively strip secret values from resource metadata.
 
-    Any mapping entry whose *key name* matches a secret marker
-    (``password``/``secret``/``key``/``token``/``securestring`` and friends) has
-    its value replaced with :data:`REDACTED`. Nested mappings and sequences are
-    walked recursively. Non-secret metadata is retained unchanged.
+    Two complementary redactions are applied, so a snapshot file never carries
+    secret material (inventory-standards §6):
 
-    This is the reusable redaction helper referenced by the Collector; it never
-    mutates the input, returning a redacted copy instead.
+    * **by key name** — any mapping entry whose *key* matches a secret marker
+      (``password``/``secret``/``key``/``token``/``securestring`` and friends)
+      has its value replaced with :data:`REDACTED`;
+    * **by value content** — any *string value* that embeds a secret pattern (a
+      PEM/OpenSSH private-key block, a ``SecureString`` payload, or an inline
+      ``password=``/``token=`` assignment) is replaced with :data:`REDACTED`
+      even when its key name is benign.
+
+    Nested mappings and sequences are walked recursively; non-secret metadata is
+    retained unchanged. Never mutates the input, returning a redacted copy.
     """
     if isinstance(value, Mapping):
         result: Dict[str, Any] = {}
@@ -178,6 +212,8 @@ def redact_secrets(value: Any) -> Any:
         return result
     if isinstance(value, (list, tuple)):
         return [redact_secrets(item) for item in value]
+    if isinstance(value, str) and _value_is_secret(value):
+        return REDACTED
     return value
 
 

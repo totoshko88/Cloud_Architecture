@@ -283,3 +283,31 @@ def test_non_mapping_inputs_rejected_no_outputs(tmp_path: Path) -> None:
 
     assert exc_info.value.invalid_input == "inputs"
     assert _output_dir_is_empty(output_root)
+
+
+# --------------------------------------------------------------------------- #
+# Requirement 7 AC14 — the generation gate fail-closes on a missing ruleset
+# --------------------------------------------------------------------------- #
+
+
+def test_generation_blocks_when_ruleset_unavailable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When the authoritative diagram-lint.md ruleset cannot be found, the
+    contract's publication gate must block generation (Requirement 7 AC14).
+
+    The contract now lints through ``linter.lint_with_ruleset`` rather than the
+    unguarded ``linter.lint``, so a missing ruleset yields a blocked result and
+    ``invoke`` raises ``ContractGenerationError``. We force the unavailable path
+    by making ``find_ruleset`` report the ruleset absent everywhere.
+    """
+    from rule_engine import contract as contract_mod
+    from rule_engine.contract import ContractGenerationError
+
+    monkeypatch.setattr(
+        contract_mod.linter_mod, "find_ruleset", lambda *a, **k: None
+    )
+
+    output_root = tmp_path / "out"
+    with pytest.raises(ContractGenerationError):
+        invoke(_valid_inputs(tmp_path), output_root=output_root)

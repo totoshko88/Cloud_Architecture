@@ -8,6 +8,7 @@ resources and, in later tasks, by the Normalizer before it emits a resource.
 from __future__ import annotations
 
 import json
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -34,13 +35,33 @@ class ResourceValidationError(ValueError):
 
 
 def load_schema() -> dict[str, Any]:
-    """Load and return the Normalized Resource JSON Schema."""
+    """Load and return the Normalized Resource JSON Schema.
+
+    Returns a fresh copy each call so a caller that mutates the returned dict
+    cannot corrupt the cached schema; the file read + parse behind it is cached
+    (:func:`_cached_schema`), since the schema file is static at runtime and was
+    otherwise re-read once per validated resource."""
+    import copy
+
+    return copy.deepcopy(_cached_schema())
+
+
+@lru_cache(maxsize=1)
+def _cached_schema() -> dict[str, Any]:
     with _SCHEMA_PATH.open(encoding="utf-8") as fh:
         return json.load(fh)
 
 
+@lru_cache(maxsize=1)
 def _validator() -> Draft202012Validator:
-    return Draft202012Validator(load_schema())
+    """Return a cached validator.
+
+    Constructing a ``Draft202012Validator`` re-checks the meta-schema, so it was
+    the single biggest avoidable cost in the normalize path (one construction
+    per resource). The validator is stateless across ``iter_errors`` calls, so
+    one shared instance is safe to reuse. Built from the cached schema directly
+    (not the deep-copied ``load_schema``) since the validator never mutates it."""
+    return Draft202012Validator(_cached_schema())
 
 
 def resource_errors(resource: Any) -> list[str]:

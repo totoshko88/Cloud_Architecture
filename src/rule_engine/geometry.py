@@ -246,10 +246,18 @@ def build_geometry(text: str) -> DiagramGeometry:
 
 
 def check_grid_alignment(geo: DiagramGeometry, grid: int = GRID) -> List[str]:
-    """Return ids of nodes whose absolute x or y is not a multiple of ``grid``."""
+    """Return ids of nodes whose absolute x or y is not a multiple of ``grid``.
+
+    Coordinates are compared after rounding to the nearest integer so that a
+    value carrying float noise from accumulated coordinate math (e.g.
+    ``219.9999999``) is judged against its intended integer origin rather than
+    the raw float — the origins this engine emits are whole ``grid`` multiples,
+    and a sub-pixel drift is not a real misalignment. (Node coordinates are
+    always numeric here: :func:`build_geometry`'s ``origin`` coalesces a missing
+    ``x``/``y`` to ``0.0`` before the box is built, so this never sees ``None``.)"""
     out = []
     for cid, b in geo.nodes.items():
-        if (b.x % grid) or (b.y % grid):
+        if (round(b.x) % grid) or (round(b.y) % grid):
             out.append(cid)
     return sorted(out)
 
@@ -359,14 +367,32 @@ def check_edge_direction(geo: DiagramGeometry) -> List[Tuple[str, str]]:
     for e in geo.edges:
         ex, ey = e.exit
         nx, ny = e.entry
+        # An edge is judged only if it pins at least one contact axis; a fully
+        # floating edge is left to the perimeter router.
+        #
+        # A pinned axis is judged only against its OWN side of the contract, so
+        # an edge that pins just one axis on the correct side is not flagged for
+        # the unset complementary axis (the earlier logic false-flagged e.g. a
+        # right-face exit given as exitX>=0.5 with exitY unset only when it read
+        # exitY, and a right-face band given as exitY alone). Concretely:
+        #   * a valid exit leans right (exitX >= 0.5) OR sits on the bottom
+        #     (exitY == 1); the defect is a pinned left-edge exit (exitX < 0.5)
+        #     or a pinned top-edge exit (exitY == 0) that no right/bottom pin
+        #     rescues.
+        #   * a valid entry leans left (entryX <= 0.5) OR sits on the top
+        #     (entryY == 0); the defect is a pinned right-edge entry
+        #     (entryX > 0.5) or a pinned bottom-edge entry (entryY == 1) that no
+        #     left/top pin rescues.
         if ex is not None or ey is not None:
-            exit_ok = (ex is not None and ex >= 0.5) or (ey is not None and ey >= 1.0)
-            if not exit_ok:
+            exit_right_or_bottom = (ex is not None and ex >= 0.5) or (ey is not None and ey >= 1.0)
+            exit_wrong = (ex is not None and ex < 0.5) or (ey is not None and ey <= 0.0)
+            if exit_wrong and not exit_right_or_bottom:
                 out.append((e.id, "exit-not-right-or-bottom"))
                 continue
         if nx is not None or ny is not None:
-            entry_ok = (nx is not None and nx <= 0.5) or (ny is not None and ny <= 0.0)
-            if not entry_ok:
+            entry_left_or_top = (nx is not None and nx <= 0.5) or (ny is not None and ny <= 0.0)
+            entry_wrong = (nx is not None and nx > 0.5) or (ny is not None and ny >= 1.0)
+            if entry_wrong and not entry_left_or_top:
                 out.append((e.id, "enter-not-left-or-top"))
     return out
 
@@ -425,21 +451,42 @@ def check_exit_thirds(geo: DiagramGeometry, min_sep: float = 0.2) -> List[Tuple[
     return out
 
 
+#: The step, in model units, between successive samples along a segment. Chosen
+#: well below the smallest obstacle dimension the engine draws (a 78×78 icon,
+#: and a ~30px label band) so no obstacle can slip entirely between two samples
+#: on a long run. A fixed sample *count* (the old 61) under-sampled a wide
+#: landscape run — its spacing exceeded a 78px icon, so a thin obstacle sitting
+#: between two samples was missed (a false-negative crossing). Sampling by a
+#: fixed *step* instead keeps the density constant regardless of run length.
+_SEGMENT_SAMPLE_STEP = 8.0
+
+
 def segment_crosses_box(
     p: Tuple[float, float], q: Tuple[float, float], b: Box, inset: float = 2.0
 ) -> bool:
     """Return True when the straight segment ``p``→``q`` passes through box ``b``.
 
     This is the **single** segment-sampling obstacle predicate: the straight run
-    is sampled at 61 evenly spaced points and a sample counts as a crossing only
-    when it lands strictly inside ``b`` shrunk by ``inset`` on every side, so a
-    mere graze of a border is not a crossing. :func:`check_edge_routing` uses it
-    to decide whether a waypoint-free edge cuts an unrelated node, and the layout
-    engine's routers reuse the *same* predicate as their obstacle test so the
-    router and the validator agree by construction (design.md → Routing)."""
-    for i in range(61):
-        px = p[0] + (q[0] - p[0]) * i / 60.0
-        py = p[1] + (q[1] - p[1]) * i / 60.0
+    is sampled at a fixed spatial *step* (:data:`_SEGMENT_SAMPLE_STEP` model
+    units, ≪ a 78px icon) rather than a fixed number of points, so the sample
+    density stays constant on both a short stub and a multi-thousand-pixel
+    landscape run — a thin obstacle can never fall entirely between two samples.
+    A sample counts as a crossing only when it lands strictly inside ``b``
+    shrunk by ``inset`` on every side, so a mere graze of a border is not a
+    crossing. :func:`check_edge_routing` uses it to decide whether a
+    waypoint-free edge cuts an unrelated node, and the layout engine's routers
+    reuse the *same* predicate as their obstacle test so the router and the
+    validator agree by construction (design.md → Routing)."""
+    dx = q[0] - p[0]
+    dy = q[1] - p[1]
+    length = (dx * dx + dy * dy) ** 0.5
+    # At least 61 samples (the historical floor for short runs), and more for a
+    # long run so spacing never exceeds _SEGMENT_SAMPLE_STEP.
+    steps = max(60, int(length / _SEGMENT_SAMPLE_STEP))
+    for i in range(steps + 1):
+        t = i / steps
+        px = p[0] + dx * t
+        py = p[1] + dy * t
         if b.x + inset <= px <= b.right - inset and b.y + inset <= py <= b.bottom - inset:
             return True
     return False

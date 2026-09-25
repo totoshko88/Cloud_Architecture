@@ -182,3 +182,40 @@ def test_build_index_and_json_roundtrip(aws_pack, azure_pack):
     entry = payload["aws"]["security-agent"]
     assert entry["ext"] == ".svg"
     assert entry["provider"] == "aws"
+
+
+# ---------------------------------------------------------------------------
+# slug-collision logging (P1): two different services must not silently shadow
+# ---------------------------------------------------------------------------
+
+
+def test_index_provider_warns_on_slug_collision(tmp_path, caplog):
+    """Two different AWS services whose display names normalize (vendor-stripped)
+    to the same slug must WARN — the shadowed service would otherwise vanish
+    from the index silently."""
+    import logging
+
+    root = tmp_path / "aws"
+    svc = root / "Architecture-Service-Icons_07312026"
+    # "AWS Cloud Storage" and "AWS Storage" both vendor-strip to slug "storage",
+    # but carry distinct display names — a genuine collision.
+    (svc / "Arch_Storage" / "32").mkdir(parents=True)
+    (svc / "Arch_Storage" / "32" / "Arch_AWS-Cloud-Storage_32.svg").write_text("<svg/>")
+    (svc / "Arch_Storage" / "32" / "Arch_AWS-Storage_32.svg").write_text("<svg/>")
+
+    with caplog.at_level(logging.WARNING, logger="rule_engine.asset_index"):
+        idx = index_provider("aws", str(root))
+
+    assert "storage" in idx  # last-writer-wins keeps one entry
+    assert any("slug collision" in r.message for r in caplog.records)
+
+
+def test_index_provider_svg_over_png_same_service_no_warning(aws_pack, caplog):
+    """An SVG upgrading a PNG for the SAME service (equal display name) is a
+    legitimate format upgrade, not a collision — it must not warn."""
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="rule_engine.asset_index"):
+        index_provider("aws", aws_pack)  # EKS ships both .svg and .png
+
+    assert not any("slug collision" in r.message for r in caplog.records)

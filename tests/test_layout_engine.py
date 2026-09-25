@@ -1305,6 +1305,18 @@ def test_router_obstacle_test_is_the_same_predicate_as_the_oracle():
     assert not segment_crosses_box((200, 0), (400, 0), box)
 
 
+def test_segment_sampling_catches_thin_obstacle_on_a_long_run():
+    """A 78px icon sitting in the middle of a multi-thousand-pixel horizontal
+    run must be detected. The old fixed 61-sample density spaced samples wider
+    than the icon on such a run, missing it (false-negative crossing); the
+    fixed-step sampling keeps the density constant so it is caught."""
+    box = Box("far", 1700, 500 - _S / 2, _S, _S)  # centred on y=500
+    # A 3400px run straight through the box centre.
+    assert segment_crosses_box((0, 500), (3400, 500), box)
+    # A parallel run one row above (clears the box) is not a crossing.
+    assert not segment_crosses_box((0, 300), (3400, 300), box)
+
+
 # ---------------------------------------------------------------------------
 # Task 7 — right-margin Flow/Legend placement (Req 8)
 # ---------------------------------------------------------------------------

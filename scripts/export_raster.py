@@ -31,8 +31,10 @@ Usage::
     python scripts/export_raster.py --all          # every examples/**/*.drawio
 
 Requires the ``drawio`` CLI on PATH (draw.io desktop). Exports at
-``--width 1200 --border 8 --theme light`` to meet the Raster Export Dimensions
-budget (≤ 1200px wide, < 500KB, white background, 8px padding).
+``--border 8 --theme light`` with a **class-aware** width — ``flow`` diagrams at
+1600px, ``landscape`` as-builts at 3400px — to meet the Raster Export Dimensions
+budget (flow ≤ 1600px / < 500KB, landscape ≤ 3600px / < 2MB, white background,
+8px padding).
 """
 
 from __future__ import annotations
@@ -55,7 +57,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 _ASSET_IMAGE_RE = re.compile(r"image=(assets/vendor/[^;\"]+)")
 
 # Class-aware export width (matches the raster gate's class-aware budget). A
-# ``flow`` diagram fits a doc column at 1200px; a ``landscape`` as-built needs a
+# ``flow`` diagram fits a doc column at 1600px; a ``landscape`` as-built needs a
 # wider raster so 30-plus nodes stay legible (the reference detailed as-built
 # exports at ~3400px). The class is read from the companion .diagram.md.
 EXPORT_WIDTH = "1600"
