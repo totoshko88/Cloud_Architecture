@@ -8,8 +8,12 @@ linter, raster gate, and icon verifier as the publication gate.
 
 ## What's inside
 
-- **`plugin.json`** — the power manifest (name, version, description, keywords,
-  the bundled skill, and an optional read-only AWS-docs MCP server).
+- **`plugin.json`** — the power manifest (name, version, description, author,
+  keywords). Skills and MCP servers are **not** declared here — Kiro discovers
+  them by file/directory convention (see below).
+- **`mcp.json`** — the read-only AWS-docs MCP server, declared under
+  `mcpServers` per the `mcp.schema.json` schema (Kiro loads MCP servers from
+  this sibling file, not from `plugin.json`).
 - **`skills/rule-engine-artifacts/SKILL.md`** — the on-demand *how-to* skill: the
   diagram / companion-document / inventory workflow and the exact gate commands
   to run before publication. Rule *values* stay in the project's always-on
