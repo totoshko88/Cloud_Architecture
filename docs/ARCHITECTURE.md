@@ -48,7 +48,7 @@ new provider.
 | --- | --- |
 | `.kiro/steering/*.md` | Six always-on rule documents (the authoritative standards) |
 | `.kiro/specs/multicloud-diagram-inventory/` | The spec: `requirements.md`, `design.md`, `tasks.md` |
-| `.kiro/hooks/*.hook` | Automation: lint-on-save, validate-on-task |
+| `.kiro/hooks/*.json` | Automation: lint-on-save, validate-on-task, check-workspace-init |
 | `.kiro/skills/rule-engine-artifacts/` | The artifact-authoring skill (how-to workflow) |
 | `.kiro/settings/mcp.json` | Optional MCP server registration (AWS docs) |
 | `src/rule_engine/` | The provider-neutral core (Python) |

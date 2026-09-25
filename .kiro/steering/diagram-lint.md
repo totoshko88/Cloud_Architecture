@@ -127,7 +127,18 @@ every applicable rule against every artifact.
   exactly with its parent (`right == right`) reads as inside-with-zero-padding —
   a finding — not as a disjoint sibling. Before v1.5.2 this check measured only
   nodes-in-containers, so a VPC boundary sharing an edge with its Account
-  boundary linted clean; that gap is closed.
+  boundary linted clean; that gap is closed. **A node spilled past a
+  container's top/bottom border is now caught too (v1.5.3):** the pre-1.5.3
+  check recognised only a node fully *inside* a container (pad measured) or one
+  *straddling* it on **both** axes. A node sharing the container's x-band but
+  drawn entirely *below* (or above) its border overlapped on one axis only, so
+  it was neither inside nor a straddle and linted clean — the EC2-az-c / S3
+  "fell below the VPC" defect. Spill detection is deliberately narrow to avoid
+  false positives: it fires only for an **orphaned** node (housed by no
+  container), whose projection is **fully within** the container's x-band, that
+  has slid at most one row-step (`160`) past the top/bottom border. **Horizontal**
+  spill is intentionally not flagged, because an external actor sits to the left
+  of the boundary by design.
   **Class-aware:** for a `landscape` diagram this is
   raised to an **ERROR**, because nested labelled containers are the primary
   device that keeps a large as-built legible, so a padding defect must block

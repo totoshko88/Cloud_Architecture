@@ -143,6 +143,74 @@ def test_triple_nest_measured_against_immediate_parent():
 
 
 # --------------------------------------------------------------------------- #
+# node spilled past a container border (v1.5.3)
+#
+# Regression for the 01-aws-eu-central-1 defect: EC2-az-c and S3 shared the
+# VPC's x-band but were drawn BELOW the VPC's bottom edge. The pre-1.5.3 check
+# required box overlap on BOTH axes for a straddle, so a node overlapping only
+# the x-axis while sitting entirely below the container was neither "inside" nor
+# "straddle" — the linter reported the diagram clean. Spill detection closes it,
+# while staying narrow enough not to flag housed nodes or external actors.
+# --------------------------------------------------------------------------- #
+
+
+def test_orphan_node_spilled_below_container_is_flagged():
+    """A node in the container's x-band, sitting just below its bottom edge and
+    housed by no container, is flagged as spilled out."""
+    g = DiagramGeometry(
+        nodes={"ec2c": Box("ec2c", 100, 420, 78, 78)},  # bottom (w/ label) ~528
+        containers={"vpc": Box("vpc", 60, 60, 400, 330)},  # vpc bottom = 390
+    )
+    findings = geo.check_container_padding(g)
+    assert any(f[0] == "ec2c" and f[1] == "vpc" for f in findings)
+
+
+def test_orphan_node_spilled_above_container_is_flagged():
+    """The mirror case: a node in the x-band sitting just above the top edge."""
+    g = DiagramGeometry(
+        nodes={"n": Box("n", 100, 20, 78, 78)},          # bottom ~128
+        containers={"vpc": Box("vpc", 60, 200, 400, 330)},  # vpc top = 200
+    )
+    findings = geo.check_container_padding(g)
+    assert any(f[0] == "n" and f[1] == "vpc" for f in findings)
+
+
+def test_housed_node_sharing_a_neighbours_band_is_not_flagged():
+    """A node fully inside its OWN container (az-a2) must not be flagged as
+    spilled out of a sibling container (az-a1) whose x-band it shares one
+    row-step away — the landscape false-positive this rule must avoid."""
+    g = DiagramGeometry(
+        nodes={"db": Box("db", 120, 780, 78, 78)},  # fully inside az-a2 below
+        containers={
+            "az-a1": Box("az-a1", 90, 390, 800, 328),   # ends at y=718
+            "az-a2": Box("az-a2", 90, 750, 800, 328),   # houses db (750..1078)
+        },
+    )
+    assert geo.check_container_padding(g) == []
+
+
+def test_external_actor_left_of_boundary_is_not_flagged():
+    """An external actor drawn just to the LEFT of a boundary (in its y-band,
+    within one step) is a legitimate placement (actors sit outside the cloud
+    boundary) — horizontal spill is deliberately not flagged."""
+    g = DiagramGeometry(
+        nodes={"user": Box("user", 80, 440, 60, 60)},   # right = 140
+        containers={"boundary": Box("boundary", 200, 70, 1160, 800)},  # left = 200
+    )
+    assert geo.check_container_padding(g) == []
+
+
+def test_disjoint_node_far_below_container_is_not_flagged():
+    """A node in the x-band but MORE than one row-step below the border is
+    unrelated (not a spill of this container)."""
+    g = DiagramGeometry(
+        nodes={"n": Box("n", 100, 700, 78, 78)},         # top 700, > 160 below 390
+        containers={"vpc": Box("vpc", 60, 60, 400, 330)},  # bottom = 390
+    )
+    assert geo.check_container_padding(g) == []
+
+
+# --------------------------------------------------------------------------- #
 # container-overlap
 # --------------------------------------------------------------------------- #
 

@@ -93,13 +93,19 @@ Follow these steps in order.
 
 8. **Enable the Kiro hooks.** Confirm the hooks under `.kiro/hooks/` are active so quality
    gates run automatically:
-   - `lint-on-save.kiro.hook` — lints the saved `.drawio`/`.md` file and surfaces a
+   - `lint-on-save.json` — lints the saved `.drawio`/`.md` file and surfaces a
      blocking failure reason. It resolves the saved path from the hook's stdin JSON
      (falling back to `$KIRO_FILE_PATH`), and **skips silently** when the
      `rule-engine-lint` CLI is not installed (a Power-only install without pip) —
      so a fresh workspace never errors on save.
-   - `validate-on-task.kiro.hook` — runs the linter (`--all`) and schema validation
+   - `validate-on-task.json` — runs the linter (`--all`) and schema validation
      after a task executes. It also **skips silently** when the CLI is absent.
+
+   > **Hook file format.** Hooks are `.kiro/hooks/<name>.json` files carrying the
+   > `{"version":"v1","hooks":[…]}` schema. Do **not** rename them to `.kiro.hook`:
+   > that extension is the legacy IDE `when`/`then` format, and pairing it with the
+   > current `version`/`hooks` body makes Kiro report **"Hook has invalid data
+   > structure"** on install.
 
 9. **(Optional) Use the custom agents.** Three purpose-built agents live under
    `.kiro/agents/` and are picked up automatically when the project is open in Kiro
