@@ -136,10 +136,38 @@ Do not restate rule values from memory. The binding sources are always-on:
 
 - Execute only the read-only verbs declared in the provider profile; the count
   of state-mutating verbs per run is zero.
+- **Enumerate the full set of service domains** in `inventory-standards.md` §6 —
+  identity, network, edge (CDN/DNS/WAF), load balancing, compute, containers,
+  serverless, messaging, storage (**object stores AND file systems — EFS / Azure
+  Files / Filestore / OCI File Storage**), database (SQL + cache), secrets, AI.
+  A diagram is formed for the *whole* inventory, so a narrow collection silently
+  drops resources (the omitted EFS defect). A domain with no resources is an
+  empty file, never a silent skip.
 - Write the Snapshot to `inventory-<provider>-<boundary-id>-<region>-<UTC>` with
   one JSON per service domain and a per-resource subfolder under `resources/`.
 - Record metadata only — never secret values, key material, or SecureString
   contents.
+
+## After inventory: offer the diagram type (simple / summary / landscape)
+
+Once the snapshot is written, **ask the user which diagram type to produce** —
+do not silently pick one (`diagram-standards.md` → *Choosing the diagram type
+after inventory*):
+
+- **simple** (`diagram_class: flow`, ≤ 12 nodes) — one focused view / request
+  path. The everyday default for a small account or a single-flow question.
+- **summary** (`flow`, ≤ 12 nodes) — the *shape* of a large system, paired with a
+  landscape (`detailed_view:` ⇄ `summary_of:`).
+- **landscape** (`diagram_class: landscape`) — the full as-built, everything
+  enumerated on one canvas; cross-links a `flow` summary via `summary_of`.
+
+Recommend **simple** for a small account; the **summary + landscape pair** for a
+large one. When drawing **from the snapshot**, every enumerated resource that
+resolves to a role (`roles.yaml`, incl. `file_system`, `compute_instance`,
+`cdn`, `dns`, `waf`, `lb`, `cache`) MUST appear on the landscape; a
+simple/summary shows the in-scope flow but never silently drops a resource that
+is part of it. If a resource has no role, add one and re-run
+`rule-engine-build-icon-sets` — never omit it or use a look-alike.
 
 ## Validate before publishing (run these gates)
 

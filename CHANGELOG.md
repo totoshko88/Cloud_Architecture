@@ -2,6 +2,117 @@
 
 All notable changes to the Rule Engine are recorded here, per released version, in reverse chronological order.
 
+## [1.5.1] - 2026-09-25
+
+**Theme: a git/Power install uses the packaged resources, and the linter blocks
+the routing defects it used to wave through.** Test-installing the Power from git
+surfaced three problems: (1) the engine resolved its scripts and asset resources
+from whatever happened to be on the local machine instead of the packaged
+payload; (2) an inventory-driven AWS diagram shipped with routing defects the
+gate did not catch — an edge entering a node through its icon, and two edges
+stacked on one contact point; (3) an EFS filesystem that existed in the account
+was missing from the diagram. This release fixes the resolution drift, closes the
+linter gaps, broadens inventory coverage, and makes the diagram-type choice
+explicit.
+
+### Fixed
+
+- **Packaged resources resolve from the install, not the local machine**
+  (`asset_index.py`, `build_icon_sets_cli.py`, `azure2_shapes.py`,
+  `asset_index_cli.py`, `asset_paths_guard.py`, `raster_gate.py`, `linter.py`).
+  Several modules resolved data files via a bare
+  `Path(__file__).resolve().parents[2]`, which is **not** the repo root in a
+  pip/Power install, so they fell through to CWD-relative defaults and picked up
+  whatever was on the machine. `roles.yaml`, the committed `icon-index.json`, and
+  the `aws4`/`azure2` manifests now resolve through the shared
+  `constants.resolve_bundled_dir()` (repo → bundled `_bootstrap` payload → CWD);
+  `rule-engine-index-assets` no longer defaults `--root` to `.` (it is now
+  explicit); `asset-paths-guard` / `raster-gate` default to the current workspace
+  when it looks like one; and `find_ruleset` gains a bundled-payload fallback so a
+  correctly-installed package can lint without a prior `rule-engine-init`.
+- **The linter now blocks an edge that enters a node through its icon**
+  (`geometry.py`, `linter.py`). `edge-routing` previously skipped every
+  waypointed edge, so a corridor that ran a final leg up through the target's own
+  glyph to reach a top entry (the ALB→S3 defect) was invisible. A new self-pierce
+  check flags an edge whose final approach reaches its pinned entry contact from
+  the wrong side (`pierces-target-<node>`); an icon crossing — that or a
+  waypoint-free `straight-through-<node>` — is now an **ERROR** on any class, so
+  it blocks publication instead of merely warning.
+
+### Added
+
+- **Fan-out crossing fixes: overflow valve + bottom-left left-corridor branch**
+  (`layout_engine.py`, `diagram-standards.md`). Two crossings remained on the
+  dense landscape after adaptive routing: (a) a fan-out source's left-corridor
+  branch left the bottom-*right* band and its leftward step crossed the
+  centre straight-down branch (edge 4 × edge 3); (b) a source with three
+  right-going fan-out edges (`app → cache / db / obj`) had its below-row
+  corridors tangle (edge 5 × edge 6, edge 5 × edge 8). Fix (a): the
+  left-corridor branch now exits **bottom-left** while the straight branch keeps
+  **bottom-centre**, so the two diverge from the glyph. Fix (b): an **overflow
+  valve** spills the surplus beyond two right fan-out edges onto the **bottom**
+  face (farthest target first) into its own below-row corridor — `route_fan_out_row`
+  now honours a bottom exit (drops straight down into its lane rather than a
+  right-side stair), and the exit-spread keeps an adjacent straight edge on the
+  centre band. Both deterministic and scoped, so a node with ≤ 2 right fan-out
+  edges is byte-unchanged. All four provider HA landscapes regenerate with zero
+  crossings among the fan-out edges and every geometry check clean.
+- **`edge-crosses-container-label` lint rule + adaptive corridor routing**
+  (`geometry.py`, `layout_engine.py`, `linter.py`, `diagram-standards.md`). A new
+  check flags a routed edge whose polyline runs along a Boundary container's top
+  caption (the cross-region corridor that sliced the `vpc-passive` / `az-b1`
+  labels); the caption band is sized from the real caption text, so a corridor
+  clearing a short caption ("az-a1") is not false-flagged. The router now chooses
+  the **nearest free corridor** and enters the face it reaches, generalising a
+  reviewer's hand-route: a same-column tier-skip past an intermediate node drops
+  in the column's **left** gap and enters the target's **left** face (removing
+  the load-balancer→lower-AZ-app back-loop), and a cross-region hop to a
+  left-clear target routes in the **inter-row gap** with a **left** entry
+  (removing the caption slice and the top-entry pierce). Both faces are
+  contract-legal, so `edge-direction` is unchanged. All four provider HA
+  landscapes regenerated; the parity guard now accepts a top **or** left
+  cross-region entry.
+- **`entry-thirds` lint rule** (`geometry.py`, `linter.py`, `diagram-lint.md`).
+  The entry-side mirror of `exit-thirds`: several edges arriving on one target
+  face at the same/merged contact point (the two `EC2 → RDS` edges both pinned at
+  `entryX=0, entryY=0.5`) now trip a finding. WARNING for `flow`, ERROR for
+  `landscape`, matching the other routing-family escalations. +8 regression tests.
+- **Broad inventory service domains** (`inventory-standards.md` §6). A new
+  "Service Domains to Enumerate" table lists the diagram-complete set — identity,
+  network, edge (CDN/DNS/WAF), load balancing, compute, containers, serverless,
+  messaging, storage (**object stores AND file systems — EFS / Azure Files /
+  Filestore / OCI File Storage**), database (SQL + cache), secrets, AI — so a
+  diagram formed for the whole inventory no longer silently drops a resource (the
+  missing-EFS defect). A domain with no resources is an empty file, never a silent
+  skip.
+- **Explicit diagram-type selection after inventory** (`diagram-standards.md`,
+  both `SKILL.md` copies). After a snapshot, the agent offers **simple** /
+  **summary** / **landscape** rather than silently picking one; simple and
+  summary are the `flow` lint class, landscape is the `landscape` class.
+- **Inventory-completeness → diagram rule** (`diagram-standards.md`). Every
+  enumerated resource that resolves to a role must appear on the landscape (and on
+  a simple/summary when it is in scope); a resource with no role gets a role added
+  and the icon set rebuilt — never a dropped node or a look-alike icon. Codifies
+  that `object_store` (bucket) and `file_system` (EFS) are distinct roles.
+
+### Changed
+
+- **A fan-out source may leave from two faces (right + bottom)** (`layout_engine.py`,
+  `diagram-standards.md`). A node that starts several downward flows — a load
+  balancer or DNS branching to two app tiers / AZs — now routes its
+  *directly-below* branch out the **bottom** (a clean vertical drop, like the
+  compact summary) while the sibling branches keep the **right** face, instead of
+  cramming every branch onto the right and looping the vertical one. Both faces
+  are already contract-legal (`edge-direction` admits `exitX>=0.5` OR `exitY==1`),
+  so the linter is unchanged; the generator only widens which allowed face it
+  picks. Scoped to a source with ≥ 2 downward edges and exactly one directly-below
+  branch, so every other layout is byte-unchanged. All four provider HA landscapes
+  regenerated; the parity shape-guard now accepts a bottom exit as well as a right
+  exit (rejecting only a left or top exit).
+- **Version bumped to 1.5.1** (`VERSION`, `pyproject.toml`); `inventory-standards.md`
+  sections renumbered (secret-safety → §7, non-fatal failure → §8, cost → §9) with
+  code/test references updated.
+
 ## [1.5.0] - 2026-09-25
 
 **Theme: a fresh workspace produces correct output.** A Kiro Power carries only

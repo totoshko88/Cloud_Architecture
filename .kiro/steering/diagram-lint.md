@@ -41,7 +41,7 @@ every applicable rule against every artifact.
 | `title-versioned` | A diagram title cell has no version identifier or no date. | WARNING | R7 AC12 / R5 AC9 |
 | `mermaid-type` | Mermaid is used for a diagram type other than sequence, flow, or state. | WARNING | R7 AC13 / R1 AC2 |
 | `flow-legend` | A diagram uses numeric flow markers on edges but has no `Flow` legend cell covering every marker. | WARNING | diagram-standards Numbered Flow Legend |
-| `edge-routing` | A diagram edge is not orthogonally routed, crosses a node icon, shares a corridor with a parallel edge, overlaps a label/legend, or two edges leave/enter one node side on the same contact point. | WARNING | diagram-standards Edge Routing |
+| `edge-routing` | A diagram edge is not orthogonally routed, crosses a node icon, shares a corridor with a parallel edge, overlaps a label/legend, or two edges leave/enter one node side on the same contact point. **Raised to ERROR** when an edge's run cuts through a node icon — an unrelated node (`*-through-*`) or its own target reached from the wrong side (`pierces-target-*`). | WARNING/ERROR | diagram-standards Edge Routing |
 | `container-padding` | A container border sits flush against or straddles a child node (no grid-step padding). Raised to ERROR for `landscape`. | WARNING/ERROR | diagram-standards Container Padding |
 | `min-font-size` | A diagram carries on-diagram text below the 12px minimum font size. | WARNING | diagram-standards Accessibility & Contrast |
 | `grid-alignment` | A diagram node's absolute x or y is not a whole multiple of the grid step (default 10). | WARNING | diagram-standards Layout Geometry |
@@ -50,12 +50,14 @@ every applicable rule against every artifact.
 | `orphan-landscape` | A `landscape`-class diagram declares no valid `summary_of` cross-link to a `flow` summary. | ERROR | diagram-standards Diagram Class |
 | `overlay-legend-coverage` | A diagram carries an overlay marker (findings/state vocabulary) that the Legend does not document. | WARNING | diagram-standards Overlay Vocabulary |
 | `exit-thirds` | A node fans out **more than three** edges on one side, or two same-side exits sit closer than ~⅕ of the side (they merge into one doubled line). | WARNING | diagram-standards Label-safe exits |
+| `entry-thirds` | **More than three** edges arrive on one target face, or two arrivals on one face sit closer than ~⅕ of the face (they stack on one contact point — the entry-side mirror of `exit-thirds`). Raised to ERROR for `landscape`. | WARNING/ERROR | diagram-standards Label-safe exits |
 | `container-overlap` | Two sibling (non-nested) Boundary/Network-Boundary containers overlap. Raised to ERROR for `landscape`. | WARNING/ERROR | diagram-standards Container Nesting |
 | `edge-direction` | An edge with explicit contact points does not exit its source right/bottom and enter its target left/top. Raised to ERROR for `landscape`. | WARNING/ERROR | diagram-standards Edge Routing (directional contract) |
 | `text-padding` | A filled+stroked text/legend/note box does not set uniform inner padding (`spacing{Left,Right,Top,Bottom}`). | WARNING | diagram-standards Text-box Padding |
 | `corridor-sharing` | Two unrelated long edges run in the same straight horizontal/vertical corridor (same grid line, overlapping extent). | WARNING | diagram-standards Edge Routing (one edge per corridor) |
 | `edge-float` | An edge declares no explicit exit/entry contact point (floats its connection to the perimeter router). Raised to ERROR for `landscape`. | WARNING/ERROR | diagram-standards Edge Routing (no-float on landscape) |
 | `edge-crosses-label` | A routed edge's polyline crosses an **unrelated node's label band** (the caption strip drawn beneath the icon), i.e. a corridor runs through a service name. | WARNING | diagram-standards Edge Routing (corridors clear the label band) |
+| `edge-crosses-container-label` | A routed edge's polyline runs **along a Boundary container's top caption band** (a corridor slicing a `vpc-…`/`az-…` label). The caption width is sized from its text, so a run clearing a short caption is not flagged; only a long horizontal run along the caption trips. | WARNING | diagram-standards Edge Routing (adaptive routing / corridors clear the caption) |
 
 ### Rule Detail
 
@@ -102,7 +104,7 @@ every applicable rule against every artifact.
   the `Flow` legend, or whose `Flow` legend does not cover every marker, produces a
   WARNING. Diagrams that use descriptive prose labels instead of numeric markers are
   unaffected.
-- **`edge-routing` (WARNING)** — *Geometry-enforced from the parsed `.drawio` model.* The check is conservative to avoid false positives on validly routed diagrams: it flags a **non-orthogonal** edge, and a **waypoint-free** edge whose straight run between its real contact points passes through an unrelated node. An edge carrying explicit `<mxPoint>` waypoints is treated as deliberately routed (draw.io routes orthogonally around nodes). Beyond the enforced core, edges should be orthogonally routed
+- **`edge-routing` (WARNING/ERROR)** — *Geometry-enforced from the parsed `.drawio` model.* The check is conservative to avoid false positives on validly routed diagrams. It flags: (a) a **non-orthogonal** edge; (b) a **waypoint-free** edge whose straight run between its real contact points passes through an unrelated node (`straight-through-<node>`); and (c) — **new in v1.5.1** — an edge whose **final approach leg reaches its own target's pinned entry contact from the wrong side**, so the leg pierces the target's glyph to reach the contact (`pierces-target-<node>`). Case (c) catches the canonical defect where an edge pins a *top* entry but its corridor sits *below* the icon, so the arrow enters up through the icon body instead of from above (or the mirror on any face). An edge carrying explicit `<mxPoint>` waypoints is still treated as deliberately routed **for the unrelated-node criterion** (draw.io routes orthogonally around nodes), so (b) does not fire on it; the self-pierce criterion (c) is checked on every edge regardless of waypoints, because a wrong-side approach is a defect even when the rest of the route was deliberate. **Severity: an icon-crossing finding — `*-through-*` (b) or `pierces-target-*` (c) — is raised to ERROR on any class** (a line drawn over an icon it does not connect, or into its target from the wrong side, is a correctness failure, not a style nit); a bare non-orthogonal edge with no crossing stays a WARNING. Beyond the enforced core, edges should be orthogonally routed
   (`edgeStyle=orthogonalEdgeStyle` for `.drawio`), must not cross through a node icon,
   and must enter a node on its left/top and exit on its right/bottom. When one node
   side carries more than one edge, each edge uses a distinct contact point
@@ -143,6 +145,20 @@ every applicable rule against every artifact.
   forced thirds. The rule reads *exit* points only (source-side fan-out); a
   left-side exit is left to `edge-direction`, and edges that float their contact
   point are ignored. A violation is a WARNING for both classes.
+- **`entry-thirds` (WARNING/ERROR)** — *Geometry-enforced (new in v1.5.1).* The
+  **entry-side mirror** of `exit-thirds`. `exit-thirds` inspects only *source*
+  fan-out, so two edges arriving on the **same target face at the same contact
+  point** were invisible to it — they render as a single doubled line into the
+  glyph (the canonical defect: two `EC2 → RDS` edges both pinned at
+  `entryX=0, entryY=0.5`). The rule groups every explicit entry point by
+  `(target, face)` — a left entry (`entryX ≤ 0.5`) by its `entryY` band, a top
+  entry (`entryY ≤ 0`) by its `entryX` band — and enforces the same two soft
+  conditions: (1) a face carries **at most three** arrivals; (2) any two arrivals
+  on one face stay **distinct** (≥ ~⅕ of the face apart). A right-edge entry
+  already breaks the directional contract (`edge-direction` owns it) and floated
+  entries are ignored. WARNING for `flow`; **raised to ERROR for `landscape`**,
+  where a dense as-built must keep every arrival distinct — matching how the other
+  routing-family rules (`edge-direction`, `edge-float`) escalate.
 - **`overlay-legend-coverage` (WARNING)** — A diagram may carry an optional,
   double-encoded **overlay vocabulary** (shape + color + label) for findings and
   state — for example "spec-required-not-deployed" (red dashed box),
@@ -239,6 +255,8 @@ keeps its exact behavior.
 | `container-overlap` | WARNING | **ERROR** (sibling boundaries must not overlap) |
 | `edge-direction` | WARNING | **ERROR** (directional contract is strict) |
 | `edge-float` | WARNING | **ERROR** (every edge must pin its contact points) |
+| `entry-thirds` | WARNING | **ERROR** (arrivals on one face must stay distinct) |
+| `edge-routing` (icon crossing) | **ERROR** | **ERROR** (a run through an icon it does not connect / into its target from the wrong side) |
 | `orphan-landscape` | n/a | ERROR unless `summary_of` names a `flow` summary |
 | numbered flow markers | expected | optional (a landscape has no single path) |
 | `overlay-legend-coverage` | WARNING when overlay markers are used | WARNING when overlay markers are used |

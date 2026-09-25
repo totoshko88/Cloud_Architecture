@@ -154,6 +154,11 @@ class DiagramGeometry:
     nodes: Dict[str, Box] = field(default_factory=dict)
     containers: Dict[str, Box] = field(default_factory=dict)
     edges: List[EdgeGeom] = field(default_factory=list)
+    #: Container id -> its caption text (the group's ``value``). Used to size the
+    #: left-aligned caption band in ``check_edge_crosses_container_label`` per its
+    #: real text length, so a corridor clearing a SHORT caption (e.g. "az-a1") is
+    #: not flagged while one slicing a LONG caption ("vpc-passive …") is.
+    container_labels: Dict[str, str] = field(default_factory=dict)
 
 
 def build_geometry(text: str) -> DiagramGeometry:
@@ -204,6 +209,7 @@ def build_geometry(text: str) -> DiagramGeometry:
         if g and g.get("w"):
             ax, ay = origin(cid)
             geo.containers[cid] = Box(cid, ax, ay, float(g["w"]), float(g["h"]))
+            geo.container_labels[cid] = _attr(str(raw[cid]["cell"]), "value") or ""
 
     for cid, d in raw.items():
         if not d["vertex"] or cid in boundary_ids:
@@ -451,6 +457,58 @@ def check_exit_thirds(geo: DiagramGeometry, min_sep: float = 0.2) -> List[Tuple[
     return out
 
 
+def check_entry_thirds(geo: DiagramGeometry, min_sep: float = 0.2) -> List[Tuple[str, str]]:
+    """Return ``(node_id, reason)`` for a TARGET's over-crowded same-face arrivals.
+
+    The entry-side mirror of :func:`check_exit_thirds` (v1.5.1). ``check_exit_thirds``
+    only inspects *source* fan-out, so two edges arriving on the SAME target face
+    at the SAME point were invisible to it — the exact defect in the buggy AWS
+    example, where two ``EC2 → RDS`` edges both entered RDS at ``entryX=0,
+    entryY=0.5`` and merged into one doubled line at the glyph.
+
+    Two soft conditions, matching the exit rule:
+
+    1. **At most three entries per face.** A fourth means the node is
+       over-connected — split or re-lane (``over-connected``).
+    2. **Distinct entries (no two merge).** Any two arrivals on one face sit at
+       least ``min_sep`` of the face apart (default 0.2), so they do not stack on
+       one contact point (``entries-merge``).
+
+    An entry face is keyed off the *entry* point: a left entry (``entryX <= 0.5``)
+    groups by its ``entryY`` band; a top entry (``entryY <= 0``) by its ``entryX``
+    band. A right-edge entry (``entryX > 0.5``) already violates the directional
+    contract, which :func:`check_edge_direction` owns, so it is not judged here.
+    Edges that float their entry (no explicit point) are ignored."""
+    faces: Dict[Tuple[str, str], List[float]] = {}
+    for e in geo.edges:
+        nx, ny = e.entry
+        if nx is None and ny is None:
+            continue
+        if ny is not None and ny <= 0.0:            # top face
+            face, coord = "top", (nx if nx is not None else 0.5)
+        elif nx is not None and nx <= 0.5:          # left face (incl. <0 stubs)
+            face, coord = "left", (ny if ny is not None else 0.5)
+        else:
+            # A right-edge entry already breaks the directional contract
+            # (check_edge_direction owns that); the arrival-crowding rule only
+            # judges the sanctioned left/top faces.
+            continue
+        faces.setdefault((e.target, face), []).append(coord)
+
+    out: List[Tuple[str, str]] = []
+    for (node, face), coords in sorted(faces.items()):
+        if len(coords) <= 1:
+            continue
+        if len(coords) > 3:
+            out.append((node, f"{face}-over-connected-{len(coords)}-entries"))
+            continue
+        got = sorted(round(c, 3) for c in coords)
+        if any(b - a < min_sep for a, b in zip(got, got[1:])):
+            pts = ",".join(f"{g:.2f}" for g in got)
+            out.append((node, f"{face}-entries-merge(<{min_sep}: {pts})"))
+    return out
+
+
 #: The step, in model units, between successive samples along a segment. Chosen
 #: well below the smallest obstacle dimension the engine draws (a 78×78 icon,
 #: and a ~30px label band) so no obstacle can slip entirely between two samples
@@ -511,8 +569,6 @@ def check_edge_routing(geo: DiagramGeometry) -> List[Tuple[str, str]]:
             continue
         if e.source not in nodes or e.target not in nodes:
             continue
-        if e.points:
-            continue  # author laid explicit waypoints — deliberate routing
         s, t = nodes[e.source], nodes[e.target]
         ex = e.exit[0] if e.exit[0] is not None else 1.0
         ey = e.exit[1] if e.exit[1] is not None else 0.5
@@ -520,6 +576,30 @@ def check_edge_routing(geo: DiagramGeometry) -> List[Tuple[str, str]]:
         ny = e.entry[1] if e.entry[1] is not None else 0.5
         p = (s.x + ex * s.w, s.y + ey * s.h)
         q = (t.x + nx * t.w, t.y + ny * t.h)
+        # (1) Self-piercing approach (v1.5.1). The last segment before the entry
+        #     must reach the pinned entry contact FROM THE CORRECT SIDE, so it
+        #     touches the target's perimeter, not its interior. A TOP entry
+        #     (entryY == 0) must be approached from ABOVE (the segment's other end
+        #     has y < entry_y); a LEFT entry (entryX == 0) from the LEFT
+        #     (x < entry_x). The buggy ALB→S3 edge pinned a TOP entry but ran its
+        #     final leg UP from a corridor BELOW the icon, so the leg pierced the
+        #     target's own glyph to reach the top contact (the "enters through the
+        #     icon instead of from the top" defect). This is target-specific, so
+        #     it is checked here rather than in the unrelated-node loop below.
+        approach = (e.points[-1] if e.points else p)
+        pierce = _approach_pierces_target(approach, q, e.entry, t)
+        if pierce:
+            out.append((e.id, f"pierces-target-{e.target}"))
+            continue
+        # (2) A waypoint-free edge's straight run cuts an UNRELATED node. An edge
+        #     with explicit waypoints is deliberate routing and is not judged on
+        #     the straight-line criterion (draw.io routes orthogonally around
+        #     nodes; sampling raw segments false-flags a validly routed edge —
+        #     the GCP/OCI golden e5 case). The self-pierce check above already
+        #     covers the target; label-band crossings are owned by
+        #     ``check_edge_crosses_label``.
+        if e.points:
+            continue
         for other, b in nodes.items():
             if other in (e.source, e.target):
                 continue
@@ -529,6 +609,52 @@ def check_edge_routing(geo: DiagramGeometry) -> List[Tuple[str, str]]:
                 out.append((e.id, f"straight-through-{other}"))
                 break
     return out
+
+
+def _approach_pierces_target(
+    approach: Tuple[float, float],
+    entry_pt: Tuple[float, float],
+    entry_frac: Tuple[Optional[float], Optional[float]],
+    target: Box,
+) -> bool:
+    """Return True when the final leg reaches ``entry_pt`` from the wrong side.
+
+    ``approach`` is the last polyline vertex before the entry contact
+    ``entry_pt`` (in absolute coords); ``entry_frac`` is the pinned
+    ``(entryX, entryY)`` fraction; ``target`` is the target box. A pinned entry
+    contact sits on one face of the target; the leg arriving at it must come from
+    OUTSIDE that face, or it crosses the icon body to reach the contact:
+
+    * a TOP entry (``entryY == 0``) must be approached from ABOVE
+      (``approach_y < entry_y``);
+    * a BOTTOM entry (``entryY == 1``) from BELOW (``approach_y > entry_y``);
+    * a LEFT entry (``entryX == 0``) from the LEFT (``approach_x < entry_x``);
+    * a RIGHT entry (``entryX == 1``) from the RIGHT (``approach_x > entry_x``).
+
+    Only a clearly wrong-side approach (beyond a small tolerance, and while the
+    approach is within the icon's cross-extent so it truly overlaps the glyph) is
+    a pierce, so an orthogonal leg that meets the face squarely is never flagged.
+    """
+    fx, fy = entry_frac
+    ax, ay = approach
+    ex, ey = entry_pt
+    tol = 2.0
+    # TOP / BOTTOM faces: the approach x must be within the icon's x-extent for
+    # the vertical leg to actually run through the glyph.
+    if fy is not None and fy <= 0.0:  # top face → must come from above
+        if target.x + tol < ax < target.right - tol and ay > ey + tol:
+            return True
+    if fy is not None and fy >= 1.0:  # bottom face → must come from below
+        if target.x + tol < ax < target.right - tol and ay < ey - tol:
+            return True
+    # LEFT / RIGHT faces: the approach y must be within the icon's y-extent.
+    if fx is not None and fx <= 0.0:  # left face → must come from the left
+        if target.y + tol < ay < target.bottom - tol and ax > ex + tol:
+            return True
+    if fx is not None and fx >= 1.0:  # right face → must come from the right
+        if target.y + tol < ay < target.bottom - tol and ax < ex - tol:
+            return True
+    return False
 
 
 def check_edge_crosses_label(geo: DiagramGeometry, label_band: float = LABEL_BAND) -> List[Tuple[str, str]]:
@@ -568,6 +694,105 @@ def check_edge_crosses_label(geo: DiagramGeometry, label_band: float = LABEL_BAN
             )
             if crossed:
                 out.append((e.id, other))
+    return sorted(set(out))
+
+
+#: The label band a BOUNDARY container draws INSIDE its top edge. Unlike a node
+#: (caption below the icon), a container renders its name inside the top-left of
+#: the group box (``verticalAlign=top;align=left``), so the strip that a routed
+#: edge must clear runs from the container's TOP edge DOWN by one text line
+#: (~30px = the same one-line floor as ``LABEL_BAND``).
+CONTAINER_LABEL_BAND = 30
+
+#: Per-character advance and left inset used to estimate a container caption's
+#: horizontal extent from its text. The caption is LEFT-aligned inside the group
+#: box (a group badge + ``spacingLeft`` inset, then ~12px text), so a corridor to
+#: the RIGHT of the caption text does not cross it even on a very wide box. The
+#: estimate is a conservative floor (round up), mirroring how ``LABEL_BAND`` is a
+#: one-line floor rather than a per-string measurement.
+_CONTAINER_LABEL_CHAR_W = 7.5   # ~advance per char at the 12px caption font
+_CONTAINER_LABEL_INSET = 40.0   # group badge + spacingLeft before the text
+
+
+def _container_caption_width(label: str, box_w: float) -> float:
+    """Estimate the caption's horizontal extent, capped at the box width.
+
+    A short caption ("az-a1") stays a narrow left strip; a long one
+    ("vpc-passive us-west-2") reaches further right. Never exceeds ``box_w``."""
+    est = _CONTAINER_LABEL_INSET + len(label) * _CONTAINER_LABEL_CHAR_W
+    return min(box_w, est)
+
+
+def check_edge_crosses_container_label(
+    geo: DiagramGeometry, band: float = CONTAINER_LABEL_BAND
+) -> List[Tuple[str, str]]:
+    """Return ``(edge_id, container_id)`` for edges whose polyline cuts a
+    **container's top label band** — the caption strip a Boundary / Network
+    Boundary group draws inside its top edge (``verticalAlign=top``).
+
+    A cross-region corridor placed one grid step above a target VPC can run
+    straight along that VPC's top edge, slicing its ``vpc-...`` caption (the
+    edge-2 → ``vpc-passive`` defect) — a crossing the node-label check
+    (:func:`check_edge_crosses_label`, which measures node captions only) never
+    sees. This samples each edge's full polyline against every container's top
+    band with the same :func:`segment_crosses_box` predicate.
+
+    An edge legitimately entering or leaving a container touches its border, so a
+    container is skipped for an edge whose source **or** target sits inside that
+    container's box — only an *unrelated* container's caption is a defect.
+    Advisory (WARNING), like ``edge-crosses-label``."""
+    out: List[Tuple[str, str]] = []
+    nodes = geo.nodes
+    for e in geo.edges:
+        if e.source not in nodes or e.target not in nodes:
+            continue
+        s, t = nodes[e.source], nodes[e.target]
+        ex = e.exit[0] if e.exit[0] is not None else 1.0
+        ey = e.exit[1] if e.exit[1] is not None else 0.5
+        nx = e.entry[0] if e.entry[0] is not None else 0.0
+        ny = e.entry[1] if e.entry[1] is not None else 0.5
+        polyline = [(s.x + ex * s.w, s.y + ey * s.h)]
+        polyline += list(e.points)
+        polyline += [(t.x + nx * t.w, t.y + ny * t.h)]
+        for cid, c in geo.containers.items():
+            # The caption is left-aligned: size its width from the real caption
+            # text so a corridor RIGHT of the (short) text does not false-flag,
+            # while a run slicing a LONG caption still trips.
+            label_w = _container_caption_width(geo.container_labels.get(cid, ""), c.w)
+            label = Box(cid, c.x, c.y, label_w, band)  # top-left .. +one line
+            # A run only defects the caption when a HORIZONTAL segment runs along
+            # it. A near-VERTICAL segment that crosses the band is an edge
+            # dropping IN through the container's top edge to reach a target
+            # inside it (the sanctioned top entry) — not a run along the caption —
+            # so it is not flagged. This replaces a membership exemption (which
+            # wrongly let a horizontal run along the TARGET's own VPC caption
+            # slip): the discriminator is the segment's direction, not which
+            # container the endpoints belong to.
+            # A run defects the caption only when a HORIZONTAL segment travels
+            # ALONG it for a meaningful distance — i.e. the segment's overlap
+            # with the caption band's x-extent exceeds a short-step threshold.
+            # A near-vertical drop through the top edge (a sanctioned top entry)
+            # has ~zero horizontal overlap; a short final entry-approach step that
+            # only grazes the caption's right edge (l4/l9 clipping ~7px) is below
+            # the threshold; a long run laid along the caption (edge 2, or a
+            # cross-region rep line at the caption's y — l11) exceeds it.
+            lab_x0, lab_x1 = label.x, label.right
+            lab_y0, lab_y1 = label.y, label.bottom
+            crossed = False
+            for p, q in zip(polyline, polyline[1:]):
+                if abs(q[0] - p[0]) <= abs(q[1] - p[1]):
+                    continue  # not a horizontal segment
+                seg_y = (p[1] + q[1]) / 2.0
+                if not (lab_y0 <= seg_y <= lab_y1):
+                    continue  # not within the caption's vertical band
+                # horizontal overlap of [min,max] segment x with the caption x-extent
+                seg_lo, seg_hi = min(p[0], q[0]), max(p[0], q[0])
+                overlap = min(seg_hi, lab_x1) - max(seg_lo, lab_x0)
+                if overlap > 2 * GRID:
+                    crossed = True
+                    break
+            if crossed:
+                out.append((e.id, cid))
     return sorted(set(out))
 
 

@@ -44,7 +44,7 @@ from dataclasses import dataclass, asdict, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from rule_engine.constants import PROVIDERS  # single source of truth
+from rule_engine.constants import PROVIDERS, resolve_bundled_dir  # single source of truth
 
 logger = logging.getLogger(__name__)
 
@@ -498,7 +498,12 @@ def index_to_json(index: Dict[str, Dict[str, AssetEntry]]) -> str:
 # every role against the packs and writes a committed, deterministic
 # icon-index.json so generators and CI resolve/verify without the packs present.
 
-ROLES_PATH = Path(__file__).resolve().parents[2] / "mappings" / "roles.yaml"
+# roles.yaml is a bundled data file. Resolve it through the shared repo →
+# bundled-package-payload → CWD helper so build_icon_index works on a pip/Power
+# install where ``parents[2]`` is NOT the repo root (v1.5.1). A bare
+# ``parents[2]`` here silently missed the file in a repo-less install and the
+# builder fell back to whatever ``mappings/roles.yaml`` happened to be in the CWD.
+ROLES_PATH = resolve_bundled_dir("mappings") / "roles.yaml"
 
 # Where each provider's pack unpacks under the asset root, and the on-disk path
 # prefix a resolved file lives under (matches what the diagram generators emit).

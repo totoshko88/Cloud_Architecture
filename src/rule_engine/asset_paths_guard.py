@@ -48,6 +48,23 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+
+def _default_workspace_root() -> Path:
+    """Return the workspace root this guard should validate (v1.5.1).
+
+    This guard checks a WORKSPACE's ``mappings/`` and ``assets/vendor/`` — those
+    are per-workspace files, not package data. On a pip/Power install
+    ``parents[2]`` is NOT the repo root, so it would point at ``site-packages``.
+    Prefer the current directory when it looks like a bootstrapped workspace (it
+    has a ``mappings/`` tree); otherwise fall back to ``REPO_ROOT`` (the dev /
+    repo-checkout case), preserving the historical default there.
+    """
+    cwd = Path.cwd()
+    if (cwd / "mappings").is_dir():
+        return cwd
+    return REPO_ROOT
+
+
 # Extract the path from an ``image=<path>`` draw.io style token. The value runs
 # to the next ``;`` or the end of the style string.
 _IMAGE_RE = re.compile(r"image=([^;]+)")
@@ -225,8 +242,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         prog="asset-paths-guard",
         description="Verify mapping icon file paths exist under the asset root.",
     )
-    parser.add_argument("--mappings", default=str(REPO_ROOT / "mappings"))
-    parser.add_argument("--repo-root", default=str(REPO_ROOT))
+    default_root = _default_workspace_root()
+    parser.add_argument("--mappings", default=str(default_root / "mappings"))
+    parser.add_argument("--repo-root", default=str(default_root))
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     refs = check_mapping_assets(args.mappings, args.repo_root)

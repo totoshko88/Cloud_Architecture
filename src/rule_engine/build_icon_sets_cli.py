@@ -31,10 +31,21 @@ from pathlib import Path
 from typing import Dict, Optional, Sequence
 
 from rule_engine.asset_index import build_icon_index, icon_index_to_json
+from rule_engine.constants import resolve_bundled_dir
 
 # The repo root: this file is src/rule_engine/build_icon_sets_cli.py -> ... -> root.
 REPO_ROOT = Path(__file__).resolve().parents[2]
-ICON_INDEX_OUT = REPO_ROOT / "mappings" / "icon-index.json"
+# The committed icon index lives in the mappings/ tree. Resolve it through the
+# shared repo → bundled-payload → CWD helper (v1.5.1): on a pip/Power install
+# ``REPO_ROOT`` (parents[2]) is NOT the repo root, so a bare
+# ``REPO_ROOT / "mappings"`` wrote/read the index in the wrong place. The
+# asset-root default stays under the resolved mappings' parent so a rebuild
+# writes next to the tree it belongs to, not into an unrelated CWD.
+_MAPPINGS_DIR = resolve_bundled_dir("mappings")
+ICON_INDEX_OUT = _MAPPINGS_DIR / "icon-index.json"
+# Workspace root that owns the resolved mappings/ tree (its parent), used as the
+# base for the default asset root and relative --out/--asset-root values.
+_WORKSPACE_ROOT = _MAPPINGS_DIR.parent
 
 # Pack key -> unpacked root under the asset root (mirrors asset-sources.yaml
 # `unpack_to`). GCP resolves against two packs (core products first, then
@@ -46,6 +57,18 @@ _PACK_ROOTS = {
     "gcp-category": "gcp-category",
     "oci": "oci-stencils/stencils.json",
 }
+
+def _shown(path: Path) -> str:
+    """Return a workspace-relative display path, or the absolute path.
+
+    A written file may live under the resolved workspace root (repo, bundled
+    payload, or a target workspace passed via --out), so ``relative_to`` may
+    raise; fall back to the absolute path then (v1.5.1)."""
+    try:
+        return str(Path(path).relative_to(_WORKSPACE_ROOT))
+    except ValueError:
+        return str(path)
+
 
 EXIT_OK = 0
 EXIT_FAIL = 1
@@ -83,8 +106,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         prog="rule-engine-build-icon-sets",
         description="Fetch official icon packs and build the committed mappings/icon-index.json.",
     )
-    parser.add_argument("--asset-root", default=str(REPO_ROOT / "assets" / "vendor"),
-                        help="unpacked asset root (default: assets/vendor)")
+    parser.add_argument("--asset-root", default=str(_WORKSPACE_ROOT / "assets" / "vendor"),
+                        help="unpacked asset root (default: <workspace>/assets/vendor)")
     parser.add_argument("--out", default=str(ICON_INDEX_OUT),
                         help="committed icon index path (default: mappings/icon-index.json)")
     parser.add_argument("--no-fetch", action="store_true",
@@ -95,12 +118,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         help="embed the full per-slug pack tables (large); default writes a summary")
     args = parser.parse_args(list(argv) if argv is not None else None)
 
+    # Relative --asset-root / --out are resolved against the workspace root that
+    # OWNS the resolved mappings/ tree (repo checkout, bundled payload, or CWD),
+    # not a bare ``parents[2]`` that is wrong on a pip/Power install (v1.5.1).
     asset_root = Path(args.asset_root)
     if not asset_root.is_absolute():
-        asset_root = REPO_ROOT / asset_root
+        asset_root = _WORKSPACE_ROOT / asset_root
     out_path = Path(args.out)
     if not out_path.is_absolute():
-        out_path = REPO_ROOT / out_path
+        out_path = _WORKSPACE_ROOT / out_path
 
     # 1) Fetch the official packs (unless indexing pre-fetched ones or --check).
     if not args.no_fetch and not args.check:
@@ -160,14 +186,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(text, encoding="utf-8")
-    # out_path may live outside REPO_ROOT (e.g. rule-engine-init --with-assets
-    # writing into a target workspace), so relative_to would raise — print a
-    # repo-relative path when possible, else the absolute path.
-    try:
-        shown = out_path.relative_to(REPO_ROOT)
-    except ValueError:
-        shown = out_path
-    print(f"Wrote {shown} — {len(payload['roles'])} roles; packs {packs}.")
+    print(f"Wrote {_shown(out_path)} — {len(payload['roles'])} roles; packs {packs}.")
 
     # Refresh the Azure azure2 shape manifest when a local draw.io app.asar is
     # available (the azure2 shapes ship inside draw.io, not in a fetched pack).
@@ -179,10 +198,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if asar is not None:
             paths = _az2.extract_azure2_paths(asar)
             _az2.write_manifest(paths)
-            print(f"Refreshed {_az2.DEFAULT_MANIFEST.relative_to(REPO_ROOT)} — {len(paths)} azure2 shapes.")
-            aws4 = _az2.build_aws4_manifest(asar, REPO_ROOT)
+            print(f"Refreshed {_shown(_az2.DEFAULT_MANIFEST)} — {len(paths)} azure2 shapes.")
+            # build_aws4_manifest resolves the curated mappings/ tree itself via
+            # the shared bundled-payload helper (v1.5.1); no repo root passed.
+            aws4 = _az2.build_aws4_manifest(asar)
             _az2.write_aws4_manifest(aws4)
-            print(f"Refreshed {_az2.AWS4_MANIFEST.relative_to(REPO_ROOT)} — {len(aws4)} aws4 ids.")
+            print(f"Refreshed {_shown(_az2.AWS4_MANIFEST)} — {len(aws4)} aws4 ids.")
         else:
             print("  note: draw.io app.asar not found; kept existing azure2/aws4 manifests.")
     except Exception as exc:  # noqa: BLE001 - non-fatal; manifest is optional
