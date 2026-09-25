@@ -7,7 +7,7 @@
       "matcher": "\\.(drawio|md)$",
       "action": {
         "type": "command",
-        "command": "rule-engine-lint --file \"$KIRO_FILE_PATH\" --fail-on error,critical"
+        "command": "command -v rule-engine-lint >/dev/null 2>&1 || exit 0; ctx=\"$(cat 2>/dev/null || true)\"; f=\"$(printf '%s' \"$ctx\" | python3 -c 'import sys,json; d=json.load(sys.stdin) if sys.stdin.isatty()==False else {}; f=d.get(\"filePath\") or d.get(\"file_path\") or d.get(\"path\"); print(f if isinstance(f,str) else \"\")' 2>/dev/null || true)\"; [ -n \"$f\" ] || f=\"$KIRO_FILE_PATH\"; [ -n \"$f\" ] || exit 0; rule-engine-lint --file \"$f\" --fail-on error,critical"
       }
     }
   ]

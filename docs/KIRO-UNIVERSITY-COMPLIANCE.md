@@ -72,11 +72,13 @@ intent being that any conforming agent produces the same review-passing output.
 Two hooks in `.kiro/hooks/` automate the quality gates:
 
 - `lint-on-save.kiro.hook` — trigger `PostFileSave`, matcher `\.(drawio|md)$`,
-  action runs `rule-engine-lint --file "$KIRO_FILE_PATH" --fail-on
-  error,critical`. Every diagram/document is linted the moment it is saved.
+  action lints the saved file with `rule-engine-lint --file <path> --fail-on
+  error,critical`. The saved path comes from the hook's stdin JSON (falling back
+  to `$KIRO_FILE_PATH`); the action **skips silently** when the CLI is not
+  installed, so it never errors in a Power-only workspace.
 - `validate-on-task.kiro.hook` — trigger `PostTaskExec`, action runs
-  `rule-engine-lint --all` **and** `rule-engine-validate-schema`, so completing
-  a spec task automatically re-checks the whole workspace.
+  `rule-engine-lint --all` **and** `rule-engine-validate-schema` (also guarded on
+  the CLI being present), so completing a spec task re-checks the workspace.
 
 This matches the lesson's pattern of a trigger event plus a corresponding
 command action, letting Kiro handle execution.
