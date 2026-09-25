@@ -106,3 +106,17 @@ roles:
     azure: "Cache Redis"
     gcp_category: "Databases"
     oci: "autonomous-db"
+  # Virtual machine / compute instance (EC2 and peers). Compute family, distinct
+  # from serverless_fn — a VM is not a function. Orange compute family on AWS.
+  compute_instance:
+    aws: "EC2"
+    azure: "Virtual Machines"
+    gcp_category: "Compute"
+    oci: "compute"
+  # Managed elastic file system / shared NFS. Storage family (green on AWS) —
+  # distinct from object_store: a mountable filesystem is not a bucket.
+  file_system:
+    aws: "Elastic File System"
+    azure: "Azure Files"
+    gcp_category: "Storage"
+    oci: "file-storage"

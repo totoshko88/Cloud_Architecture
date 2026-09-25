@@ -2,6 +2,20 @@
 
 All notable changes to the Rule Engine are recorded here, per released version, in reverse chronological order.
 
+## [1.4.2] - 2026-09-25
+
+Closes the gap that let a diagram generated **in a fresh workspace through the Kiro Power ignore the rules**. A Power carries only the skill + MCP, not the always-on steering documents or the icon/role mappings — so in an empty directory the linter never ran and the agent guessed icon colors and boundary placement (EFS drawn Compute-orange instead of Storage-green, external users drawn inside the VPC). This adds a workspace bootstrap step and the two missing AWS presentation roles so a first-time user gets correct output.
+
+### Added
+
+- **`rule-engine-init` workspace bootstrap** (`src/rule_engine/init_workspace.py`, `pyproject.toml` console script): copies the always-on `.kiro/steering/`, the `mappings/` tree (role table, per-provider icon maps, committed `icon-index.json`), and `schemas/` from the installed engine (or the cloned power repo at `~/.kiro/powers/repos/rule-engine-artifacts`) into a target workspace, idempotently. `--check` reports what is missing (exit 1) without writing; `--force` overwrites. This is the fix for "rules are present in one workspace but empty in another": the rules are workspace files, and the Power does not carry them, so the skill's new **STEP 0** runs `rule-engine-init` before generating anything.
+- **`compute_instance` and `file_system` AWS presentation roles** (`mappings/roles.yaml`, `mappings/aws-icons.yaml` new `presentation:` section, rebuilt `mappings/icon-index.json` — 16 roles): EC2 and EFS were absent from the mappings, so a generator had no resolved icon/color and guessed. They now resolve through the mapping like every other node, each with its correct AWS service-family color — EC2 Compute orange `#ED7100`, **EFS Storage green `#7AA116`** (not orange), load balancer / CDN / DNS Networking purple `#8C4FFF` — and verified `resIcon` ids (`ec2`, `elastic_file_system`, `application_load_balancer`, `cloudfront`, `route_53`). All four providers resolve for the two new roles (Azure VM/Files, GCP Compute/Storage categories, OCI Compute/File Storage stencils).
+
+### Changed
+
+- **Skill: mandatory STEP 0 bootstrap + hardened anti-patterns** (`.kiro/skills/rule-engine-artifacts/SKILL.md` and the mirrored `powers/rule-engine-artifacts/skills/rule-engine-artifacts/SKILL.md`): the skill now tells the agent to run `rule-engine-init --check` / `rule-engine-init` FIRST in any workspace, take the whole `style:` string (id + fillColor) from `mappings/<provider>-icons.yaml` and **never hand-write a `fillColor` hex** or guess an id, add a new role + re-run `rule-engine-build-icon-sets` when a service has none (never a look-alike), and keep **external actors and on-premises nodes OUTSIDE the cloud boundaries** (a regional service like S3 sits in the Account but outside the VPC).
+- **Version bumped to 1.4.2** (`VERSION`, `pyproject.toml`).
+
 ## [1.4.1] - 2026-09-24
 
 Refines the layout engine's **edge routing and contact-point selection** so the generated HA diagrams match the hand-routed reference, then **retires the `-reference` snapshots** now that the engine reproduces them. The routing rules were distilled from reviewer hand-edits and are enforced by the existing geometry oracle plus one new advisory lint rule; all four clouds still share one generated geometry (byte-parity preserved), and every example was regenerated from scratch to exercise the logic end-to-end.

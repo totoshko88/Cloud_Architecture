@@ -92,6 +92,32 @@
         "source": "stencil"
       }
     },
+    "compute_instance": {
+      "aws": {
+        "display_name": "Amazon EC2",
+        "note": "resolved 'EC2'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Compute/32/Arch_Amazon-EC2_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Virtual Machine",
+        "note": "resolved 'Virtual Machines'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/compute/10021-icon-service-Virtual-Machine.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "Compute",
+        "note": "category icon (Compute) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Compute/SVG/Compute-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Bare Metal Compute",
+        "note": "resolved 'compute'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#bare-metal-compute",
+        "source": "stencil"
+      }
+    },
     "dns": {
       "aws": {
         "display_name": "Amazon Route 53",
@@ -115,6 +141,32 @@
         "display_name": "DNS",
         "note": "resolved 'dns'",
         "ref": "assets/vendor/oci-stencils/stencils.json#dns",
+        "source": "stencil"
+      }
+    },
+    "file_system": {
+      "aws": {
+        "display_name": "Amazon Elastic File System File System",
+        "note": "resolved 'Elastic File System'",
+        "ref": "assets/vendor/aws-icons/Resource-Icons_07312026/Res_Storage/Res_Amazon-Elastic-File-System_File-System_48.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Files",
+        "note": "resolved 'Azure Files'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/general/10801-icon-service-Files.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "Storage",
+        "note": "category icon (Storage) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Storage/SVG/Storage-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "File Storage",
+        "note": "resolved 'file-storage'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#file-storage",
         "source": "stencil"
       }
     },

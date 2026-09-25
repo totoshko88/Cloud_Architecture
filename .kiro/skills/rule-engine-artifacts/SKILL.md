@@ -17,6 +17,31 @@ always-on steering documents under `.kiro/steering/` (which carry the
 authoritative rules); this file is the *how-to* an agent follows when it is
 actually generating or fixing an artifact.
 
+## STEP 0 — Bootstrap the workspace (MANDATORY, do this FIRST)
+
+The authoritative rules live in `.kiro/steering/*.md` and the icon/role tables
+in `mappings/` — these are **workspace** files. A Kiro Power carries only this
+skill and the MCP server, **not** the steering or mappings. So in a fresh /
+empty workspace those rules are absent: the linter cannot run, and any diagram
+you produce will guess icon colors and boundary placement (the exact defects
+that ship when the rules are missing — orange EFS, actors drawn inside the VPC).
+
+Before generating or editing ANY artifact, ensure the current workspace has the
+rules. Run:
+
+```bash
+rule-engine-init --check            # reports missing rule files (exit 1 if any)
+rule-engine-init                    # copies steering + mappings + schema in
+```
+
+`rule-engine-init` copies `.kiro/steering/`, `mappings/`, and `schemas/` from the
+installed engine (or the cloned power repo at
+`~/.kiro/powers/repos/rule-engine-artifacts`) into the target workspace,
+idempotently. Do not skip this step and do not hand-copy a subset — the whole
+`mappings/` tree (including `icon-index.json`, `aws-icons.yaml`, `roles.yaml`) is
+required for correct icon resolution. Only after the workspace is bootstrapped do
+the always-on steering rules apply and the gate commands below work.
+
 ## When to use
 
 Activate this skill for any of:
@@ -47,13 +72,25 @@ Do not restate rule values from memory. The binding sources are always-on:
 1. Pick the source format from the `diagram-standards.md` decision matrix
    (PlantUML for C4/architecture/component/deployment; Mermaid only for
    sequence/flow/state on GitLab/Backstage targets).
-2. Resolve every node icon through `mappings/<provider>-icons.yaml` — never
-   hand-write a `shape=mxgraph.*` id or an `image=data:` URI (a `data:` URI
-   trips the `icon-resolved` rule; use a file path). For GCP, respect the
-   product → category → gcp2 source priority in `gcp-icons.yaml`.
-3. Keep ≤ 12 nodes, ordered by the fixed lane order; add the Legend, a versioned
-   title cell, numbered flow markers with a right-side `Flow` legend, and
-   labeled orthogonal edges.
+2. Resolve every node icon through `mappings/<provider>-icons.yaml` — take the
+   whole `style:` string (which carries the correct `resIcon` id AND the correct
+   service-family `fillColor`) from the mapping. The nine neutral types live
+   under `resources:`; presentation-only services (EC2/compute, EFS/file system,
+   load balancer, CDN, DNS, …) live under `presentation:` and in `roles.yaml`.
+   **Never hand-write a `fillColor` hex** and never guess an id — a guessed color
+   is an icon-fidelity defect (e.g. EFS is Storage GREEN `#7AA116`, not Compute
+   orange `#ED7100`; a load balancer is networking purple `#8C4FFF`). Never use a
+   `shape=mxgraph.*` id you have not verified or an `image=data:` URI (a `data:`
+   URI trips the `icon-resolved` rule; use a file path). If a service has no role
+   yet, ADD one to `roles.yaml` + `<provider>-icons.yaml` and re-run
+   `rule-engine-build-icon-sets` — do not invent a look-alike. For GCP, respect
+   the product → category → gcp2 source priority in `gcp-icons.yaml`.
+3. Keep ≤ 12 nodes (flow class), ordered by the fixed lane order; add the Legend,
+   a versioned title cell, numbered flow markers with a right-side `Flow` legend,
+   and labeled orthogonal edges. **External actors (users) and on-premises nodes
+   sit OUTSIDE the cloud boundaries** — never inside the Account/VPC/subnet
+   containers. Only regional cloud resources belong in the VPC; a regional
+   service like S3 sits in the Account boundary but outside the VPC.
 4. Produce the mandatory triple: `NN-topic.drawio`, `NN-topic.drawio.png`,
    `NN-topic.diagram.md`.
 5. Export the raster with `scripts/export_raster.py <file>.drawio` — it inlines
