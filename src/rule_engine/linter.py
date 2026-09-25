@@ -580,7 +580,13 @@ def _check_edge_routing(a: Artifact):
     an icon it does not connect (the ALB→S3 corridor cutting the S3 glyph). That
     escalates to ERROR so it blocks publication, not merely warns. A
     non-orthogonal edge with no node crossing stays a WARNING (a style nit, not a
-    correctness failure)."""
+    correctness failure).
+
+    v1.5.4: the ``*-through-*`` family now also covers a **waypointed** edge
+    whose real *orthogonal knee* path (not the raw diagonal between points)
+    slices an unrelated icon (``knee-through-<node>``) — the devoxx ``e8``
+    horizontal stub cutting the RDS glyph. It matches the same ``through-``
+    escalation below, so it blocks publication like any other icon crossing."""
     geo = _geometry_of(a)
     if geo is None:
         return False

@@ -671,6 +671,82 @@ def test_edge_routing_pierce_is_error_in_linter():
 
 
 # --------------------------------------------------------------------------- #
+# edge-routing (v1.5.4) — a WAYPOINTED orthogonal edge whose real KNEE path cuts
+# an unrelated icon. Before 1.5.4 any waypointed edge was trusted entirely on the
+# crossing criterion, so the devoxx e8 horizontal stub through RDS linted clean.
+# --------------------------------------------------------------------------- #
+
+
+def test_edge_routing_knee_through_unrelated_node_flagged():
+    """The devoxx e8 defect: EC2->S3 exits the RIGHT face at y=215.6, first
+    waypoint is up-and-right, so draw.io draws a horizontal-first knee — a
+    horizontal leg at y=215.6 that slices the RDS icon before turning up. The raw
+    diagonal between the exit and the waypoint stepped over RDS; the knee path
+    does not."""
+    ec2a = Box("ec2a", 720, 200, 78, 78)
+    rds = Box("rds", 940, 200, 78, 78)       # unrelated node in the corridor
+    s3 = Box("s3", 1160, 360, 78, 78)
+    e = EdgeGeom(
+        id="e8", source="ec2a", target="s3", orthogonal=True,
+        exit=(1.0, 0.2), entry=(0.5, 0.0),
+        points=[(1078.0, 140.0), (1199.0, 140.0)],
+    )
+    g = DiagramGeometry(nodes={"ec2a": ec2a, "rds": rds, "s3": s3}, edges=[e])
+    hits = geo.check_edge_routing(g)
+    assert any(reason == "knee-through-rds" for _eid, reason in hits), hits
+
+
+def test_edge_routing_knee_through_is_error_in_linter():
+    """A knee crossing an unrelated icon escalates edge-routing to ERROR (it is a
+    ``through-`` reason), blocking publication on any class."""
+    ec2a = Box("ec2a", 720, 200, 78, 78)
+    rds = Box("rds", 940, 200, 78, 78)
+    s3 = Box("s3", 1160, 360, 78, 78)
+    e = EdgeGeom(
+        id="e8", source="ec2a", target="s3", orthogonal=True,
+        exit=(1.0, 0.2), entry=(0.5, 0.0),
+        points=[(1078.0, 140.0), (1199.0, 140.0)],
+    )
+    g = DiagramGeometry(nodes={"ec2a": ec2a, "rds": rds, "s3": s3}, edges=[e])
+    art = Artifact(kind="diagram", node_names=["ec2a", "rds", "s3"], geometry=g)
+    assert _sev(lint(art), "edge-routing") == Severity.ERROR.value
+
+
+def test_edge_routing_knee_clear_of_node_clean():
+    """The same EC2->S3 edge routed so its FIRST leg clears RDS: the exit stub
+    rises ABOVE the RDS row before turning right (waypoint x sits at the exit's x
+    so the horizontal leg runs at y=140, above RDS). No knee cuts an icon."""
+    ec2a = Box("ec2a", 720, 200, 78, 78)
+    rds = Box("rds", 940, 200, 78, 78)
+    s3 = Box("s3", 1160, 360, 78, 78)
+    e = EdgeGeom(
+        id="e8", source="ec2a", target="s3", orthogonal=True,
+        exit=(1.0, 0.2), entry=(0.5, 0.0),
+        # first waypoint shares the exit's x-column intent: the horizontal-first
+        # knee from (798,215.6) to (798,140)... a leg already aligned in x runs
+        # vertically up the gap just right of EC2a, clear of RDS at x=940.
+        points=[(838.0, 140.0), (1199.0, 140.0)],
+    )
+    g = DiagramGeometry(nodes={"ec2a": ec2a, "rds": rds, "s3": s3}, edges=[e])
+    assert geo.check_edge_routing(g) == []
+
+
+def test_edge_routing_waypointed_axis_aligned_legs_clean():
+    """A waypointed edge whose legs are already axis-aligned (no diagonal knee)
+    is not expanded and not flagged when it clears every unrelated icon."""
+    a = Box("a", 100, 100, 78, 78)
+    b = Box("b", 500, 300, 78, 78)
+    other = Box("other", 100, 300, 78, 78)   # not in either leg's corridor
+    e = EdgeGeom(
+        id="e", source="a", target="b", orthogonal=True,
+        exit=(1.0, 0.5), entry=(0.0, 0.5),
+        points=[(300.0, 139.0), (300.0, 339.0)],  # right, down, right — clean
+    )
+    g = DiagramGeometry(nodes={"a": a, "b": b, "other": other}, edges=[e])
+    assert geo.check_edge_routing(g) == []
+
+
+# --------------------------------------------------------------------------- #
 # edge-crosses-container-label (v1.5.1) — a corridor must clear a VPC caption
 # --------------------------------------------------------------------------- #
 
