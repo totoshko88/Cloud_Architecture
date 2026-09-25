@@ -75,6 +75,74 @@ def test_container_padding_is_label_aware():
 
 
 # --------------------------------------------------------------------------- #
+# nested container-in-container padding (v1.5.2)
+#
+# Regression for the audit finding: a VPC boundary sharing an edge with its
+# Account boundary (zero padding) was never evaluated, because
+# ``check_container_padding`` only measured nodes-in-containers, never a nested
+# container against its parent. The parser confirmed both cells are containers,
+# yet the linter reported the diagram clean.
+# --------------------------------------------------------------------------- #
+
+
+def test_nested_container_shared_edge_is_flagged():
+    """A child boundary whose right edge coincides with its parent's right edge
+    (the exact 01-aws-web VPC⊂Account defect) has zero padding and is flagged."""
+    g = DiagramGeometry(
+        containers={
+            # Account right = 250+798 = 1048.
+            "acct": Box("acct", 250, 220, 798, 288),
+            # VPC right = 690+358 = 1048 — shares Account's right edge → 0 pad.
+            "vpc": Box("vpc", 690, 280, 358, 198),
+        }
+    )
+    findings = geo.check_container_padding(g)
+    assert ("vpc", "acct", 0.0) in findings
+
+
+def test_nested_container_with_ample_padding_is_clean():
+    """The fixed geometry — Account widened so the VPC clears it by >=30px on
+    every side (top measured past the parent caption band) — is clean."""
+    g = DiagramGeometry(
+        containers={
+            # Account widened: right = 250+828 = 1078, bottom = 508.
+            "acct": Box("acct", 250, 220, 828, 288),
+            # VPC right = 1048 (30 from 1078), bottom = 478 (30 from 508),
+            # left = 440, top gap = 60 (>= 30 pad + 30 caption band).
+            "vpc": Box("vpc", 690, 280, 358, 198),
+        }
+    )
+    assert geo.check_container_padding(g) == []
+
+
+def test_nested_container_top_flush_is_flagged():
+    """A child whose top sits < one grid step below the parent's top border is
+    flagged even though left/right/bottom clear by >= 100 — the four sides are
+    measured symmetrically against the pad floor, exactly as a node is."""
+    g = DiagramGeometry(
+        containers={
+            "acct": Box("acct", 0, 0, 1000, 800),
+            "vpc": Box("vpc", 100, 5, 400, 400),  # top gap 5 < pad(10)
+        }
+    )
+    findings = geo.check_container_padding(g)
+    assert any(f[0] == "vpc" and f[1] == "acct" for f in findings)
+
+
+def test_triple_nest_measured_against_immediate_parent():
+    """Account ⊃ VPC ⊃ AZ: the AZ is measured against the VPC (its tightest
+    enclosing parent), not the Account, so a well-padded triple nest is clean."""
+    g = DiagramGeometry(
+        containers={
+            "acct": Box("acct", 0, 0, 1200, 900),
+            "vpc": Box("vpc", 60, 60, 900, 600),   # clears acct by 60 on top/left
+            "az": Box("az", 120, 120, 600, 400),   # clears vpc by 60 on top/left
+        }
+    )
+    assert geo.check_container_padding(g) == []
+
+
+# --------------------------------------------------------------------------- #
 # container-overlap
 # --------------------------------------------------------------------------- #
 

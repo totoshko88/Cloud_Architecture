@@ -120,7 +120,15 @@ every applicable rule against every artifact.
 - **`container-padding` (WARNING)** — *Geometry-enforced from the parsed `.drawio` model* (a node's absolute box is measured against each container box). A Boundary or Network Boundary container must keep
   at least one grid step of padding between its border and every child node, and between
   a nested container and its parent. A node placed flush against or straddling a
-  container border is a WARNING. **Class-aware:** for a `landscape` diagram this is
+  container border is a WARNING. **The nested container-in-container case is now
+  geometry-enforced (v1.5.2):** each child boundary is measured against its
+  **tightest** enclosing parent, with the four side gaps measured symmetrically
+  against the same one-grid-step floor a node gets. A child sharing an edge
+  exactly with its parent (`right == right`) reads as inside-with-zero-padding —
+  a finding — not as a disjoint sibling. Before v1.5.2 this check measured only
+  nodes-in-containers, so a VPC boundary sharing an edge with its Account
+  boundary linted clean; that gap is closed.
+  **Class-aware:** for a `landscape` diagram this is
   raised to an **ERROR**, because nested labelled containers are the primary
   device that keeps a large as-built legible, so a padding defect must block
   publication rather than merely warn.

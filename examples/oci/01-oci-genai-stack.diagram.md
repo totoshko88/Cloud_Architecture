@@ -9,6 +9,7 @@ updated: 2026-09-22
 owner: platform-architecture-team
 author: rule-engine
 next_review_date: 2027-03-22
+diagram_class: flow
 tags:
   - oci
   - generative-ai

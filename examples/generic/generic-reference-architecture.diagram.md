@@ -9,6 +9,7 @@ updated: 2026-09-22
 owner: platform-engineering
 author: rule-engine
 next_review_date: 2027-03-22
+diagram_class: flow
 tags:
   - generic
   - vendor-neutral
