@@ -14,6 +14,11 @@ linter, raster gate, and icon verifier as the publication gate.
   the schema's `extensions."dev.kiro".icon` namespace (→ `icon.png`), the only
   schema-valid place for client-specific manifest data.
 - **`icon.png`** — the power logo (640×640 PNG).
+- **`dev.kiro/steering/rule-engine-setup.md`** — a Kiro-specific always-on
+  steering file (the sanctioned power activation-time instructions) that reminds
+  the agent to run `rule-engine-init --check` / `rule-engine-init --with-assets`
+  to bootstrap the workspace before generating artifacts, and restates the
+  icon-fidelity and boundary rules.
 - **`mcp.json`** — the read-only AWS-docs MCP server, declared under
   `mcpServers` per the `mcp.schema.json` schema (Kiro loads MCP servers from
   this sibling file, not from `plugin.json`).

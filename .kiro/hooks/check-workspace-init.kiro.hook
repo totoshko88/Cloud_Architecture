@@ -1,0 +1,13 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "Check Rule Engine workspace bootstrap",
+      "trigger": "SessionStart",
+      "action": {
+        "type": "command",
+        "command": "if command -v rule-engine-init >/dev/null 2>&1; then if ! rule-engine-init --check >/dev/null 2>&1; then echo 'Rule Engine: this workspace is missing the always-on rules and/or icon mappings. Before generating any diagram/inventory artifact, bootstrap it: run `rule-engine-init` to copy the steering rules + mappings, and `rule-engine-init --with-assets` to ALSO download the official GCP/OCI icon packs (AWS/Azure icons are built into draw.io; GCP/OCI icons are file/stencil assets that are not committed, so a GCP/OCI diagram renders empty boxes until fetched).'; fi; fi"
+      }
+    }
+  ]
+}

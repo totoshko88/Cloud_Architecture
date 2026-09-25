@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="powers/rule-engine-artifacts/icon.png" alt="Diagram & Inventory Rule Engine logo" width="160" height="160">
+</p>
+
 # Diagram & Inventory Rule Engine
 
 A reusable, cloud-agnostic Kiro project that codifies how AI agents deterministically

@@ -47,6 +47,7 @@ EXIT_USAGE = 2
 #   schemas         — the Normalized Resource JSON Schema
 _BOOTSTRAP_DIRS = (
     ".kiro/steering",
+    ".kiro/hooks",
     "mappings",
     "schemas",
 )
