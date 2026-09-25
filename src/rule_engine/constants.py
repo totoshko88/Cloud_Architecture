@@ -132,9 +132,36 @@ SECRET_CONTENT_MARKERS: Tuple[str, ...] = (
 # Terminology source of truth (C1)
 # --------------------------------------------------------------------------- #
 
-#: profiles/terminology.yaml lives at the repo root: this file is
-#: src/rule_engine/constants.py -> src/rule_engine -> src -> <root>.
-TERMINOLOGY_PATH: Path = Path(__file__).resolve().parents[2] / "profiles" / "terminology.yaml"
+def _resolve_terminology_path() -> Path:
+    """Locate ``profiles/terminology.yaml`` for both the repo and installed cases.
+
+    Resolution order (first that exists):
+      1. the repo root — ``src/rule_engine/constants.py`` -> parents[2] -> root,
+         the dev/checkout case;
+      2. the payload bundled inside the installed package
+         (``rule_engine/_bootstrap/profiles/terminology.yaml``, staged by
+         ``build_backend.py``) — present in every pip / Kiro-Power install, so
+         the CLIs work with no repo checkout;
+      3. the current working directory's ``profiles/`` — a bootstrapped
+         workspace.
+
+    Falls back to the repo-root path (even if absent) so the eventual
+    ``FileNotFoundError`` names the expected location.
+    """
+    here = Path(__file__).resolve()
+    repo_root = here.parents[2] / "profiles" / "terminology.yaml"
+    bundled = here.parent / "_bootstrap" / "profiles" / "terminology.yaml"
+    cwd = Path.cwd() / "profiles" / "terminology.yaml"
+    for candidate in (repo_root, bundled, cwd):
+        if candidate.is_file():
+            return candidate
+    return repo_root
+
+
+#: profiles/terminology.yaml — the terminology source of truth. Resolved from the
+#: repo root (dev), the bundled package payload (pip/Power install), or the CWD
+#: (bootstrapped workspace), so the engine loads it in every install shape.
+TERMINOLOGY_PATH: Path = _resolve_terminology_path()
 
 
 @functools.lru_cache(maxsize=1)

@@ -421,6 +421,9 @@ _EXCLUDED_DIRS = {
     "assets",
     ".build-tools",  # downloaded tooling + unpacked vendor asset packs (uncommitted)
     "release-dist",  # locally built release bundles (uncommitted)
+    "build",  # setuptools build/ output (build/lib/... copies), not source artifacts
+    "dist",  # built wheels/sdists
+    "_bootstrap",  # bundled workspace-bootstrap payload (build-time copy of the rules)
     ".kiro",  # steering/specs are rule sources, not linted artifacts
 }
 
@@ -450,12 +453,41 @@ def _is_generated_markdown(path: str) -> bool:
 
     Companion documents (``*.diagram.md``) and versioned inventory / KB
     documents are linted; top-level hand-authored repo docs (README, INSTALL,
-    CHANGELOG, ...) are not.
+    CHANGELOG, ...) are not. Steering files are rule *sources*, not generated KB
+    documents: those under the repo's own ``.kiro/steering`` are already skipped
+    by the ``.kiro`` directory prune in ``_EXCLUDED_DIRS``, but a power ships its
+    steering under ``dev.kiro/steering`` (walked normally), and steering uses
+    Kiro's ``inclusion:`` frontmatter, not the 12 KB keys — so the frontmatter
+    contract must not apply to it. Exempt any ``*.kiro/steering/`` file here, the
+    single predicate both the ``--all`` scan and the ``--file`` hook path use.
     """
+    if _is_steering_markdown(path):
+        return False
     base = os.path.basename(path).lower()
     if base.endswith(".diagram.md"):
         return True
     return base not in _EXCLUDED_MD_BASENAMES
+
+
+def _is_steering_markdown(path: str) -> bool:
+    """True when ``path`` is a Kiro steering doc (a rule source, not a KB doc).
+
+    Matches a file directly inside a ``steering`` directory whose parent is a
+    Kiro config dir — literal ``.kiro`` or a client-namespaced ``*.kiro`` such as
+    ``dev.kiro`` (the power's ``dev.kiro/steering``). Steering carries an
+    ``inclusion:`` frontmatter contract, not the 12 generated-KB keys, so it is
+    exempt from the ``frontmatter`` rule.
+    """
+    parts = [p.lower() for p in os.path.normpath(path).split(os.sep)]
+    for i in range(1, len(parts) - 1):
+        parent = parts[i - 1]
+        # ".kiro" / "dev.kiro" (workspace/power) and the dot-free "kiro" used by
+        # the bundled package payload all denote a steering source directory.
+        if parts[i] == "steering" and (
+            parent == ".kiro" or parent == "kiro" or parent.endswith(".kiro")
+        ):
+            return True
+    return False
 
 
 def _is_snapshot_json(path: str) -> bool:

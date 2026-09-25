@@ -1,6 +1,11 @@
 [build-system]
 requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
+# In-tree backend (build_backend.py) that copies the workspace bootstrap payload
+# (.kiro/steering, .kiro/hooks, mappings, schemas) into src/rule_engine/_bootstrap
+# so rule-engine-init can bootstrap a fresh workspace from the installed package
+# alone — even when only the Kiro Power / pip package is present, not the repo.
+build-backend = "build_backend"
+backend-path = ["."]
 
 [project]
 name = "rule-engine"
@@ -67,6 +72,13 @@ rule-engine-init = "rule_engine.init_workspace:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+# Ship the bundled workspace bootstrap payload (steering rules, hooks, icon
+# mappings, schema) staged by build_backend.py, so rule-engine-init works from
+# the installed package with no repo checkout. The trees are git-ignored in the
+# source tree; the build backend regenerates them for every wheel/sdist.
+"rule_engine._bootstrap" = ["**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

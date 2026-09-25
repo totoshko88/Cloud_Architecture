@@ -20,10 +20,14 @@ Usage::
     rule-engine-init --force         # overwrite existing copies
     rule-engine-init --check         # report what is missing, write nothing
 
-Source resolution order (first that contains ``.kiro/steering``):
+Source resolution order (first that contains ``.kiro/steering`` + ``mappings``):
   1. ``--source`` if given;
-  2. the installed engine repo root (this file's ``parents[2]``);
-  3. the cloned power repo at ``~/.kiro/powers/repos/rule-engine-artifacts``.
+  2. the bundled payload shipped inside the installed package
+     (``rule_engine/_bootstrap``) — present in every pip/Power install, so this
+     works with no repo checkout at all;
+  3. the installed engine repo root (this file's ``parents[2]``) — the dev/repo
+     case;
+  4. the cloned power repo at ``~/.kiro/powers/repos/rule-engine-artifacts``.
 
 The copy is idempotent: existing files are skipped unless ``--force`` is given.
 Nothing outside the target workspace is ever written.
@@ -41,8 +45,10 @@ EXIT_OK = 0
 EXIT_FAIL = 1
 EXIT_USAGE = 2
 
-# What a bootstrapped workspace needs for the always-on rules + icon resolution.
+# What a bootstrapped workspace needs for the always-on rules + icon resolution,
+# expressed as WORKSPACE-relative destinations (always dot-prefixed for .kiro):
 #   .kiro/steering  — the six always-on steering documents (the rules)
+#   .kiro/hooks     — the lint-on-save / validate-on-task / bootstrap-check hooks
 #   mappings        — role table, per-provider icon maps, committed icon-index
 #   schemas         — the Normalized Resource JSON Schema
 _BOOTSTRAP_DIRS = (
@@ -50,20 +56,68 @@ _BOOTSTRAP_DIRS = (
     ".kiro/hooks",
     "mappings",
     "schemas",
+    # profiles/terminology.yaml — the terminology source of truth that
+    # rule_engine.constants loads. Copying it lets a bootstrapped workspace also
+    # run the engine from its own root (repo-root path resolution).
+    "profiles",
 )
 
 _POWER_REPO = Path.home() / ".kiro" / "powers" / "repos" / "rule-engine-artifacts"
 
+# Bundled payload copied into the package at build time (see build_backend.py).
+# Present in every pip / Kiro-Power install, so rule-engine-init can bootstrap a
+# workspace with no repo checkout. This is the primary source for a new user.
+_BUNDLED = Path(__file__).resolve().parent / "_bootstrap"
+
+# setuptools' package-data collection drops dot-directories, so the bundled
+# payload stores the .kiro trees under DOT-FREE names ("kiro/..."). This maps a
+# workspace-relative destination to where it lives inside the bundle. Keep in
+# sync with build_backend._PAYLOAD. Non-.kiro dirs (mappings, schemas) are stored
+# under their own name and need no remap.
+_BUNDLE_MAP = {
+    ".kiro/steering": "kiro/steering",
+    ".kiro/hooks": "kiro/hooks",
+}
+
+
+def _source_subdir(source: Path, dest_rel: str) -> Path:
+    """Return the directory inside ``source`` that holds ``dest_rel``.
+
+    A repo source stores files at the dot-prefixed path (``.kiro/steering``); the
+    bundled package payload stores them dot-free (``kiro/steering``). Prefer the
+    dot-prefixed layout, fall back to the bundle's dot-free layout.
+    """
+    direct = source / dest_rel
+    if direct.is_dir():
+        return direct
+    remapped = _BUNDLE_MAP.get(dest_rel)
+    if remapped:
+        return source / remapped
+    return direct
+
 
 def _looks_like_source(root: Path) -> bool:
-    return (root / ".kiro" / "steering").is_dir() and (root / "mappings").is_dir()
+    """True when ``root`` holds a usable payload (repo dot layout OR bundle layout)."""
+    has_steering = (root / ".kiro" / "steering").is_dir() or (
+        root / "kiro" / "steering"
+    ).is_dir()
+    return has_steering and (root / "mappings").is_dir()
 
 
 def resolve_source(explicit: Optional[str]) -> Optional[Path]:
-    """Find the engine source tree that holds steering + mappings."""
+    """Find the engine source tree that holds steering + mappings.
+
+    Preference order: an explicit ``--source``; the payload bundled inside the
+    installed package (works with no repo); the installed repo root (dev case);
+    the cloned power repo. The bundled payload comes before the repo root so a
+    normal install self-configures even when the caller sits inside an unrelated
+    checkout.
+    """
     candidates: list[Path] = []
     if explicit:
         candidates.append(Path(explicit).expanduser().resolve())
+    # Bundled package payload first: this is what a pip/Power install ships.
+    candidates.append(_BUNDLED)
     # Installed engine repo root: src/rule_engine/init_workspace.py -> parents[2].
     candidates.append(Path(__file__).resolve().parents[2])
     candidates.append(_POWER_REPO)
@@ -93,12 +147,16 @@ def bootstrap(
     """
     written: list[str] = []
     skipped: list[str] = []
-    for rel in _BOOTSTRAP_DIRS:
-        src_dir = source / rel
+    for dest_rel in _BOOTSTRAP_DIRS:
+        src_dir = _source_subdir(source, dest_rel)
         if not src_dir.is_dir():
             continue
+        dest_base = Path(dest_rel)  # always the dot-prefixed workspace path
         for src_file in _iter_files(src_dir):
-            rel_path = src_file.relative_to(source)
+            # Reconstruct the workspace-relative path from the destination base
+            # plus the file's position within the source subdir — so a dot-free
+            # bundle path ("kiro/steering/x.md") lands at ".kiro/steering/x.md".
+            rel_path = dest_base / src_file.relative_to(src_dir)
             dst_file = target / rel_path
             if dst_file.exists() and not force:
                 skipped.append(str(rel_path))

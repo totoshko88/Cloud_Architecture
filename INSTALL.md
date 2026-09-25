@@ -119,6 +119,24 @@ Follow these steps in order.
     server as a single power instead of the workspace-local copies. See
     [`powers/rule-engine-artifacts/README.md`](powers/rule-engine-artifacts/README.md).
 
+    **Power-only install (a new user who did not do steps 1–5).** Installing a power
+    does *not* run pip and does *not* copy the workspace rule files, so the power ships a
+    one-step bootstrap that closes both gaps. On first use, run the helper from the skill
+    directory:
+
+    ```bash
+    # from skills/rule-engine-artifacts/ inside the installed power:
+    bash scripts/bootstrap.sh               # pip-install the rule-engine CLI (if missing) + bootstrap the workspace
+    bash scripts/bootstrap.sh --with-assets # ALSO fetch the official GCP/OCI icon packs
+    ```
+
+    It installs the `rule-engine` package when `rule-engine-init` is absent, then copies
+    `.kiro/steering/`, `.kiro/hooks/`, `mappings/`, and `schemas/` into the current
+    workspace from the payload **bundled inside the installed package** (no repo checkout
+    needed). The skill's always-on `dev.kiro/` steering instructs the agent to run this
+    before generating any artifact. Steps 1–5 above remain the path for a full repo/CI
+    checkout; the bootstrap helper is the equivalent for a power-only install.
+
 Once these steps complete, the Rule Engine is installed and active: the steering rules
 govern generation, the hooks gate saves and task completion, the custom agents provide
 least-privilege per-workflow configurations, and the CLIs are available for manual and CI

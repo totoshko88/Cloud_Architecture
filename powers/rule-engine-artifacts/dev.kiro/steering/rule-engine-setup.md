@@ -13,10 +13,22 @@ snapshot, or knowledge-base document.
 The Rule Engine's authoritative rules (`.kiro/steering/*.md`), the icon/role
 mappings (`mappings/`), the hooks (`.kiro/hooks/`), and the JSON schema
 (`schemas/`) are **workspace files**. The Power itself carries only this skill +
-MCP — it does **not** carry those rule files or the icon binaries. So in a fresh
-workspace the linter cannot run and icons do not resolve.
+MCP + this steering — it does **not** carry those rule files, the icon binaries,
+or the `rule-engine-*` CLIs (installing a power does not run pip). So in a fresh
+workspace the linter cannot run, icons do not resolve, and the CLI the workflow
+depends on is not yet on PATH.
 
-At the start of working in a workspace, run the check and act on it:
+At the start of working in a workspace, bootstrap it. The one-step helper
+shipped with the skill installs the `rule-engine` package if its CLI is missing,
+then copies the rules/mappings/schema/hooks into the current workspace:
+
+```bash
+# from the skill directory (skills/rule-engine-artifacts/):
+bash scripts/bootstrap.sh               # install CLI (if needed) + bootstrap CWD
+bash scripts/bootstrap.sh --with-assets # ALSO download the GCP/OCI icon packs
+```
+
+If `rule-engine-init` is already on PATH, you can run it directly instead:
 
 ```bash
 rule-engine-init --check          # exit 1 if the rules/mappings are missing
@@ -24,8 +36,11 @@ rule-engine-init                  # copy steering + hooks + mappings + schema in
 rule-engine-init --with-assets    # AND download the official GCP/OCI icon packs
 ```
 
-- If `rule-engine-init --check` reports missing files, run `rule-engine-init`
-  (or `rule-engine-init --with-assets`) before anything else.
+- Always bootstrap **before** producing any artifact. Do not rely on a
+  SessionStart hook to do it — a Power cannot ship Kiro hooks, so a
+  power-installed workspace has none; the bootstrap must be driven from here.
+- `rule-engine-init` resolves its source from the payload **bundled inside the
+  installed package**, so it works with no repo checkout.
 - **AWS and Azure** icons are built into the draw.io app and need no download.
 - **GCP and OCI** icons are official file/stencil assets that are **not
   committed** (`icon-index.json` records only their paths); a GCP or OCI diagram

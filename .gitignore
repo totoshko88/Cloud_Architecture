@@ -36,6 +36,11 @@ azure-icons/
 gcp-icons/
 oci-icons/
 
+# Bundled workspace bootstrap payload — a build-time copy of .kiro/steering,
+# .kiro/hooks, mappings, and schemas staged by build_backend.py into the package.
+# The repo keeps the single source of truth at the top level; this is generated.
+src/rule_engine/_bootstrap/
+
 # Local build tooling (PlantUML jar, etc.) — downloaded on demand, not committed
 .build-tools/
 release-dist/

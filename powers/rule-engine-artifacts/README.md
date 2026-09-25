@@ -36,6 +36,35 @@ special approval). The manifest follows the
 `https://agent-plugins.org/schemas/1.0.0/plugin.schema.json` schema; a power may
 ship Agent Skills, MCP server configuration, and Kiro-specific extensions.
 
+### First run: bootstrap the workspace (one step)
+
+Installing the power wires up the skill, the `dev.kiro/` steering, and the MCP
+server — but a power **cannot** run pip or ship the always-on rule files, so on
+first use the `rule-engine-*` CLIs are not on `PATH` and the target workspace has
+no rules/mappings yet. The skill's `dev.kiro/` steering makes the agent run the
+bundled one-step helper before generating anything:
+
+```bash
+# from the skill dir: skills/rule-engine-artifacts/
+bash scripts/bootstrap.sh               # install the rule-engine CLI (if missing) + bootstrap CWD
+bash scripts/bootstrap.sh --with-assets # ALSO download the official GCP/OCI icon packs
+```
+
+`scripts/bootstrap.sh`:
+
+1. `pip install`s the `rule-engine` package if `rule-engine-init` is not already
+   on `PATH` (override the source with `RULE_ENGINE_SPEC`, e.g. a pinned tag or a
+   local `-e /path/to/repo`; override the installer with `PIP`);
+2. runs `rule-engine-init` to copy `.kiro/steering/`, `.kiro/hooks/`, `mappings/`,
+   and `schemas/` into the current workspace — resolved from the payload
+   **bundled inside the installed package**, so no repo checkout is required;
+3. with `--with-assets`, also fetches the official GCP/OCI icon packs (AWS/Azure
+   icons are built into draw.io and need no download).
+
+After this one step the always-on rules apply, the linter runs, and every node
+resolves to the correct provider icon. The bootstrap is idempotent — re-running
+it is safe.
+
 ## Relationship to the workspace
 
 In this repository the same skill is also available workspace-locally at

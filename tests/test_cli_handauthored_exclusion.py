@@ -36,8 +36,46 @@ def test_is_generated_markdown_excludes_hand_authored_basenames():
     assert _is_generated_markdown("CODE_OF_CONDUCT.md") is False
     assert _is_generated_markdown("SECURITY.md") is False
     assert _is_generated_markdown(".github/PULL_REQUEST_TEMPLATE.md") is False
+    # Steering files are rule sources, not generated KB docs: both the repo's
+    # own .kiro/steering and a power's dev.kiro/steering are exempt from the
+    # frontmatter contract (they use Kiro's inclusion: frontmatter, not the 12
+    # KB keys). Regression: a power's dev.kiro/steering used to trip a false
+    # frontmatter CRITICAL and block the gate.
+    assert _is_generated_markdown(".kiro/steering/diagram-standards.md") is False
+    assert (
+        _is_generated_markdown(
+            "powers/rule-engine-artifacts/dev.kiro/steering/rule-engine-setup.md"
+        )
+        is False
+    )
     # A companion / KB doc is still treated as generated.
     assert _is_generated_markdown("examples/aws/01-x.diagram.md") is True
+
+
+def test_file_mode_skips_power_steering(tmp_path, capsys):
+    # A power's dev.kiro/steering/*.md must be [SKIP], not a frontmatter CRITICAL.
+    steering = tmp_path / "dev.kiro" / "steering"
+    steering.mkdir(parents=True)
+    p = steering / "rule-engine-setup.md"
+    _write(str(p), "---\ninclusion: always\n---\n# Steering, not a KB doc\n")
+    rc = main(["--file", str(p), "--fail-on", "error,critical"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "[SKIP]" in out
+
+
+def test_discover_skips_power_steering(tmp_path):
+    # The --all scan must not pick up a power's dev.kiro/steering as a KB doc.
+    from rule_engine.cli import discover_artifacts
+
+    steering = tmp_path / "powers" / "p" / "dev.kiro" / "steering"
+    steering.mkdir(parents=True)
+    _write(str(steering / "setup.md"), "---\ninclusion: always\n---\n# x\n")
+    ex = tmp_path / "examples" / "aws"
+    _write(str(ex / "01-topic.diagram.md"), "# no frontmatter\n")
+    found = discover_artifacts(str(tmp_path))
+    assert not any(a.endswith(os.sep + "setup.md") for a in found)
+    assert any(a.endswith("01-topic.diagram.md") for a in found)
 
 
 def test_file_mode_skips_hand_authored_doc(tmp_path, capsys):
