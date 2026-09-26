@@ -28,10 +28,10 @@ the linter cannot run, and any diagram you produce will guess icon colors and
 boundary placement (the exact defects that ship when the rules are missing —
 orange EFS, actors drawn inside the VPC).
 
-Before generating or editing ANY artifact, ensure the current workspace has the
-rules. If you installed via the **Kiro Power**, run the bundled one-step helper
-(it installs the `rule-engine` package if the CLI is missing, then bootstraps
-the current workspace):
+Before generating or editing ANY artifact, run the bundled bootstrap helper. It
+does everything in one idempotent step — installs the `rule-engine` package if
+its CLI is missing, then copies the rules, agents, mappings, schema, and hooks
+into the current workspace:
 
 ```bash
 # from this skill's directory (scripts/ ships with the power):
@@ -39,24 +39,24 @@ bash scripts/bootstrap.sh               # install CLI (if needed) + bootstrap CW
 bash scripts/bootstrap.sh --with-assets # ALSO download the GCP/OCI icon packs
 ```
 
-If `rule-engine-init` is already on PATH (e.g. you ran `pip install -e .` from
-the engine repo), call it directly:
+If `rule-engine-init` is **already** on PATH (e.g. the user did `pip install -e .`
+from the engine repo), you can call it directly instead:
 
 ```bash
 rule-engine-init --check            # reports missing rule files (exit 1 if any)
-rule-engine-init                    # copies steering + hooks + mappings + schema
+rule-engine-init                    # copies steering + agents + hooks + mappings + schema
 rule-engine-init --with-assets      # AND download the GCP/OCI icon packs (below)
 ```
 
-`rule-engine-init` copies `.kiro/steering/`, `.kiro/hooks/`, `mappings/`, and
-`schemas/` into the target workspace, idempotently. The source is resolved in
-order: an explicit `--source`; the **payload bundled inside the installed
-package** (so it works with no repo checkout — the normal power/pip case); the
-installed engine repo root; then the cloned power repo. Do not skip this step
-and do not hand-copy a subset — the whole `mappings/` tree (including
-`icon-index.json`, `aws-icons.yaml`, `roles.yaml`) is required for correct icon
-resolution. Only after the workspace is bootstrapped do the always-on steering
-rules apply and the gate commands below work.
+`rule-engine-init` copies `.kiro/steering/`, `.kiro/agents/`, `.kiro/hooks/`,
+`mappings/`, `schemas/`, and `profiles/` into the target workspace, idempotently.
+The source is resolved in order: an explicit `--source`; the **payload bundled
+inside the installed package** (so it works with no repo checkout — this is the
+normal power/pip case); the installed engine repo root; then the cloned power
+repo. Do not skip this step and do not hand-copy a subset — the whole `mappings/`
+tree (including `icon-index.json`, `aws-icons.yaml`, `roles.yaml`) is required for
+correct icon resolution. Only after the workspace is bootstrapped do the always-on
+steering rules apply and the gate commands below work.
 
 **Icons: AWS/Azure are built in; GCP/OCI need the packs fetched.** AWS
 (`mxgraph.aws4.*`) and Azure (`img/lib/azure2/*`) icons ship inside the draw.io
@@ -176,6 +176,7 @@ rule-engine-lint --all --fail-on error,critical      # zero CRITICAL/ERROR to pu
 rule-engine-validate-schema --schema schemas/inventory.schema.json --targets 'examples/**/*.json'
 rule-engine-check-asset-paths                         # mapping icon paths + OCI slugs exist
 rule-engine-check-rasters                             # exported PNGs within the D7 budget
+rule-engine-check-snapshot --strict                   # Snapshot folder shape (§3-§5)
 pytest -q                                             # unit + property-based tests
 ```
 

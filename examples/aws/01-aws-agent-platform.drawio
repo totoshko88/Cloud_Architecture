@@ -34,38 +34,47 @@
         <mxCell id="node-s3" parent="1" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.s3;fillColor=#7AA116;strokeColor=#ffffff;aspect=fixed;html=1;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center" value="agent-artifact-store" vertex="1">
           <mxGeometry height="78" width="78" x="1100" y="580" as="geometry" />
         </mxCell>
-        <mxCell id="edge-eks-sqs" edge="1" parent="1" source="node-eks" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.026;exitY=0.493;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1;exitPerimeter=0;" target="node-sqs" value="1">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="edge-sqs-lambda" edge="1" parent="1" source="node-sqs" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.25;entryY=0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="node-lambda" value="2">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="edge-lambda-bedrock" edge="1" parent="1" source="node-lambda" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1;exitY=0.25;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="node-bedrock" value="3">
-          <mxGeometry relative="1" as="geometry">
+        <mxCell id="edge-eks-sqs" edge="1" parent="1" source="node-eks" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.026;exitY=0.5128;exitDx=0;exitDy=0;entryX=0;entryY=0.5128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1;exitPerimeter=0;" target="node-sqs" value="1">
+          <mxGeometry relative="1" as="geometry" >
             <Array as="points">
-              <mxPoint x="1000" y="379.54" />
-              <mxPoint x="1000" y="240" />
-              <mxPoint x="1100" y="240" />
+              <mxPoint x="650.00" y="400.00" />
+              <mxPoint x="650.00" y="240.00" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="edge-lambda-rds" edge="1" parent="1" source="node-lambda" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="node-rds" value="4">
-          <mxGeometry relative="1" as="geometry">
+        <mxCell id="edge-sqs-lambda" edge="1" parent="1" source="node-sqs" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.5128;exitY=1;exitDx=0;exitDy=0;entryX=0.2564;entryY=0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="node-lambda" value="2">
+          <mxGeometry relative="1" as="geometry" >
             <Array as="points">
-              <mxPoint x="1060" y="399.08" />
-              <mxPoint x="1060" y="479.08" />
+              <mxPoint x="700.00" y="350.00" />
+              <mxPoint x="900.00" y="350.00" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="edge-lambda-s3" edge="1" parent="1" source="node-lambda" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.006;exitY=0.75;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1;exitPerimeter=0;" target="node-s3" value="5">
+        <mxCell id="edge-lambda-bedrock" edge="1" parent="1" source="node-lambda" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1;exitY=0.2564;exitDx=0;exitDy=0;entryX=0;entryY=0.5128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="node-bedrock" value="3">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="1000" y="418.46" />
-              <mxPoint x="1000" y="619.08" />
+              <mxPoint x="1000.00" y="380.00" />
+              <mxPoint x="1000.00" y="240.00" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="edge-lambda-secrets" edge="1" parent="1" source="node-lambda" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="node-secrets" value="6">
+        <mxCell id="edge-lambda-rds" edge="1" parent="1" source="node-lambda" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1;exitY=0.5128;exitDx=0;exitDy=0;entryX=0;entryY=0.5128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="node-rds" value="4">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1060.00" y="400.00" />
+              <mxPoint x="1060.00" y="480.00" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-lambda-s3" edge="1" parent="1" source="node-lambda" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.006;exitY=0.7692;exitDx=0;exitDy=0;entryX=0;entryY=0.5128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1;exitPerimeter=0;" target="node-s3" value="5">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1000.00" y="420.00" />
+              <mxPoint x="1000.00" y="620.00" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-lambda-secrets" edge="1" parent="1" source="node-lambda" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.5128;exitY=1;exitDx=0;exitDy=0;entryX=0.5128;entryY=0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="node-secrets" value="6">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="flow-legend" parent="1" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF;spacingLeft=10;spacingRight=10;spacingTop=10;spacingBottom=10" value="Flow&#xa;1. EKS enqueues agent task on SQS&#xa;2. SQS delivers queued message to Lambda (async)&#xa;3. Lambda invokes Bedrock model inference&#xa;4. Lambda persists conversation to RDS&#xa;5. Lambda stores generated artifact in S3&#xa;6. Lambda reads API credentials from Secrets Manager" vertex="1">

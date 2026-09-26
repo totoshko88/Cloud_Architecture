@@ -179,23 +179,35 @@ _LANDSCAPE_NODES = (
     NodeSpec(id="api_a2", role="k8s", lane="workers", region="a", slot=2, sub=1, container="boundary-az-a2"),
     NodeSpec(id="cache_a2", role="cache", lane="platform", region="a", slot=1, container="boundary-az-a2"),
     # region B — VPC service row.
+    #
+    # The PASSIVE region is an active-passive mirror of the primary: every peer
+    # exists, but drawing its full edge set would duplicate the primary region's
+    # topology and double the ink for no new information. The four peers that
+    # carry a genuine cross-region relationship (``lb_b`` ← DNS standby,
+    # ``app_b1`` ← passive LB, ``db_b1`` / ``obj_b1`` ← replication) keep their
+    # real edges; the rest declare ``overlay="standby"``, the Overlay Vocabulary
+    # marker that states "mirrors the active peer; edges omitted for clarity".
+    # That is the sanctioned alternative to real edges under
+    # ``node-connectivity`` — double-encoded as a dashed outline, a ``-standby``
+    # label token, and a Legend entry, so it survives grayscale and colour-vision
+    # deficiency.
     NodeSpec(id="lb_b", role="lb", lane="router", region="b", slot=0, container="boundary-vpc-b"),
-    NodeSpec(id="queue_b", role="queue", lane="async", region="b", slot=0, container="boundary-vpc-b"),
-    NodeSpec(id="fn_b", role="fn", lane="workers", region="b", slot=0, container="boundary-vpc-b"),
-    NodeSpec(id="sec_b", role="sec", lane="platform", region="b", slot=0, container="boundary-vpc-b"),
+    NodeSpec(id="queue_b", role="queue", lane="async", region="b", slot=0, container="boundary-vpc-b", overlay="standby"),
+    NodeSpec(id="fn_b", role="fn", lane="workers", region="b", slot=0, container="boundary-vpc-b", overlay="standby"),
+    NodeSpec(id="sec_b", role="sec", lane="platform", region="b", slot=0, container="boundary-vpc-b", overlay="standby"),
     # region B — AZ-1 (slots 0..2).
     NodeSpec(id="db_b1", role="sql", lane="data", region="b", slot=0, container="boundary-az-b1"),
     NodeSpec(id="obj_b1", role="obj", lane="data", region="b", slot=1, container="boundary-az-b1"),
     NodeSpec(id="app_b1", role="k8s", lane="workers", region="b", slot=1, container="boundary-az-b1"),
-    NodeSpec(id="api_b1", role="k8s", lane="workers", region="b", slot=2, sub=1, container="boundary-az-b1"),
-    NodeSpec(id="cache_b1", role="cache", lane="platform", region="b", slot=1, container="boundary-az-b1"),
-    NodeSpec(id="mon_b", role="fn", lane="platform", region="b", slot=2, sub=1, container="boundary-az-b1"),
+    NodeSpec(id="api_b1", role="k8s", lane="workers", region="b", slot=2, sub=1, container="boundary-az-b1", overlay="standby"),
+    NodeSpec(id="cache_b1", role="cache", lane="platform", region="b", slot=1, container="boundary-az-b1", overlay="standby"),
+    NodeSpec(id="mon_b", role="fn", lane="platform", region="b", slot=2, sub=1, container="boundary-az-b1", overlay="standby"),
     # region B — AZ-2 (same slots as AZ-1; distinguished by its lower tier band).
-    NodeSpec(id="db_b2", role="sql", lane="data", region="b", slot=0, container="boundary-az-b2"),
-    NodeSpec(id="obj_b2", role="obj", lane="data", region="b", slot=1, container="boundary-az-b2"),
-    NodeSpec(id="app_b2", role="k8s", lane="workers", region="b", slot=1, container="boundary-az-b2"),
-    NodeSpec(id="api_b2", role="k8s", lane="workers", region="b", slot=2, sub=1, container="boundary-az-b2"),
-    NodeSpec(id="cache_b2", role="cache", lane="platform", region="b", slot=1, container="boundary-az-b2"),
+    NodeSpec(id="db_b2", role="sql", lane="data", region="b", slot=0, container="boundary-az-b2", overlay="standby"),
+    NodeSpec(id="obj_b2", role="obj", lane="data", region="b", slot=1, container="boundary-az-b2", overlay="standby"),
+    NodeSpec(id="app_b2", role="k8s", lane="workers", region="b", slot=1, container="boundary-az-b2", overlay="standby"),
+    NodeSpec(id="api_b2", role="k8s", lane="workers", region="b", slot=2, sub=1, container="boundary-az-b2", overlay="standby"),
+    NodeSpec(id="cache_b2", role="cache", lane="platform", region="b", slot=1, container="boundary-az-b2", overlay="standby"),
 )
 
 _LANDSCAPE_EDGES = (
@@ -217,6 +229,31 @@ _LANDSCAPE_EDGES = (
     EdgeSpec(id="l10", source="db_a1", target="db_b1", marker="10", dashed=True, kind_hint="cross-region"),
     EdgeSpec(id="l11", source="obj_a1", target="obj_b1", marker="11", dashed=True, kind_hint="cross-region"),
     EdgeSpec(id="l12", source="queue_a", target="fn_a", marker="12", dashed=True),
+    # --- v1.6.0: connect the account edge tier and the primary region --------
+    # Before 1.6.0 this landscape drew 34 nodes joined by 12 edges, leaving 20
+    # nodes with no incident edge at all — the 2026-09-25 audit's headline
+    # finding, and the reason ``node-connectivity`` could not ship as a rule
+    # until the examples it judges were connected. The nine edges below are the
+    # relationships the companion document already described in prose, so this
+    # also closes a doc/diagram mismatch. The remaining unconnected nodes are
+    # the PASSIVE region's mirror peers, which now carry the ``standby`` overlay
+    # marker instead (see ``_LANDSCAPE_NODES``).
+    EdgeSpec(id="l13", source="wafedge", target="cdn", marker="13"),
+    EdgeSpec(id="l14", source="cdn", target="audit", marker="14", dashed=True),
+    EdgeSpec(id="l15", source="cdn", target="lb_a", marker="15"),
+    # The API tier hangs off the WORKER, not the load balancer: giving ``lb_a`` a
+    # third downward branch put three exits on one bottom face, which the
+    # contact-spread cannot keep distinct (``exit-thirds``). diagram-standards is
+    # explicit that an over-connected side means "split or re-lane", so the edge
+    # is re-sourced rather than the spread being bent to accommodate it. ``fn_a``
+    # then has exactly one straight-down branch (``sec_a``) plus this one, the
+    # two-face fan-out shape the engine handles cleanly.
+    EdgeSpec(id="l16", source="fn_a", target="api_a1", marker="16"),
+    EdgeSpec(id="l17", source="api_a1", target="mon_a", marker="17", dashed=True),
+    EdgeSpec(id="l18", source="fn_a", target="sec_a", marker="18"),
+    EdgeSpec(id="l19", source="app_a2", target="cache_a2", marker="19"),
+    EdgeSpec(id="l20", source="app_a2", target="obj_a2", marker="20"),
+    EdgeSpec(id="l21", source="app_a2", target="api_a2", marker="21"),
 )
 
 # Nested containers: account ⊃ region VPC ⊃ availability zone.
@@ -244,6 +281,23 @@ _LANDSCAPE_FLOW = (
     "10. Cross-region DB replication (primary to passive)",
     "11. Cross-region object-store replication (CRR)",
     "12. Regional queue drives the worker (async)",
+    "13. Edge WAF policy fronts the CDN",
+    "14. CDN access logs to the audit bucket (async)",
+    "15. CDN origin fetch to the primary LB",
+    "16. Primary LB to the AZ-1 API tier",
+    "17. API tier emits telemetry to observability (async)",
+    "18. Primary worker reads the secrets store",
+    "19. AZ-2 app to AZ-2 cache",
+    "20. AZ-2 app writes AZ-2 object store",
+    "21. AZ-2 app to the AZ-2 API tier",
+)
+
+#: The landscape's Legend documents the ``standby`` overlay it uses, so
+#: ``overlay-legend-coverage`` is satisfied by a real legend entry rather than by
+#: the marker merely appearing twice in the file.
+LANDSCAPE_LEGEND_EXTRA = (
+    "standby (dashed outline, -standby label) = passive peer mirrors the active "
+    "one; edges omitted for clarity",
 )
 
 LANDSCAPE_SPEC = DiagramSpec(

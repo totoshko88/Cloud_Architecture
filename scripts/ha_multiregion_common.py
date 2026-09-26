@@ -51,9 +51,11 @@ from rule_engine.diagram_layout import (  # noqa: E402
     image_icon,
     OciStencilIcon,
     CONTAINER_PAD,
+    STANDARD_LEGEND_LINES,
 )
 from rule_engine.layout_engine import PlacedDiagram, layout  # noqa: E402
 from rule_engine.ha_multiregion_spec import (  # noqa: E402
+    LANDSCAPE_LEGEND_EXTRA,
     LANDSCAPE_SPEC,
     SUMMARY_SPEC,
 )
@@ -153,13 +155,28 @@ def _nodes_from(placed: PlacedDiagram, skin: ProviderSkin) -> List[Node]:
     return [
         Node(
             id=n.id,
-            label=LABELS.get(n.id, n.id),
+            label=_skinned_label(n),
             x=int(placed.nodes[n.id].x),
             y=int(placed.nodes[n.id].y),
             render=skin.renderers[role_of[n.id]],
+            overlay=getattr(n, "overlay", None),
         )
         for n in placed.spec.nodes
     ]
+
+
+def _skinned_label(spec_node) -> str:
+    """Return the node's label, suffixed with its overlay term when it has one.
+
+    The overlay marker's **label channel**: a ``standby`` peer reads
+    ``app-az2-standby``, so the marker survives grayscale printing and
+    colour-vision deficiency without repainting the pack glyph (which
+    diagram-standards → *Icon Fidelity* forbids). The suffix stays inside the
+    ``node-quote`` safe set ``[A-Za-z0-9_-]``, so no label needs quoting.
+    """
+    label = LABELS.get(spec_node.id, spec_node.id)
+    overlay = getattr(spec_node, "overlay", None)
+    return f"{label}-{overlay}" if overlay else label
 
 
 def _boundaries_from(
@@ -276,7 +293,11 @@ def build_landscape(skin: ProviderSkin) -> str:
         title=title, boundaries=boundaries, nodes=nodes, edges=edges,
         flow_lines=placed.spec.flow_lines,
         legend_x=placed.legend_x, legend_y_flow=120, legend_y_legend=460,
-        legend_w=placed.legend_w, page_w=page_w, page_h=page_h,
+        legend_w=placed.legend_w,
+        # The landscape uses the ``standby`` overlay, so its Legend must document
+        # it (overlay-legend-coverage).
+        legend_lines=STANDARD_LEGEND_LINES + LANDSCAPE_LEGEND_EXTRA,
+        page_w=page_w, page_h=page_h,
     )
 
 

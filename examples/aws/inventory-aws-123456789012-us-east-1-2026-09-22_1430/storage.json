@@ -1,0 +1,35 @@
+{
+  "resources": [
+    {
+      "boundary": "123456789012",
+      "config_digest": "95fa64e436520383d022450ae27d62837734e69d3c52e7bf24e4114f22866cba",
+      "id": "arn:aws:s3:::agent-artifact-store",
+      "name": "agent-artifact-store",
+      "native_type": "AWS::S3::Bucket",
+      "provider": "aws",
+      "region": "us-east-1",
+      "resource_type": "object_store",
+      "tags": {
+        "env": "prod",
+        "team": "platform",
+        "workload": "agent-platform"
+      }
+    },
+    {
+      "boundary": "123456789012",
+      "config_digest": "5c53ea26917faee227152b156b8288af096c42e7f45d06d014078386ab4c9ae0",
+      "id": "arn:aws:s3:::agent-transcripts",
+      "name": "agent-transcripts",
+      "native_type": "AWS::S3::Bucket",
+      "provider": "aws",
+      "region": "us-east-1",
+      "resource_type": "object_store",
+      "tags": {
+        "env": "prod",
+        "team": "platform",
+        "workload": "agent-platform"
+      }
+    }
+  ],
+  "service": "storage"
+}

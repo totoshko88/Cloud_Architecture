@@ -1,0 +1,15 @@
+{
+  "boundary": "123456789012",
+  "config_digest": "54e5374ec610fdeaebc3d707981de02403f4f8bfa3513d6662601230684deef8",
+  "id": "vpc-0a1b2c3d4e5f60718",
+  "name": "agent-platform-vpc",
+  "native_type": "AWS::EC2::VPC",
+  "provider": "aws",
+  "region": "us-east-1",
+  "resource_type": "network_boundary",
+  "tags": {
+    "env": "prod",
+    "team": "platform",
+    "workload": "agent-platform"
+  }
+}

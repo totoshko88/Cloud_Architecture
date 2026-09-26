@@ -58,6 +58,9 @@ every applicable rule against every artifact.
 | `edge-float` | An edge declares no explicit exit/entry contact point (floats its connection to the perimeter router). Raised to ERROR for `landscape`. | WARNING/ERROR | diagram-standards Edge Routing (no-float on landscape) |
 | `edge-crosses-label` | A routed edge's polyline crosses an **unrelated node's label band** (the caption strip drawn beneath the icon), i.e. a corridor runs through a service name. | WARNING | diagram-standards Edge Routing (corridors clear the label band) |
 | `edge-crosses-container-label` | A routed edge's polyline runs **along a Boundary container's top caption band** (a corridor slicing a `vpc-…`/`az-…` label). The caption width is sized from its text, so a run clearing a short caption is not flagged; only a long horizontal run along the caption trips. | WARNING | diagram-standards Edge Routing (adaptive routing / corridors clear the caption) |
+| `node-connectivity` | A role-bearing node is drawn with **zero incident edges** and carries no overlay marker explaining why. Boundary containers and text cells are not nodes and are exempt. | WARNING | diagram-standards Inventory completeness → diagram |
+| `legend-placement` | A `Flow` / `Legend` box does not sit in the **right margin**, at least one grid step past the outermost container's right edge, or overlaps a Boundary container. | WARNING | diagram-standards Reserve the right margin for Flow/Legend |
+| `edge-approach` | Two consecutive points of a route are not axis-aligned (`diagonal-leg`), or the leg touching a contact does not meet its face head-on (`exit-leg-…` / `entry-leg-…`). | WARNING | diagram-standards Every leg is explicitly axis-aligned |
 
 ### Rule Detail
 
@@ -103,7 +106,70 @@ every applicable rule against every artifact.
   line per marker in ascending order. A diagram that uses numeric markers but omits
   the `Flow` legend, or whose `Flow` legend does not cover every marker, produces a
   WARNING. Diagrams that use descriptive prose labels instead of numeric markers are
-  unaffected.
+  unaffected. **Implemented in v1.6.0.** This rule was specified from the first
+  ruleset but had no implementation behind it — the generator always emitted the
+  Flow cell, so every generated diagram happened to comply and the missing check
+  went unnoticed. Only a hand-authored diagram could hit it, which is exactly the
+  case a fresh install produces. A marker line may separate with `N.` or `N)`. An
+  artifact whose Flow cell was not parsed (a programmatic `Artifact` with no
+  `flow_legend_lines`) is **skipped**, not assumed to fail.
+- **`node-connectivity` (WARNING)** — *Topology-enforced from the parsed model.*
+  A role-bearing node drawn with **zero incident edges** tells the reader nothing
+  about how it participates; when most of the nodes float, the picture has stopped
+  being an architecture and become an inventory listing. This was the headline
+  finding of the 2026-09-25 audit: each of the four HA landscape examples drew
+  **34 nodes joined by 12 edges, leaving 20 entirely unconnected** — the same 20
+  ids on all four providers, since they share one spec. The rule is pure topology
+  (node ids minus the union of edge endpoints), so it is cheap and independent of
+  layout. Two categories are legitimately exempt: **Boundary containers** and text
+  cells (already not nodes), and **overlay-marked nodes** — a node carrying
+  `overlay=<term>` (e.g. a `standby` passive peer) is *declaring* why it has no
+  edges, double-encoded and documented in the Legend, which is the sanctioned way
+  to draw a symmetric mirror tier without duplicating every edge into it.
+  WARNING on both classes: it surfaces the defect without blocking publication,
+  because "connected enough" is a judgement the author makes.
+- **`edge-approach` (WARNING)** — *Geometry-enforced.* An `orthogonalEdgeStyle`
+  edge **never draws a diagonal**. When two consecutive points of a route are not
+  axis-aligned, draw.io inserts its own corner and **chooses which way it turns**.
+  So an unaligned pair in the source is not a diagonal on screen — it is a corner
+  the author did not specify, and every other geometry check reads the points as
+  given and therefore cannot see it. That is how an edge ends up grazing a glyph or
+  sliding along a container border while every waypoint looked deliberate.
+  Measured across the shipped corpus before v1.6.0, **30 routed edges** had such a
+  leg: each router computed its corridor correctly but emitted the waypoint next to
+  a contact from the *corridor's* coordinates rather than the *contact's*. Three
+  conditions are reported:
+
+  * `diagonal-leg` — two consecutive points are not axis-aligned.
+  * `exit-leg-<axis>-want-<axis>` — the leg leaving the source does not meet the
+    exit face head-on. A right/left face is met by a **horizontal** leg, a
+    top/bottom face by a **vertical** one.
+  * `entry-leg-<axis>-want-<axis>` — the same at the target. The canonical defect
+    is a horizontal leg running **along** a node's top border into a top-centre
+    entry, so the arrowhead slides across the glyph's edge instead of dropping
+    into it.
+
+  A **corner** contact lies on two faces and accepts either axis, so it is not
+  constrained; an edge with no waypoints is a single straight run and is skipped;
+  an edge that floats a contact is left to `edge-float`. Generated diagrams satisfy
+  this by construction — the layout engine re-aligns after every repair and the
+  shared builder aligns at render time — so the rule exists for hand-authored and
+  hand-dragged sources. `scripts/orthogonalise_drawio.py` applies the same rewrite
+  to a `.drawio` in place.
+- **`legend-placement` (WARNING)** — *Geometry-enforced.* The `Flow` and `Legend`
+  blocks live in the **right margin**, their left edge at least one grid step past
+  the outermost container's right edge, clear of every Boundary box
+  (diagram-standards → *Reserve the right margin for Flow/Legend*). Two reasons
+  are reported: `left-of-diagram-body` (the box does not clear the outermost
+  container) and `overlaps-<container-id>` (the box is drawn on top of a
+  boundary). Nothing enforced this before v1.6.0, and it showed: a clean-room
+  install produced an otherwise-clean AWS diagram with **both blocks stacked in
+  the left margin below the external user**, while every shipped golden — built
+  through the shared builder — puts them on the right. The rule is the difference
+  between a convention the builder happens to follow and one a hand-authoring
+  agent must follow too. Only cells whose first line is exactly `Flow` or `Legend`
+  are judged (an arbitrary note box is not the furniture), and a diagram with no
+  Boundary container is skipped: there is no body to reserve a margin against.
 - **`edge-routing` (WARNING/ERROR)** — *Geometry-enforced from the parsed `.drawio` model.* The check is conservative to avoid false positives on validly routed diagrams. It flags: (a) a **non-orthogonal** edge; (b) a **waypoint-free** edge whose straight run between its real contact points passes through an unrelated node (`straight-through-<node>`); and (c) — **new in v1.5.1** — an edge whose **final approach leg reaches its own target's pinned entry contact from the wrong side**, so the leg pierces the target's glyph to reach the contact (`pierces-target-<node>`). Case (c) catches the canonical defect where an edge pins a *top* entry but its corridor sits *below* the icon, so the arrow enters up through the icon body instead of from above (or the mirror on any face). A waypointed edge is **not** blindly trusted: while its raw diagonal is not sampled (draw.io routes orthogonally, so the diagonal would false-flag a validly routed edge), its real **orthogonal knee** path — the horizontal-first axis-aligned segments draw.io actually draws between consecutive points — **is** sampled (case (d), **new in v1.5.4**), so a knee leg that slices an unrelated icon is flagged (`knee-through-<node>`). This closes the gap where a waypointed edge's L-shaped leg (the devoxx `e8` horizontal stub cutting the RDS glyph) stepped cleanly between diagonal samples yet rendered straight through the icon. The self-pierce criterion (c) is checked on every edge regardless of waypoints, because a wrong-side approach is a defect even when the rest of the route was deliberate. **Severity: an icon-crossing finding — `*-through-*` (b) or `pierces-target-*` (c) — is raised to ERROR on any class** (a line drawn over an icon it does not connect, or into its target from the wrong side, is a correctness failure, not a style nit); a bare non-orthogonal edge with no crossing stays a WARNING. Beyond the enforced core, edges should be orthogonally routed
   (`edgeStyle=orthogonalEdgeStyle` for `.drawio`), must not cross through a node icon,
   and must enter a node on its left/top and exit on its right/bottom. When one node
@@ -196,13 +262,36 @@ every applicable rule against every artifact.
   as-built legible.
 - **`edge-direction` (WARNING/ERROR)** — *Geometry-enforced.* The **directional
   contract**: every edge that declares explicit contact points must **exit** its
-  source on the **right or bottom** (`exitX >= 0.5`, admitting the right edge and
-  the top-right / bottom-right corners, or `exitY == 1`) and **enter** its target
-  on the **left or top** (`entryX <= 0.5` or `entryY == 0`). A left-edge exit
-  (`0, 0.5`) or a right-edge entry (`1, 0.5`) is the defect. This single rule
-  removes most crossings on a dense diagram. Edges that float their connection
-  (no explicit contact point) are left to the perimeter router and not judged.
-  WARNING for `flow`; **ERROR for `landscape`**.
+  source on the **right or bottom** face and **enter** its target on the **left or
+  top** face. Edges that float their connection (no explicit contact point) are
+  left to the perimeter router and not judged (`edge-float` owns them). WARNING
+  for `flow`; **ERROR for `landscape`**.
+
+  **Face classification (v1.6.0).** The check reads which *face* of the unit
+  square each contact point lies on, not which half-plane it leans into. The
+  pre-1.6.0 logic tested `exitX >= 0.5` in order to admit the right edge **and**
+  the top-right / bottom-right corners — but `exitX >= 0.5` is also true of
+  `(0.5, 0)`, the **top-centre** point, so a pinned top exit was "rescued" by its
+  own x and an edge leaving straight out of the top of its glyph linted clean.
+  That is precisely what a clean-room install produced: an `EC2 → S3` edge pinned
+  `exit=(0.5, 0)`, visibly rising out of the top of the EC2 icon, with no finding.
+  The entry side had the mirror hole — a bottom-centre arrival `(0.5, 1)` was
+  rescued by `entryX <= 0.5`. So:
+
+  * a valid **exit** lies on the **right** (`exitX >= 1`) or **bottom**
+    (`exitY >= 1`) face. The top-right `(1, 0)` and bottom-right `(1, 1)` corners
+    stay legal because they lie on the right face too; the top-centre `(0.5, 0)`
+    and left-centre `(0, 0.5)` points are defects.
+  * a valid **entry** lies on the **left** (`entryX <= 0`) or **top**
+    (`entryY <= 0`) face. The bottom-left `(0, 1)` corner stays legal; the
+    bottom-centre `(0.5, 1)` and right-centre `(1, 0.5)` points are defects.
+  * a *band* pin that names no face (e.g. `exitX=0.75` with no `exitY`) keeps the
+    pre-1.6.0 lean test, so every prior judgement on a single-axis pin is
+    preserved.
+
+  The reason names the offending face — `exit-top-not-right-or-bottom`,
+  `exit-left-not-right-or-bottom`, `enter-bottom-not-left-or-top`,
+  `enter-right-not-left-or-top` — so the author knows which contact to move.
 - **Label-aware geometry (applies to `container-padding` and `node-overlap`).**
   A node's footprint is not its 78×78 icon box alone — the service name renders
   in a caption band **below** the icon (`verticalLabelPosition=bottom`), and that
@@ -277,6 +366,8 @@ keeps its exact behavior.
 | `entry-thirds` | WARNING | **ERROR** (arrivals on one face must stay distinct) |
 | `edge-routing` (icon crossing) | **ERROR** | **ERROR** (a run through an icon it does not connect / into its target from the wrong side) |
 | `orphan-landscape` | n/a | ERROR unless `summary_of` names a `flow` summary |
+| `node-connectivity` | WARNING | WARNING (an overlay marker is the sanctioned exemption) |
+| `legend-placement` | WARNING | WARNING |
 | numbered flow markers | expected | optional (a landscape has no single path) |
 | `overlay-legend-coverage` | WARNING when overlay markers are used | WARNING when overlay markers are used |
 | raster budget (export guidance) | ≤ 1600px / < 500KB | ≤ 3600px / < 2MB (a wide as-built stays legible) |

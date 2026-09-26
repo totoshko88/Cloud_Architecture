@@ -9,7 +9,7 @@ backend-path = ["."]
 
 [project]
 name = "rule-engine"
-version = "1.5.4"
+version = "1.6.0"
 description = "Diagram & Inventory Rule Engine — a cloud-agnostic Kiro project for deterministic diagram and inventory generation."
 readme = "README.md"
 # Python 3.14 is intentional: Python 3.10 reaches end-of-life in October 2026,
@@ -50,6 +50,14 @@ rule-engine-check-asset-paths = "rule_engine.asset_paths_guard:main"
 # export budget (flow <= 1600px / < 500KB, landscape <= 3600px / < 2MB). Used by
 # the CI validate stage.
 rule-engine-check-rasters = "rule_engine.raster_gate:main"
+# Snapshot gate (v1.6.0): verify every inventory-* Snapshot folder satisfies the
+# mandated shape from inventory-standards.md — folder name (§3), the seven
+# non-empty manifest fields (§4), one JSON per service domain and one subfolder
+# per enumerated resource (§5). The linter checks snapshot file CONTENT
+# (frontmatter, secret-safety); nothing checked the folder shape, so a
+# hand-written snapshot could ship with an empty resources/ and a wrong
+# file_count and still lint clean.
+rule-engine-check-snapshot = "rule_engine.snapshot_gate:main"
 # Icon-reference verifier (v1.3.0): resolve every resIcon/grIcon/image path
 # in a .drawio against the provider's authoritative icon source, so a guessed
 # id (which renders as an empty box) is caught before publication.

@@ -156,6 +156,18 @@ every enumerated resource that resolves to a diagram role
   role-resolvable resource in the snapshot is either drawn or, for a
   simple/summary, consciously out of scope. An unexplained gap is a defect.
 
+**Drawing a resource is not the same as relating it.** Completeness gets the node
+onto the canvas; it does not make the diagram an *architecture*. A node with **no
+incident edge** tells the reader nothing about how it participates, and when most
+of the nodes float, the picture has become an inventory listing with icons. Every
+role-bearing node must therefore be either **connected** — at least one edge, in
+or out — or **explicitly marked** with an overlay term that declares why it is
+not (in practice `standby`, for a symmetric passive peer whose edges mirror the
+active side). This is the `node-connectivity` lint rule (WARNING on both classes).
+It is a WARNING rather than an ERROR because "connected enough" is a judgement the
+author makes: an edge-less node is always worth a second look, but only the author
+knows whether the missing relationship is real or out of scope.
+
 ## Overlay Vocabulary (findings / state)
 
 A diagram may carry an **optional** second layer of meaning — findings and
@@ -168,11 +180,30 @@ WARNING). The canonical vocabulary:
 | --- | --- | --- | --- |
 | Spec requires, not deployed | dashed rectangle overlay | red `#D64550` | `spec-required-not-deployed` |
 | Observability overlay | stroked box | blue `#0062AD` | `observability-overlay` |
+| Passive peer, edges omitted | dashed node outline | — (never repaint a pack glyph) | `standby` |
 | New in version N | badge on node | — | 🆕 |
 | Changed in version N | badge on node | — | 🔄 |
 
 Overlay markers are additive: they annotate existing nodes/edges, never replace
 the node's own icon or the standard Legend/Flow blocks.
+
+**Machine-readable form.** A marked cell carries `overlay=<term>` in its style —
+the token the linter reads for `overlay-legend-coverage` (is the term documented?)
+and for `node-connectivity` (is this node's edge-lessness *declared*?). The token
+is not the marker: the three human channels (shape, color, label) still apply, so
+the marker survives grayscale printing and colour-vision deficiency.
+
+**`standby` (v1.6.0).** An active-passive architecture draws every passive peer,
+but drawing its full edge set duplicates the active region's topology and doubles
+the ink for no new information. A peer marked `standby` states "mirrors the active
+one; edges omitted for clarity", which is the sanctioned alternative to real edges
+under `node-connectivity`. Its three channels are a **dashed node outline**, a
+**`-standby` label suffix** (kept inside the `node-quote` safe set
+`[A-Za-z0-9_-]`, so no label needs quoting), and a **Legend entry**. It
+deliberately declares **no colour**: *Icon Fidelity* forbids recolouring a pack
+glyph, so the marker is additive only. Use it for a genuine symmetric mirror — a
+passive region, a standby AZ — never to excuse a node the author simply forgot to
+connect.
 
 ## Node Quoting Rule
 
@@ -196,11 +227,30 @@ When a diagram uses numbered flow markers, it includes a **Flow** legend cell pl
 
 The standard Legend block additionally documents the marker convention with the line `Numbered markers (1..N) = ordered data flow steps; see Flow list`.
 
-**Flow and Legend share one width, and each box fits its text without wrapping.** The two right-margin cells (`Flow` and `Legend`) use the **same width**, chosen so the **longest line across both** fits on one line — no wrapping. Height is sized to each box's own (unwrapped) line count plus the uniform inner padding, so the pair reads as one aligned block with a consistent left/right silhouette (widths equal; heights may differ per content). The shared builder computes this: `build_diagram` sets one `box_w` from the longest Flow/Legend line and applies it to both, and sizes each height from its line count — never a fixed width that wraps the long legend lines. Reserve enough right-margin page width for `legend_x + box_w`.
+**Flow and Legend share one width. No-wrap is the default; a narrow pin is the sanctioned exception.** The two right-margin cells (`Flow` and `Legend`) always use the **same width**, so the pair reads as one aligned block with a consistent left/right silhouette (widths equal; heights may differ per content). The width is chosen one of two ways, and only these two:
+
+- **Default — size to content, no wrapping.** The shared width is the **longest line across both** boxes, so every line fits on one line. `build_diagram` computes this automatically when no width is pinned: one `box_w` from the longest Flow/Legend line, applied to both, with each height sized from its own line count plus the uniform inner padding.
+- **Exception — pin narrower and let it wrap taller.** When the no-wrap width would push the block past the page or back into the diagram body (a wide as-built, where the longest legend line is wider than the right margin can hold), pin a narrower `legend_w`. The text then **wraps and the box grows taller**, which is correct: a narrow-and-tall Flow/Legend never collides with a node or a container border, whereas a wide one does. `build_diagram`'s height calculation is wrap-aware, so the pinned box is still sized to its real (wrapped) line count. The four shipped HA landscapes take this path at `legend_w=280`.
+
+So wrapping is **not** a defect in itself — wrapping *at the default width* is, because it means the width was hand-set too small for no reason. Reserve enough right-margin page width for `legend_x + box_w` either way, and never let the Legend box overlap the Flow box above it: `build_diagram` pushes the Legend down to clear the Flow box by one grid step, since a long Flow list (or a pinned narrow width) can grow past a caller's requested `legend_y_legend`.
 
 ## Edge Routing
 
 Route edges so that no edge crosses through a node icon and no two edges overlap where it can be avoided. Use orthogonal routing (`edgeStyle=orthogonalEdgeStyle`) for `.drawio` sources. Fix connection points explicitly with `exitX/exitY` and `entryX/entryY` rather than relying on floating connections.
+
+**Every leg is explicitly axis-aligned — never leave a corner to draw.io.** An `orthogonalEdgeStyle` edge never draws a diagonal. When two consecutive points of a route are not axis-aligned, draw.io **inserts its own corner and chooses which way it turns** — so an unaligned waypoint is not a diagonal on screen, it is a corner the author did not specify. Its two possible shapes (horizontal-first or vertical-first) can differ by a whole icon: one clears a glyph and the other cuts straight through it. That is how an edge ends up grazing an icon or sliding along a container border while every waypoint in the source looked deliberate, and it is invisible to every other geometry rule, all of which read the points as given.
+
+So the source must fully determine the drawn path. Three concrete requirements, enforced by the `edge-approach` lint rule:
+
+- **Every leg is H or V.** For each consecutive pair in `[exit contact] + waypoints + [entry contact]`, either the x or the y is equal. Insert the corner yourself instead of implying it.
+- **The first leg meets the exit face head-on.** A right/left face is left by a **horizontal** leg, a top/bottom face by a **vertical** one. (A corner contact lies on two faces and accepts either.)
+- **The last leg meets the entry face head-on**, arriving from an approach lane one grid step outside the face. A horizontal leg running *along* a node's top border into a top-centre entry is the defect: the arrowhead slides across the glyph's edge rather than dropping into it. Turn one step above the node and drop in.
+
+A fourth, related rule: **collapse an overshoot.** A run that passes the contact and comes back along the same axis (`… → (1290, 410) → entry at (1290, 380)`) is one run to 380, not two. The extra point adds nothing and makes the route read as a stutter.
+
+**Contacts are grid-resolved along the face they sit on.** A fraction such as `exitY=0.25` on a 78px icon resolves to `y0 + 19.5` — half a pixel off the 10-grid every waypoint snaps to — which leaves a permanent kink that reads as a bent arrowhead. Nudge the *fraction* until the absolute contact lands on the grid, but snap **only the along-face coordinate**: for a right face only the y, for a top face only the x. Snapping the face coordinate would pull the contact *inside* the glyph whenever the icon is not grid-commensurate (a 64px icon at `x=540` has its right edge at 604; rounding to 600 moves the contact off its own face and silently breaks the directional contract).
+
+Generated diagrams get all of this for free — the layout engine re-aligns every route after each repair pass, and the shared builder aligns at render time — so these rules bite on hand-authored sources and on edges dragged in the draw.io GUI. `scripts/orthogonalise_drawio.py` applies the same rewrite to a `.drawio` in place. (Distilled from a reviewer's hand-edit of the AWS landscape, 2026-09-26: three edges, all three instances of this one defect.)
 
 **The directional contract (the one hard rule — stated first).** Every edge with explicit contact points **exits** its source on the **right or bottom** and **enters** its target on the **left or top**. In draw.io unit-square fractions: a valid exit leans right (`exitX >= 0.5`, which admits the right edge and the top-right / bottom-right corners) or sits on the bottom edge (`exitY == 1`); a valid entry leans left (`entryX <= 0.5`) or sits on the top edge (`entryY == 0`). A left-edge exit (`exitX=0`) or a right-edge entry (`entryX=1`) is the defect. This single rule removes most crossings on a dense diagram and is enforced by the `edge-direction` lint rule — WARNING for `flow`, **ERROR for `landscape`**. Exceptions are the documented corner-exit and back-edge patterns below (both still exit right/bottom, enter left/top).
 
@@ -214,7 +264,17 @@ Route edges so that no edge crosses through a node icon and no two edges overlap
 - **Cross-region hop, target has a clear left approach** (row-rightmost, left face free) → route in the **inter-row gap** between the source row and the row below, then enter the target's **left** face — never along an AZ/VPC top caption. A target with a left neighbour is still reached from the **top**.
 - **Free-corridor predicate.** Before choosing a side, verify the corridor lane is empty and the target face has a clear approach (≥ 1 grid step to its neighbour / container edge). This makes a hand-tuned route reproducible for any layout rather than hard-coding coordinates. `edge-crosses-container-label` (below) is the regression gate.
 
-**Overflow valve: spill a crowded fan-out onto the bottom face.** A node's right face holds only so many distinct fan-out lanes before their below-row corridors tangle with each other and with an adjacent target's straight stub (the `app → cache / db / obj` case: three right exits whose corridors crossed). When a source has **more than two** right-going fan-out edges, spill the surplus onto the **bottom** face, farthest target first (largest dx, declared-order tiebreak): the spilled edge drops straight from the source bottom into its **own** below-row corridor and enters the target's left face, so the right face keeps at most two clean exits. Deterministic and scoped to genuinely over-connected right faces (≤ 2 right edges are untouched); both faces stay contract-legal, so `edge-direction` is unaffected.
+**A long run picks its row band by what else is in that band, and its exit band follows.** This is the one rule that subsumes most of the fan-out and long-haul guidance below, and the one that took the landscape to hand-routed quality. Every fan-out, cross-region hop and back-edge runs a long horizontal leg in a **row gap** — above the row or below it — and three decisions have to agree:
+
+- **The band above a container's first row is free by construction.** Nothing is ever placed between a container's caption strip and its topmost icons, whereas the band *below* a row carries the next tier's drops, the nested boundary boxes and their captions. So a fan-out whose source sits in the topmost row of its container runs **above** the row — *unless* an inbound **top-entry approach** column falls inside the run, because that approach has to cross the band to reach its target and the fan-out would cut it. Check the run's own extent (`source_right … target_x − ½ gap`) against the row's approach columns: an approach at the far left of the row does not block a fan-out running off to the right.
+- **The exit band must be on the side the lane is on.** An above-going branch leaves from an **upper** band, a **level** run (a straight hop to a same-row neighbour) keeps the **centre**, a below-going branch leaves from a **lower** band. Leave from the wrong side and the stub has to travel back across the face to reach its lane, cutting every sibling on the way — a descending fan-out that left from *above* the level run it then crossed is exactly this defect. A **back-runner** (one that turns and heads left) goes **outermost**, because its turn column is necessarily the nearest lane to the face, so a sibling turning farther out would cross it at the glyph.
+- **One band, non-overlapping runs.** Two long runs in one band get distinct lanes, but distinct lanes do not stop them crossing: each turns vertically at its ends, and when their horizontal **extents overlap**, those turn legs cut the sibling's lane whichever lane each got — symmetrically, so no lane ordering fixes it. Overlapping extents therefore go on **opposite sides** of the row. Claim extents per (row, side), fan-out runs first (their side is forced by the container geometry), then give each long-haul run the first side it does not clash with, preferring its natural side. A **top row** has no band above it, so two opposed runs leaving it cannot be separated — that crossing is the layout's, not the router's.
+
+Corollary: the **overflow valve** below now stands down when a face has an above-lane-capable branch. Three right-face exits can be served one per band (above / level / below) instead of spilling the farthest onto the bottom, which is what the valve was approximating while every fan-out was stuck below its row.
+
+**A crowded right face is relieved by the branch that has a straight drop.** When a node fans out sideways along its row **and** has one branch to the tier directly below it, three exits pile onto the right face and the downward one has to turn, run back under the row and cross both siblings. That branch has a clean vertical available, so it takes it: **bottom-centre to top-centre**, no turns, no lane, nothing to cross. Scoped to a genuinely crowded face (three or more right exits) with **exactly one** directly-below branch, so the engine never has to choose between two bottom stubs.
+
+**Overflow valve: spill a crowded fan-out onto the bottom face.** A node's right face holds only so many distinct fan-out lanes before their below-row corridors tangle with each other and with an adjacent target's straight stub (the `app → cache / db / obj` case: three right exits whose corridors crossed). When a source has **more than two** right-going fan-out edges, spill the surplus onto the **bottom** face, farthest target first (largest dx, declared-order tiebreak): the spilled edge drops straight from the source bottom into its **own** below-row corridor and enters the target's left face, so the right face keeps at most two clean exits. Deterministic and scoped to genuinely over-connected right faces (≤ 2 right edges are untouched); both faces stay contract-legal, so `edge-direction` is unaffected. **Superseded in part:** where an above-row lane is available the branches split across the two bands instead (see the band rule above); the valve still applies when every branch is stuck in the below band.
 
 **A left-corridor fan-out branch exits bottom-LEFT, the straight branch bottom-centre.** When a fan-out source sends one branch down the **left** corridor and another straight down the column, the left branch must leave from the **bottom-left** band and the straight branch keep the **bottom-centre** — otherwise the left branch's immediate leftward step crosses the centre branch's drop at the glyph (edge 4 crossing edge 3). Biasing the left-corridor branch to the left band makes the two bottom stubs diverge from the start with no crossing.
 
@@ -223,6 +283,11 @@ Route edges so that no edge crosses through a node icon and no two edges overlap
 **Spine edges route via a side corridor, not down the node column.** A vertical "spine" hop between tiers in the same column (edge → router → app, app → data) should **not** drop straight down through the column even when source and target share an x — a straight in-column vertical visually collides with the icons and their labels stacked in that column. Instead **exit the source's right, drop in the gap corridor one grid column beside the column, and enter the target's left/top.** (The exception is the fan-out-source bottom branch above: a *directly-below* target with a clear column is reached by a straight bottom drop, since there is no intervening icon to collide with.) For the canonical HA layout that gap sits between the node column and the next (e.g. a load-balancer at column x routes down the corridor at `x + ½·COL_STEP` — the empty lane between the LB column and the cache column — then into the app node). This keeps the spine legible and leaves the node column clear for labels. (Distilled from a reviewer's hand-edit of the AWS landscape, 2026-09-23.)
 
 **Fan-out along a row: turn up into the target in the gap BEFORE it, not right after the source.** When one node fans out to several targets to its right on the same row (e.g. `app → cache`, `app → db`, `app → object-store`, where cache/db/obj sit two-plus columns away past intervening icons), each edge exits the source's right/bottom, runs along its **own** below-row lane, and makes its **vertical up-turn in the inter-column gap immediately to the LEFT of its target** — then enters the target's left face. Do **not** drop all the fan-out verticals right beside the source: that stacks them a few pixels apart so they read as one merged line, and forces every edge to run the full width under the row. Placing the up-turn in the gap just before each target (`target_x − ~½ gap`) instead spreads the verticals across the row (one per target, well separated) and keeps each horizontal run only as long as it must be. Pair this with **distinct below-row lanes** (each edge its own y, ≥ 1 grid step apart) so the horizontals never merge either. Net shape: a set of stepped "exit-right → own lane → up-turn just before the target → enter-left" edges that fan across the row cleanly, rather than a bundle of near-parallel lines hugging the source. (Distilled from the reviewer's `app→db` / `app→obj` routing on the AWS landscape, 2026-09-23.)
+
+**A back-edge runs on the side its TARGET is on, and drops in a FREE column.** Two parts, both about not deciding a long route from local information:
+
+- **Corridor side.** A back-edge (or cross-region hop) whose target sits a full row or more **below** it loops **below** its own row, not above. Choosing the side on canvas room alone sends a downward hop up over the tier above and back down the length of the diagram to reach a target that was two rows beneath it.
+- **Drop column.** The natural column to descend in before a **top** entry is the target's own centre — but only when that column is clear. Where the target sits at the bottom of a **stacked column** (load balancer over application tier over API tier, all at one x) that column is full: the drop cuts every icon above the target, and the clockwise detour then leaves it a couple of pixels off their border, which is the second-rail defect this standard forbids. Take the target's own column when clear, else the **centred lane in the gap beside it** (left preferred, then right, each kept ≥ one grid step inside the enclosing container and the target column), then step across in the lane just above the target and drop into its top. Clearance of one grid step from a column of icons is the floor; more is better.
 
 **A back-edge's turn corridor sits one column beyond its SOURCE, not the canvas edge.** When an edge's target is far to the right (or a back-reference to the left), its first turn happens in the gap **one grid column beyond the source**, and it runs across in a reserved lane from there — it does **not** detour to a far/outer column first (that makes the longest, most border-crossing line on the canvas). Example: a `dns → passive-LB` standby edge turns at `dns_x + ~1 column` and crosses in a mid corridor, rather than travelling to the passive region's own column before turning. (Generalises the earlier "turn near the source" lesson to the spine edges.)
 
@@ -248,6 +313,8 @@ Directional convention (matches the lane order and provider reference diagrams):
 - **Route around obstacles clockwise.** When an edge must detour around an intervening node, a container border, or another line, go around it **clockwise** (obstacle kept on the edge's left). One fixed turn direction makes the detour deterministic — two agents routing the same edge produce the same path — and stops a detour from doubling back into what it just avoided.
 - **Any overlap (edge, or a container border) means step off by one grid step.** If a run would coincide with another edge's corridor **or with a boundary/container border**, offset it by at least one grid step onto its own lane via explicit `<mxPoint>` waypoints. A line riding along a box border reads as part of the border; a line riding another line merges into one. Both are the same fix: step off a step.
 - **When space is tight, widen — never narrow — the corridor.** If a corridor cannot hold every parallel run at one grid step apart, grow the gap (push nodes or the container out a step) rather than squeezing runs below one step. More padding is always better than a corridor too narrow to separate its lines. This is the tie-breaker whenever spacing and compactness conflict.
+- **Lanes are two grid steps apart by default, one when the band is full, and never shared.** Parallel runs read as separate lines at two grid steps; a band trimmed to ~30px by a container caption strip holds only one such lane, so a second run there drops to **one** grid step — still distinct, still grid-aligned. What must never happen is a run falling back to the band's *midpoint*, because a second run falling back the same way lands on the same line, and a shared lane that was never allocated cannot be repaired: bumping one run moves it onto the other. Allocate, then tighten, and only then give up.
+- **A long vertical never coincides with a container border.** A run that sits exactly on a box edge reads as part of that edge. This bites where a lane is derived from the same column as a nested boundary — centring a corridor in a VPC's left gap lands it precisely on the AZ box's left edge. Step to the nearest grid line in the gap that clears every border it would otherwise ride, preferring the smallest move so the lane stays as centred as it can be.
 - **No edge–node crossings.** An edge must not pass through any node it does not connect; route around it (clockwise, per above) with waypoints, or move the node out of the corridor. A line overlapping an unrelated icon is a defect.
 - **Corridors clear the label band (no line through a caption).** A horizontal corridor placed one grid step under an icon still runs through the **service caption** drawn beneath it (the label band, ~one line ≈ 30px below the icon). Every horizontal run therefore starts **below the source row's label band** (a below-row lane insets past `icon_bottom + LABEL_BAND`), and an over-row corridor insets past the **upper** row's label band. This keeps a fan-out or cross-region run off the names of the row it passes. Enforced by the `edge-crosses-label` lint rule (WARNING): a routed polyline that crosses an unrelated node's label band is flagged, so the icon-box geometry rules (which measure the bare icon) do not let a caption-crossing slip through.
 - **Bottom-exit is a last resort, only to remove a crossing.** The default is a right exit (a bottom stub crosses the node's own caption). A tier-skip to a target **strictly below in the same column** MAY exit the bottom **only when** doing so removes a crossing the right-exit route would make and introduces none — verified against the geometry oracle, never applied speculatively.
@@ -285,6 +352,8 @@ A Boundary or Network Boundary container must leave a margin of at least **one g
 
 **A node's footprint includes its label.** A node cell is a 78×78 icon, but the service name renders in a caption band directly **below** the icon (`verticalLabelPosition=bottom`). That band collides with the next row and the container border exactly as the icon does, so *padding is measured against the footprint (icon + one label line, ~30px), not the bare icon box*. Sizing a container to the icon boxes alone leaves the labels crowding — or overflowing — the border, which reads as "no padding" even though the icons technically fit. The `container-padding` and `node-overlap` lint rules are label-aware for this reason.
 
+**A container's TOP padding reserves its own caption strip (≥ 60px).** A draw.io group draws its caption *inside* its own top edge, so a uniform 30px pad makes the caption band and the top padding the **same** strip: the first content row then begins exactly where the caption ends, and there is **no corridor lane inside the container above its first row**. Any edge descending into the container has to run through the caption — which is what `edge-crosses-container-label` flags, and what four edges on the re-connected HA landscape did (an account-row hop and a CDN origin fetch slicing `vpc-primary us-east-1`). So the top padding is **`CONTAINER_PAD + CONTAINER_LABEL_BAND` (30 + 30)** while the other three sides keep the bare 30: the caption gets its own strip, the 30px below it is real clearance, and every container gains a legal entry corridor. Two consequences follow for a nested stack: the region band is anchored one caption strip *plus* one pad lower than its lane row would put it (so the container cannot grow upward into the tier above — on the HA landscape, into the account edge row's label band), and an inter-band gap that separates two boxed bands grows by the same strip. The shared layout engine applies all of this in `size_containers` and `_band_packing`; a hand-authored container must budget the same 60px at the top.
+
 **Text-box padding (Flow / Legend / notes).** Every text box that draws a **visible box** (a concrete `fillColor` and `strokeColor`) reserves uniform inner padding on all four sides — `spacingLeft=spacingRight=spacingTop=spacingBottom=10` (one grid step) — so no line of text abuts the stroke, and is sized from its content **plus** that padding (one 12px line ≈ 16px of leading). Use the one project-wide value everywhere so every box breathes identically. The shared builder's `_TEXT_STYLE` carries these tokens and `build_diagram` auto-sizes the box height, so every generated Flow/Legend cell passes; a borderless title or free label (no concrete fill+stroke) has no box to pad and is exempt. Enforced by the `text-padding` lint rule (WARNING).
 
 ## Container Nesting (proper nesting, no sibling overlap)
@@ -297,7 +366,7 @@ Practically: give each region/VPC its own horizontal band with a clear gap betwe
 
 **Sibling region bands are equal size, and their nodes sit centred on the grid.** Peer region containers (the primary and passive VPC, and their matching AZ boxes) must be the **same width** — a passive region is not drawn narrower than the active one. Widen both bands toward the shared centre so their outer edges stay put and their widths match. Within each band, the block of service nodes is **centred** in its VPC with equal left/right padding, and every node origin stays on the grid (a whole grid multiple). Centre the block as a whole (all nodes plus their edge waypoints move together) so routing is preserved; do not centre by eye. This keeps the two regions mirror-symmetric and readable. (Reviewer goal 2026-09-23.)
 
-**Reserve the right margin for Flow/Legend, clear of the cloud.** The `Flow` and `Legend` text blocks live in the right margin, their left edge at least one grid step **past the outermost container's right edge** — never overlapping the account/VPC boxes. When the diagram is wide, pin the blocks **narrow and let them wrap taller** rather than run wide into (or past) the diagram body; a narrow-and-tall Flow/Legend never collides with a node or a container border.
+**Reserve the right margin for Flow/Legend, clear of the cloud.** The `Flow` and `Legend` text blocks live in the right margin, their left edge at least one grid step **past the outermost container's right edge** — never overlapping the account/VPC boxes, and never parked in the left margin under the actor column. Enforced by the `legend-placement` lint rule (WARNING), which reports `left-of-diagram-body` when a block does not clear the outermost container and `overlaps-<container-id>` when it is drawn on top of one. When the diagram is wide, pin the blocks **narrow and let them wrap taller** rather than run wide into (or past) the diagram body — the sanctioned exception described under *Numbered Flow Legend* above; a narrow-and-tall Flow/Legend never collides with a node or a container border.
 
 **Size a parent's envelope from its deepest child's FOOTPRINT, not its top.** A parent container's bottom (and right) must clear its deepest/rightmost child by ≥ 1 grid step measured against that child's **footprint** (icon + label band), and the child container must clear ITS deepest node the same way. Grow the parent's height/width to satisfy this — never shrink a child box until its own node's label touches its border. Concretely: if the lowest node's footprint bottom is `B`, the enclosing AZ box bottom is ≥ `B + 30`, the VPC box bottom is ≥ `AZ_bottom + 30`, and the Account box bottom is ≥ `VPC_bottom + 30`; the page height follows the Account box. A nested box whose bottom coincides with its parent's bottom (flush) is a `container-padding` finding.
 
@@ -460,18 +529,29 @@ endlegend
 - [ ] Back-edges exit right / loop / enter left — never exit the side they enter
 - [ ] Fan-out from a stacked column leaves via a side corridor, not through the middle icon
 - [ ] Row fan-out: each edge turns up in the gap just before its target (not stacked beside the source); own below-row lane per edge
+- [ ] Long run's band picked by what else is in it: above a container's first row when free and no top-entry approach crosses the run, else below; overlapping extents on opposite sides
+- [ ] Exit band matches the lane side (above→upper, level→centre, below→lower; back-runner outermost)
+- [ ] A crowded right face (3+ exits) with one directly-below branch gives that branch the straight bottom drop
+- [ ] Back-edge loops on the side its target is on, and drops in a FREE column (never the target's own when stacked above it)
+- [ ] Lanes 2 grid steps apart (1 when the band is full), always allocated — never a shared midpoint fallback
+- [ ] No long vertical coincides with a container border
+- [ ] Every leg explicitly H or V; first leg meets the exit face head-on, last leg the entry face, from a lane one grid step out; no overshoot-and-return (`edge-approach`)
+- [ ] Contacts grid-resolved along the face only (never snap the face coordinate)
 - [ ] Step sideways into the gap corridor before turning (stair) — no right-angle bend glued to the glyph edge; symmetric for up-turns (step out then rise)
 - [ ] Minimise turns; no long vertical run parallel to a node column; a tier-skip takes the one corridor that crosses no fan-out lane
 - [ ] Two+ edges leaving one node side use points ≥ a third apart (0.25/0.5/0.75); a third edge moves to another face (bottom)
 - [ ] Bottom fan-out exits DOWN first, then steps sideways (stair from the bottom)
 - [ ] Parent container bottom/right clears the deepest child footprint by ≥ 1 grid step (grow the parent, don't shrink the child); no flush borders
-- [ ] Flow and Legend boxes share one width sized tight to the longest line (no wrap); heights fit each box's text
+- [ ] Flow and Legend boxes share one width: sized tight to the longest line (no wrap) by default, or deliberately pinned narrower so they wrap taller on a wide diagram; heights fit each box's real line count
+- [ ] Flow and Legend sit in the right margin, past the outermost container and clear of every boundary (`legend-placement`)
 - [ ] Diagram class declared in companion frontmatter (`flow` default, or `landscape`)
 - [ ] `landscape` cross-links a ≤12-node `flow` summary via `summary_of`
 - [ ] Any overlay marker (findings/state) is documented in the Legend (shape+color+label)
 - [ ] Arrow stubs start just past the source perimeter (exitPerimeter=0), not into the glyph
 - [ ] No edge overlaps an unrelated node, a label, or the right-side Flow/Legend blocks
 - [ ] Containers pad ≥ 1 grid step around child nodes and nested containers (padding measured against the icon+label footprint, not the bare icon)
+- [ ] Container TOP padding reserves the caption strip (30 + 30), so an edge can enter below the caption
+- [ ] Every role-bearing node is connected by at least one edge, or carries an overlay marker saying why not (`node-connectivity`)
 - [ ] Sibling containers do not overlap — boundaries nest strictly or sit disjoint (no partial overlap); peers in a row share top+height, in a column share left+width
 - [ ] External actors and on-premises nodes sit OUTSIDE the cloud boundaries (on-prem in its own boundary)
 - [ ] Directional contract: every edge exits its source right/bottom and enters its target left/top (`edge-direction`)

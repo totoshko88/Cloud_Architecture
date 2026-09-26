@@ -51,6 +51,12 @@ _BOOTSTRAP = _ROOT / "src" / "rule_engine" / "_bootstrap"
 _PAYLOAD = {
     ".kiro/steering": "kiro/steering",
     ".kiro/hooks": "kiro/hooks",
+    # .kiro/agents (v1.6.0): the three agents that encode the workflow —
+    # diagram-author, inventory-collector, rule-engine-reviewer. A clean-room
+    # install got the steering rules and the icon mappings but NONE of the agents,
+    # so a fresh workspace had the rules without the roles that apply them. They
+    # are small Markdown files and, like steering, are pure configuration.
+    ".kiro/agents": "kiro/agents",
     "mappings": "mappings",
     "schemas": "schemas",
     # profiles/terminology.yaml is the terminology source of truth loaded by

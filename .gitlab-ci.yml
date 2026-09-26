@@ -153,6 +153,22 @@ validate:
     # oversize raster. Call the declared console script so a broken
     # [project.scripts] mapping is caught. Rasters must stay within budget.
     - rule-engine-check-rasters
+    - echo "Verifying every edge leg is explicitly axis-aligned"
+    # draw.io picks its own corner between two unaligned points; generated
+    # diagrams are aligned by the builder, this catches hand-authored sources.
+    - |
+      rc=0
+      for f in $(find examples -name '*.drawio' -type f); do
+        python scripts/orthogonalise_drawio.py --check "$f" || rc=1
+      done
+      [ "$rc" -eq 0 ] || { echo "BLOCKING: unaligned edge leg(s)"; exit 1; }
+    - echo "Enforcing the inventory Snapshot folder shape (inventory-standards §3-§5)"
+    # The linter checks snapshot file CONTENT (frontmatter, secret-safety); the
+    # folder SHAPE was unchecked, so a hand-written snapshot could ship with an
+    # empty resources/ and a wrong file_count and still lint clean.
+    - rule-engine-check-snapshot --root examples --strict
+    - echo "Verifying the example Snapshot data files are current"
+    - python scripts/build_example_snapshots.py --check
     - echo "Verifying the workspace bootstrap works from the installed package"
     # Bootstrap a fresh workspace from the installed engine, then --check it: a
     # payload that ships incompletely in the wheel (build_backend._PAYLOAD /

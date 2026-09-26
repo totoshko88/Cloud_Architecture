@@ -145,6 +145,9 @@ This exposes the console scripts used by the Kiro hooks and the CI pipeline:
 - `rule-engine-verify-icon` — resolve every icon reference in a `.drawio` against its
   authoritative source (aws4 ids, azure2 paths, GCP asset paths, OCI slugs)
 - `rule-engine-check-rasters` — enforce the class-aware exported-PNG budget
+- `rule-engine-check-snapshot` — enforce the inventory Snapshot folder shape
+  (folder name, the seven manifest fields, one JSON per service domain, one
+  subfolder per enumerated resource)
 - `rule-engine-index-assets` / `rule-engine-check-asset-paths` — asset indexing / path guard
 
 Lint every artifact in the workspace and fail on any ERROR or CRITICAL finding:

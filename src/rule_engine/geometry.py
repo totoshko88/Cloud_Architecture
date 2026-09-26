@@ -92,6 +92,27 @@ def _style_token(cell: str, name: str) -> Optional[str]:
     return m.group(1) if m else None
 
 
+# A draw.io cell ``value`` separates lines with the XML entity ``&#10;`` (what the
+# shared builder emits) or an HTML ``<br>``; markup may also wrap the text.
+_VALUE_BREAK_RE = re.compile(r"&#10;|&#xa;|<br\s*/?>", re.I)
+_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _first_line(value: str) -> str:
+    """Return the first rendered line of a cell ``value``, markup stripped.
+
+    Used to read a text box's heading (``Flow`` / ``Legend``) so the Flow/Legend
+    furniture can be told apart from an arbitrary note box.
+    """
+    first = _VALUE_BREAK_RE.split(value or "", 1)[0]
+    return _TAG_RE.sub("", first).strip()
+
+
+# An overlay marker on a cell, per the Overlay Vocabulary convention the CLI
+# already reads for ``overlay-legend-coverage``: ``overlay=<term>``.
+_OVERLAY_TERM_RE = re.compile(r"\boverlay=([A-Za-z0-9_\-]+)")
+
+
 def _geom(cell: str) -> Optional[Dict[str, object]]:
     m = _GEOM_RE.search(cell)
     if not m:
@@ -167,6 +188,18 @@ class DiagramGeometry:
     #: real text length, so a corridor clearing a SHORT caption (e.g. "az-a1") is
     #: not flagged while one slicing a LONG caption ("vpc-passive …") is.
     container_labels: Dict[str, str] = field(default_factory=dict)
+    #: Text-cell id -> its box. Text cells are deliberately excluded from
+    #: ``nodes`` (the linter must not count a Legend as a node), but their
+    #: geometry is needed to check that the Flow/Legend furniture sits in the
+    #: right margin (``legend-placement``, v1.6.0).
+    text_boxes: Dict[str, Box] = field(default_factory=dict)
+    #: Text-cell id -> its first line (the box heading, e.g. ``Flow``/``Legend``).
+    text_headings: Dict[str, str] = field(default_factory=dict)
+    #: Node id -> the overlay marker term it carries (``overlay=<term>`` in the
+    #: cell, the vocabulary convention the CLI already reads). An overlay-marked
+    #: node is exempt from ``node-connectivity``: a passive/standby peer may be
+    #: drawn without edges precisely because the marker says so.
+    overlay_nodes: Dict[str, str] = field(default_factory=dict)
 
 
 def build_geometry(text: str) -> DiagramGeometry:
@@ -222,15 +255,27 @@ def build_geometry(text: str) -> DiagramGeometry:
     for cid, d in raw.items():
         if not d["vertex"] or cid in boundary_ids:
             continue
+        g = d["geom"]
         if _is_text_style(str(d["style"]).lower()):
+            # A text cell is NOT a node (it must never be counted by node-count),
+            # but its box is recorded separately so the Flow/Legend furniture can
+            # be checked against the diagram body (legend-placement).
+            if g and g.get("w"):
+                ax, ay = origin(cid)
+                geo.text_boxes[cid] = Box(cid, ax, ay, float(g["w"]), float(g["h"]))
+                geo.text_headings[cid] = _first_line(
+                    _attr(str(d["cell"]), "value") or ""
+                )
             continue
         if d["parent"] not in node_parents:
             continue
-        g = d["geom"]
         if not g or not g.get("w"):
             continue
         ax, ay = origin(cid)
         geo.nodes[cid] = Box(cid, ax, ay, float(g["w"]), float(g["h"]))
+        overlay = _OVERLAY_TERM_RE.search(str(d["cell"]))
+        if overlay:
+            geo.overlay_nodes[cid] = overlay.group(1)
 
     for cid, d in raw.items():
         if not d["edge"]:
@@ -482,58 +527,108 @@ def check_container_overlap(geo: DiagramGeometry) -> List[Tuple[str, str]]:
     return sorted(set(out))
 
 
+# Tolerance for reading a draw.io unit-square fraction as lying *on* a face. The
+# shared builder deliberately starts a stub a hair beyond the perimeter
+# (``exitX=1.0256`` with ``exitPerimeter=0``) so the arrow does not bite into the
+# glyph, so the right/bottom faces are matched with ">= 1.0", not "== 1.0".
+_FACE_EPS = 1e-9
+
+#: The faces an edge may legally leave its source from (right or bottom).
+_LEGAL_EXIT_FACES = frozenset({"right", "bottom"})
+#: The faces an edge may legally arrive at its target on (left or top).
+_LEGAL_ENTRY_FACES = frozenset({"left", "top"})
+
+
+def contact_faces(x: Optional[float], y: Optional[float]) -> frozenset[str]:
+    """Return the unit-square faces a contact point lies on.
+
+    A draw.io contact point is a fraction of the node box: ``x`` grows right,
+    ``y`` grows downward. A coordinate at an extreme puts the point **on** that
+    face, so ``(1, 0.5)`` is the right face, ``(0.5, 0)`` the top face, and a
+    corner such as ``(1, 0)`` lies on **two** faces (right *and* top).
+
+    A coordinate strictly between the extremes is a *band* position that names no
+    face — ``(0.5, None)`` pins only how far right along an unspecified side the
+    stub sits — so the returned set is empty and the caller falls back to judging
+    the lean.
+    """
+    faces: set[str] = set()
+    if x is not None:
+        if x >= 1.0 - _FACE_EPS:
+            faces.add("right")
+        elif x <= _FACE_EPS:
+            faces.add("left")
+    if y is not None:
+        if y >= 1.0 - _FACE_EPS:
+            faces.add("bottom")
+        elif y <= _FACE_EPS:
+            faces.add("top")
+    return frozenset(faces)
+
+
 def check_edge_direction(geo: DiagramGeometry) -> List[Tuple[str, str]]:
     """Return ``(edge_id, reason)`` for edges that break the directional contract.
 
     The contract (diagram-standards Edge Routing → "The directional contract"):
     an edge **exits** its source on the **right or bottom** and **enters** its
-    target on the **left or top**. In draw.io fractions that means the exit
-    point sits on the right/bottom half (``exitX >= 0.5`` or ``exitY >= 0.5``)
-    and the entry point on the left/top half (``entryX <= 0.5`` or
-    ``entryY <= 0.5``).
+    target on the **left or top**.
 
-    A point is read as position within the node's unit square: ``x`` grows to
-    the right, ``y`` grows downward. A valid **exit** leans to the right
-    (``exitX >= 0.5``, which admits the right edge and the top-right/bottom-right
-    corners) or sits on the bottom edge (``exitY == 1``). A valid **entry** leans
-    to the left (``entryX <= 0.5``) or sits on the top edge (``entryY == 0``). A
-    left-edge exit like ``(0, 0.5)`` or a right-edge entry like ``(1, 0.5)`` is
-    the defect this catches.
+    **Face classification (v1.6.0).** The check reads which *face* of the unit
+    square each contact point lies on (:func:`contact_faces`) rather than which
+    half-plane it leans into. The pre-1.6.0 logic tested ``exitX >= 0.5`` in
+    order to admit the right edge **and** the top-right / bottom-right corners —
+    but ``exitX >= 0.5`` is also true of ``(0.5, 0)``, the **top-centre** point,
+    so a pinned top exit was "rescued" by its own x and an edge leaving straight
+    out of the top of its glyph linted clean. That is exactly what a clean-room
+    install produced: an ``EC2 → S3`` edge pinned ``exit=(0.5, 0)``, visibly
+    rising out of the top of the EC2 icon, with no finding. The entry side had
+    the mirror hole: a bottom-centre arrival ``(0.5, 1)`` was rescued by
+    ``entryX <= 0.5``.
 
-    This is enforced only for edges that declare explicit contact points
-    (``exitX/exitY`` / ``entryX/entryY``); an edge that floats its connection is
-    left to draw.io's perimeter router and not judged here. A ``exit-<side>`` or
-    ``enter-<side>`` reason names the violated half."""
+    So a contact point that lies on a face is judged by that face:
+
+    * a valid **exit** lies on the **right** (``exitX >= 1``) or **bottom**
+      (``exitY >= 1``) face; the top-right ``(1, 0)`` and bottom-right ``(1, 1)``
+      corners stay legal because they lie on the right face too, while the
+      top-centre ``(0.5, 0)`` and left-centre ``(0, 0.5)`` points are defects;
+    * a valid **entry** lies on the **left** (``entryX <= 0``) or **top**
+      (``entryY <= 0``) face; the bottom-left ``(0, 1)`` corner stays legal,
+      while the bottom-centre ``(0.5, 1)`` and right-centre ``(1, 0.5)`` points
+      are defects.
+
+    A *band* pin that names no face (e.g. ``exitX=0.75`` with no ``exitY``) keeps
+    the pre-1.6.0 lean test, so every prior judgement on a single-axis pin is
+    preserved.
+
+    This is enforced only for edges that declare explicit contact points; an edge
+    that floats its connection is left to draw.io's perimeter router and not
+    judged here (``edge-float`` owns that). The reason names the offending face,
+    e.g. ``exit-top-not-right-or-bottom``.
+    """
     out: List[Tuple[str, str]] = []
     for e in geo.edges:
         ex, ey = e.exit
         nx, ny = e.entry
         # An edge is judged only if it pins at least one contact axis; a fully
         # floating edge is left to the perimeter router.
-        #
-        # A pinned axis is judged only against its OWN side of the contract, so
-        # an edge that pins just one axis on the correct side is not flagged for
-        # the unset complementary axis (the earlier logic false-flagged e.g. a
-        # right-face exit given as exitX>=0.5 with exitY unset only when it read
-        # exitY, and a right-face band given as exitY alone). Concretely:
-        #   * a valid exit leans right (exitX >= 0.5) OR sits on the bottom
-        #     (exitY == 1); the defect is a pinned left-edge exit (exitX < 0.5)
-        #     or a pinned top-edge exit (exitY == 0) that no right/bottom pin
-        #     rescues.
-        #   * a valid entry leans left (entryX <= 0.5) OR sits on the top
-        #     (entryY == 0); the defect is a pinned right-edge entry
-        #     (entryX > 0.5) or a pinned bottom-edge entry (entryY == 1) that no
-        #     left/top pin rescues.
         if ex is not None or ey is not None:
-            exit_right_or_bottom = (ex is not None and ex >= 0.5) or (ey is not None and ey >= 1.0)
-            exit_wrong = (ex is not None and ex < 0.5) or (ey is not None and ey <= 0.0)
-            if exit_wrong and not exit_right_or_bottom:
+            faces = contact_faces(ex, ey)
+            if faces:
+                if not (faces & _LEGAL_EXIT_FACES):
+                    offending = "-".join(sorted(faces))
+                    out.append((e.id, f"exit-{offending}-not-right-or-bottom"))
+                    continue
+            elif ex is not None and ex < 0.5:
+                # Band pin on no face: keep the pre-1.6.0 lean test.
                 out.append((e.id, "exit-not-right-or-bottom"))
                 continue
         if nx is not None or ny is not None:
-            entry_left_or_top = (nx is not None and nx <= 0.5) or (ny is not None and ny <= 0.0)
-            entry_wrong = (nx is not None and nx > 0.5) or (ny is not None and ny >= 1.0)
-            if entry_wrong and not entry_left_or_top:
+            faces = contact_faces(nx, ny)
+            if faces:
+                if not (faces & _LEGAL_ENTRY_FACES):
+                    offending = "-".join(sorted(faces))
+                    out.append((e.id, f"enter-{offending}-not-left-or-top"))
+            elif nx is not None and nx > 0.5:
                 out.append((e.id, "enter-not-left-or-top"))
     return out
 
@@ -1018,6 +1113,570 @@ def check_text_padding(text: str) -> List[str]:
             continue
         if not all(tok in low for tok in _SPACING_TOKENS):
             out.append(style)
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# Route quality cost (v1.6.0)
+#
+# The routers choose every corridor, lane, and face by RULE, with no view of the
+# diagram as a whole — ~25 named patterns in diagram-standards.md, each distilled
+# from a hand-edit. That works until two patterns want the same plane, and then
+# only a measurement can say which route is better.
+#
+# Two reviewer hand-edits of the AWS HA landscape (2026-09-26) made the case and
+# also pinned down the objective:
+#
+#   * The first edit removed 2 parallel rails while *adding* a crossing (7 -> 6
+#     crossings, 4 -> 2 rails). A crossing-only objective would have rejected it,
+#     so rails must be weighted at least as heavily as crossings.
+#   * The second edit improved every number at once (3 crossings, 2 rails, 45
+#     turns, 10.0k ink against 7 / 4 / 50 / 11.0k), which is what a scored router
+#     should be able to find.
+#
+# A third, decisive experiment: turning on the straight-drop spine route for
+# landscapes (it is currently gated to compact diagrams) cuts turns 50 -> 41 and
+# ink 11.0k -> 10.5k but raises crossings 7 -> 11. So the choice between two legal
+# shapes genuinely varies per edge and per layout — it cannot be settled by
+# another fixed rule, only by scoring the alternatives.
+#
+# This function is that score. It does not choose anything yet; see
+# docs/REVIEW.md -> Open gaps for why acting on it needs the contact pipeline
+# inverted (contacts are currently decided by eight global passes before any edge
+# is routed, so there is no per-edge decision point to score).
+# --------------------------------------------------------------------------- #
+
+#: A vertical run must span at least this much to read as a "rail" beside a column
+#: rather than a step between adjacent rows (roughly two row steps).
+RAIL_MIN_SPAN = 300.0
+
+#: How close a rail may come to an unrelated node's side border before it reads as
+#: part of that column. Roughly half a column gap.
+RAIL_CLEARANCE = 40.0
+
+
+@dataclass(frozen=True)
+class RouteCost:
+    """The measured quality of a diagram's edge routing (lower is better).
+
+    Ordered by weight: a crossing or a rail is a legibility defect, while turns and
+    ink are economy. ``as_tuple`` gives the comparison key a scored router would
+    minimise.
+    """
+
+    crossings: int = 0
+    rails: int = 0
+    turns: int = 0
+    ink: float = 0.0
+    crossing_pairs: Tuple[Tuple[str, str], ...] = ()
+    rail_pairs: Tuple[Tuple[str, str, int], ...] = ()
+
+    def as_tuple(self) -> Tuple[int, int, int, float]:
+        """Comparison key: crossings, then rails, then turns, then ink."""
+        return (self.crossings, self.rails, self.turns, round(self.ink))
+
+    def summary(self) -> str:
+        return (
+            f"crossings={self.crossings}  rails={self.rails}  "
+            f"turns={self.turns}  ink={self.ink / 1000:.1f}k"
+        )
+
+
+def edge_polyline(geo: DiagramGeometry, edge: EdgeGeom) -> List[Point]:
+    """Return an edge's full polyline: exit contact, waypoints, entry contact."""
+    src, tgt = geo.nodes.get(edge.source), geo.nodes.get(edge.target)
+    if src is None or tgt is None or None in edge.exit or None in edge.entry:
+        return []
+    return (
+        [(src.x + edge.exit[0] * src.w, src.y + edge.exit[1] * src.h)]
+        + [(x, y) for x, y in edge.points]
+        + [(tgt.x + edge.entry[0] * tgt.w, tgt.y + edge.entry[1] * tgt.h)]
+    )
+
+
+def segments_cross(s1: Tuple[Point, Point], s2: Tuple[Point, Point]) -> bool:
+    """True when an H segment and a V segment intersect strictly inside both.
+
+    Touching at an endpoint is not a crossing — two edges may legitimately meet at
+    a shared trunk corner.
+    """
+    for (p1, q1), (p2, q2) in ((s1, s2), (s2, s1)):
+        if leg_axis(p1, q1) != "H" or leg_axis(p2, q2) != "V":
+            continue
+        y, x = p1[1], p2[0]
+        x0, x1 = sorted((p1[0], q1[0]))
+        y0, y1 = sorted((p2[1], q2[1]))
+        if x0 + AXIS_EPS < x < x1 - AXIS_EPS and y0 + AXIS_EPS < y < y1 - AXIS_EPS:
+            return True
+    return False
+
+
+def route_cost(geo: DiagramGeometry) -> RouteCost:
+    """Measure a diagram's routing: crossings, parallel rails, turns, ink.
+
+    * **crossing** — a horizontal segment of one edge properly intersects a
+      vertical segment of another. Two edges that share an endpoint are **not**
+      exempt: diagram-standards sanctions a *shared trunk* — the two branches
+      running together in one stub just outside the node — but the same sentence
+      requires that "the branches never overlap". Sharing a trunk makes the
+      branches **touch**, and touching is already excluded by
+      :func:`segments_cross` (it tests the strict interior of both segments), so
+      the trunk needs no exemption of its own. A genuine *crossing* between two
+      branches of one fan-out is the defect that pattern exists to prevent: one
+      branch's stub cutting through a sibling's turn leg because the two exit
+      bands were ordered against their directions of travel. Exempting it hid
+      four such crossings per HA landscape from the measurement.
+    * **parallel rail** — a vertical run of at least :data:`RAIL_MIN_SPAN` passing
+      within :data:`RAIL_CLEARANCE` of an unrelated node's side border, over that
+      node's own vertical extent. diagram-standards forbids this outright ("no long
+      vertical run parallel to a node column") because it reads as a second rail
+      beside the services.
+    * **turns** — interior vertices, summed over every edge.
+    * **ink** — total Manhattan length of every route.
+    """
+    polys: Dict[str, List[Point]] = {}
+    edges: Dict[str, EdgeGeom] = {}
+    turns = 0
+    ink = 0.0
+    for e in geo.edges:
+        poly = edge_polyline(geo, e)
+        if len(poly) < 2:
+            continue
+        polys[e.id] = poly
+        edges[e.id] = e
+        turns += max(0, len(poly) - 2)
+        ink += sum(
+            abs(b[0] - a[0]) + abs(b[1] - a[1]) for a, b in zip(poly, poly[1:])
+        )
+
+    crossings = 0
+    crossing_pairs: List[Tuple[str, str]] = []
+    ids = sorted(polys)
+    for a_i in range(len(ids)):
+        for b_i in range(a_i + 1, len(ids)):
+            i, j = ids[a_i], ids[b_i]
+            n = sum(
+                1
+                for s1 in zip(polys[i], polys[i][1:])
+                for s2 in zip(polys[j], polys[j][1:])
+                if segments_cross(s1, s2)
+            )
+            if n:
+                crossings += n
+                crossing_pairs.append((i, j))
+
+    rail_pairs: List[Tuple[str, str, int]] = []
+    seen = set()
+    for eid, poly in polys.items():
+        e = edges[eid]
+        for a, b in zip(poly, poly[1:]):
+            if leg_axis(a, b) != "V" or abs(b[1] - a[1]) < RAIL_MIN_SPAN:
+                continue
+            lo, hi = sorted((a[1], b[1]))
+            for nid, box in sorted(geo.nodes.items()):
+                if nid in (e.source, e.target) or box.bottom < lo or box.y > hi:
+                    continue
+                if min(abs(a[0] - box.x), abs(a[0] - box.right)) <= RAIL_CLEARANCE:
+                    if (eid, nid) not in seen:
+                        seen.add((eid, nid))
+                        rail_pairs.append((eid, nid, int(abs(b[1] - a[1]))))
+
+    return RouteCost(
+        crossings=crossings,
+        rails=len(rail_pairs),
+        turns=turns,
+        ink=ink,
+        crossing_pairs=tuple(crossing_pairs),
+        rail_pairs=tuple(rail_pairs),
+    )
+
+
+def check_edge_approach(geo: DiagramGeometry) -> List[Tuple[str, str]]:
+    """Return ``(edge_id, reason)`` for routes whose legs are not axis-aligned.
+
+    Three conditions, all of them about the source **fully determining** the drawn
+    path rather than leaving it to draw.io:
+
+    * ``diagonal-leg`` — two consecutive points are not axis-aligned. An
+      ``orthogonalEdgeStyle`` edge never draws a diagonal: draw.io inserts its own
+      corner and **picks the direction**, so an unaligned pair is a corner the
+      author did not specify. That is how an edge ends up grazing a glyph or
+      sliding along a container border even though every waypoint looked
+      deliberate — and it is invisible to every other check, which reads the
+      points as given.
+    * ``exit-leg-<axis>`` — the leg leaving the source does not meet the exit face
+      head-on (a right/left face is met horizontally, a top/bottom face
+      vertically).
+    * ``entry-leg-<axis>`` — the same for the leg arriving at the target. The
+      canonical defect is a horizontal leg running **along** a node's top border
+      into a top-centre entry, so the arrowhead slides across the glyph's edge
+      instead of dropping into it.
+
+    A corner contact lies on two faces and accepts either axis, so it is not
+    constrained. An edge with no waypoints is a single straight run and is skipped,
+    as is an edge that floats a contact (``edge-float`` owns that).
+    """
+    out: List[Tuple[str, str]] = []
+    for e in geo.edges:
+        src, tgt = geo.nodes.get(e.source), geo.nodes.get(e.target)
+        if src is None or tgt is None or not e.points:
+            continue
+        if None in e.exit or None in e.entry:
+            continue
+        poly = (
+            [(src.x + e.exit[0] * src.w, src.y + e.exit[1] * src.h)]
+            + [(x, y) for x, y in e.points]
+            + [(tgt.x + e.entry[0] * tgt.w, tgt.y + e.entry[1] * tgt.h)]
+        )
+        legs = [leg_axis(a, b) for a, b in zip(poly, poly[1:])]
+        if "D" in legs:
+            out.append((e.id, "diagonal-leg"))
+        want_exit = required_leg_axis(contact_faces(*e.exit))
+        if want_exit and legs[0] not in (want_exit, "0"):
+            out.append((e.id, f"exit-leg-{legs[0]}-want-{want_exit}"))
+        want_entry = required_leg_axis(contact_faces(*e.entry))
+        if want_entry and legs[-1] not in (want_entry, "0"):
+            out.append((e.id, f"entry-leg-{legs[-1]}-want-{want_entry}"))
+    return out
+
+
+def check_node_connectivity(geo: DiagramGeometry) -> List[str]:
+    """Return ids of role-bearing nodes drawn with **no incident edge**.
+
+    A diagram is an architecture, not an inventory listing, when its nodes are
+    related to one another. A node with zero incident edges tells the reader
+    nothing about how it participates — and when two thirds of the nodes float,
+    the picture has stopped being a diagram. This was the headline finding of the
+    2026-09-25 audit: every one of the four HA landscape examples drew **34 nodes
+    joined by 12 edges, leaving 20 nodes entirely unconnected** (the same 20 ids
+    on all four providers, since they share one spec).
+
+    Two categories are legitimately exempt:
+
+    * **Boundary containers** — an Account / VPC / AZ frame is a grouping device,
+      not a participant. They are already absent from ``geo.nodes``, and text
+      cells (Flow / Legend / title) likewise.
+    * **Overlay-marked nodes** — a node carrying an overlay marker
+      (``overlay=<term>``, e.g. a ``standby`` passive peer) is *declaring* why it
+      has no edges, double-encoded and documented in the Legend. That is the
+      sanctioned way to draw a symmetric mirror tier without duplicating every
+      edge into it.
+
+    Pure topology (node ids minus the union of edge endpoints), so it is cheap and
+    independent of layout.
+    """
+    endpoints: set[str] = set()
+    for e in geo.edges:
+        if e.source:
+            endpoints.add(e.source)
+        if e.target:
+            endpoints.add(e.target)
+    return sorted(
+        nid
+        for nid in geo.nodes
+        if nid not in endpoints and nid not in geo.overlay_nodes
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Route orthogonalisation (v1.6.0)
+#
+# An ``orthogonalEdgeStyle`` edge never draws a diagonal. When two consecutive
+# points of a route are not axis-aligned, draw.io inserts its own corner and
+# **chooses which way it turns** — so a diagonal pair in the source is not a
+# diagonal on screen, it is a corner the author did not specify. That is how an
+# edge ends up grazing a glyph or sliding along a container border even though
+# every waypoint looked deliberate.
+#
+# Measured across the shipped corpus before v1.6.0, 30 routed edges had such an
+# unaligned leg at one or both ends: each router computed its corridor correctly
+# but emitted the waypoint adjacent to a contact from the *corridor's* coordinates
+# rather than the *contact's*. These helpers rewrite a finished polyline so every
+# leg is explicitly H or V and both contact legs meet their face head-on, which
+# moves the corner decision into the source where the geometry checks can see it.
+#
+# They live here, in pure geometry, because both artifact paths need them: the
+# lane-grid layout engine (which routes) and the shared diagram builder (which
+# renders hand-authored waypoint literals).
+# --------------------------------------------------------------------------- #
+
+Point = Tuple[float, float]
+
+#: Tolerance for calling a leg axis-aligned. Contacts are grid-resolved, so a real
+#: misalignment is >= one grid step; anything under half a pixel is float noise.
+AXIS_EPS = 0.5
+
+#: Outward normal of each contact face as a ``(dx, dy)`` sign pair. The approach
+#: lane for a face sits one grid step along this normal — you meet a **top** entry
+#: from above, a **left** entry from the left — so the side is a property of the
+#: face, never of where the route happens to arrive from.
+_FACE_NORMAL = {
+    "top": (0, -1),
+    "bottom": (0, 1),
+    "left": (-1, 0),
+    "right": (1, 0),
+}
+
+
+def snap(value: float, grid: int = GRID) -> int:
+    """Round ``value`` to the nearest whole ``grid`` multiple."""
+    return int(round(value / grid) * grid)
+
+
+def leg_axis(p: Point, q: Point) -> str:
+    """Classify a leg: ``"H"``, ``"V"``, ``"0"`` (degenerate) or ``"D"`` (diagonal)."""
+    dx, dy = abs(q[0] - p[0]), abs(q[1] - p[1])
+    if dx < AXIS_EPS and dy < AXIS_EPS:
+        return "0"
+    if dy < AXIS_EPS:
+        return "H"
+    if dx < AXIS_EPS:
+        return "V"
+    return "D"
+
+
+def required_leg_axis(faces: frozenset[str]) -> Optional[str]:
+    """Return the leg axis that meets a contact face head-on.
+
+    A right/left face is met by a **horizontal** leg, a top/bottom face by a
+    **vertical** one. A corner lies on two faces and accepts either, so it returns
+    ``None`` — no constraint.
+    """
+    horizontal = bool(faces & {"left", "right"})
+    vertical = bool(faces & {"top", "bottom"})
+    if horizontal and not vertical:
+        return "H"
+    if vertical and not horizontal:
+        return "V"
+    return None
+
+
+def _face_normal(faces: frozenset[str], want: str) -> Tuple[int, int]:
+    """Return the outward normal of the face that ``want`` must be met through."""
+    for name in (("top", "bottom") if want == "V" else ("left", "right")):
+        if name in faces:
+            return _FACE_NORMAL[name]
+    return (0, -1) if want == "V" else (-1, 0)
+
+
+def collapse_collinear(pts: Sequence[Point]) -> List[Point]:
+    """Drop midpoints that share an axis with both neighbours.
+
+    Three consecutive points on one x (or one y) describe a single straight run, so
+    the middle one is redundant. This also removes a **backtrack** — a point that
+    overshoots and returns along the same axis — which is what turns a router's
+    ``(1290, 270) → (1290, 410) → (1290, 380)`` overshoot into the one clean run
+    ``(1290, 270) → (1290, 380)``.
+    """
+    out: List[Point] = []
+    for p in pts:
+        if len(out) >= 2:
+            a, b = out[-2], out[-1]
+            same_x = abs(a[0] - b[0]) < AXIS_EPS and abs(b[0] - p[0]) < AXIS_EPS
+            same_y = abs(a[1] - b[1]) < AXIS_EPS and abs(b[1] - p[1]) < AXIS_EPS
+            if same_x or same_y:
+                out[-1] = p
+                continue
+        if out and leg_axis(out[-1], p) == "0":
+            continue  # duplicate point
+        out.append(p)
+    return out
+
+
+def insert_orthogonal_corners(
+    pts: Sequence[Point], first_axis: Optional[str]
+) -> List[Point]:
+    """Insert a corner wherever two consecutive points are diagonal.
+
+    The corner continues along the **current** axis and then turns, so the route
+    reads as a stair rather than a kink: after a horizontal run the corner is
+    ``(q.x, p.y)``; after a vertical run, ``(p.x, q.y)``. ``first_axis`` seeds the
+    current axis from the exit face, so the first leg leaves perpendicular to the
+    face it exits.
+    """
+    pts = list(pts)
+    if len(pts) < 2:
+        return pts
+    out: List[Point] = [pts[0]]
+    axis = first_axis or leg_axis(pts[0], pts[1])
+    if axis not in ("H", "V"):
+        axis = "H"
+    for q in pts[1:]:
+        p = out[-1]
+        kind = leg_axis(p, q)
+        if kind == "0":
+            continue
+        if kind == "D":
+            out.append((q[0], p[1]) if axis == "H" else (p[0], q[1]))
+            out.append(q)
+            axis = "V" if axis == "H" else "H"
+            continue
+        out.append(q)
+        axis = kind
+    return out
+
+
+def force_contact_axis(
+    pts: Sequence[Point],
+    want: Optional[str],
+    *,
+    at_end: bool,
+    faces: frozenset[str] = frozenset(),
+    grid: int = GRID,
+) -> List[Point]:
+    """Make the leg touching a contact perpendicular to its face.
+
+    When that leg runs *along* the face instead of into it, the arrow slides across
+    the glyph's border to reach its contact point rather than meeting it head-on —
+    the canonical defect being a horizontal leg running along a node's **top**
+    border into a top-centre entry. The fix inserts an approach lane one grid step
+    outside the face and turns there, so the final leg drops (or steps) straight
+    into the contact.
+    """
+    out = list(pts)
+    if want is None or len(out) < 2:
+        return out
+    contact = out[-1] if at_end else out[0]
+    neighbour = out[-2] if at_end else out[1]
+    if leg_axis(neighbour, contact) == want:
+        return out
+    nx, ny = _face_normal(faces, want)
+    if want == "V":
+        lane_y = snap(contact[1] + ny * grid, grid)
+        lane, pulled = (contact[0], lane_y), (neighbour[0], lane_y)
+    else:
+        lane_x = snap(contact[0] + nx * grid, grid)
+        lane, pulled = (lane_x, contact[1]), (lane_x, neighbour[1])
+    if at_end:
+        out[-2] = pulled
+        out.insert(-1, lane)
+    else:
+        out[1] = pulled
+        out.insert(1, lane)
+    return out
+
+
+def grid_resolve_contact(
+    box: "Box", frac: Tuple[float, float], grid: int = GRID
+) -> Tuple[Point, Tuple[float, float]]:
+    """Return ``(absolute point, adjusted fraction)`` with the contact on the grid.
+
+    A hand-written fraction such as ``0.25`` on a 78px icon resolves to
+    ``y0 + 19.5`` — half a pixel off the grid every waypoint snaps to. Aligning a
+    snapped waypoint to that contact would leave a permanent kink, which is the
+    skew that makes an arrowhead look bent.
+
+    Only the **along-face** coordinate is snapped, never the face coordinate. For a
+    left/right face the leg meeting it is horizontal, so only its ``y`` has to sit
+    on the grid; for a top/bottom face, only its ``x``. Snapping the face
+    coordinate as well would pull the contact *inside* the glyph whenever the icon
+    is not grid-commensurate — a 64px icon at ``x=540`` has its right edge at 604,
+    and rounding that to 600 moves the contact off its own face, silently breaking
+    the directional contract. A *band* pin that lies on no face has no face
+    coordinate to protect, so both axes are snapped.
+    """
+    fx, fy = frac
+    ax, ay = box.x + fx * box.w, box.y + fy * box.h
+    faces = contact_faces(fx, fy)
+    if faces & {"left", "right"}:
+        ay = snap(ay, grid)
+    elif faces & {"top", "bottom"}:
+        ax = snap(ax, grid)
+    else:
+        ax, ay = snap(ax, grid), snap(ay, grid)
+    nfx = (ax - box.x) / box.w if box.w else fx
+    nfy = (ay - box.y) / box.h if box.h else fy
+    return (ax, ay), (nfx, nfy)
+
+
+def orthogonalise_route(
+    exit_abs: Point,
+    points: Sequence[Point],
+    entry_abs: Point,
+    exit_faces: frozenset[str],
+    entry_faces: frozenset[str],
+    grid: int = GRID,
+) -> List[Point]:
+    """Return ``points`` rewritten so every leg of the route is axis-aligned.
+
+    Three passes: insert the corners the source left implicit
+    (:func:`insert_orthogonal_corners`), collapse redundant midpoints and
+    backtracks (:func:`collapse_collinear`), then force both contact legs
+    perpendicular to their faces (:func:`force_contact_axis`) — re-running the
+    first two so a newly inserted approach lane is itself aligned.
+
+    Returns the **interior** waypoints only (the contacts are stored separately by
+    every caller). Pure and deterministic: the same route always yields the same
+    rewrite, and a route that is already orthogonal with perpendicular contact legs
+    comes back unchanged.
+    """
+    pts: List[Point] = [tuple(exit_abs)] + [tuple(p) for p in points] + [tuple(entry_abs)]
+    pts = insert_orthogonal_corners(pts, required_leg_axis(exit_faces))
+    pts = collapse_collinear(pts)
+    pts = force_contact_axis(
+        pts, required_leg_axis(entry_faces), at_end=True, faces=entry_faces, grid=grid
+    )
+    pts = force_contact_axis(
+        pts, required_leg_axis(exit_faces), at_end=False, faces=exit_faces, grid=grid
+    )
+    pts = insert_orthogonal_corners(pts, required_leg_axis(exit_faces))
+    pts = collapse_collinear(pts)
+    return [(snap(x, grid), snap(y, grid)) for x, y in pts[1:-1]]
+
+
+#: The headings that mark a text cell as the diagram's Flow/Legend furniture.
+#: Matched on the box's FIRST rendered line, which diagram-standards already
+#: pins exactly ("Has a value whose first line is exactly ``Flow``").
+LEGEND_HEADINGS = frozenset({"flow", "legend"})
+
+
+def check_legend_placement(
+    geo: DiagramGeometry, grid: int = GRID
+) -> List[Tuple[str, str]]:
+    """Return ``(cell_id, reason)`` for Flow/Legend boxes outside the right margin.
+
+    diagram-standards (*Reserve the right margin for Flow/Legend, clear of the
+    cloud*) puts the ``Flow`` and ``Legend`` blocks in the **right margin**, their
+    left edge at least one grid step **past the outermost container's right
+    edge** — never overlapping the account/VPC boxes and never parked in the left
+    margin under the actor column.
+
+    Nothing enforced this before v1.6.0, and it showed: a clean-room install drew
+    an otherwise-clean AWS diagram with both blocks stacked in the **left** margin
+    below the external user, while every shipped golden (built through
+    ``diagram_layout.build_diagram``) puts them on the right. The rule is the
+    difference between a convention the builder happens to follow and one an agent
+    hand-authoring a diagram must follow too.
+
+    Two conditions are reported:
+
+    * ``left-of-diagram-body`` — the box's left edge is not at least one grid step
+      past the outermost container's right edge.
+    * ``overlaps-<container-id>`` — the box's rectangle intersects a boundary
+      container, i.e. the furniture is drawn on top of the cloud.
+
+    A diagram with no boundary containers (a bare flow sketch with nothing to sit
+    right of) is skipped rather than assumed to pass: there is no body to reserve
+    a margin against.
+    """
+    if not geo.containers or not geo.text_boxes:
+        return []
+    outer_right = max(c.right for c in geo.containers.values())
+    out: List[Tuple[str, str]] = []
+    for cid, box in sorted(geo.text_boxes.items()):
+        heading = geo.text_headings.get(cid, "").strip().lower()
+        if heading not in LEGEND_HEADINGS:
+            continue
+        if box.x < outer_right + grid:
+            out.append((cid, "left-of-diagram-body"))
+        for kid, container in sorted(geo.containers.items()):
+            if (
+                box.x < container.right
+                and container.x < box.right
+                and box.y < container.bottom
+                and container.y < box.bottom
+            ):
+                out.append((cid, f"overlaps-{kid}"))
     return out
 
 

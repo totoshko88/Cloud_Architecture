@@ -106,7 +106,11 @@ def test_ha_parity_has_expected_shape():
     assert len(sg.nodes) == 9
     assert len(sg.edges) == 9
     assert len(lg.nodes) == 34
-    assert len(lg.edges) == 12
+    # v1.6.0: 21 edges (was 12, which left 20 nodes unconnected).
+    assert len(lg.edges) == 21
+    # Every node is connected or overlay-marked (``node-connectivity``).
+    assert geo.check_node_connectivity(lg) == []
+    assert len(lg.overlay_nodes) == 11
     # both region frames present in the summary; account+vpc+az in the landscape.
     assert set(sg.containers) == {"nb_a", "nb_b"}
     assert "boundary-account" in lg.containers

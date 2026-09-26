@@ -309,6 +309,118 @@ def test_single_axis_bottom_entry_still_flagged():
     assert geo.check_edge_direction(g)  # enter-not-left-or-top
 
 
+# --------------------------------------------------------------------------- #
+# edge-direction — face classification (v1.6.0)
+#
+# The pre-1.6.0 check tested the half-plane (``exitX >= 0.5``) in order to admit
+# the right edge AND the top-right/bottom-right corners. But ``exitX >= 0.5`` is
+# also true of the TOP-CENTRE point ``(0.5, 0)``, so a pinned top exit rescued
+# itself and an edge leaving straight out of the top of its glyph linted clean —
+# the clean-room ``EC2 -> S3`` defect. The entry side had the mirror hole at
+# ``(0.5, 1)``. These tests pin the face-classified behaviour.
+# --------------------------------------------------------------------------- #
+
+
+def test_top_centre_exit_flagged():
+    """The clean-room defect: an edge rising out of the TOP of its own icon.
+
+    ``(0.5, 0)`` is the top-face centre. Pre-1.6.0 it passed because
+    ``exitX >= 0.5`` rescued it.
+    """
+    g = DiagramGeometry(edges=[_edge("a", "b", (0.5, 0.0), (0.5, 0.0))])
+    findings = geo.check_edge_direction(g)
+    assert findings
+    assert findings[0][1] == "exit-top-not-right-or-bottom"
+
+
+def test_bottom_centre_entry_flagged():
+    """The entry-side mirror: an arrow entering up through the target's bottom."""
+    g = DiagramGeometry(edges=[_edge("a", "b", (1.0, 0.5), (0.5, 1.0))])
+    findings = geo.check_edge_direction(g)
+    assert findings
+    assert findings[0][1] == "enter-bottom-not-left-or-top"
+
+
+def test_top_right_corner_exit_stays_legal():
+    """``(1, 0)`` lies on the right face as well as the top, so it is allowed.
+
+    This is the case the half-plane test existed to admit; face classification
+    keeps it legal without also admitting the top-centre point.
+    """
+    g = DiagramGeometry(edges=[_edge("a", "b", (1.0, 0.0), (0.0, 0.5))])
+    assert geo.check_edge_direction(g) == []
+
+
+def test_bottom_left_corner_entry_stays_legal():
+    """``(0, 1)`` lies on the left face as well as the bottom, so it is allowed."""
+    g = DiagramGeometry(edges=[_edge("a", "b", (1.0, 0.5), (0.0, 1.0))])
+    assert geo.check_edge_direction(g) == []
+
+
+def test_builder_perimeter_overshoot_exit_is_on_the_right_face():
+    """The shared builder starts a stub just past the perimeter (1.0256), which
+    must still read as the right face, not as a band."""
+    g = DiagramGeometry(
+        edges=[_edge("a", "b", (1.0256410256410255, 0.5128205128205128),
+                     (0.5128205128205128, 0.0))]
+    )
+    assert geo.check_edge_direction(g) == []
+
+
+def test_builder_bottom_left_band_exit_stays_legal():
+    """The sanctioned left-corridor fan-out branch exits the bottom-LEFT band
+    (``exitX`` low, ``exitY`` past 1), which lies on the bottom face."""
+    g = DiagramGeometry(
+        edges=[_edge("a", "b", (0.2564102564102564, 1.0256410256410255),
+                     (0.0, 0.5128205128205128))]
+    )
+    assert geo.check_edge_direction(g) == []
+
+
+def test_left_centre_exit_flagged_by_face_not_lean():
+    g = DiagramGeometry(edges=[_edge("a", "b", (0.0, 0.5), (0.0, 0.5))])
+    findings = geo.check_edge_direction(g)
+    assert findings
+    assert findings[0][1] == "exit-left-not-right-or-bottom"
+
+
+def test_right_centre_entry_flagged_by_face_not_lean():
+    g = DiagramGeometry(edges=[_edge("a", "b", (1.0, 0.5), (1.0, 0.5))])
+    findings = geo.check_edge_direction(g)
+    assert findings
+    assert findings[0][1] == "enter-right-not-left-or-top"
+
+
+def test_interior_band_exit_keeps_the_pre_1_6_0_lean_test():
+    """A band pin that names no face is judged by its lean, exactly as before:
+    ``0.75`` leans right (clean), ``0.25`` leans left (a defect)."""
+    clean = DiagramGeometry(edges=[_edge("a", "b", (0.75, None), (0.0, 0.5))])
+    assert geo.check_edge_direction(clean) == []
+    defect = DiagramGeometry(edges=[_edge("a", "b", (0.25, None), (0.0, 0.5))])
+    assert geo.check_edge_direction(defect)
+
+
+def test_floating_edge_is_still_not_judged():
+    """No pinned contact point at all: left to the perimeter router (edge-float
+    owns it), so edge-direction stays silent."""
+    g = DiagramGeometry(edges=[_edge("a", "b", (None, None), (None, None))])
+    assert geo.check_edge_direction(g) == []
+
+
+def test_contact_faces_classifies_every_face_and_corner():
+    """The face helper is exercised directly: extremes name a face, a corner
+    names two, and an interior band names none."""
+    assert geo.contact_faces(1.0, 0.5) == frozenset({"right"})
+    assert geo.contact_faces(0.0, 0.5) == frozenset({"left"})
+    assert geo.contact_faces(0.5, 1.0) == frozenset({"bottom"})
+    assert geo.contact_faces(0.5, 0.0) == frozenset({"top"})
+    assert geo.contact_faces(1.0, 0.0) == frozenset({"right", "top"})
+    assert geo.contact_faces(0.0, 1.0) == frozenset({"left", "bottom"})
+    assert geo.contact_faces(0.5, 0.5) == frozenset()
+    assert geo.contact_faces(0.75, None) == frozenset()
+    assert geo.contact_faces(None, None) == frozenset()
+
+
 def test_grid_alignment_tolerates_float_noise():
     """A coordinate carrying sub-pixel float drift is judged against its rounded
     integer origin, not the raw float (no false misalignment)."""
@@ -944,15 +1056,24 @@ def test_left_corridor_branch_exits_bottom_left():
     assert l4.exit[0] is not None and l4.exit[0] < 0.5, f"l4 not bottom-LEFT: {l4.exit}"
 
 
-def test_overflow_valve_spills_farthest_fanout_to_bottom():
-    """app_a1 has 3 right fan-out targets (cache/db/obj); the farthest (obj, l8)
-    spills onto the BOTTOM face, leaving <=2 exits on the right (v1.5.1 #2)."""
+def test_three_fanout_targets_split_across_the_two_row_bands():
+    """``app_a1`` has 3 right fan-out targets (cache / db / obj) on one face.
+
+    Up to v1.6.0 the overflow valve spilled the farthest onto the BOTTOM face,
+    because every fan-out ran below its row and two below-row lanes was the limit.
+    Now that a fan-out can also run in the free band ABOVE its row, the same three
+    exits are served from the right face alone: the farthest (obj, ``l8``) leaves
+    HIGH and runs above, the level neighbour (cache, ``l6``) keeps the centre, and
+    the middle one (db, ``l5``) leaves LOW and runs below — each stub diverging
+    toward its own lane. No spill, three distinct bands, contract-legal throughout.
+    """
     g = _aws_landscape_geo()
-    l8 = next(e for e in g.edges if e.id == "l8")
-    assert l8.exit[1] is not None and l8.exit[1] >= 1.0, f"l8 not spilled to bottom: {l8.exit}"
-    # The two kept right-face edges (l5 db, l6 cache) still exit right.
-    for eid in ("l5", "l6"):
-        e = next(x for x in g.edges if x.id == eid)
-        assert e.exit[0] is not None and e.exit[0] >= 0.5, f"{eid} not right: {e.exit}"
-    # All contract-legal + no crossings already covered by the check above.
+    exits = {eid: next(e for e in g.edges if e.id == eid).exit for eid in ("l5", "l6", "l8")}
+    for eid, pt in exits.items():
+        assert pt[0] is not None and pt[0] >= 0.5, f"{eid} not a right exit: {pt}"
+    # Bands ordered by the lane each run takes: obj above < cache level < db below.
+    assert exits["l8"][1] < exits["l6"][1] < exits["l5"][1], exits
+    assert abs(exits["l6"][1] - 0.5) < 0.05, f"level run off centre: {exits['l6']}"
+    # Distinct enough not to merge at the glyph, and contract-legal.
+    assert geo.check_exit_thirds(g) == []
     assert geo.check_edge_direction(g) == []

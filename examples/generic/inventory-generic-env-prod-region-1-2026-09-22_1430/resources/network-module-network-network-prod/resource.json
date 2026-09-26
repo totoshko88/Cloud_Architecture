@@ -1,0 +1,15 @@
+{
+  "boundary": "env-prod",
+  "config_digest": "60a533419d691b1e7833fcefc9470448bc4099f6482b3dd717404f592fa05429",
+  "id": "module.network.network.prod",
+  "name": "prod-network",
+  "native_type": "Network",
+  "provider": "generic",
+  "region": "region-1",
+  "resource_type": "network_boundary",
+  "tags": {
+    "env": "prod",
+    "source": "terraform-state",
+    "team": "platform"
+  }
+}

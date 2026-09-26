@@ -95,15 +95,40 @@ def main(argv: list[str] | None = None) -> int:
     Usage::
 
         python -m rule_engine.version_guard <changelog_path> <version>
+        python -m rule_engine.version_guard --triple [<repo_root>]
 
     Exits ``0`` when the version already has a curated Changelog section (safe to
     build a Release Bundle) and ``1`` when the version is absent (fail-closed: no
     bundle is produced, the maintainer must add the entry first).
+
+    ``--triple`` checks the other half of the release contract (v1.6.0): that
+    ``VERSION``, ``pyproject.toml`` and the newest ``CHANGELOG.md`` section all
+    name the same version. Exits ``1`` naming each source's value when they
+    disagree.
     """
     args = list(sys.argv[1:] if argv is None else argv)
+    if args and args[0] == "--triple":
+        if len(args) > 2:
+            print(
+                "usage: python -m rule_engine.version_guard --triple [<repo_root>]",
+                file=sys.stderr,
+            )
+            return 2
+        repo_root = args[1] if len(args) == 2 else "."
+        try:
+            agreed = assert_version_triple_consistent(repo_root)
+        except VersionMismatchError as exc:
+            print(f"BLOCKING: {exc}", file=sys.stderr)
+            return 1
+        print(
+            f"OK: VERSION, pyproject.toml and CHANGELOG.md all agree on "
+            f"{agreed!r}."
+        )
+        return 0
     if len(args) != 2:
         print(
-            "usage: python -m rule_engine.version_guard <changelog_path> <version>",
+            "usage: python -m rule_engine.version_guard <changelog_path> <version>\n"
+            "   or: python -m rule_engine.version_guard --triple [<repo_root>]",
             file=sys.stderr,
         )
         return 2
@@ -120,5 +145,118 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+# ---------------------------------------------------------------------------
+# Version-triple consistency (v1.6.0)
+# ---------------------------------------------------------------------------
+#
+# The released version is recorded in THREE places and they drifted: at 1.5.4 the
+# working tree carried ``VERSION`` = 1.5.3, ``pyproject.toml`` = 1.5.4, and a top
+# CHANGELOG heading of 1.5.4. CI rewrites ``VERSION`` at tag time, so the stale
+# file never broke a release — which is exactly why nothing surfaced the drift.
+# These helpers make the triple a checked contract: one source disagreeing is a
+# blocking error, not a silent inconsistency a reader has to reconcile by hand.
+
+#: The three files that must agree on the version being released.
+VERSION_FILE = "VERSION"
+PYPROJECT_FILE = "pyproject.toml"
+CHANGELOG_FILE = "CHANGELOG.md"
+
+# ``version = "1.2.3"`` in the [project] table. Matched line-anchored so a
+# dependency pin like ``jsonschema>=4.18`` can never be mistaken for it.
+_PYPROJECT_VERSION_RE = re.compile(
+    r'^version\s*=\s*["\']([^"\']+)["\']', re.MULTILINE
+)
+
+# The first ``## [1.2.3]`` heading in the Changelog is the most recent release,
+# because the Changelog is kept in reverse chronological order.
+_CHANGELOG_HEADING_RE = re.compile(r"^##\s*\[v?([0-9][^\]]*)\]", re.MULTILINE)
+
+
+class VersionMismatchError(ValueError):
+    """Raised when ``VERSION``, ``pyproject.toml`` and ``CHANGELOG.md`` disagree.
+
+    Carries the per-source values so the error names exactly which file is out
+    of step, rather than only reporting that something is wrong.
+    """
+
+    def __init__(self, versions: dict[str, str | None]) -> None:
+        self.versions = dict(versions)
+        detail = ", ".join(
+            f"{name}={value!r}" for name, value in sorted(versions.items())
+        )
+        super().__init__(
+            "release version sources disagree: "
+            f"{detail}. Bring all three into agreement before releasing."
+        )
+
+
+def read_version_file(repo_root: str | Path) -> str | None:
+    """Return the bare version recorded in ``VERSION``, or ``None`` if absent."""
+    path = Path(repo_root) / VERSION_FILE
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    stripped = text.strip()
+    return normalize_version(stripped) if stripped else None
+
+
+def read_pyproject_version(repo_root: str | Path) -> str | None:
+    """Return the ``[project] version`` from ``pyproject.toml``, or ``None``."""
+    path = Path(repo_root) / PYPROJECT_FILE
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    match = _PYPROJECT_VERSION_RE.search(text)
+    return normalize_version(match.group(1)) if match else None
+
+
+def latest_changelog_version(changelog_text: str) -> str | None:
+    """Return the version of the Changelog's newest section, or ``None``.
+
+    The Changelog is reverse chronological, so the FIRST ``## [x.y.z]`` heading
+    is the most recent release.
+    """
+    match = _CHANGELOG_HEADING_RE.search(changelog_text)
+    return normalize_version(match.group(1)) if match else None
+
+
+def read_changelog_version(repo_root: str | Path) -> str | None:
+    """Return the newest version section recorded in ``CHANGELOG.md``."""
+    path = Path(repo_root) / CHANGELOG_FILE
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    return latest_changelog_version(text)
+
+
+def version_triple(repo_root: str | Path) -> dict[str, str | None]:
+    """Return the version recorded by each of the three sources."""
+    return {
+        VERSION_FILE: read_version_file(repo_root),
+        PYPROJECT_FILE: read_pyproject_version(repo_root),
+        CHANGELOG_FILE: read_changelog_version(repo_root),
+    }
+
+
+def assert_version_triple_consistent(repo_root: str | Path) -> str:
+    """Return the agreed version, or raise :class:`VersionMismatchError`.
+
+    All three sources must be present and equal. A missing source counts as a
+    disagreement (fail-closed), so a deleted ``VERSION`` file cannot quietly
+    reduce the contract to two sources.
+    """
+    versions = version_triple(repo_root)
+    distinct = set(versions.values())
+    if None in distinct or len(distinct) != 1:
+        raise VersionMismatchError(versions)
+    return distinct.pop()
+
+
+# The module-run guard lives at the END of the file: ``python -m
+# rule_engine.version_guard`` executes the module top-to-bottom, so a guard
+# placed mid-file would call ``main()`` before the definitions below it had run.
 if __name__ == "__main__":
     raise SystemExit(main())
