@@ -1,6 +1,6 @@
 ---
-
-## inclusion: always
+inclusion: always
+---
 
 # Diagram Standards
 

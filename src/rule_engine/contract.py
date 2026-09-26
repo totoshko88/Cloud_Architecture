@@ -772,9 +772,10 @@ def _frontmatter_dict(
         "author": "rule-engine",
         "next_review_date": (today + timedelta(days=180)).isoformat(),
         "tags": [provider, "inventory", boundary_id],
-        # kb-frontmatter permits 0 entries here, but the Linter's generic
-        # empty-collection check flags an empty list; the rendered documents
-        # always cross-reference a related doc, so keep it non-empty.
+        # kb-frontmatter permits 0 entries here, and since 1.6.1 the Linter
+        # accepts ``[]``. The rendered documents always cross-reference a
+        # related doc, so a non-empty placeholder is kept for now; linting the
+        # rendered text instead of this synthetic mapping is tracked for 1.7.0.
         "related_docs": [f"{provider}-{boundary_id}-related"],
     }
 

@@ -268,6 +268,22 @@ def test_count_enumerated_resources_tolerates_unreadable_json(tmp_path):
     assert sg.count_enumerated_resources(root) == 0
 
 
+def test_failures_json_entries_are_not_counted_as_resources(tmp_path):
+    """failures.json lists services that could NOT be enumerated (v1.6.1).
+
+    Counting its entries turned an empty inventory with one recorded failure —
+    a cost request without a declared endpoint — into a ``resources-empty``
+    ERROR."""
+    root = tmp_path / _GOOD_NAME
+    root.mkdir()
+    (root / "failures.json").write_text(
+        json.dumps({"failures": [{"service": "cost", "reason": "no declared cost endpoint"}]}),
+        encoding="utf-8",
+    )
+    (root / "storage.json").write_text(json.dumps({"service": "storage", "resources": []}), encoding="utf-8")
+    assert sg.count_enumerated_resources(root) == 0
+
+
 # =========================================================================== #
 # §4 file_count
 # =========================================================================== #

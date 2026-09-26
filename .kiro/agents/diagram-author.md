@@ -23,23 +23,62 @@ resources:
   - file://docs/ARCHITECTURE.md
   - skill://.kiro/skills/**/SKILL.md
 permissions:
+  # Kiro evaluates deny > ask > allow, so an ``ask`` rule below overrides a
+  # matching ``allow`` and a ``deny`` overrides both.
   rules:
     # Regeneration + gates: exactly the commands the workflow needs.
+    #
+    # v1.6.1: ``git *`` was replaced by the read-only git commands. The blanket
+    # allow let ``git push``, ``git checkout -- .``, ``git branch -D`` and
+    # ``git stash drop`` run without a prompt; only force-push, ``reset --hard``
+    # and ``clean -f`` were denied.
     - capability: shell
       match:
         - "python scripts/build_*"
         - "python scripts/export_raster.py *"
         - "python scripts/fetch_assets.py *"
+        - "python scripts/orthogonalise_drawio.py *"
+        - "python scripts/route_quality.py*"
         - "rule-engine-lint *"
         - "rule-engine-check-rasters*"
         - "rule-engine-check-asset-paths*"
+        - "rule-engine-check-snapshot*"
         - "rule-engine-verify-icon *"
         - "rule-engine-build-icon-sets *"
         - "rule-engine-validate-schema*"
         - "drawio *"
         - "pytest*"
-        - "git *"
+        - "git status*"
+        - "git diff*"
+        - "git log*"
+        - "git show*"
+        - "git add *"
       effect: allow
+    # Anything that changes history, the working tree, or a remote needs the
+    # user's confirmation.
+    - capability: shell
+      match:
+        - "git commit*"
+        - "git push*"
+        - "git checkout*"
+        - "git switch*"
+        - "git restore*"
+        - "git stash*"
+        - "git branch *"
+        - "git tag*"
+        - "git merge*"
+        - "git rebase*"
+        - "git cherry-pick*"
+        - "git revert*"
+        - "git pull*"
+        - "git reset*"
+        # A redirect writes outside the fs_write allow-list, and a command
+        # substitution or backtick hides a second command inside an allowed one.
+        - "*>*"
+        - "*`*"
+        - "*$(*"
+        - "*\n*"
+      effect: ask
     # Write is scoped to the artifacts this agent owns.
     - capability: fs_write
       match:
@@ -56,8 +95,36 @@ permissions:
         - "rm -rf *"
         - "sudo *"
         - "git push --force*"
+        - "git push -f*"
+        - "git push * --force*"
+        - "git push * -f*"
         - "git reset --hard*"
-        - "git clean -f*"
+        - "git clean*"
+        - "git checkout -- *"
+        - "git checkout .*"
+        - "git restore .*"
+        - "git branch -D*"
+        - "git stash drop*"
+        - "git stash clear*"
+      effect: deny
+    # Local credential stores are never read (v1.6.1).
+    - capability: fs_read
+      match:
+        - "**/.aws/credentials"
+        - "**/.aws/sso/cache/**"
+        - "**/.azure/**"
+        - "**/.config/gcloud/**"
+        - "**/.oci/**"
+        - "**/.kube/config"
+        - "**/.docker/config.json"
+        - "**/.ssh/**"
+        - "**/.aws/cli/cache/**"
+        - "**/.env"
+        - "**/.env.*"
+        - "**/.git-credentials"
+        - "**/.netrc"
+        - "**/.config/gh/hosts.yml"
+        - "**/*.pem"
       effect: deny
 welcomeMessage: >-
   Diagram author ready. I regenerate the provider diagrams from the declarative

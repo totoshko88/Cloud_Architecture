@@ -25,6 +25,12 @@ The collector enforces the read-only contract before calling any enumerator:
   does not match is **never called**.
 * Any verb that looks state-mutating (``create``/``put``/``update``/
   ``delete``/``remove``/``set`` and equivalents) is rejected and never called.
+* Any verb that returns a secret value or mints a credential
+  (``get_secret_value``, ``get_session_token``, ``az keyvault secret show``,
+  ``az storage account keys list``, ``oci secrets secret-bundle get``, …) is
+  rejected and never called, even though it is "read-only" (v1.6.1).
+* Any verb carrying a shell metacharacter (``;``, ``&``, ``|``, a redirect, an
+  expansion) is rejected and never called (v1.6.1).
 * The count of executed state-mutating verbs per run is guaranteed to be zero
   and is recorded on the manifest (``mutating_verbs_executed: 0``).
 
@@ -55,14 +61,25 @@ from rule_engine.constants import PROVIDERS as _PROVIDERS
 # Valid providers come from rule_engine.constants (single source of truth).
 
 # Per-provider read-only enumeration verb patterns. A verb name must match one
-# of these (case-insensitive) to be eligible for execution. ``generic`` uses
-# manual entry / Terraform-state import, so any injected verb is allowed (there
-# are no live provider calls); state-mutating names are still rejected below.
+# of these to be eligible for execution. ``generic`` uses manual entry /
+# Terraform-state import, so any injected verb is allowed (there are no live
+# provider calls); state-mutating and secret-returning names are still rejected
+# below.
+#
+# aws (v1.6.1): the prefix is ``list``/``describe``/``get`` in snake or Pascal
+# case, and the character after it must be a real word boundary — end of name,
+# ``_``/``-``, or the capital letter that starts the next camelCase word. The
+# pre-1.6.1 patterns applied ``re.IGNORECASE`` to the whole expression, which
+# made the boundary class ``[_A-Z]`` match *any* letter: ``listen`` and
+# ``getanddeletebucket`` were accepted as read-only verbs. The flag is gone: the
+# two accepted spellings of each prefix are listed explicitly, so the boundary
+# stays case-sensitive. Kebab case (``describe-instances``, the form the
+# inventory-standards §6 examples use) is accepted too.
 _READ_ONLY_VERB_PATTERNS: Dict[str, Tuple[re.Pattern[str], ...]] = {
     "aws": (
-        re.compile(r"^list($|[_A-Z].*)", re.IGNORECASE),
-        re.compile(r"^describe($|[_A-Z].*)", re.IGNORECASE),
-        re.compile(r"^get($|[_A-Z].*)", re.IGNORECASE),
+        re.compile(r"^(?:list|List)(?:$|[_-]|[A-Z])"),
+        re.compile(r"^(?:describe|Describe)(?:$|[_-]|[A-Z])"),
+        re.compile(r"^(?:get|Get)(?:$|[_-]|[A-Z])"),
     ),
     # azure: "az … list" / "az … show" — the trailing sub-command is list/show.
     "azure": (
@@ -114,6 +131,84 @@ _MUTATING_TOKENS = (
 # non-alphanumeric separators.
 _SEGMENT_RE = re.compile(r"[A-Za-z][a-z0-9]*|[A-Z]+(?![a-z])|[0-9]+")
 
+# Shell metacharacters (v1.6.1). A verb is an operation name or a CLI phrase,
+# never a command line: a ``;``/``&``/``|`` chains a second command, a ``<``/``>``
+# redirect reads or writes a file, and a backtick or ``$`` expands one. None of
+# them belongs in a read-only enumeration verb, so any of them rejects the verb
+# outright — defence in depth for any caller that ever hands a verb to a shell.
+_SHELL_META_RE = re.compile(r"[;&|<>`$\\\n\r]")
+
+# Secret-returning and credential-minting operations (v1.6.1). These are
+# *read-only* in the provider's own sense — they create, update and delete
+# nothing — so the read-only patterns above admit them. But what they return is
+# a secret value or a usable credential, which inventory-standards §7 forbids in
+# any snapshot, and redaction cannot reliably undo that afterwards (an Azure
+# ``keys list`` result carries the key under a benign ``value`` field). They are
+# therefore rejected before execution, whatever the provider patterns say.
+#
+# Each pattern matches the verb *normalised* by :func:`_normalised_verb` — its
+# camelCase / snake / kebab / space segments lowercased and joined with ``_`` —
+# so ``GetSecretValue``, ``get_secret_value`` and ``get-secret-value`` are one
+# name. The list is deliberately specific: metadata operations on the same
+# services (``list_secrets``, ``describe_secret``, ``describe_parameters``,
+# ``get_account_password_policy``, ``get_credential_report``,
+# ``az keyvault secret list``) stay allowed.
+#
+# Each entry is ``(pattern, providers)``; ``providers`` is ``None`` when the
+# pattern holds for every provider. Some shapes mean "secret" in one CLI and
+# "metadata" in another: ``az storage account keys list`` returns the account
+# keys, while ``gcloud kms keys list`` and ``oci kms management key list`` list
+# key *metadata* (inventory-standards §6 puts them in the secrets.json floor).
+# Those patterns are scoped to the provider whose command they describe.
+_ALL = None
+_AZURE = frozenset({"azure"})
+_SECRET_VERB_PATTERNS: Tuple[Tuple[re.Pattern[str], Optional[frozenset]], ...] = (
+    # Secrets Manager GetSecretValue / BatchGetSecretValue.
+    (re.compile(r"(?:^|_)secret_value(?:_|$)"), _ALL),
+    # OCI ``secrets secret-bundle get`` (returns the secret content).
+    (re.compile(r"(?:^|_)secret_bundle(?:_|$)"), _ALL),
+    # Azure ``keyvault secret show`` (returns the secret value).
+    (re.compile(r"(?:^|_)secret_show$"), _ALL),
+    # GCP ``secrets versions access`` (returns the secret payload).
+    (re.compile(r"(?:^|_)versions_access$"), _ALL),
+    # ``get-access-token`` / ``print-access-token`` (mints a bearer token).
+    (re.compile(r"(?:^|_)access_token(?:_|$)"), _ALL),
+    # ECR get-login-password, EC2 GetPasswordData, GetRandomPassword, Lightsail
+    # GetRelationalDatabaseMasterUserPassword. The IAM account password *policy*
+    # is metadata and stays allowed.
+    (re.compile(r"(?:^|_)password(?!_policy)(?:_|$)"), _ALL),
+    # Redshift GetClusterCredentials, SSO GetRoleCredentials, Cognito
+    # GetCredentialsForIdentity, ``get-credentials`` (kubeconfig with a token).
+    # Anchored on ``get``: IAM ListServiceSpecificCredentials is metadata.
+    (re.compile(r"(?:^|_)get_(?:[a-z0-9]+_)*credentials(?:_|$)"), _ALL),
+    # Lightsail GetInstanceAccessDetails (temporary SSH key material).
+    (re.compile(r"(?:^|_)get_instance_access_details$"), _ALL),
+    # STS GetSessionToken / GetFederationToken, ECR / CodeArtifact
+    # GetAuthorizationToken, Cognito GetOpenIdToken: every ``get…token``.
+    (re.compile(r"^get_(?:[a-z0-9]+_)*tokens?$"), _ALL),
+    # SSM GetParameter / GetParameters / GetParametersByPath / GetParameterHistory
+    # (a String parameter is returned in clear, a SecureString with its value).
+    # DescribeParameters is metadata and stays allowed.
+    (re.compile(r"^get_parameters?(?:_|$)"), _ALL),
+    # S3 GetObject / OCI ``os object get``: object *content*, not metadata.
+    (re.compile(r"^get_object$"), _ALL),
+    (re.compile(r"(?:^|_)object_get$"), _ALL),
+    # Azure ``show-connection-string`` (a connection string embeds the key).
+    (re.compile(r"(?:^|_)connection_strings?(?:_|$)"), _ALL),
+    # Azure ``acr credential show`` / ``… credential list`` (registry passwords).
+    # ``az ad sp|app credential list`` returns key ids only and stays allowed.
+    (re.compile(r"(?:^|_)acr_credential_(?:show|list)$"), _AZURE),
+    # Azure ``… deployment list-publishing-credentials|profiles`` (passwords).
+    (re.compile(r"(?:^|_)list_publishing_(?:credentials|profiles)$"), _AZURE),
+    # Azure ``… keys list`` / ``… key show`` / ``admin-key show`` (storage,
+    # Cosmos DB, Cognitive Services, Search, SignalR, Functions keys). Key Vault
+    # ``key list`` / ``key show`` return key identifiers and public material only,
+    # so they stay allowed.
+    (re.compile(r"(?:^|(?<!keyvault)_)keys?_(?:list|show)$"), _AZURE),
+    # Azure ``config appsettings list`` (app settings routinely hold secrets).
+    (re.compile(r"(?:^|_)appsettings_list$"), _AZURE),
+)
+
 
 # ---------------------------------------------------------------------------
 # Secret-safety redaction (inventory-standards.md §7; secret-safety)
@@ -140,6 +235,21 @@ _SECRET_KEY_MARKERS = (
     "certificate",
     "keymaterial",
     "key_material",
+    # v1.6.1: the Azure spellings. Storage, Service Bus, Event Hubs, Cosmos DB,
+    # Redis and IoT Hub all return their keys under camelCase names none of the
+    # markers above matched (``primaryKey``, ``primaryMasterKey``,
+    # ``primaryConnectionString`` …).
+    "primarykey",
+    "secondarykey",
+    "accountkey",
+    "sharedaccesskey",
+    # Cosmos DB primaryMasterKey / secondaryMasterKey / *ReadonlyMasterKey. Not a
+    # bare "masterkey": that would erase KMS ``CustomerMasterKeySpec`` metadata.
+    "primarymasterkey",
+    "secondarymasterkey",
+    "readonlymasterkey",
+    "adminkey",
+    "connectionstring",
 )
 
 # Redaction placeholder written in place of a stripped secret value. Contains no
@@ -158,12 +268,35 @@ _SECRET_CONTENT_RE = re.compile(
     r"""
     -----BEGIN[ ][A-Z ]*PRIVATE[ ]KEY-----   # PEM private-key block
     | -----BEGIN[ ]OPENSSH[ ]PRIVATE[ ]KEY-----
+    | -----BEGIN[ ]PGP[ ]PRIVATE[ ]KEY[ ]BLOCK-----   # v1.6.1
     | \bsecurestring\b                        # SSM SecureString payload marker
     | \b(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|
         session[_-]?token|client[_-]?secret)\s*[:=]\s*\S   # inline assignment
+    # v1.6.1: ``export AWS_SECRET_ACCESS_KEY=…`` — ``\b`` never fires after the
+    # ``_`` that precedes SECRET, so the inline rule above missed the most common
+    # spelling of the most common cloud secret.
+    | (?<![A-Za-z0-9])(?:aws_)?secret_access_key\s*[:=]\s*\S
+    # v1.6.1: Azure connection strings and SAS signatures.
+    | \b(?:AccountKey|SharedAccessKey|SharedAccessSignature)\s*=\s*\S
+    # v1.6.1: a URL whose userinfo carries a password (``postgres://app:pw@db``).
+    | \b[a-z][a-z0-9+.-]*://[^/\s:@]+:[^/\s@]+@
     """,
     re.IGNORECASE | re.VERBOSE,
 )
+
+# Name/value pair shapes (v1.6.1). Several provider APIs carry configuration as a
+# list of ``{name, value}`` records rather than as a mapping: AWS tags
+# (``{Key, Value}``), ECS / Batch container environment (``{name, value}``),
+# CloudFormation parameters (``{ParameterKey, ParameterValue}``), Elastic
+# Beanstalk option settings (``{OptionName, Value}``). Key-name redaction cannot
+# see a secret in that shape — the secret's NAME is a *value* (``"DB_PASSWORD"``)
+# and its VALUE sits under a benign key (``"Value"``) — and before 1.6.1 it
+# redacted exactly the wrong half: the bare-``key`` rule erased every tag's name
+# and kept ``hunter2``. A pair is now judged by its name.
+_PAIR_NAME_KEYS = frozenset(
+    {"key", "name", "parameterkey", "parametername", "optionname", "variablename"}
+)
+_PAIR_VALUE_KEYS = frozenset({"value", "parametervalue"})
 
 
 def _key_is_secret(key: str) -> bool:
@@ -193,6 +326,46 @@ def _decode_bytes(value: bytes) -> str | None:
         return None
 
 
+def _pair_redactions(mapping: Mapping[Any, Any]) -> Tuple[frozenset, frozenset]:
+    """Decide how a name/value-pair record is redacted (v1.6.1).
+
+    Returns ``(redact, passthrough)`` as sets of **lowercased** key names:
+
+    * ``redact`` — entries replaced with :data:`REDACTED` outright;
+    * ``passthrough`` — entries exempt from the key-name rule (still walked for
+      secret *content*). This is only ever the ``Key`` field of a pure
+      ``{Key, Value}`` tag, which names the tag rather than holding key material.
+
+    A record's value entries are redacted when any of these holds:
+
+    * its name entry names a secret (``DB_PASSWORD``, ``ApiToken``) — then the
+      name is redacted too, so a secret-looking name never reaches a snapshot
+      file either (it is what the linter's secret-safety scan keys on);
+    * it is an SSM parameter whose ``Type`` is ``SecureString``;
+    * it carries a ``keyName`` (the Azure ``keys list`` record shape).
+
+    A mapping with no value entry is not a pair; both sets are empty.
+    """
+    lowered = {k.lower(): v for k, v in mapping.items() if isinstance(k, str)}
+    value_keys = _PAIR_VALUE_KEYS & lowered.keys()
+    if not value_keys:
+        return frozenset(), frozenset()
+    redact: set = set()
+    type_label = lowered.get("type")
+    if isinstance(type_label, str) and type_label.strip().lower() == "securestring":
+        redact |= value_keys
+    if "keyname" in lowered:
+        redact |= value_keys
+    for name_key in sorted(_PAIR_NAME_KEYS & lowered.keys()):
+        name = lowered[name_key]
+        if isinstance(name, str) and (_key_is_secret(name) or _value_is_secret(name)):
+            redact |= value_keys | {name_key}
+    passthrough: frozenset = frozenset()
+    if set(lowered) <= {"key", "value"} and "key" in lowered and "key" not in redact:
+        passthrough = frozenset({"key"})
+    return frozenset(redact), passthrough
+
+
 def redact_secrets(value: Any) -> Any:
     """Recursively strip secret values from resource metadata.
 
@@ -205,15 +378,25 @@ def redact_secrets(value: Any) -> Any:
     * **by value content** — any *string value* that embeds a secret pattern (a
       PEM/OpenSSH private-key block, a ``SecureString`` payload, or an inline
       ``password=``/``token=`` assignment) is replaced with :data:`REDACTED`
-      even when its key name is benign.
+      even when its key name is benign;
+    * **by pair name** (v1.6.1) — a ``{name, value}`` record (a tag, a container
+      environment variable, a CloudFormation parameter, an SSM ``SecureString``
+      parameter) has its value redacted when its *name* names a secret; see
+      :func:`_pair_redactions`.
 
     Nested mappings and sequences are walked recursively; non-secret metadata is
     retained unchanged. Never mutates the input, returning a redacted copy.
     """
     if isinstance(value, Mapping):
+        redact, passthrough = _pair_redactions(value)
         result: Dict[str, Any] = {}
         for k, v in value.items():
-            if isinstance(k, str) and _key_is_secret(k):
+            low = k.lower() if isinstance(k, str) else None
+            if low is not None and low in redact:
+                result[k] = REDACTED
+            elif low is not None and low in passthrough:
+                result[k] = redact_secrets(v)
+            elif isinstance(k, str) and _key_is_secret(k):
                 result[k] = REDACTED
             else:
                 result[k] = redact_secrets(v)
@@ -298,18 +481,69 @@ def is_mutating_verb(verb: str) -> bool:
     return any(token in segments for token in _MUTATING_TOKENS)
 
 
+def _normalised_verb(verb: str) -> str:
+    """Return ``verb``'s segments lowercased and joined with ``_``.
+
+    ``GetSecretValue``, ``get_secret_value``, ``get-secret-value`` and the CLI
+    phrase ``az keyvault secret show`` all reduce to one comparable form, which
+    is what :data:`_SECRET_VERB_PATTERNS` is written against."""
+    return "_".join(_verb_segments(verb))
+
+
+def has_shell_metacharacters(verb: str) -> bool:
+    """Return True when ``verb`` carries a shell metacharacter (v1.6.1)."""
+    return bool(_SHELL_META_RE.search(verb))
+
+
+def is_secret_verb(verb: str, provider: Optional[str] = None) -> bool:
+    """Return True when ``verb`` returns a secret value or mints a credential.
+
+    Such operations are read-only in the provider's sense but violate
+    secret-safety (inventory-standards §7), so they are never executed
+    (v1.6.1). See :data:`_SECRET_VERB_PATTERNS` for the list and its rationale.
+
+    ``provider`` scopes the provider-specific patterns (an Azure ``keys list``
+    returns account keys; a GCP ``kms keys list`` lists key metadata). With no
+    provider — or ``generic``, which has no live verbs to scope by — every
+    pattern applies, the conservative reading.
+    """
+    normalised = _normalised_verb(verb)
+    scoped = provider not in (None, "generic")
+    return any(
+        pattern.search(normalised)
+        for pattern, providers in _SECRET_VERB_PATTERNS
+        if providers is None or not scoped or provider in providers
+    )
+
+
+def rejection_reason(provider: str, verb: str) -> Optional[str]:
+    """Return why ``verb`` may not run for ``provider``, or ``None`` if it may.
+
+    The checks run in order of severity, so a verb that is both chained and
+    mutating is reported for the chaining: shell metacharacters, then a
+    state-mutating name, then a secret-returning / credential-minting operation,
+    then a name that matches none of the provider's read-only patterns.
+    """
+    if has_shell_metacharacters(verb):
+        return "shell metacharacter in verb rejected"
+    if is_mutating_verb(verb):
+        return "state-mutating verb rejected"
+    if is_secret_verb(verb, provider):
+        return "secret-returning or credential-minting verb rejected (secret-safety)"
+    patterns = _READ_ONLY_VERB_PATTERNS.get(provider)
+    if patterns is None or not any(p.search(verb) for p in patterns):
+        return "verb does not match provider read-only patterns"
+    return None
+
+
 def is_read_only_verb(provider: str, verb: str) -> bool:
     """Return True when ``verb`` is a permitted read-only verb for ``provider``.
 
-    A verb is permitted only when it matches one of the provider's read-only
-    patterns AND does not look state-mutating.
+    A verb is permitted only when it carries no shell metacharacter, does not
+    look state-mutating, does not return a secret or mint a credential, and
+    matches one of the provider's read-only patterns (:func:`rejection_reason`).
     """
-    if is_mutating_verb(verb):
-        return False
-    patterns = _READ_ONLY_VERB_PATTERNS.get(provider)
-    if patterns is None:
-        return False
-    return any(p.search(verb) for p in patterns)
+    return rejection_reason(provider, verb) is None
 
 
 # ---------------------------------------------------------------------------
@@ -367,6 +601,23 @@ def _render_manifest_md(manifest: Mapping[str, Any]) -> str:
         lines += ["", "## Enumeration failures (non-fatal)", "", "| Service | Reason |", "| --- | --- |"]
         for fail in failures:
             lines.append(f"| {fail.get('service', '')} | {fail.get('reason', '')} |")
+
+    # v1.6.1: a rejected verb is never executed, so its service gets no domain
+    # file. Without this section the snapshot gave no sign a domain was skipped
+    # — the silent omission inventory-standards §6 forbids.
+    rejected = manifest.get("rejected_verbs") or []
+    if rejected:
+        lines += [
+            "",
+            "## Rejected verbs (not executed)",
+            "",
+            "| Service | Verb | Reason |",
+            "| --- | --- | --- |",
+        ]
+        for rej in rejected:
+            lines.append(
+                f"| {rej.get('service', '')} | {rej.get('verb', '')} | {rej.get('reason', '')} |"
+            )
 
     lines.append("")
     return "\n".join(lines)
@@ -484,13 +735,10 @@ def collect(
 
     for enum in norm_enumerators:
         # Read-only enforcement: reject anything not matching the profile's
-        # read-only patterns, and never call state-mutating verbs.
-        if not is_read_only_verb(provider, enum.verb):
-            reason = (
-                "state-mutating verb rejected"
-                if is_mutating_verb(enum.verb)
-                else "verb does not match provider read-only patterns"
-            )
+        # read-only patterns, and never call a state-mutating, secret-returning,
+        # or shell-chained verb (rejection_reason names which rule fired).
+        reason = rejection_reason(provider, enum.verb)
+        if reason is not None:
             rejected.append({"service": enum.service, "verb": enum.verb, "reason": reason})
             continue
 
@@ -528,14 +776,10 @@ def collect(
                 json.dumps(resource, indent=2, sort_keys=True), encoding="utf-8"
             )
 
-    # Record non-fatal failures in a dedicated domain file, if any.
-    if failures:
-        (snapshot_dir / "failures.json").write_text(
-            json.dumps({"failures": failures}, indent=2, sort_keys=True),
-            encoding="utf-8",
-        )
-
-    # Cost/billing: only via the profile's declared cost endpoint.
+    # Cost/billing: only via the profile's declared cost endpoint. Decided BEFORE
+    # failures.json is written (v1.6.1): the "no declared cost endpoint" failure
+    # used to be appended after the file was already on disk, so it reached the
+    # manifest but never failures.json.
     cost_note: Optional[str] = None
     if collect_cost:
         if cost_endpoint:
@@ -545,6 +789,20 @@ def collect(
             failures.append(
                 {"service": "cost", "verb": "cost-endpoint", "reason": "no declared cost endpoint in profile"}
             )
+
+    # Failure reasons are exception text, and provider SDK errors routinely echo
+    # the request parameters that caused them (a password in a rejected
+    # connection string, a token in a signed URL). failures.json is a snapshot
+    # file like any other, so it goes through the same redaction (v1.6.1; it was
+    # written verbatim before).
+    failures = redact_secrets(failures)
+
+    # Record non-fatal failures in a dedicated domain file, if any.
+    if failures:
+        (snapshot_dir / "failures.json").write_text(
+            json.dumps({"failures": failures}, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
 
     # Build the manifest with all seven required, non-empty fields.
     resolved_tool_versions = dict(tool_versions or {}) or {"rule-engine": "0.0.0"}
@@ -604,6 +862,9 @@ __all__ = [
     "redact_secrets",
     "is_mutating_verb",
     "is_read_only_verb",
+    "is_secret_verb",
+    "has_shell_metacharacters",
+    "rejection_reason",
     "snapshot_folder_name",
     "REDACTED",
 ]

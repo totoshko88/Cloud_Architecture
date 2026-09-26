@@ -12,11 +12,20 @@ name: CI
 #              the schema is a valid JSON Schema, and confirm every
 #              mappings/<provider>-icons.yaml is well-formed (Requirement 10.2).
 #   test     — pytest across a Python version matrix (unit + property-based).
+#
+# v1.6.1: the release workflow CALLS this workflow (``workflow_call``) and needs
+# it to pass, so a tag is published only after the exact same gate that guards a
+# pull request — not the two-step subset the release job used to re-run.
 
 on:
   push:
     branches: ["**"]
   pull_request:
+  workflow_call:
+
+# Least privilege: every job here only reads the repository.
+permissions:
+  contents: read
 
 # Cancel superseded runs on the same ref.
 concurrency:
@@ -118,10 +127,13 @@ jobs:
         run: rule-engine-check-asset-paths
       - name: Verify the committed icon index is current with the official packs
         # Rebuild mappings/icon-index.json from the fetched packs and confirm the
-        # committed file is byte-identical (no stale role->icon wiring). Skips
-        # gracefully if a pack failed to fetch.
-        run: |
-          rule-engine-build-icon-sets --check --no-fetch || echo "WARNING: icon-index check skipped (packs incomplete) or STALE — see log"
+        # committed file is byte-identical (no stale role->icon wiring).
+        # v1.6.1: BLOCKING. The old ``|| echo WARNING`` turned a stale index into
+        # a log line, so the check could never fail. --allow-missing still skips
+        # (with a warning) when a pack failed to download — a network problem is
+        # not a stale index. If a vendor republishes a pack, this fails until the
+        # index is rebuilt: that is the signal the check exists to give.
+        run: rule-engine-build-icon-sets --check --no-fetch --allow-missing
       - name: Verify every diagram icon reference resolves (incl. azure2 img/lib paths)
         # A well-formed-but-nonexistent id/path renders as an empty/broken icon
         # the linter cannot see. Checks aws4 ids, azure2 img/lib paths (against

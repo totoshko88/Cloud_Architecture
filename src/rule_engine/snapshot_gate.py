@@ -201,10 +201,18 @@ def _count_list_items(payload: object) -> int:
 
 
 def count_enumerated_resources(snapshot_dir: str | Path) -> int:
-    """Return how many resources the snapshot's per-domain JSON files enumerate."""
+    """Return how many resources the snapshot's per-domain JSON files enumerate.
+
+    ``failures.json`` records services that could NOT be enumerated, so its list
+    items are not resources (v1.6.1). Counting them made an empty inventory whose
+    only entry was a failure — e.g. a cost request with no declared endpoint —
+    fail ``resources-empty``.
+    """
     total = 0
     for name in sorted(os.listdir(snapshot_dir)):
         if not name.lower().endswith(".json"):
+            continue
+        if name.lower() == "failures.json":
             continue
         path = Path(snapshot_dir) / name
         if not path.is_file():

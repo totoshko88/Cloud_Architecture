@@ -132,15 +132,83 @@ class ResolvedAsset:
 
 
 def _iter_files(root: Path) -> List[Path]:
+    """Return every file under ``root`` in a **deterministic** order (v1.6.1).
+
+    ``os.walk`` yields entries in the filesystem's readdir order, which differs
+    between platforms (APFS hash order on macOS, ext4 hash-tree order on Linux).
+    Before 1.6.1 the indexer kept the *first* file seen for a slug, so the
+    committed icon index depended on the machine that built it: permuting the
+    walk changed 15 of the 32 aws/azure role references. The walk is now sorted,
+    and :func:`index_provider` no longer depends on order at all (it ranks every
+    candidate explicitly); sorting keeps the collision warnings stable too."""
     out: List[Path] = []
     for dirpath, dirnames, filenames in os.walk(root):
-        # Skip mac cruft.
-        dirnames[:] = [d for d in dirnames if d != "__MACOSX"]
-        for name in filenames:
+        # Skip mac cruft; sort in place so os.walk descends in a stable order.
+        dirnames[:] = sorted(d for d in dirnames if d != "__MACOSX")
+        for name in sorted(filenames):
             if name == ".DS_Store":
                 continue
             out.append(Path(dirpath) / name)
     return out
+
+
+# Candidate ranking (v1.6.1). Several files in a pack normalise to one slug: the
+# same service in SVG and PNG, in four sizes (AWS 16/32/48/64), in a Dark/Light
+# variant, or — Azure — the byte-identical icon filed under two category folders.
+# The indexer keeps exactly one, chosen by an explicit rank instead of by which
+# file the directory walk happened to reach first.
+_SIZE_TOKEN_RE = re.compile(r"(?:^|[-_ ])(16|24|32|48|64|128|256|512)(?:px)?(?=$|[-_ ])", re.I)
+_VARIANT_TOKEN_RE = re.compile(r"(?:^|[-_ ])(?:dark|light)(?=$|[-_ ])", re.I)
+
+#: Preferred icon size, best first; an unsized file ranks after every listed
+#: size. 32 comes first because it is the size every committed icon index has
+#: resolved the AWS Architecture icons to, so making the choice explicit changes
+#: no committed reference. Preferring a different size (the 64px artwork is the
+#: closest to the 78px node footprint) is a deliberate re-index, not a hotfix:
+#: it re-points every AWS image reference.
+_SIZE_PREFERENCE = (32, 48, 64, 16, 24, 128, 256, 512)
+
+
+def _candidate_rank(path: Path, ext: str) -> tuple:
+    """Rank one candidate file for its slug; a lower tuple is better.
+
+    1. format — SVG before PNG (vector scales cleanly in draw.io);
+    2. variant — the base icon before a Dark/Light variant;
+    3. size — per :data:`_SIZE_PREFERENCE`.
+
+    Candidates equal on all three are broken by path (see :func:`index_provider`).
+    """
+    ext_rank = {".svg": 0, ".png": 1}.get(ext, 2)
+    stem = path.stem
+    variant_rank = 1 if _VARIANT_TOKEN_RE.search(stem) else 0
+    size_match = _SIZE_TOKEN_RE.search(stem)
+    size = int(size_match.group(1)) if size_match else None
+    size_rank = _SIZE_PREFERENCE.index(size) if size in _SIZE_PREFERENCE else len(_SIZE_PREFERENCE)
+    return (ext_rank, variant_rank, size_rank)
+
+
+def _is_better_candidate(rank: tuple, rel_path: str, best_rank: tuple, best_path: str) -> bool:
+    """True when a candidate beats the current best for its slug.
+
+    The rank decides; equal ranks are broken by the **greater** relative path.
+    In the shipped packs an equal rank only happens for the same Azure icon filed
+    under two category folders (byte-for-byte identical files), so the tie-break
+    never changes what renders — it only has to be stable. Descending order is
+    the one that reproduces the reference the goldens already embed (the Azure
+    CDN icon under ``networking/``, not ``app services/``)."""
+    if rank != best_rank:
+        return rank < best_rank
+    return rel_path > best_path
+
+
+def _base_display(display: str) -> str:
+    """A display name with size and Dark/Light decoration removed.
+
+    Used only to decide whether a slug collision is worth a warning: two files
+    that differ just by size or theme are the same service, not a collision."""
+    text = _VARIANT_TOKEN_RE.sub(" ", display)
+    text = _SIZE_TOKEN_RE.sub(" ", text)
+    return normalize_slug(text)
 
 
 def _best_ext(path: Path) -> Optional[str]:
@@ -233,11 +301,14 @@ def _index_oci_stencils(root: Path) -> Dict[str, AssetEntry]:
 def index_provider(provider: str, pack_root: str) -> Dict[str, AssetEntry]:
     """Index one provider's unpacked official asset pack rooted at ``pack_root``.
 
-    Returns a mapping of vendor-stripped slug -> :class:`AssetEntry`. When both an
-    SVG and a PNG exist for the same slug, the SVG wins; when several sizes exist,
-    the largest available is kept (later files of the preferred ext overwrite only
-    when strictly better). Providers without per-service files (``oci``) yield an
-    empty map; use :func:`resolve_asset` for their library-based fallback.
+    Returns a mapping of vendor-stripped slug -> :class:`AssetEntry`. When several
+    files normalise to one slug, exactly one is kept, chosen by
+    :func:`_candidate_rank` (SVG before PNG, base icon before a Dark/Light
+    variant, then :data:`_SIZE_PREFERENCE`) with a path tie-break — so the result
+    is independent of filesystem enumeration order (v1.6.1). Before 1.6.1 the
+    docstring promised "the largest available size" while the code kept whichever
+    file the walk reached first. OCI is indexed from its decoded stencil library
+    instead of a file tree.
     """
     if provider not in PROVIDERS:
         raise ValueError(f"unknown provider {provider!r}")
@@ -255,8 +326,9 @@ def index_provider(provider: str, pack_root: str) -> Dict[str, AssetEntry]:
         raise FileNotFoundError(f"asset pack root not found: {pack_root}")
 
     display_fn = _DISPLAY_FN.get(provider, lambda p: p.stem.replace("-", " ").replace("_", " "))
-    index: Dict[str, AssetEntry] = {}
-    ext_rank = {".svg": 2, ".png": 1}
+    best: Dict[str, tuple] = {}  # slug -> (rank, rel_path, entry)
+    # Distinct services that normalise to one slug, reported once per slug.
+    collisions: Dict[str, set] = {}
 
     for path in _iter_files(root):
         ext = _best_ext(path)
@@ -266,6 +338,7 @@ def index_provider(provider: str, pack_root: str) -> Dict[str, AssetEntry]:
         slug = normalize_slug(display, strip_vendor=True)
         if not slug:
             continue
+        rel_path = path.relative_to(root).as_posix()
         entry = AssetEntry(
             provider=provider,
             slug=slug,
@@ -274,30 +347,28 @@ def index_provider(provider: str, pack_root: str) -> Dict[str, AssetEntry]:
             ext=ext,
             category=_category_from_path(root, path),
         )
-        existing = index.get(slug)
-        if existing is None:
-            index[slug] = entry
-        elif ext_rank[ext] > ext_rank[existing.ext]:
-            # Higher-ranked format (SVG over PNG) for the SAME service is a
-            # legitimate upgrade, not a collision. Only warn when the display
-            # names differ — that means two DIFFERENT services normalized to one
-            # slug and one is being shadowed (a silent-loss bug otherwise).
-            if existing.display_name != entry.display_name:
-                logger.warning(
-                    "slug collision for %s %r: %r replaces %r (both normalize to "
-                    "the same slug; the shadowed service is dropped from the index)",
-                    provider, slug, entry.display_name, existing.display_name,
-                )
-            index[slug] = entry
-        elif existing.display_name != entry.display_name:
-            # The incoming entry loses the ext-rank tie/comparison but is a
-            # DIFFERENT service — it is being silently dropped. Surface it.
-            logger.warning(
-                "slug collision for %s %r: %r is shadowed by %r (both normalize "
-                "to the same slug; the incoming service is dropped)",
-                provider, slug, entry.display_name, existing.display_name,
+        rank = _candidate_rank(path, ext)
+        current = best.get(slug)
+        if current is not None and _base_display(current[2].display_name) != _base_display(display):
+            # Two DIFFERENT services normalised to one slug: one of them is
+            # unreachable from the index. Collected and reported once per slug
+            # below, rather than once per competing file (the 133-line warning
+            # storm of 1.6.0 was almost all size and Dark/Light variants).
+            collisions.setdefault(slug, set()).update(
+                {current[2].display_name, display}
             )
-    return index
+        if current is None or _is_better_candidate(rank, rel_path, current[0], current[1]):
+            best[slug] = (rank, rel_path, entry)
+
+    for slug in sorted(collisions):
+        kept = best[slug][2].display_name
+        dropped = sorted(n for n in collisions[slug] if _base_display(n) != _base_display(kept))
+        logger.warning(
+            "slug collision for %s %r: kept %r, shadowed %s (distinct services "
+            "normalise to one slug; the shadowed ones are unreachable from the index)",
+            provider, slug, kept, dropped,
+        )
+    return {slug: best[slug][2] for slug in sorted(best)}
 
 
 # ---------------------------------------------------------------------------
@@ -389,6 +460,10 @@ def _best_token_match(
             e.ext != ".svg",
             abs(len(e.slug.split("-")) - len(q_tokens)),
             len(e.slug),
+            # v1.6.1: a final total-order key. Without it two equally good
+            # candidates kept the index's insertion order, i.e. the directory
+            # walk order of whichever machine built the index.
+            e.slug,
         )
     )
     return candidates[0]

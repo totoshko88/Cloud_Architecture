@@ -67,8 +67,8 @@ VALID_FRONTMATTER = {
     "author": "kiro",
     "next_review_date": "2025-07-15",
     "tags": ["cloud"],
-    # The linter treats any empty list value as a missing required key, so a
-    # clean document must populate related_docs with at least one entry.
+    # related_docs may be empty (kb-frontmatter: 0-20 entries); since 1.6.1 the
+    # linter accepts ``[]`` — see test_related_docs_may_be_an_empty_list below.
     "related_docs": ["doc-0"],
 }
 
@@ -221,6 +221,50 @@ def test_clean_document_is_eligible():
     result = lint(art)
     assert RULE_FRONTMATTER not in _rules(result)
     assert result["eligible_for_publication"] is True
+
+
+def test_related_docs_may_be_an_empty_list():
+    """kb-frontmatter bounds related_docs at 0-20 entries ("empty list allowed").
+
+    Before 1.6.1 the generic empty-collection check reported ``related_docs: []``
+    as a missing key — a CRITICAL that blocked a document for having no related
+    documents."""
+    fm = dict(VALID_FRONTMATTER, related_docs=[])
+    result = lint(Artifact(kind="document", is_markdown=True, frontmatter=fm))
+    assert RULE_FRONTMATTER not in _rules(result)
+    assert result["eligible_for_publication"] is True
+
+
+def test_related_docs_parsed_from_real_markdown_may_be_empty(tmp_path):
+    """The same through the CLI parser: ``related_docs: []`` in a real file."""
+    from rule_engine.cli import parse_artifact
+
+    doc = tmp_path / "kb-doc.md"
+    doc.write_text(
+        "---\n"
+        "id: doc-1\ntitle: A Document\nkb_namespace: arch\nsection: diagrams\n"
+        "category: reference\nstatus: draft\nupdated: 2025-01-15\n"
+        "owner: platform-team\nauthor: kiro\nnext_review_date: 2025-07-15\n"
+        "tags:\n  - cloud\nrelated_docs: []\n"
+        "---\n\n# A Document\n",
+        encoding="utf-8",
+    )
+    assert RULE_FRONTMATTER not in _rules(lint(parse_artifact(str(doc))))
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"tags": []},  # tags still needs 1-20 entries
+        {"related_docs": None},  # present but valueless is still missing
+        {"related_docs": ""},
+        {"related_docs": {}},
+    ],
+)
+def test_empty_values_other_than_related_docs_list_are_still_missing(overrides):
+    fm = dict(VALID_FRONTMATTER, **overrides)
+    result = lint(Artifact(kind="document", is_markdown=True, frontmatter=fm))
+    assert _severity_of(result, RULE_FRONTMATTER) == Severity.CRITICAL.value
 
 
 def test_warning_only_stays_eligible():

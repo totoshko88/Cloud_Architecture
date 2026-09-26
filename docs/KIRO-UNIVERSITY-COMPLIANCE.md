@@ -138,15 +138,17 @@ The project registers the **AWS Documentation MCP server** so Kiro can look up
 current AWS facts (service names, limits, documentation links) instead of
 relying on memory when authoring AWS diagrams or inventory notes.
 
-Registration (`.kiro/settings/mcp.json`, mirrored at the user level
-`~/.kiro/settings/mcp.json`):
+Registration (the Power's `powers/rule-engine-artifacts/mcp.json`; without the
+Power, the same block in `.kiro/settings/mcp.json` or the user-level
+`~/.kiro/settings/mcp.json`). Since v1.6.1 the server is pinned to an exact
+release instead of `@latest`:
 
 ```json
 {
   "mcpServers": {
     "aws-docs": {
       "command": "uvx",
-      "args": ["awslabs.aws-documentation-mcp-server@latest"],
+      "args": ["awslabs.aws-documentation-mcp-server@1.2.1"],
       "env": { "FASTMCP_LOG_LEVEL": "ERROR" },
       "disabled": false,
       "autoApprove": ["search_documentation", "read_documentation", "recommend"]

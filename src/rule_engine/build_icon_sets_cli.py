@@ -17,9 +17,12 @@ Usage::
     rule-engine-build-icon-sets --no-fetch      # index already-fetched packs only
     rule-engine-build-icon-sets --check         # verify the committed index is current
     rule-engine-build-icon-sets --full          # embed full per-slug pack tables
+    rule-engine-build-icon-sets --check --no-fetch --allow-missing
+                                                # CI: stale index fails; a pack that
+                                                # failed to download is skipped
 
-Exit codes: 0 success / index current; 1 build failed or index stale (--check);
-2 usage/config error.
+Exit codes: 0 success / index current (or, with --allow-missing, packs absent);
+1 build failed or index stale (--check); 2 usage/config error.
 """
 
 from __future__ import annotations
@@ -116,6 +119,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         help="do not write; exit 1 if the committed index differs from a fresh build")
     parser.add_argument("--full", action="store_true",
                         help="embed the full per-slug pack tables (large); default writes a summary")
+    parser.add_argument("--allow-missing", action="store_true",
+                        help="with --check: when an unpacked pack is missing (e.g. the "
+                        "download failed), skip the check with a warning and exit 0 "
+                        "instead of failing. A STALE index still exits 1.")
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     # Relative --asset-root / --out are resolved against the workspace root that
@@ -143,8 +150,28 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     # 2) Index the packs into the icon-index payload.
     pack_roots = _pack_roots(asset_root)
-    missing = [k for k, r in pack_roots.items() if not Path(r).exists()]
+
+    def _absent(root: str) -> bool:
+        # An EMPTY pack directory counts as missing too (v1.6.1): a failed unpack
+        # of an earlier release left one behind, and indexing it would report a
+        # stale index instead of a missing pack.
+        path = Path(root)
+        if not path.exists():
+            return True
+        return path.is_dir() and not any(path.iterdir())
+
+    missing = [k for k, r in pack_roots.items() if _absent(r)]
     if missing:
+        if args.check and args.allow_missing:
+            # v1.6.1: CI runs --check as a BLOCKING gate. A pack that failed to
+            # download is a network problem, not a stale index, so it is reported
+            # and skipped here — while a genuinely stale index still exits 1.
+            print(
+                "rule-engine-build-icon-sets: WARNING: icon-index check SKIPPED — "
+                f"missing unpacked pack(s): {', '.join(missing)} (--allow-missing).",
+                file=sys.stderr,
+            )
+            return EXIT_OK
         print(
             "rule-engine-build-icon-sets: missing unpacked pack(s): "
             f"{', '.join(missing)}. Run without --no-fetch, or fetch first with "

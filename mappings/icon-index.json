@@ -232,7 +232,7 @@
       "azure": {
         "display_name": "Kubernetes Services",
         "note": "resolved 'Kubernetes Services'",
-        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/compute/10023-icon-service-Kubernetes-Services.svg",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/containers/10023-icon-service-Kubernetes-Services.svg",
         "source": "product"
       },
       "gcp": {

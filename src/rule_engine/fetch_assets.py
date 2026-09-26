@@ -76,11 +76,16 @@ def _unpack(zip_path: Path, out_dir: Path) -> int:
 
     Rejects any entry whose resolved path escapes ``out_dir`` (zip-slip), so a
     tampered or malicious pack cannot write outside the asset root.
+
+    The archive is opened BEFORE ``out_dir`` is created (v1.6.1): a download
+    that is not a zip (an HTML error page, a truncated file) used to leave an
+    empty pack directory behind, which the icon-index check then read as a
+    present-but-stale pack instead of a missing one.
     """
-    out_dir.mkdir(parents=True, exist_ok=True)
-    root = out_dir.resolve()
-    count = 0
     with zipfile.ZipFile(zip_path) as zf:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        root = out_dir.resolve()
+        count = 0
         for name in zf.namelist():
             if "__MACOSX" in name or name.endswith(".DS_Store") or name.endswith("/"):
                 continue

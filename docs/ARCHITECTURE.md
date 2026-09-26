@@ -112,6 +112,7 @@ flowchart TD
 | --- | --- | --- |
 | Rule Engine Contract | `contract.py` | Validate inputs, orchestrate components, return the artifact set (or a blocking error) |
 | Diagram Generator | `contract.py` + `diagram_layout.py` | Render `.drawio`, apply lane layout, node cap, legend, title cell, companion doc |
+| Layout Engine | `layout_engine.py` | Turn a coordinate-free `DiagramSpec` into placed nodes, sized containers and routed edges, checked by a geometry oracle. Today it drives the HA example generators (`scripts/build_*_ha_example.py`); `contract.py` does not use it yet — wiring an inventory snapshot through it is planned work |
 | Icon Resolver | `icon_resolver.py` | Map a neutral type + provider to a draw.io style string and brand hex; never emit a placeholder |
 | Inventory Collector | `collector.py` | Run only read-only enumeration verbs; write the Snapshot + Manifest; enforce secret-safety |
 | Normalizer | `normalizer.py` | Transform native resources to Normalized Resources; compute the `config_digest` |
@@ -155,7 +156,8 @@ The committed `.drawio` references image-shape icons by **file path** (lint-clea
 a `data:` URI would trip `icon-resolved`). The headless draw.io CLI cannot load
 local files, so `scripts/export_raster.py` inlines `assets/vendor/*` icons as
 base64 in a **temporary copy** before export, keeping the source lint-clean and
-the raster within the D7 budget (≤ 1200px wide, < 500KB, white background).
+the raster within the class-aware D7 budget enforced by `rule-engine-check-rasters`
+(`flow` ≤ 1600px wide / < 500KB, `landscape` ≤ 3600px / < 2MB; white background).
 
 ---
 
@@ -228,16 +230,18 @@ names, limits, doc links). The project registers the **AWS Documentation MCP
 server** so the agent can look these up instead of relying on memory. It exposes
 read-only tools (`search_documentation`, `read_documentation`, `recommend`).
 
-Registration lives in `.kiro/settings/mcp.json`. If that workspace file is not
-present (its directory is access-controlled in some setups), add the same block
-to the user-level `~/.kiro/settings/mcp.json`:
+The Kiro Power declares the server in `powers/rule-engine-artifacts/mcp.json`.
+To use it without the Power, add the same block to the workspace
+`.kiro/settings/mcp.json` or the user-level `~/.kiro/settings/mcp.json`. Since
+engine v1.6.1 the server is pinned to an exact release so an upstream release
+cannot change behaviour unannounced; bump the pin deliberately:
 
 ```json
 {
   "mcpServers": {
     "aws-docs": {
       "command": "uvx",
-      "args": ["awslabs.aws-documentation-mcp-server@latest"],
+      "args": ["awslabs.aws-documentation-mcp-server@1.2.1"],
       "env": { "FASTMCP_LOG_LEVEL": "ERROR" },
       "disabled": false,
       "autoApprove": ["search_documentation", "read_documentation", "recommend"]

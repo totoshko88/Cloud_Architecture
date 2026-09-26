@@ -6,7 +6,7 @@
       "trigger": "PostTaskExec",
       "action": {
         "type": "command",
-        "command": "command -v rule-engine-lint >/dev/null 2>&1 || exit 0; rule-engine-lint --all --fail-on error,critical && { command -v rule-engine-validate-schema >/dev/null 2>&1 && rule-engine-validate-schema --schema schemas/inventory.schema.json --targets 'examples/**/*.json' || true; }"
+        "command": "command -v rule-engine-lint >/dev/null 2>&1 || { echo 'Rule Engine: rule-engine-lint is not on PATH, so the validate-on-task gate did not run. Install the rule-engine package (the power skill ships scripts/bootstrap.sh).' >&2; exit 0; }; rc=0; rule-engine-lint --all --fail-on error,critical || rc=1; if command -v rule-engine-validate-schema >/dev/null 2>&1; then rule-engine-validate-schema --schema schemas/inventory.schema.json --targets 'examples/**/*.json' || rc=1; fi; exit $rc"
       }
     }
   ]

@@ -52,9 +52,13 @@ bash scripts/bootstrap.sh --with-assets # ALSO download the official GCP/OCI ico
 
 `scripts/bootstrap.sh`:
 
-1. `pip install`s the `rule-engine` package if `rule-engine-init` is not already
-   on `PATH` (override the source with `RULE_ENGINE_SPEC`, e.g. a pinned tag or a
-   local `-e /path/to/repo`; override the installer with `PIP`);
+1. installs the `rule-engine` package if `rule-engine-init` is not already on
+   `PATH` — the **release the Power ships with** (the matching `vX.Y.Z` git tag),
+   never the moving default branch. With `uv` available it uses
+   `uv tool install` (an isolated environment with a supported Python, fetched if
+   needed); otherwise `python3 -m pip install`. Override the release with
+   `RULE_ENGINE_VERSION`, the whole target with `RULE_ENGINE_SPEC` (one argument,
+   e.g. a local checkout `/path/to/repo`), or force pip with `PIP`;
 2. runs `rule-engine-init` to copy `.kiro/steering/`, `.kiro/hooks/`, `mappings/`,
    and `schemas/` into the current workspace — resolved from the payload
    **bundled inside the installed package**, so no repo checkout is required;
@@ -68,7 +72,9 @@ it is safe.
 ## Relationship to the workspace
 
 In this repository the same skill is also available workspace-locally at
-`.kiro/skills/rule-engine-artifacts/SKILL.md` and the same MCP server at
-`.kiro/settings/mcp.json` (mirrored at the user level). This power packages them
+`.kiro/skills/rule-engine-artifacts/SKILL.md` (kept byte-identical to the Power's
+copy by a test). The MCP server is declared in this power's `mcp.json`, pinned to
+an exact release of `awslabs.aws-documentation-mcp-server` so a new upstream
+release cannot change the power's behaviour unannounced. This power packages them
 into one installable, shareable unit — the wrapping the project's
 `docs/KIRO-UNIVERSITY-COMPLIANCE.md` described as a future step.

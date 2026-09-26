@@ -8,26 +8,31 @@
 #           mappings, Inventory Schema, examples, and the add-a-provider runbook
 #           (docs/add-a-provider.md).
 #   - 10.5  Name every Release Bundle with a Semantic Version identifier.
-#   - 10.6  Generate/update the Changelog (added/changed/removed) for the
-#           released Semantic Version in reverse chronological order.
-#   - 10.10 Publish the Release Bundle and the updated Changelog as artifacts.
+#   - 10.6  The Changelog is HAND-CURATED: the maintainer writes each release's
+#           added/changed/removed section before tagging; CI never rewrites it.
+#   - 10.10 Publish the Release Bundle and the Changelog as artifacts.
 #
 # Fail conditions (task 12.2):
 #   - 10.3  IF the Linter reports >= 1 CRITICAL or ERROR finding, THEN fail the
 #           run and produce NO Release Bundle. The `lint` stage runs first and
 #           exits non-zero via `--fail-on error,critical`; the release stages
 #           (`version-guard`, `build`, `changelog`, `publish`) declare
-#           `needs: [lint, validate]` so a failed gate stops the pipeline and no
-#           bundle is ever packaged.
-#   - 10.7  IF the release trigger's Semantic Version already exists in the
-#           Changelog, THEN fail the run and produce NO Release Bundle. The
-#           `version-guard` stage runs the reusable
-#           `src/rule_engine/version_guard.py` check BEFORE `build`, so a
-#           duplicate version fails the pipeline before any archive is created.
+#           `needs: [lint, validate, test]` so a failed gate stops the pipeline
+#           and no bundle is ever packaged.
+#   - 10.7  IF the release trigger's Semantic Version has NO curated section in
+#           the Changelog, THEN fail the run and produce NO Release Bundle. The
+#           `version-guard` stage runs `src/rule_engine/version_guard.py` BEFORE
+#           `build`, and `build` re-checks it. (v1.6.1: this header used to state
+#           the opposite condition — "already exists" — which is not what the
+#           guard does or what Requirement 10.7 says.)
+#   - v1.6.1 The tag, pyproject.toml and the newest CHANGELOG.md heading must
+#           name the same version: `build` writes VERSION from the tag and runs
+#           `version_guard --triple`, which fails closed on any disagreement.
 
 stages:
   - lint
   - validate
+  - test
   - version-guard
   - build
   - changelog
@@ -60,7 +65,8 @@ cache:
   - pip install -e .
 
 # A release run is triggered by a Git tag. Non-tag pipelines run lint + validate
-# only; build/changelog/publish are release-only (Requirement 10.4).
+# + test only; version-guard/build/changelog/publish are release-only
+# (Requirement 10.4).
 .release_rules: &release_rules
   rules:
     - if: '$CI_COMMIT_TAG'
@@ -131,8 +137,10 @@ validate:
     - echo "Verifying the committed icon index is current with the official packs"
     # Icon-set index (v1.3.x): rebuild from the fetched packs and confirm the
     # committed mappings/icon-index.json is byte-identical (no stale role→icon
-    # wiring). Skips gracefully if a pack failed to fetch.
-    - rule-engine-build-icon-sets --check --no-fetch || echo "WARNING: icon-index check skipped (packs incomplete) or STALE — see log"
+    # wiring). v1.6.1: BLOCKING — the old `|| echo WARNING` meant a stale index
+    # could never fail the pipeline. --allow-missing still skips (with a
+    # warning) when a pack failed to download.
+    - rule-engine-build-icon-sets --check --no-fetch --allow-missing
     - echo "Verifying every diagram icon reference resolves (incl. azure2 img/lib paths)"
     # Icon-reference verifier: a well-formed-but-nonexistent id/path renders as an
     # empty/broken icon that the linter's icon-resolved rule cannot see. This
@@ -179,14 +187,29 @@ validate:
       rule-engine-init --check "$ws"
 
 # ---------------------------------------------------------------------------
+# Stage: test (v1.6.1)
+#   Run the unit + property-based test suite. Before 1.6.1 the GitLab pipeline
+#   ran no tests at all (only GitHub Actions did), so a GitLab tag could package
+#   a Release Bundle from a tree whose tests failed.
+# ---------------------------------------------------------------------------
+test:
+  stage: test
+  before_script:
+    - python --version
+    - pip install --upgrade pip
+    - pip install -e ".[dev]"
+  script:
+    - pytest -q
+
+# ---------------------------------------------------------------------------
 # Stage: version-guard
 #   On a release trigger (tag), fail-closed BEFORE any Release Bundle is built
 #   if the release Semantic Version has NO curated section in CHANGELOG.md
 #   (Requirement 10.7). The Changelog is hand-curated, so the release version's
 #   section must already exist; a missing entry exits non-zero and stops the
 #   pipeline, so build/changelog/publish never run and no archive is ever
-#   created. It also `needs: [lint, validate]`, so a lint CRITICAL/ERROR
-#   (Requirement 10.3) short-circuits the release path here as well.
+#   created. It also `needs: [lint, validate, test]`, so a lint CRITICAL/ERROR
+#   (Requirement 10.3) or a failing test short-circuits the release path here.
 # ---------------------------------------------------------------------------
 version-guard:
   stage: version-guard
@@ -194,6 +217,7 @@ version-guard:
   needs:
     - lint
     - validate
+    - test
   before_script:
     - *install
     - export RELEASE_VERSION="${CI_COMMIT_TAG#v}"
@@ -211,12 +235,13 @@ version-guard:
 #   and the "add a new provider" runbook. The archive is named with a Semantic
 #   Version (Requirement 10.4, 10.5).
 #
-#   `needs: [lint, validate, version-guard]` makes the fail conditions explicit
-#   and robust: if the Linter reported a CRITICAL/ERROR (10.3) or the version
-#   already exists in the Changelog (10.7), those upstream jobs fail and this
-#   build job never runs -- so NO Release Bundle is produced. As a defense in
-#   depth, the guard is re-run at the start of the build script before the
-#   archive is created.
+#   `needs: [lint, validate, test, version-guard]` makes the fail conditions
+#   explicit and robust: if the Linter reported a CRITICAL/ERROR (10.3), a test
+#   failed, or the version has no curated Changelog section (10.7), those
+#   upstream jobs fail and this build job never runs -- so NO Release Bundle is
+#   produced. As a defense in depth, the guard is re-run at the start of the
+#   build script before the archive is created, and (v1.6.1) the tag,
+#   pyproject.toml and the newest CHANGELOG heading must agree (--triple).
 # ---------------------------------------------------------------------------
 build:
   stage: build
@@ -224,6 +249,7 @@ build:
   needs:
     - lint
     - validate
+    - test
     - version-guard
   before_script:
     - *install
@@ -240,6 +266,9 @@ build:
     - echo "Packaging the Release Bundle for version ${RELEASE_VERSION}"
     - export BUNDLE_ARCHIVE="${BUNDLE_NAME}-${RELEASE_VERSION}.tar.gz"
     - echo "${RELEASE_VERSION}" > VERSION
+    # v1.6.1: VERSION (the tag), pyproject.toml and the newest CHANGELOG.md
+    # heading must name one version; fail closed before any archive exists.
+    - python -m rule_engine.version_guard --triple .
     # Runbook: the "add a new provider" runbook is the dedicated document
     # docs/add-a-provider.md (Requirement 9 AC9). The spec design document is
     # also bundled for the design-level narrative.

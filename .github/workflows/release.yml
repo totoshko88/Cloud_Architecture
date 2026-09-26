@@ -2,29 +2,47 @@ name: Release
 
 # Tag-triggered release for the Diagram & Inventory Rule Engine.
 #
-# Mirrors the GitLab release stages (.gitlab-ci.yml: version-guard → build →
-# publish) on GitHub: on a pushed ``v*`` tag it re-runs the lint + validate
-# gate, packages the Release Bundle (steering docs, mappings, Inventory Schema,
+# Mirrors the GitLab release stages (.gitlab-ci.yml: test → version-guard → build
+# → publish) on GitHub: on a pushed ``v*`` tag it runs the FULL CI workflow
+# (tests, lint, every validate gate) as a required job, verifies that the tag,
+# pyproject.toml and the newest CHANGELOG.md heading name the same version,
+# packages the Release Bundle (steering docs, mappings, Inventory Schema,
 # examples, the add-a-provider runbook, the design doc, README, VERSION), pulls
 # the release notes from the matching CHANGELOG.md section, and publishes a
 # GitHub Release with the bundle attached.
 #
 # The Semantic Version is the tag without a leading ``v`` (v1.2.3 -> 1.2.3).
-# The tag's version MUST have a section in CHANGELOG.md (the source of truth for
-# per-version history) or the release fails — no bundle is published.
+#
+# v1.6.1: before this release the job re-ran only ``rule-engine-lint`` and
+# ``rule-engine-validate-schema`` — no tests, no icon/raster/snapshot gates — and
+# never compared the tag with pyproject.toml, so ``v1.7.0`` on a tree that still
+# said ``1.6.0`` would have been published. The ``ci`` job below is the same
+# workflow that guards every pull request, and ``version_guard --triple`` fails
+# closed on any disagreement between the tag (written to VERSION),
+# pyproject.toml and CHANGELOG.md.
 
 on:
   push:
     tags:
       - "v*"
 
+# Least privilege by default; only the release job may write.
 permissions:
-  contents: write   # create the GitHub Release + upload the bundle asset
+  contents: read
 
 jobs:
+  ci:
+    name: full CI gate
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
   release:
     name: build & publish release
+    needs: ci
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # create the GitHub Release + upload the bundle asset
     steps:
       - uses: actions/checkout@v4
 
@@ -41,11 +59,12 @@ jobs:
         id: ver
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
-      - name: Lint gate (fail on CRITICAL/ERROR)
-        run: rule-engine-lint --all --fail-on error,critical
-
-      - name: Validate schema + examples
-        run: rule-engine-validate-schema --schema schemas/inventory.schema.json --targets 'examples/**/*.json'
+      - name: Write VERSION and verify the version triple
+        # VERSION is the tag; --triple requires it, pyproject.toml's version and
+        # the newest CHANGELOG.md heading to agree, and fails closed otherwise.
+        run: |
+          echo "${{ steps.ver.outputs.version }}" > VERSION
+          python -m rule_engine.version_guard --triple .
 
       - name: Release notes from CHANGELOG
         id: notes
@@ -57,7 +76,6 @@ jobs:
       - name: Package the Release Bundle
         run: |
           VERSION="${{ steps.ver.outputs.version }}"
-          echo "${VERSION}" > VERSION
           BUNDLE="rule-engine-${VERSION}.tar.gz"
           tar -czf "${BUNDLE}" \
             .kiro/steering/ \
