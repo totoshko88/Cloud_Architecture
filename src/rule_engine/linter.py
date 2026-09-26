@@ -490,8 +490,24 @@ def _check_companion_doc(a: Artifact) -> bool:
     return not a.has_companion_doc
 
 
+#: Required keys whose value is a list that may legitimately be EMPTY.
+#: kb-frontmatter bounds ``related_docs`` at 0–20 entries ("empty list
+#: allowed"); every other required key must hold a non-empty value. Before
+#: 1.6.1 the generic empty-collection test below flagged ``related_docs: []`` as
+#: a CRITICAL "missing key", so a document that simply had no related documents
+#: was blocked from publication — and callers (contract._frontmatter_dict)
+#: worked around it by inventing a related-doc id.
+_EMPTY_LIST_ALLOWED_KEYS = frozenset({"related_docs"})
+
+
 def _check_frontmatter(a: Artifact) -> bool:
-    """frontmatter: a Markdown document is missing/empty a required key (CRITICAL)."""
+    """frontmatter: a Markdown document is missing/empty a required key (CRITICAL).
+
+    A key is missing when it is absent, ``None``, a blank string, or an empty
+    collection — except that a key in :data:`_EMPTY_LIST_ALLOWED_KEYS` may hold
+    an explicitly empty *list* (``related_docs: []``), which kb-frontmatter
+    permits. ``tags`` still needs at least one entry.
+    """
     if not _is_document(a):
         return False
     fm = a.frontmatter
@@ -506,7 +522,11 @@ def _check_frontmatter(a: Artifact) -> bool:
             return True
         if isinstance(value, str) and value.strip() == "":
             return True
-        if isinstance(value, (list, tuple, dict)) and len(value) == 0:
+        if isinstance(value, (list, tuple)) and len(value) == 0:
+            if key in _EMPTY_LIST_ALLOWED_KEYS:
+                continue
+            return True
+        if isinstance(value, dict) and len(value) == 0:
             return True
     return False
 

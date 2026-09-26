@@ -1,3 +1,7 @@
+---
+inclusion: always
+---
+
 # Provider Asset Packs & Icon Fallback
 
 This steering document defines where each provider's **official icon asset pack** lives, how it is laid out, and the **fallback order** the engine uses when a specific service is not available as a built-in draw.io stencil. It complements `provider-profiles.md` (which maps the nine neutral resource types to built-in stencils) and `diagram-standards.md` (which forbids unresolved placeholder icons via the `icon-resolved` ERROR).
@@ -106,8 +110,13 @@ thin wrapper `scripts/build_icon_sets.py`):
 Only the **index** is committed; the heavy vendor binaries stay uncommitted. So generators
 and CI resolve a role→icon and verify wiring **without** the packs present, and a new or
 renamed vendor icon is a **re-index** (`rule-engine-build-icon-sets`), not a code edit.
-`--check` fails if the committed index is stale (wired into CI after the asset fetch);
-`--no-fetch` indexes already-fetched packs; `--full` embeds the complete per-slug tables.
+`--check` fails if the committed index is stale — a **blocking** CI gate after the asset
+fetch since v1.6.1, run with `--allow-missing` so a pack that failed to download is
+skipped with a warning rather than reported as stale; `--no-fetch` indexes
+already-fetched packs; `--full` embeds the complete per-slug tables. The index is a pure
+function of the pack contents: when several files normalise to one slug the indexer keeps
+SVG over PNG, the base icon over a Dark/Light variant, then the 32px size, with a path
+tie-break — never "whichever file the directory walk reached first".
 
 **Roles.** `mappings/roles.yaml` is the single source of truth for role → per-provider
 service query. It covers the nine neutral resource types plus presentation-only roles

@@ -6,7 +6,7 @@
       "trigger": "SessionStart",
       "action": {
         "type": "command",
-        "command": "if command -v rule-engine-init >/dev/null 2>&1; then if ! rule-engine-init --check >/dev/null 2>&1; then echo 'Rule Engine: this workspace is missing the always-on rules and/or icon mappings. Before generating any diagram/inventory artifact, bootstrap it: run `rule-engine-init` to copy the steering rules + mappings, and `rule-engine-init --with-assets` to ALSO download the official GCP/OCI icon packs (AWS/Azure icons are built into draw.io; GCP/OCI icons are file/stencil assets that are not committed, so a GCP/OCI diagram renders empty boxes until fetched).'; fi; fi"
+        "command": "if command -v rule-engine-init >/dev/null 2>&1; then if ! rule-engine-init --check >/dev/null 2>&1; then echo 'Rule Engine: this workspace is missing the always-on rules and/or icon mappings. Before generating any diagram/inventory artifact, bootstrap it: run `rule-engine-init` to copy the steering rules + mappings, and `rule-engine-init --with-assets` to ALSO download the official GCP/OCI icon packs (AWS/Azure icons are built into draw.io; GCP/OCI icons are file/stencil assets that are not committed, so a GCP/OCI diagram renders empty boxes until fetched).'; fi; else echo 'Rule Engine: the rule-engine package is not installed (rule-engine-init is not on PATH), so the lint / icon / raster gates cannot run in this workspace and the save and task hooks skip. Install it before generating diagram or inventory artifacts: the power skill ships scripts/bootstrap.sh, or run `pip install \"rule-engine @ git+https://github.com/totoshko88/Cloud_Architecture.git@v1.6.1\"` in an active virtualenv.'; fi"
       }
     }
   ]

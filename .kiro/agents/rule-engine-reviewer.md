@@ -19,18 +19,23 @@ resources:
 permissions:
   rules:
     # Verification commands only — the gate, nothing that mutates artifacts.
+    #
+    # v1.6.1: ``cat *`` was removed. It could read local credential files, and a
+    # redirect (``cat a > b``) is not split into a separate command, so it could
+    # also write past the fs_write deny. The ``read`` tool covers reading.
     - capability: shell
       match:
         - "rule-engine-lint *"
         - "rule-engine-check-rasters*"
         - "rule-engine-check-asset-paths*"
+        - "rule-engine-check-snapshot*"
         - "rule-engine-verify-icon *"
         - "rule-engine-validate-schema*"
+        - "python scripts/orthogonalise_drawio.py --check *"
         - "pytest*"
         - "git status*"
         - "git diff*"
         - "git log*"
-        - "cat *"
         - "ls *"
       effect: allow
     # Read-only: never write, never run a destructive or state-changing command.
@@ -46,6 +51,34 @@ permissions:
         - "git push*"
         - "python scripts/build_*"
         - "python scripts/export_raster.py *"
+        # v1.6.1: a redirect writes a file past the fs_write deny, and a command
+        # substitution or backtick runs a second command inside an allowed one;
+        # neither is split into a separate command, so a read-only gate denies
+        # them outright.
+        - "*>*"
+        - "*<*"
+        - "*`*"
+        - "*$(*"
+        - "*\n*"
+      effect: deny
+    # Local credential stores are never read (v1.6.1).
+    - capability: fs_read
+      match:
+        - "**/.aws/credentials"
+        - "**/.aws/sso/cache/**"
+        - "**/.azure/**"
+        - "**/.config/gcloud/**"
+        - "**/.oci/**"
+        - "**/.kube/config"
+        - "**/.docker/config.json"
+        - "**/.ssh/**"
+        - "**/.aws/cli/cache/**"
+        - "**/.env"
+        - "**/.env.*"
+        - "**/.git-credentials"
+        - "**/.netrc"
+        - "**/.config/gh/hosts.yml"
+        - "**/*.pem"
       effect: deny
 welcomeMessage: >-
   Reviewer ready. I run the full gate (lint, raster, icon, tests) and report

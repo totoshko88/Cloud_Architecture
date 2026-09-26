@@ -4,8 +4,11 @@ The released version is recorded in three places. At 1.5.4 they drifted — the
 working tree carried ``VERSION`` = 1.5.3 against ``pyproject.toml`` = 1.5.4 and
 a top CHANGELOG heading of 1.5.4 — and nothing surfaced it, because CI rewrites
 ``VERSION`` at tag time so a stale file never broke a release. These tests make
-the triple a checked contract, and exercise the ``--triple`` CLI mode the CI
-version-guard stage runs.
+the triple a checked contract, and exercise the ``--triple`` CLI mode the
+release pipelines run right after writing ``VERSION`` from the tag (the GitHub
+``release`` job and the GitLab ``build`` stage). Until 1.6.1 this docstring said
+the CI version-guard stage ran it; no pipeline did — see
+``tests/test_hooks_and_ci_gates.py``, which now pins the wiring.
 """
 
 from __future__ import annotations
@@ -203,7 +206,7 @@ def test_missing_source_is_fail_closed(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# CLI (--triple), as the CI version-guard stage invokes it
+# CLI (--triple), as the release pipelines invoke it after writing VERSION
 # ---------------------------------------------------------------------------
 
 

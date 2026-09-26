@@ -123,7 +123,8 @@ Do not restate rule values from memory. The binding sources are always-on:
 5. Export the raster with `scripts/export_raster.py <file>.drawio` — it inlines
    local `assets/vendor` icons as base64 in a temp copy (the headless draw.io
    CLI cannot load local files), keeping the committed source lint-clean, and
-   stays within the D7 budget (≤ 1200px wide, < 500KB).
+   stays within the class-aware D7 budget enforced by `rule-engine-check-rasters`
+   (`flow` ≤ 1600px wide / < 500KB; `landscape` ≤ 3600px / < 2MB).
 
 ## Companion / KB document workflow
 

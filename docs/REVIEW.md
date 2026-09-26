@@ -103,8 +103,8 @@ These are documented and accepted; they do not block publication.
      loop cannot resolve: two edges then compete for one ~40px band, and greedy
      per-edge allocation in declared order cannot see the conflict coming.
   3. *The pipeline has no per-edge decision point.* `_place_and_route` decides
-     contacts in **eight sequential global passes** (`1`, `1b`, `1c`, `1d`, `2`,
-     `2b`, `2b2`, `2b3`, `2c`), each reading the previous one's output across the
+     contacts in **ten sequential global passes** (`1`, `1b`, `1c`, `1c2`, `1d`,
+     `2`, `2b`, `2b3`, `2b4`, `2c`), each reading the previous one's output across the
      whole edge set, and only then routes. Scoring needs contacts *and* route
      chosen together per edge, so it cannot be slotted into the current order.
 
