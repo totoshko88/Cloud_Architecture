@@ -1,0 +1,50 @@
+{
+  "resources": [
+    {
+      "boundary": "123456789012",
+      "config_digest": "61b5895c27faf7b1b24352d73ade007007e4b65ff160776494c589e72dfaa0eb",
+      "id": "arn:aws:lambda:us-east-1:123456789012:function:agent-tool-invoker",
+      "name": "agent-tool-invoker",
+      "native_type": "AWS::Lambda::Function",
+      "provider": "aws",
+      "region": "us-east-1",
+      "resource_type": "serverless_fn",
+      "tags": {
+        "env": "prod",
+        "team": "platform",
+        "workload": "agent-platform"
+      }
+    },
+    {
+      "boundary": "123456789012",
+      "config_digest": "88f81c9ad30b179f4048cbb645bb44ae04009bae5da97a6b8a2cffe77bb34099",
+      "id": "arn:aws:eks:us-east-1:123456789012:cluster/agent-runtime",
+      "name": "agent-runtime",
+      "native_type": "AWS::EKS::Cluster",
+      "provider": "aws",
+      "region": "us-east-1",
+      "resource_type": "managed_k8s",
+      "tags": {
+        "env": "prod",
+        "team": "platform",
+        "workload": "agent-platform"
+      }
+    },
+    {
+      "boundary": "123456789012",
+      "config_digest": "cc6985cc68b5cff37c2260fc5b46d5c87d15d34f0d98764ea8ace740ba7efaa0",
+      "id": "arn:aws:bedrock:us-east-1::foundation-model/agent-reasoning",
+      "name": "agent-reasoning",
+      "native_type": "AWS::Bedrock::FoundationModel",
+      "provider": "aws",
+      "region": "us-east-1",
+      "resource_type": "llm_platform",
+      "tags": {
+        "env": "prod",
+        "team": "platform",
+        "workload": "agent-platform"
+      }
+    }
+  ],
+  "service": "compute"
+}

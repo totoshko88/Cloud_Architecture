@@ -1,0 +1,15 @@
+{
+  "boundary": "env-prod",
+  "config_digest": "5f63de0ec3ccdcc61cd7bdfff6bf8831f3bf1b67db94750f86dfc941b2223ff4",
+  "id": "module.data.managed_sql.primary",
+  "name": "primary-sql",
+  "native_type": "Managed SQL",
+  "provider": "generic",
+  "region": "region-1",
+  "resource_type": "managed_sql",
+  "tags": {
+    "env": "prod",
+    "source": "terraform-state",
+    "team": "platform"
+  }
+}

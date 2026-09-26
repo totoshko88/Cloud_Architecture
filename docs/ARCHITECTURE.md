@@ -192,8 +192,15 @@ findings**; WARNING findings do not block. Gates:
 | Linter | `rule-engine-lint --all --fail-on error,critical` | any CRITICAL/ERROR (e.g. `frontmatter`, `node-count`, `icon-resolved`, `secret-safety`) |
 | Schema | `rule-engine-validate-schema` | a resource that violates `inventory.schema.json` |
 | Asset paths | `rule-engine-check-asset-paths` | a mapping icon file path / OCI slug that does not exist |
-| Raster budget | `rule-engine-check-rasters` | a PNG over 1200px wide or ≥ 500KB |
+| Raster budget | `rule-engine-check-rasters` | a PNG outside its class budget (flow ≤ 1600px / < 500KB, landscape ≤ 3600px / < 2MB) |
+| Snapshot shape | `rule-engine-check-snapshot` | a Snapshot folder that breaks `inventory-standards.md` §3–§5 (folder name, the seven manifest fields, one JSON per domain, per-resource subfolders) |
 | Tests | `pytest -q` | any failing unit or property-based test |
+
+The linter and the snapshot gate divide the inventory contract between them: the
+linter reads snapshot file **content** (every Markdown document through
+`frontmatter`, every JSON through `secret-safety`), the snapshot gate reads the
+**folder shape**. Neither sees the other's half, which is why a hand-written
+snapshot could once ship with an empty `resources/` and still lint clean.
 
 The ruleset in `diagram-lint.md` is authoritative and **fail-closed**: if that
 file is missing, every artifact is reported blocked (`ruleset-unavailable`).

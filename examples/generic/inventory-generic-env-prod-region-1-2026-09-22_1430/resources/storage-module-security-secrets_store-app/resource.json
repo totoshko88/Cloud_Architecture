@@ -1,0 +1,15 @@
+{
+  "boundary": "env-prod",
+  "config_digest": "17baa7efd840067e21f177674ea197c784c06e14fc285ca3ca7bb334dc57feb8",
+  "id": "module.security.secrets_store.app",
+  "name": "app-secrets",
+  "native_type": "Secrets Store",
+  "provider": "generic",
+  "region": "region-1",
+  "resource_type": "secrets_store",
+  "tags": {
+    "env": "prod",
+    "source": "terraform-state",
+    "team": "platform"
+  }
+}

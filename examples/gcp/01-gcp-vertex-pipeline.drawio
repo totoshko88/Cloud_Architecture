@@ -44,52 +44,62 @@
           <mxGeometry x="1140" y="520" width="78" height="78" as="geometry" />
         </mxCell>
 
-        <mxCell id="e1" value="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="api-gateway" target="load-balancer">
+        <mxCell id="e1" value="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="api-gateway" target="load-balancer">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e2" value="2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="load-balancer" target="vertex-ai">
+        <mxCell id="e2" value="2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="load-balancer" target="vertex-ai">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e3" value="3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=0.5;exitY=0.0;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="api-gateway" target="pubsub-events">
+        <mxCell id="e3" value="3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=1.0;exitY=0.2564102564102564;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="api-gateway" target="pubsub-events">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="159.00" y="239.00" />
+              <mxPoint x="250.00" y="460.00" />
+              <mxPoint x="250.00" y="240.00" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="e4" value="4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="pubsub-events" target="ingest-function">
+        <mxCell id="e4" value="4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=1.0;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="pubsub-events" target="ingest-function">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e5" value="5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.25;exitY=1.0;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="ingest-function" target="training-gke">
+        <mxCell id="e5" value="5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.2564102564102564;exitY=1.0;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="ingest-function" target="training-gke">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="855.00" y="719.00" />
+              <mxPoint x="900.00" y="320.00" />
+              <mxPoint x="800.00" y="320.00" />
+              <mxPoint x="800.00" y="720.00" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="e6" value="6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.5;exitY=0.0;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=1.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="training-gke" target="vertex-ai">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e7" value="7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0;exitY=0.25;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="vertex-ai" target="cloud-sql">
+        <mxCell id="e6" value="6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0;exitY=0.2564102564102564;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5128205128205128;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="training-gke" target="vertex-ai">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="1060.00" y="459.00" />
-              <mxPoint x="1060.00" y="399.00" />
+              <mxPoint x="1010.00" y="700.00" />
+              <mxPoint x="1010.00" y="420.00" />
+              <mxPoint x="920.00" y="420.00" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="e8" value="8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0;exitY=0.75;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="vertex-ai" target="model-storage">
+        <mxCell id="e7" value="7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0;exitY=0.2564102564102564;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="vertex-ai" target="cloud-sql">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="1090.00" y="499.00" />
-              <mxPoint x="1090.00" y="559.00" />
+              <mxPoint x="1060.00" y="460.00" />
+              <mxPoint x="1060.00" y="400.00" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="e9" value="9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.0;exitY=0.75;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="vertex-ai" target="secret-manager">
+        <mxCell id="e8" value="8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0;exitY=0.7692307692307693;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="vertex-ai" target="model-storage">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="659.00" y="498.00" />
+              <mxPoint x="1090.00" y="500.00" />
+              <mxPoint x="1090.00" y="560.00" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e9" value="9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.5128205128205128;exitY=1.0;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5128205128205128;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="vertex-ai" target="secret-manager">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="920.00" y="600.00" />
+              <mxPoint x="660.00" y="600.00" />
             </Array>
           </mxGeometry>
         </mxCell>

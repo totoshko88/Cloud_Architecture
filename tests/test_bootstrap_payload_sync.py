@@ -54,3 +54,91 @@ def test_dot_free_remap_matches_between_backend_and_init():
         "the dot-free remap differs between build_backend._PAYLOAD and "
         f"init_workspace._BUNDLE_MAP: backend={backend_remap}, init={iw._BUNDLE_MAP}"
     )
+
+
+def test_agents_are_part_of_the_bootstrap_payload():
+    """The three workflow agents ship and are copied out (v1.6.0).
+
+    A clean-room install received the always-on steering rules and the icon
+    mappings but **none** of the agents that apply them (diagram-author,
+    inventory-collector, rule-engine-reviewer), so a fresh workspace had the
+    standard without the roles. This asserts the tree is in both maps and that the
+    three agent files actually exist to be copied.
+    """
+    bb = _load_build_backend()
+    assert ".kiro/agents" in bb._PAYLOAD
+    assert ".kiro/agents" in iw._BOOTSTRAP_DIRS
+    assert iw._BUNDLE_MAP[".kiro/agents"] == "kiro/agents"
+
+    agents_dir = _REPO_ROOT / ".kiro" / "agents"
+    names = sorted(p.name for p in agents_dir.glob("*.md"))
+    assert names == [
+        "diagram-author.md",
+        "inventory-collector.md",
+        "rule-engine-reviewer.md",
+    ], f"unexpected agent set: {names}"
+
+
+def test_every_dot_kiro_payload_tree_is_remapped_dot_free():
+    """setuptools drops dot-directories from package data, so every ``.kiro/*``
+    tree in the payload MUST have a dot-free bundle destination — otherwise it is
+    silently absent from the wheel."""
+    bb = _load_build_backend()
+    for src, dst in bb._PAYLOAD.items():
+        if src.startswith("."):
+            assert not dst.startswith("."), (
+                f"payload tree {src!r} maps to {dst!r}, which setuptools will drop"
+            )
+
+
+# ---------------------------------------------------------------------------
+# Skill duplication (v1.6.0)
+# ---------------------------------------------------------------------------
+
+_SKILL_RELATIVE = "rule-engine-artifacts/SKILL.md"
+_WORKSPACE_SKILL = _REPO_ROOT / ".kiro" / "skills" / _SKILL_RELATIVE
+_POWER_SKILL = (
+    _REPO_ROOT / "powers" / "rule-engine-artifacts" / "skills" / _SKILL_RELATIVE
+)
+
+
+def test_the_two_skill_copies_are_identical():
+    """``.kiro/skills`` and the Power's ``skills/`` ship the same SKILL.md.
+
+    The skill is duplicated because a Power carries its own copy, but nothing
+    enforced the sync the way ``_PAYLOAD``/``_BOOTSTRAP_DIRS`` is enforced above —
+    and by 1.5.4 the two had drifted across four wording hunks. Drift here is
+    worse than in prose: the skill is the agent's instruction sheet, so two
+    versions mean two behaviours depending on how the engine was installed.
+    """
+    assert _WORKSPACE_SKILL.is_file(), f"missing {_WORKSPACE_SKILL}"
+    assert _POWER_SKILL.is_file(), f"missing {_POWER_SKILL}"
+    workspace = _WORKSPACE_SKILL.read_text(encoding="utf-8")
+    power = _POWER_SKILL.read_text(encoding="utf-8")
+    assert workspace == power, (
+        "the two SKILL.md copies have drifted; copy "
+        f"{_WORKSPACE_SKILL.relative_to(_REPO_ROOT)} over "
+        f"{_POWER_SKILL.relative_to(_REPO_ROOT)}"
+    )
+
+
+def test_power_plugin_version_matches_the_engine():
+    """``powers/…/plugin.json`` declares the engine version it ships.
+
+    It sat at ``1.0.0`` through nine engine releases, so a user could not tell
+    which engine a Power install carried.
+
+    Compared against ``pyproject.toml`` rather than ``VERSION``: both are
+    **committed**, so this holds in every checkout. ``VERSION`` is git-ignored and
+    written by CI at tag time, and the three-way agreement between it,
+    ``pyproject.toml`` and the CHANGELOG is ``tests/test_version_triple.py``'s job.
+    """
+    import json
+
+    from rule_engine.version_guard import read_pyproject_version
+
+    plugin = json.loads(
+        (_REPO_ROOT / "powers" / "rule-engine-artifacts" / "plugin.json")
+        .read_text(encoding="utf-8")
+    )
+    assert plugin["version"] == read_pyproject_version(_REPO_ROOT)

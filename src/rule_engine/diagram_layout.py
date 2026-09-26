@@ -106,6 +106,35 @@ class Node:
     # Icon renderer: given (node, parent_id) returns the full <mxCell> XML for
     # this node (a single top-level cell, plus any nested glyph geometry).
     render: "IconRenderer" = field(repr=False, default=None)  # type: ignore[assignment]
+    #: Optional overlay marker term (Overlay Vocabulary), e.g. ``"standby"``.
+    #: Rendered by :func:`overlay_suffix` as a dashed outline plus the
+    #: machine-readable ``overlay=<term>`` token the linter reads.
+    overlay: Optional[str] = None
+
+
+# Visual encoding of an overlay marker. diagram-standards → *Icon Fidelity*
+# forbids customising a pack icon (no forced fill, no recoloured stroke), so an
+# overlay must be ADDITIVE: the shape channel is a **dashed outline** on the
+# node's own cell, never a repaint of the glyph. The other two channels are the
+# node's label token (e.g. ``…-standby``) and the Legend entry, so the marker
+# survives grayscale printing and colour-vision deficiency.
+_OVERLAY_SHAPE = {
+    "standby": "dashed=1;dashPattern=6 4",
+}
+
+
+def overlay_suffix(node: "Node") -> str:
+    """Return the style suffix that encodes ``node.overlay``, or ``""``.
+
+    Emits the dashed-outline shape channel plus ``overlay=<term>``, the token
+    ``cli._parse_drawio`` / ``geometry.build_geometry`` read to know a node
+    carries a marker (so ``overlay-legend-coverage`` can check it is documented
+    and ``node-connectivity`` can exempt it).
+    """
+    if not node.overlay:
+        return ""
+    shape = _OVERLAY_SHAPE.get(node.overlay, "dashed=1")
+    return f";{shape};overlay={node.overlay}"
 
 
 @dataclass
@@ -162,7 +191,7 @@ def builtin_icon(shape_style: str) -> IconRenderer:
     """
 
     def render(node: Node, parent_id: str) -> str:
-        style = f"{shape_style};{_LABEL_STYLE}"
+        style = f"{shape_style};{_LABEL_STYLE}{overlay_suffix(node)}"
         return (
             f'        <mxCell id="{node.id}" value="{node.label}" style="{style}" '
             f'vertex="1" parent="{parent_id}">\n'
@@ -193,7 +222,7 @@ def image_icon(image_path: str) -> IconRenderer:
         style = (
             "image;html=1;aspect=fixed;points=[];align=center;"
             f"verticalLabelPosition=bottom;verticalAlign=top;fontSize={MIN_FONT_SIZE};"
-            f"image={image_path}"
+            f"image={image_path}{overlay_suffix(node)}"
         )
         return (
             f'        <mxCell id="{node.id}" value="{node.label}" style="{style}" '
@@ -428,7 +457,7 @@ class OciStencilIcon:
         gh = float(self.entry.get("h") or ICON_SIZE)
         style = (
             "group;html=1;fillColor=none;strokeColor=none;"
-            f"{_LABEL_STYLE};fontColor={self.brand_hex}"
+            f"{_LABEL_STYLE};fontColor={self.brand_hex}{overlay_suffix(node)}"
         )
         container = (
             f'        <mxCell id="{node.id}" value="{node.label}" style="{style}" '
@@ -468,6 +497,64 @@ def boundary_cell(b: Boundary) -> str:
         f'          <mxGeometry x="{b.x}" y="{b.y}" width="{b.w}" height="{b.h}" as="geometry" />\n'
         "        </mxCell>\n"
     )
+
+
+def _orthogonalised(
+    edges: Sequence[Edge], nodes: Sequence[Node]
+) -> List[Edge]:
+    """Return ``edges`` with every route rewritten to axis-aligned legs (v1.6.0).
+
+    An ``orthogonalEdgeStyle`` edge never draws a diagonal: when two consecutive
+    points are not axis-aligned, draw.io inserts its own corner and **picks the
+    direction**. So an unaligned waypoint is not a diagonal on screen — it is a
+    corner the author did not specify, which is how an edge ends up grazing a glyph
+    or sliding along a border even though every waypoint looked deliberate.
+
+    Applying :func:`rule_engine.geometry.orthogonalise_route` here, in the shared
+    builder, covers **both** authoring paths from one place: the lane-grid layout
+    engine already aligns the routes it computes, and this catches the diagrams
+    whose waypoints are hand-written coordinate literals (the five per-provider
+    reference examples). It also makes the alignment a property of the *builder*,
+    so a new generator inherits it without knowing the rule exists.
+
+    A route that is already orthogonal with perpendicular contact legs is returned
+    unchanged, so this is a no-op for a correct hand-authored edge.
+
+    **Contacts are grid-resolved first.** A hand-written fraction such as ``0.25``
+    on a 78px icon resolves to ``y0 + 19.5`` — half a pixel off the 10-grid that
+    every waypoint snaps to. Aligning a snapped waypoint to that contact would
+    leave a permanent 0.5px kink, which is the skew that made arrowheads look bent.
+    Nudging the *fraction* so the absolute contact lands on the grid removes it, and
+    converges the hand-authored values onto the same ones the layout engine's
+    ``_grid_contact`` produces (``0.25 → 0.2564``, ``0.5 → 0.5128``), so the two
+    authoring paths agree. The nudge is under half a grid step, so the contact stays
+    on the same face and the directional contract is unaffected.
+    """
+    from rule_engine.geometry import (
+        Box, contact_faces, grid_resolve_contact, orthogonalise_route,
+    )
+
+    boxes = {n.id: Box(n.id, n.x, n.y, ICON_SIZE, ICON_SIZE) for n in nodes}
+    out: List[Edge] = []
+    for e in edges:
+        src, tgt = boxes.get(e.source), boxes.get(e.target)
+        if src is None or tgt is None:
+            out.append(e)
+            continue
+        exit_abs, exit_frac = grid_resolve_contact(src, e.exit)
+        entry_abs, entry_frac = grid_resolve_contact(tgt, e.entry)
+        pts = orthogonalise_route(
+            exit_abs, e.points, entry_abs,
+            contact_faces(*exit_frac), contact_faces(*entry_frac),
+        )
+        out.append(
+            Edge(
+                id=e.id, source=e.source, target=e.target, marker=e.marker,
+                dashed=e.dashed, exit=exit_frac, entry=entry_frac,
+                points=tuple(pts),
+            )
+        )
+    return out
 
 
 def edge_cell(e: Edge) -> str:
@@ -541,6 +628,7 @@ def build_diagram(
     legend_y_flow: int = 120,
     legend_y_legend: int = 360,
     legend_w: int | None = None,
+    legend_lines: Sequence[str] | None = None,
     page_w: int = 1850,
     page_h: int = 950,
 ) -> str:
@@ -564,7 +652,7 @@ def build_diagram(
     for n in nodes:
         parts.append(n.render(n, "1"))
     parts.append("\n")
-    for e in edges:
+    for e in _orthogonalised(edges, nodes):
         parts.append(edge_cell(e))
     parts.append("\n")
     # Size each text box from its content plus uniform padding so no line is
@@ -597,12 +685,22 @@ def build_diagram(
         raw = int(longest * 5.6) + 2 * GRID
         return int(-(-raw // GRID) * GRID)  # round up to a grid multiple
 
+    # A caller may extend the standard Legend (e.g. a diagram that uses an
+    # overlay marker must document it — ``overlay-legend-coverage``).
+    legend_body = STANDARD_LEGEND_LINES if legend_lines is None else tuple(legend_lines)
     # A caller may pin a narrower ``legend_w`` (the Flow/Legend blocks then wrap
     # and grow taller instead of running wide into the diagram body); otherwise
     # size to the longest line with no wrap.
-    box_w = legend_w if legend_w is not None else _text_w(flow_lines, STANDARD_LEGEND_LINES)
-    parts.append(text_cell("flow-legend", flow_lines, legend_x, legend_y_flow, box_w, _text_h(flow_lines, legend_w)))
-    parts.append(text_cell("legend", STANDARD_LEGEND_LINES, legend_x, legend_y_legend, box_w, _text_h(STANDARD_LEGEND_LINES, legend_w)))
+    box_w = legend_w if legend_w is not None else _text_w(flow_lines, legend_body)
+    flow_h = _text_h(flow_lines, legend_w)
+    # The Legend stacks BELOW the Flow box. A caller's ``legend_y_legend`` is a
+    # hint, not a guarantee: a long Flow list (or a pinned narrow width, which
+    # makes it wrap taller) can grow past it and the two boxes would overlap —
+    # silently, because neither is a node, so no geometry rule would catch it.
+    # Push the Legend down to clear the Flow box by one grid step.
+    legend_y = max(legend_y_legend, legend_y_flow + flow_h + GRID)
+    parts.append(text_cell("flow-legend", flow_lines, legend_x, legend_y_flow, box_w, flow_h))
+    parts.append(text_cell("legend", legend_body, legend_x, legend_y, box_w, _text_h(legend_body, legend_w)))
     parts.append(
         "      </root>\n    </mxGraphModel>\n  </diagram>\n</mxfile>\n"
     )

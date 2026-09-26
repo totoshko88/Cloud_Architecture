@@ -246,12 +246,27 @@ def is_boundary_container_style(cell_id: str, style: str) -> bool:
     A group-styled cell that merely hosts embedded glyph geometry (an OCI node
     container) is NOT a boundary — it names no ``group_``/``grIcon=`` — and is
     handled as an ordinary top-level node.
+
+    **v1.6.0.** The dashed-borderless test is restricted to **non-group** cells,
+    which is what the paragraph above always intended but the implementation did
+    not enforce: the OCI node container is a transparent ``group`` carrying
+    ``fillColor=none``, so the moment anything added ``dashed=1`` to it (the
+    ``standby`` overlay's shape channel) it satisfied the dashed-borderless test
+    and every OCI standby node was reclassified as a *boundary*. Its embedded
+    glyph sub-cells were then promoted to top-level nodes, which cascaded into
+    ``node-quote`` and ``container-padding`` ERRORs on an otherwise valid diagram.
+    A group cell is therefore a boundary only when it names a ``group_`` /
+    ``grIcon=`` container icon.
     """
     low = (style or "").lower()
     is_group = "group" in low or "container=1" in low
     is_dashed = "dashed=1" in low and "fillcolor=none" in low
     is_boundary_group = is_group and ("group_" in low or "gricon=" in low)
-    return (cell_id or "").startswith("boundary") or is_dashed or is_boundary_group
+    if is_group:
+        # A group is a boundary only via its container icon, never via a dashed
+        # borderless outline (which a transparent node-hosting group also has).
+        return (cell_id or "").startswith("boundary") or is_boundary_group
+    return (cell_id or "").startswith("boundary") or is_dashed
 
 
 def is_text_cell_style(style: str) -> bool:

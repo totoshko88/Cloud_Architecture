@@ -49,11 +49,17 @@ EXIT_USAGE = 2
 # expressed as WORKSPACE-relative destinations (always dot-prefixed for .kiro):
 #   .kiro/steering  — the six always-on steering documents (the rules)
 #   .kiro/hooks     — the lint-on-save / validate-on-task / bootstrap-check hooks
+#   .kiro/agents    — diagram-author / inventory-collector / rule-engine-reviewer
 #   mappings        — role table, per-provider icon maps, committed icon-index
 #   schemas         — the Normalized Resource JSON Schema
 _BOOTSTRAP_DIRS = (
     ".kiro/steering",
     ".kiro/hooks",
+    # .kiro/agents (v1.6.0) — diagram-author, inventory-collector,
+    # rule-engine-reviewer. A clean-room install copied the always-on rules but
+    # none of the agents that apply them, so a fresh workspace had the standard
+    # without the roles. Pure configuration, like steering.
+    ".kiro/agents",
     "mappings",
     "schemas",
     # profiles/terminology.yaml — the terminology source of truth that
@@ -77,6 +83,7 @@ _BUNDLED = Path(__file__).resolve().parent / "_bootstrap"
 _BUNDLE_MAP = {
     ".kiro/steering": "kiro/steering",
     ".kiro/hooks": "kiro/hooks",
+    ".kiro/agents": "kiro/agents",
 }
 
 

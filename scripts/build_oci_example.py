@@ -94,17 +94,40 @@ EDGES: List[Edge] = [
     # 2: load-balancer -> generative-ai (middle row, straight; nothing between).
     Edge("e2", "load-balancer", "generative-ai", "2", exit=(1.0, 0.5), entry=(0.0, 0.5)),
     # 3: api-function up to streaming (async); riser at x=159 up to y=239.
+    # 3: api-function up to the stream. v1.6.0: exits the function's RIGHT face
+    # (upper band, biased toward the upward run), steps into the gap column at
+    # x=250, rises, then enters the stream's LEFT face. The pre-1.6.0 route exited
+    # the TOP — forbidden by the directional contract, and invisible to the rule
+    # until it classified the contact FACE instead of testing the half-plane.
     Edge("e3", "api-function", "streaming-events", "3", dashed=True,
-         exit=(0.5, 0.0), entry=(0.0, 0.5), points=[(159, 239)]),
+         exit=(1.0, 0.25), entry=(0.0, 0.5), points=[(250, 460), (250, 239)]),
     # 4: streaming -> ingest-function (top row, straight).
     Edge("e4", "streaming-events", "ingest-function", "4", dashed=True,
          exit=(1.0, 0.5), entry=(0.0, 0.5)),
-    # 5: ingest down to training, skipping generative (middle) via LEFT corridor
-    # x=855: exit ingest bottom-left, drop to y=719, into training left.
+    # 5: ingest down to training, skipping the hub via the LEFT corridor.
+    # v1.6.0: the lane turn is now an EXPLICIT waypoint. The route used to be a
+    # bottom exit followed by one far waypoint, leaving draw.io to choose the
+    # corner — and once the corner is specified rather than guessed, a
+    # vertical-first turn drives the run straight through the hub icon. Pinning
+    # the step-down lane at y=320 (clear of the ingest row's label band) and the
+    # corridor at x=800 (left of the hub column) makes the path deterministic and
+    # hub-free.
+    #
+    # v1.6.0 (2nd pass): the corridor moved from x=860 to x=800. At 860 the 400px
+    # descent ran 20px from the hub's left border, which reads as a second rail
+    # beside the hub column — the defect diagram-standards names outright. x=800
+    # clears that border by 80px and crosses nothing extra: the two crossings this
+    # descent makes (e2's approach into the hub's left, e9's lane out of its bottom)
+    # are its floor, since both of those runs span the whole left gap.
     Edge("e5", "ingest-function", "training-oke", "5", exit=(0.25, 1.0), entry=(0.0, 0.5),
-         points=[(855, 719)]),
+         points=[(800, 320), (800, 719)]),
     # 6: training up to generative bottom (adjacent rows, straight vertical).
-    Edge("e6", "training-oke", "generative-ai", "6", exit=(0.5, 0.0), entry=(0.5, 1.0)),
+    # 6: v1.6.0 — the pre-1.6.0 straight vertical exited the TOP and entered the
+    # BOTTOM, both forbidden faces. Re-routed as the sanctioned back-edge loop:
+    # exit RIGHT, rise in the free column at x=1010 (clear of the e7/e8 risers),
+    # run left in the lane at y=420, drop into generative-ai's TOP.
+    Edge("e6", "training-oke", "generative-ai", "6", exit=(1.0, 0.25), entry=(0.5, 0.0),
+         points=[(1010, 699), (1010, 420), (919, 420)]),
     # 7: generative-ai (upper-right) to autonomous-db; riser x=1060 up to y=399.
     Edge("e7", "generative-ai", "autonomous-db", "7", exit=(1.0, 0.25), entry=(0.0, 0.5),
          points=[(1060, 459), (1060, 399)]),
@@ -114,8 +137,11 @@ EDGES: List[Edge] = [
     # 9: generative-ai left to vault-secrets — single L-bend. Exit hub left at
     # y=498 (below the load-balancer->hub edge at y=479), one corner at (659,498),
     # then straight down into vault top.
-    Edge("e9", "generative-ai", "vault-secrets", "9", exit=(0.0, 0.75), entry=(0.5, 0.0),
-         points=[(659, 498)]),
+    # 9: v1.6.0 — the pre-1.6.0 route exited the hub's LEFT face (forbidden). Now
+    # it exits the BOTTOM, drops into the lane at y=600 (past the hub's own label
+    # band, above the lower row), runs left, and enters vault-secrets' TOP.
+    Edge("e9", "generative-ai", "vault-secrets", "9", exit=(0.5, 1.0), entry=(0.5, 0.0),
+         points=[(919, 600), (659, 600)]),
 ]
 
 FLOW_LINES = [

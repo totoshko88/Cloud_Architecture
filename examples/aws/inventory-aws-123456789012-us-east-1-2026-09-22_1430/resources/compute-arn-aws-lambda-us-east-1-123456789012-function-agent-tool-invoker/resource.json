@@ -1,0 +1,15 @@
+{
+  "boundary": "123456789012",
+  "config_digest": "61b5895c27faf7b1b24352d73ade007007e4b65ff160776494c589e72dfaa0eb",
+  "id": "arn:aws:lambda:us-east-1:123456789012:function:agent-tool-invoker",
+  "name": "agent-tool-invoker",
+  "native_type": "AWS::Lambda::Function",
+  "provider": "aws",
+  "region": "us-east-1",
+  "resource_type": "serverless_fn",
+  "tags": {
+    "env": "prod",
+    "team": "platform",
+    "workload": "agent-platform"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "boundary": "env-prod",
+  "config_digest": "fc95f758eb4a9b11c3b1ce826f64f6039d4464a326240f3b105cbc108702003c",
+  "id": "module.compute.managed_kubernetes.workload",
+  "name": "workload-cluster",
+  "native_type": "Managed Kubernetes",
+  "provider": "generic",
+  "region": "region-1",
+  "resource_type": "managed_k8s",
+  "tags": {
+    "env": "prod",
+    "source": "terraform-state",
+    "team": "platform"
+  }
+}

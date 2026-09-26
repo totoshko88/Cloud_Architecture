@@ -122,6 +122,42 @@ def _icon_descriptor_for_style(style: str) -> Dict[str, Any]:
     return {"style": style, "resolved": True}
 
 
+# A draw.io cell ``value`` separates lines with the XML entity ``&#10;`` (what the
+# shared builder emits) or an HTML ``<br>``.
+_VALUE_BREAK_RE = re.compile(r"&#10;|&#xa;|<br\s*/?>", re.IGNORECASE)
+_MARKUP_TAG_RE = re.compile(r"<[^>]+>")
+_FLOW_HEADING = "flow"
+
+
+def _value_lines(value: str) -> List[str]:
+    """Split a draw.io cell ``value`` into its rendered lines, markup stripped."""
+    parts = _VALUE_BREAK_RE.split(value or "")
+    return [_MARKUP_TAG_RE.sub("", p).strip() for p in parts]
+
+
+def _parse_flow_legend_lines(text: str) -> List[str]:
+    """Return the rendered lines of the diagram's ``Flow`` legend cell.
+
+    diagram-standards pins the Flow cell exactly: a text cell "whose first line
+    is exactly ``Flow``". This finds that cell and returns its lines so
+    ``flow-legend`` can check that every numeric edge marker has a matching
+    ``N. <description>`` line. An empty list means the diagram carries no Flow
+    cell (which, combined with numeric markers, is the finding).
+    """
+    for cell in _MXCELL_RE.findall(text or ""):
+        style_match = _STYLE_ATTR_RE.search(cell)
+        style = style_match.group(1) if style_match else ""
+        if "text;" not in style.lower():
+            continue
+        value_match = _VALUE_ATTR_RE.search(cell)
+        if not value_match:
+            continue
+        lines = _value_lines(value_match.group(1))
+        if lines and lines[0].lower() == _FLOW_HEADING:
+            return lines
+    return []
+
+
 def _parse_frontmatter(text: str) -> Optional[Dict[str, Any]]:
     """Best-effort parse of a Markdown YAML frontmatter block.
 
@@ -323,6 +359,13 @@ def _parse_drawio(path: str, text: str) -> Artifact:
     # are read from the diagram text: a line ``overlay=<term>`` marks a used
     # overlay term; a Legend line ``<term> =`` documents one. Absent markers
     # leave both lists empty and the rule no-ops.
+    # Numbered Flow legend (v1.6.0). Harvest the rendered lines of the ``Flow``
+    # text cell (a ``text;`` cell whose FIRST line is exactly ``Flow``, exactly as
+    # diagram-standards pins it) so ``flow-legend`` can verify every numeric edge
+    # marker has a matching ``N. <description>`` line. An empty list means the
+    # diagram has no Flow cell; None is reserved for "not parsed".
+    flow_legend_lines = _parse_flow_legend_lines(text)
+
     overlay_markers = re.findall(r"overlay=([A-Za-z0-9_\-]+)", text)
     legend_overlay_terms = []
     if has_legend:
@@ -354,6 +397,7 @@ def _parse_drawio(path: str, text: str) -> Artifact:
         detailed_view=detailed_view,
         overlay_markers=overlay_markers,
         legend_overlay_terms=legend_overlay_terms,
+        flow_legend_lines=flow_legend_lines,
     )
 
 

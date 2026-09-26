@@ -51,6 +51,7 @@ Follow these steps in order.
    rule-engine-lint --help
    rule-engine-validate-schema --help
    rule-engine-check-rasters --help        # class-aware exported-PNG budget
+   rule-engine-check-snapshot --help       # inventory Snapshot folder shape
    rule-engine-verify-icon --help          # every icon reference resolves
    rule-engine-check-asset-paths --help    # mapping icon paths / OCI slugs exist
    ```
@@ -140,9 +141,11 @@ Follow these steps in order.
     ```
 
     It installs the `rule-engine` package when `rule-engine-init` is absent, then copies
-    `.kiro/steering/`, `.kiro/hooks/`, `mappings/`, and `schemas/` into the current
-    workspace from the payload **bundled inside the installed package** (no repo checkout
-    needed). The skill's always-on `dev.kiro/` steering instructs the agent to run this
+    `.kiro/steering/`, `.kiro/agents/`, `.kiro/hooks/`, `mappings/`, `schemas/`, and
+    `profiles/` into the current workspace from the payload **bundled inside the installed
+    package** (no repo checkout needed). The three agents — diagram-author,
+    inventory-collector, rule-engine-reviewer — ship from v1.6.0; before that a fresh
+    workspace got the always-on rules but none of the roles that apply them. The skill's always-on `dev.kiro/` steering instructs the agent to run this
     before generating any artifact. Steps 1–5 above remain the path for a full repo/CI
     checkout; the bootstrap helper is the equivalent for a power-only install.
 

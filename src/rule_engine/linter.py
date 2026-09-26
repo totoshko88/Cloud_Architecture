@@ -83,6 +83,10 @@ RULE_EXIT_THIRDS = "exit-thirds"
 RULE_ENTRY_THIRDS = "entry-thirds"
 RULE_EDGE_CROSSES_LABEL = "edge-crosses-label"
 RULE_EDGE_CROSSES_CONTAINER_LABEL = "edge-crosses-container-label"
+RULE_LEGEND_PLACEMENT = "legend-placement"
+RULE_FLOW_LEGEND = "flow-legend"
+RULE_NODE_CONNECTIVITY = "node-connectivity"
+RULE_EDGE_APPROACH = "edge-approach"
 
 # Severity assigned to each rule when its condition holds (authoritative table).
 RULE_SEVERITIES: Dict[str, Severity] = {
@@ -134,6 +138,26 @@ RULE_SEVERITIES: Dict[str, Severity] = {
     # corridor slicing the ``vpc-passive`` label). Advisory WARNING for both
     # classes — the mirror of edge-crosses-label for container captions.
     RULE_EDGE_CROSSES_CONTAINER_LABEL: Severity.WARNING,
+    # legend-placement (v1.6.0): the Flow/Legend furniture must sit in the right
+    # margin, past the outermost container and clear of the cloud boxes. A
+    # clean-room install parked both blocks in the LEFT margin and linted clean.
+    RULE_LEGEND_PLACEMENT: Severity.WARNING,
+    # flow-legend: numeric flow markers on edges require a ``Flow`` legend cell
+    # covering every marker. Documented in diagram-lint.md since v1.0.0 but only
+    # IMPLEMENTED in v1.6.0 — a ruleset/code drift of the same kind 1.5.3/1.5.4
+    # closed for other rules.
+    RULE_FLOW_LEGEND: Severity.WARNING,
+    # node-connectivity (v1.6.0): a role-bearing node drawn with zero incident
+    # edges. The engine draws an inventory rather than an architecture when two
+    # thirds of the nodes float (the 2026-09-25 audit's headline finding: 20 of
+    # 34 nodes on every HA landscape). WARNING for both classes to start.
+    RULE_NODE_CONNECTIVITY: Severity.WARNING,
+    # edge-approach (v1.6.0): a route leg that is not axis-aligned, or a contact
+    # leg that does not meet its face head-on. An orthogonalEdgeStyle edge never
+    # draws a diagonal — draw.io inserts its OWN corner and picks the direction —
+    # so an unaligned pair is a corner the author did not specify, and every other
+    # geometry check reads the points as given and cannot see it.
+    RULE_EDGE_APPROACH: Severity.WARNING,
 }
 
 # Maximum node count for a single diagram (Requirement 1 AC4 / 7 AC4).
@@ -314,6 +338,12 @@ class Artifact:
     # any ``text;`` cell missing uniform inner padding (spacing* tokens); a
     # non-empty list trips ``text-padding``. None means "not parsed" (skip).
     text_padding_offenders: Optional[Sequence[str]] = None
+    # Numbered Flow legend (v1.6.0). The rendered lines of the ``Flow`` text cell
+    # (first line exactly ``Flow``), used by ``flow-legend`` to verify every
+    # numeric edge marker has a matching ``N. <description>`` line. ``None``
+    # means "not parsed" (e.g. a programmatic artifact) and the rule is skipped;
+    # an empty list means the diagram has no Flow cell at all.
+    flow_legend_lines: Optional[Sequence[str]] = None
 
     # Document
     frontmatter: Optional[Mapping[str, Any]] = None
@@ -747,6 +777,103 @@ def _check_edge_float(a: Artifact):
     return True
 
 
+# A numeric flow marker used as an on-edge label: "1", "2", … (see
+# diagram-standards → Mandatory Edge Labels / Numbered Flow Legend).
+_NUMERIC_MARKER_RE = re.compile(r"^\s*(\d+)\s*$")
+
+
+def _numeric_flow_markers(a: Artifact) -> List[int]:
+    """Return the numeric flow markers used as edge labels, ascending."""
+    markers = []
+    for e in a.edges:
+        label = getattr(e, "label", None)
+        if label is None:
+            continue
+        m = _NUMERIC_MARKER_RE.match(str(label))
+        if m:
+            markers.append(int(m.group(1)))
+    return sorted(set(markers))
+
+
+def _check_flow_legend(a: Artifact) -> bool:
+    """flow-legend: numeric edge markers without a covering ``Flow`` legend (WARNING).
+
+    diagram-standards (*Numbered Flow Legend*): when a diagram labels its edges
+    with numeric markers, it must carry a ``Flow`` legend cell listing one
+    ``N. <description>`` line per marker, in ascending order. Diagrams that use
+    descriptive prose labels instead of numeric markers are unaffected.
+
+    Documented in ``diagram-lint.md`` since the first ruleset but only implemented
+    in v1.6.0: the generator emitted the Flow cell, so every generated diagram
+    happened to comply and the missing check went unnoticed — a ruleset/code drift
+    of the same kind 1.5.3 and 1.5.4 closed for other rules. A hand-authored
+    diagram that numbered its edges and forgot the legend linted clean.
+    """
+    if not _is_diagram(a):
+        return False
+    markers = _numeric_flow_markers(a)
+    if not markers:
+        return False
+    if a.flow_legend_lines is None:
+        # Not parsed (programmatic artifact): skip rather than assume a failure.
+        return False
+    lines = [str(line).strip() for line in a.flow_legend_lines]
+    if not lines:
+        return True  # numeric markers used, but there is no Flow cell at all
+    # Line 1 is the heading ``Flow``; the rest must cover every marker.
+    covered = set()
+    for line in lines[1:]:
+        m = re.match(r"^(\d+)\s*[.)]", line)
+        if m:
+            covered.add(int(m.group(1)))
+    return not set(markers).issubset(covered)
+
+
+def _check_edge_approach(a: Artifact) -> bool:
+    """edge-approach: a route leg is not axis-aligned, or misses its face (WARNING).
+
+    ``orthogonalEdgeStyle`` never draws a diagonal, so an unaligned pair of points
+    is a corner **draw.io** chooses — which is how an edge slides along a border or
+    grazes a glyph while every waypoint looks deliberate. Measured across the
+    corpus before v1.6.0, 30 routed edges had such a leg. See
+    ``geometry.check_edge_approach``."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    return bool(_geo.check_edge_approach(geo))
+
+
+def _check_node_connectivity(a: Artifact) -> bool:
+    """node-connectivity: a role-bearing node is drawn with no incident edge (WARNING).
+
+    The audit's headline finding (2026-09-25): each HA landscape drew 34 nodes
+    joined by 12 edges, leaving 20 nodes entirely unconnected. Boundary containers
+    and overlay-marked nodes (e.g. a ``standby`` passive peer that declares why it
+    carries no edges) are exempt — see ``geometry.check_node_connectivity``."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    return bool(_geo.check_node_connectivity(geo))
+
+
+def _check_legend_placement(a: Artifact) -> bool:
+    """legend-placement: a Flow/Legend box is not in the right margin (WARNING).
+
+    The furniture must sit at least one grid step past the outermost container's
+    right edge, clear of the cloud boundaries (diagram-standards → *Reserve the
+    right margin for Flow/Legend*). Unenforced before v1.6.0: a clean-room
+    install produced an otherwise-clean diagram with both blocks parked in the
+    LEFT margin under the external user, while every shipped golden puts them on
+    the right."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    return bool(_geo.check_legend_placement(geo))
+
+
 def _stem_of(path_or_stem):
     """Return the comparable stem of a path/stem reference (basename, no ext)."""
     if not path_or_stem:
@@ -821,6 +948,10 @@ _RULES = (
     (RULE_ENTRY_THIRDS, _check_entry_thirds),
     (RULE_EDGE_CROSSES_LABEL, _check_edge_crosses_label),
     (RULE_EDGE_CROSSES_CONTAINER_LABEL, _check_edge_crosses_container_label),
+    (RULE_LEGEND_PLACEMENT, _check_legend_placement),
+    (RULE_FLOW_LEGEND, _check_flow_legend),
+    (RULE_NODE_CONNECTIVITY, _check_node_connectivity),
+    (RULE_EDGE_APPROACH, _check_edge_approach),
     (RULE_ORPHAN_LANDSCAPE, _check_orphan_landscape),
     (RULE_OVERLAY_LEGEND_COVERAGE, _check_overlay_legend_coverage),
 )
@@ -1074,7 +1205,12 @@ __all__ = [
     "RULE_EDGE_FLOAT",
     "RULE_EXIT_THIRDS",
     "RULE_ENTRY_THIRDS",
+    "RULE_EDGE_CROSSES_LABEL",
     "RULE_EDGE_CROSSES_CONTAINER_LABEL",
+    "RULE_LEGEND_PLACEMENT",
+    "RULE_FLOW_LEGEND",
+    "RULE_NODE_CONNECTIVITY",
+    "RULE_EDGE_APPROACH",
     "LANDSCAPE_NODE_WARN",
     "LANDSCAPE_NODE_ERROR",
     "DIAGRAM_CLASS_FLOW",

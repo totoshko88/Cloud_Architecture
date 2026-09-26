@@ -1,0 +1,15 @@
+{
+  "boundary": "123456789012",
+  "config_digest": "cc6985cc68b5cff37c2260fc5b46d5c87d15d34f0d98764ea8ace740ba7efaa0",
+  "id": "arn:aws:bedrock:us-east-1::foundation-model/agent-reasoning",
+  "name": "agent-reasoning",
+  "native_type": "AWS::Bedrock::FoundationModel",
+  "provider": "aws",
+  "region": "us-east-1",
+  "resource_type": "llm_platform",
+  "tags": {
+    "env": "prod",
+    "team": "platform",
+    "workload": "agent-platform"
+  }
+}

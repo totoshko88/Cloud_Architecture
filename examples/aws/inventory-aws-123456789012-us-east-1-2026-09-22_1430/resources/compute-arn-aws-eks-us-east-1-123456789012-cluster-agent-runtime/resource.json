@@ -1,0 +1,15 @@
+{
+  "boundary": "123456789012",
+  "config_digest": "88f81c9ad30b179f4048cbb645bb44ae04009bae5da97a6b8a2cffe77bb34099",
+  "id": "arn:aws:eks:us-east-1:123456789012:cluster/agent-runtime",
+  "name": "agent-runtime",
+  "native_type": "AWS::EKS::Cluster",
+  "provider": "aws",
+  "region": "us-east-1",
+  "resource_type": "managed_k8s",
+  "tags": {
+    "env": "prod",
+    "team": "platform",
+    "workload": "agent-platform"
+  }
+}

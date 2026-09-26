@@ -399,6 +399,12 @@ def test_size_containers_peer_az_widths_equal():
 def test_size_containers_account_wraps_all_bands_no_trailing_margin():
     # Req 4.5: the account envelope is exactly the child bands' bbox + PAD on
     # every side — no trailing empty margin.
+    #
+    # v1.6.0: the TOP pad is ``CONTAINER_PAD + CONTAINER_LABEL_BAND``. A draw.io
+    # group draws its caption inside its own top edge, so a uniform pad left the
+    # caption band and the top padding as the same strip and no corridor could
+    # enter the container below its caption. The other three sides keep the bare
+    # pad, so "no trailing margin" still holds where it is about trailing space.
     _, c = _sized(_landscape_spec())
     acct = c["acct"]
     bands = [c["vpc-a"], c["vpc-b"]]
@@ -406,10 +412,33 @@ def test_size_containers_account_wraps_all_bands_no_trailing_margin():
     y0 = min(b.y for b in bands)
     x1 = max(b.right for b in bands)
     y1 = max(b.bottom for b in bands)
+    top_pad = le.CONTAINER_PAD + le.CONTAINER_LABEL_BAND
     assert acct.x == le._snap(x0 - le.CONTAINER_PAD)
-    assert acct.y == le._snap(y0 - le.CONTAINER_PAD)
+    assert acct.y == le._snap(y0 - top_pad)
     assert acct.right == le._snap(x0 - le.CONTAINER_PAD) + le._snap((x1 - x0) + 2 * le.CONTAINER_PAD)
-    assert acct.bottom == le._snap(y0 - le.CONTAINER_PAD) + le._snap((y1 - y0) + 2 * le.CONTAINER_PAD)
+    assert acct.bottom == le._snap(y0 - top_pad) + le._snap((y1 - y0) + top_pad + le.CONTAINER_PAD)
+
+
+def test_container_top_pad_reserves_the_caption_strip():
+    """v1.6.0: every container's top padding clears its own caption band.
+
+    The regression this locks in: with a uniform pad the caption band *was* the
+    top padding, so the first content row began exactly where the caption ended
+    and no horizontal corridor could enter the container legally — which is why
+    four edges on the re-connected landscape ran along the ``vpc-…`` captions.
+    """
+    _, c = _sized(_landscape_spec())
+    placed = le.place_nodes(_landscape_spec())
+    for cid in ("acct", "vpc-a", "vpc-b", "az-a1", "az-a2"):
+        box = c[cid]
+        children = [b for b in list(c.values()) + list(placed.values())
+                    if b.id != cid and le._box_contains(box, b)]
+        if not children:
+            continue
+        top_child = min(b.y for b in children)
+        assert top_child - box.y >= le.CONTAINER_PAD + le.CONTAINER_LABEL_BAND, (
+            f"{cid}: top pad {top_child - box.y} does not reserve the caption strip"
+        )
 
 
 def test_size_containers_footprint_measured_with_label_band():
@@ -1549,8 +1578,31 @@ def test_ha_specs_encode_the_shipped_topology():
     assert SUMMARY_SPEC.compact is True
 
     assert len(LANDSCAPE_SPEC.nodes) == 34
-    assert {e.id for e in LANDSCAPE_SPEC.edges} == {f"l{i}" for i in range(1, 13)}
+    # v1.6.0: l1..l21. The original l1..l12 left 20 of the 34 nodes with no
+    # incident edge at all (the 2026-09-25 audit's headline finding), so
+    # ``node-connectivity`` could not ship as a rule. Nine edges were added for the
+    # account edge tier and the primary region; the passive region's mirror peers
+    # carry the ``standby`` overlay marker instead of duplicated edges.
+    assert {e.id for e in LANDSCAPE_SPEC.edges} == {f"l{i}" for i in range(1, 22)}
     assert LANDSCAPE_SPEC.axis == "north-south"
+    # Every node is either an edge endpoint or declares an overlay marker — the
+    # contract ``node-connectivity`` enforces, asserted here on the SPEC so a
+    # future node added without either is caught before any geometry is built.
+    endpoints = {e.source for e in LANDSCAPE_SPEC.edges} | {
+        e.target for e in LANDSCAPE_SPEC.edges
+    }
+    unexplained = [
+        n.id for n in LANDSCAPE_SPEC.nodes
+        if n.id not in endpoints and not n.overlay
+    ]
+    assert unexplained == [], (
+        f"landscape nodes with neither an edge nor an overlay marker: {unexplained}"
+    )
+    standby = sorted(n.id for n in LANDSCAPE_SPEC.nodes if n.overlay == "standby")
+    assert standby == [
+        "api_b1", "api_b2", "app_b2", "cache_b1", "cache_b2", "db_b2",
+        "fn_b", "mon_b", "obj_b2", "queue_b", "sec_b",
+    ], "the standby set is the passive region's unconnected mirror peers"
     # account ⊃ 2 vpc ⊃ 4 az.
     kinds = sorted(c.kind for c in LANDSCAPE_SPEC.containers)
     assert kinds == ["account", "az", "az", "az", "az", "vpc", "vpc"]

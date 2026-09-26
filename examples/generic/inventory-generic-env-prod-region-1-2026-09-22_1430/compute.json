@@ -1,0 +1,50 @@
+{
+  "resources": [
+    {
+      "boundary": "env-prod",
+      "config_digest": "da7b24cbeaa43ad07f29d9d636909116430563fa283438236e9180ea6a65d912",
+      "id": "module.compute.function.ingest",
+      "name": "ingest-function",
+      "native_type": "Function",
+      "provider": "generic",
+      "region": "region-1",
+      "resource_type": "serverless_fn",
+      "tags": {
+        "env": "prod",
+        "source": "terraform-state",
+        "team": "platform"
+      }
+    },
+    {
+      "boundary": "env-prod",
+      "config_digest": "fc95f758eb4a9b11c3b1ce826f64f6039d4464a326240f3b105cbc108702003c",
+      "id": "module.compute.managed_kubernetes.workload",
+      "name": "workload-cluster",
+      "native_type": "Managed Kubernetes",
+      "provider": "generic",
+      "region": "region-1",
+      "resource_type": "managed_k8s",
+      "tags": {
+        "env": "prod",
+        "source": "terraform-state",
+        "team": "platform"
+      }
+    },
+    {
+      "boundary": "env-prod",
+      "config_digest": "5f63de0ec3ccdcc61cd7bdfff6bf8831f3bf1b67db94750f86dfc941b2223ff4",
+      "id": "module.data.managed_sql.primary",
+      "name": "primary-sql",
+      "native_type": "Managed SQL",
+      "provider": "generic",
+      "region": "region-1",
+      "resource_type": "managed_sql",
+      "tags": {
+        "env": "prod",
+        "source": "terraform-state",
+        "team": "platform"
+      }
+    }
+  ],
+  "service": "compute"
+}

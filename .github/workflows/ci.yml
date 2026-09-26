@@ -141,6 +141,28 @@ jobs:
         # so this guard closes that gap. Call the declared console script so a
         # broken [project.scripts] mapping is caught.
         run: rule-engine-check-rasters
+      - name: Verify every edge leg is explicitly axis-aligned
+        # An orthogonalEdgeStyle edge never draws a diagonal: draw.io inserts its
+        # OWN corner between two unaligned points and picks the direction, which
+        # can differ by a whole icon. Generated diagrams are aligned by the
+        # builder; this catches a hand-authored or hand-dragged .drawio.
+        run: |
+          rc=0
+          while IFS= read -r f; do
+            python scripts/orthogonalise_drawio.py --check "$f" || rc=1
+          done < <(find examples -name '*.drawio' -type f)
+          [ "$rc" -eq 0 ] || { echo "BLOCKING: unaligned edge leg(s); run scripts/orthogonalise_drawio.py"; exit 1; }
+      - name: Enforce the inventory Snapshot folder shape
+        # The linter checks snapshot file CONTENT (frontmatter, secret-safety);
+        # nothing checked the folder SHAPE, so a hand-written snapshot could ship
+        # with an empty resources/ and a wrong file_count and still lint clean —
+        # exactly what a clean-room install produced. --strict so a stale
+        # file_count fails the reference set too.
+        run: rule-engine-check-snapshot --root examples --strict
+      - name: Verify the example Snapshot data files are current
+        # The per-domain JSON and per-resource documents are generated, so a
+        # hand-edit that drifts from the generator is caught here.
+        run: python scripts/build_example_snapshots.py --check
       - name: Verify the workspace bootstrap works from the installed package
         # Regression guard for the build_backend _PAYLOAD / init _BUNDLE_MAP sync:
         # bootstrap a FRESH empty workspace from the installed engine, then

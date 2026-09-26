@@ -1,0 +1,15 @@
+{
+  "boundary": "env-prod",
+  "config_digest": "4d3cf04c37dd5780a53c04f4609623574faaf501b33a222ab6e42ed836dea123",
+  "id": "module.data.object_store.artifacts",
+  "name": "artifact-store",
+  "native_type": "Object Store",
+  "provider": "generic",
+  "region": "region-1",
+  "resource_type": "object_store",
+  "tags": {
+    "env": "prod",
+    "source": "terraform-state",
+    "team": "platform"
+  }
+}

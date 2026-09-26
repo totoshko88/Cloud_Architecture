@@ -31,7 +31,15 @@ try:  # package-relative import when used as ``rule_engine.layout_engine``
         ROW_STEP,
         CONTAINER_PAD,
     )
-    from .geometry import Box, LABEL_BAND, CONTAINER_LABEL_BAND, segment_crosses_box
+    from .geometry import (
+        Box,
+        LABEL_BAND,
+        CONTAINER_LABEL_BAND,
+        contact_faces,
+        leg_axis as _leg_axis,
+        orthogonalise_route,
+        segment_crosses_box,
+    )
 except ImportError:  # pragma: no cover - fallback for flat-module execution
     from diagram_layout import (  # type: ignore[no-redef]
         ICON_SIZE,
@@ -40,7 +48,15 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
         ROW_STEP,
         CONTAINER_PAD,
     )
-    from geometry import Box, LABEL_BAND, CONTAINER_LABEL_BAND, segment_crosses_box  # type: ignore[no-redef]
+    from geometry import (  # type: ignore[no-redef]
+        Box,
+        LABEL_BAND,
+        CONTAINER_LABEL_BAND,
+        contact_faces,
+        leg_axis as _leg_axis,
+        orthogonalise_route,
+        segment_crosses_box,
+    )
 
 from typing import List
 
@@ -97,6 +113,14 @@ class NodeSpec:
     #: Validated by :func:`_validate_spec` to name a real, region-matching leaf
     #: container.
     container: Optional[str] = None
+    #: Optional **overlay marker** term from the Overlay Vocabulary
+    #: (diagram-standards), e.g. ``"standby"``. An overlay-marked node declares
+    #: why it is drawn the way it is; in particular a ``standby`` passive peer is
+    #: exempt from ``node-connectivity`` because the marker — double-encoded as a
+    #: dashed outline, a label token, and a Legend entry — states that it mirrors
+    #: an active peer with its edges omitted for clarity. Coordinate-free: it
+    #: names a vocabulary term, never geometry.
+    overlay: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -495,7 +519,24 @@ def _band_packing(spec: DiagramSpec) -> Tuple[Dict[int, int], Dict[int, int]]:
             # Anchor the first banded band at its top lane's natural tier row so
             # the banded region content sits BELOW the account-level edge row
             # (which is placed at its own absolute lane index, edge lane = row 1).
-            start = _snap(lo * ROW_STEP)
+            #
+            # v1.6.0: plus ``CONTAINER_LABEL_BAND``, because the enclosing region
+            # container now reserves a caption strip on its top edge
+            # (``size_containers``). Without this the container would grow UPWARD
+            # into the account-level edge row's label band, and the first thing
+            # the oracle saw was a container-padding spill on every edge-row node.
+            # Pushing the banded region down by exactly the strip keeps the gap
+            # between the edge row and the region band the same as before, while
+            # the strip itself becomes a usable entry corridor below the caption.
+            #
+            # The extra ``CONTAINER_PAD`` on top of the strip is the standard's own
+            # tie-breaker — "when space is tight, widen, never narrow, the
+            # corridor". Without it the lane between the account edge row's label
+            # band and the region container's top edge is ~12px: too narrow to hold
+            # a single grid line, so the allocator fell back into the caption band
+            # and the account-row runs (WAF→CDN, DNS→passive-LB) sliced the
+            # ``vpc-…`` captions no matter how the band was narrowed.
+            start = _snap(lo * ROW_STEP + CONTAINER_LABEL_BAND + CONTAINER_PAD)
         else:
             # The gap between the previous band's content bottom and this band's
             # content top clears the previous band's own bottom box-padding (only
@@ -509,7 +550,11 @@ def _band_packing(spec: DiagramSpec) -> Tuple[Dict[int, int], Dict[int, int]]:
             if prev_has_box:
                 gap += CONTAINER_PAD
             if has_box:
-                gap += CONTAINER_PAD
+                # This band's own box contributes its TOP padding, which since
+                # v1.6.0 is ``CONTAINER_PAD + CONTAINER_LABEL_BAND`` (the caption
+                # strip) rather than a bare pad — so the next box's caption cannot
+                # eat into the previous band's footprint.
+                gap += CONTAINER_PAD + CONTAINER_LABEL_BAND
             start = _snap(prev_end + gap)
         band_start[band] = start
         # A horizontal band is (max_sub_row + 1) rows tall (main row + any
@@ -851,6 +896,18 @@ def size_containers(
       mirror-symmetric row (Req 4.3).
     * **Account envelope** — the outermost container wraps every region band +
       ``pad``, with no trailing empty margin (Req 4.5).
+    * **Caption strip on the top edge (v1.6.0)** — the top padding is ``pad +
+      CONTAINER_LABEL_BAND``, not ``pad``. A draw.io group draws its caption
+      *inside* its own top edge, so a uniform ``pad`` made the caption band and
+      the top padding the same 30px strip: the first content row began exactly
+      where the caption ended, leaving **no corridor lane inside the container
+      above its first row**. Any edge descending into the container then had to
+      run through the caption — which is precisely what
+      ``edge-crosses-container-label`` flags, and what four edges on the
+      re-connected landscape did (an account-row edge and a CDN→LB origin fetch
+      slicing ``vpc-primary us-east-1``). Reserving the caption its own strip
+      restores ``pad`` as real clearance and gives every container an entry
+      corridor below its caption.
 
     The result passes ``check_container_padding`` and ``check_container_overlap``.
     """
@@ -874,7 +931,8 @@ def size_containers(
                 "(empty region band)"
             )
         x0, y0, x1, y1 = _bbox(child_boxes)
-        box = Box(cid, x0 - pad, y0 - pad, (x1 - x0) + 2 * pad, (y1 - y0) + 2 * pad)
+        top = pad + CONTAINER_LABEL_BAND  # reserve the caption strip (see below)
+        box = Box(cid, x0 - pad, y0 - top, (x1 - x0) + 2 * pad, (y1 - y0) + top + pad)
         boxes[cid] = box
         return box
 
@@ -1037,8 +1095,11 @@ def _size_account(
         xs1.append(fp.right)
         ys1.append(fp.bottom)
     x0, y0, x1, y1 = min(xs0), min(ys0), max(xs1), max(ys1)
-    boxes[cid] = Box(cid, _snap(x0 - pad), _snap(y0 - pad),
-                     _snap((x1 - x0) + 2 * pad), _snap((y1 - y0) + 2 * pad))
+    # Same caption strip as ``_size`` (v1.6.0): the account's own caption is drawn
+    # inside its top edge, so the top pad reserves the band plus real clearance.
+    top = pad + CONTAINER_LABEL_BAND
+    boxes[cid] = Box(cid, _snap(x0 - pad), _snap(y0 - top),
+                     _snap((x1 - x0) + 2 * pad), _snap((y1 - y0) + top + pad))
 
 
 def centre_block_in_vpc(
@@ -1510,6 +1571,36 @@ class CorridorAllocator:
         self._taken[gap_id].add(line)
         return line
 
+    def allocate_dense(self, gap_id: str, low: float, high: float) -> int:
+        """Reserve the next free line at **GRID** spacing rather than the stride.
+
+        The stride (``2·GRID``) keeps two parallel long runs visibly apart, which
+        is the right default — but a narrow band (a 30px row gap left by a
+        container caption strip) then holds exactly one strided line, and a third
+        run in that band has nowhere to go. One grid step apart is still a legal
+        separation (``check_corridor_sharing`` asks for ≥ one step); it is merely
+        tighter. So this is the fallback between the strided allocation and giving
+        up: still distinct, still grid-aligned, never a silent merge.
+
+        Raises :class:`CorridorExhaustedError` when even GRID spacing is full.
+        """
+        self.register_gap(gap_id, low, high)
+        taken = self._taken.setdefault(gap_id, set())
+        first_k = int(math.floor(low / self._grid)) + 1
+        line = first_k * self._grid
+        while line < high:
+            if int(line) not in taken:
+                taken.add(int(line))
+                if gap_id in self._free:
+                    self._free[gap_id] = [
+                        ln for ln in self._free[gap_id] if ln != int(line)
+                    ]
+                return int(line)
+            line += self._grid
+        raise CorridorExhaustedError(
+            gap_id, low, high, int(max(0, (high - low) // self._grid))
+        )
+
 
 # ---------------------------------------------------------------------------
 # Edge classification and per-class routing (Req 7)
@@ -1763,18 +1854,98 @@ def _free_left_corridor_x(
     gap = src.x - left_edge
     if gap < 2 * GRID:
         return None  # no room for a left corridor with padding
-    # Place the corridor one GRID step left of the column (nearest clean lane),
-    # clamped to stay >= one GRID inside the container left edge.
-    corridor_x = _snap(max(src.x - GRID, left_edge + GRID))
+    # Place the corridor MIDWAY in the left gap (v1.6.0), clamped to stay >= one
+    # GRID inside both the container edge and the node column.
+    #
+    # The docstring above has always said "midway", but the code took
+    # ``src.x - GRID`` — the lane NEAREST the column. On the HA landscape that put
+    # the tier-skip vertical 10px from ``app_a1``/``api_a1``'s left border, where a
+    # 540px run reads as a second rail beside the icons — the very defect
+    # diagram-standards forbids ("no long vertical run parallel to a node column"),
+    # and one a reviewer corrected by hand. Centring maximises the clearance to the
+    # nearest border on either side (30px instead of 10px in that gap) and is what
+    # the function always claimed to do.
+    centre = (left_edge + src.x) / 2.0
+    lo_x, hi_x = _snap(left_edge + GRID), _snap(src.x - GRID)
+    corridor_x = _snap(min(max(centre, lo_x), hi_x))
+    # v1.6.0: never land ON a container border. A long vertical that coincides with
+    # a nested box's edge reads as part of that edge ("a line riding along a box
+    # border reads as part of the border" — diagram-standards), and the centred
+    # lane in a VPC's left gap lands exactly on the nested AZ box's left edge,
+    # because both are derived from the same column. Step to the nearest grid line
+    # in the gap that clears every container border by one grid step, preferring
+    # the smallest move so the lane stays as centred as it can be.
+    lo, hi = min(src.y, tgt.y), max(src.bottom, tgt.bottom)
+    borders = [
+        edge_x
+        for c in (containers or {}).values()
+        if not (c.bottom < lo or c.y > hi)
+        for edge_x in (c.x, c.right)
+    ]
+
+    def _on_border(x: float) -> bool:
+        return any(abs(x - b) < GRID for b in borders)
+
+    if _on_border(corridor_x):
+        candidates = sorted(
+            (x for x in range(int(lo_x), int(hi_x) + 1, GRID) if not _on_border(x)),
+            key=lambda x: (abs(x - corridor_x), x),
+        )
+        if candidates:
+            corridor_x = candidates[0]
     # The corridor must clear every OTHER node's box: reject only when a node's
     # actual box (not a padded halo) sits on the corridor line within the run.
-    lo, hi = min(src.y, tgt.y), max(src.bottom, tgt.bottom)
     for b in obstacles:
         if b.id in (src.id, tgt.id):
             continue
         if b.x <= corridor_x <= b.right and not (b.bottom < lo or b.y > hi):
             return None  # an icon actually sits on the left corridor's path
     return corridor_x
+
+
+def _fanout_above_row(
+    src: Box,
+    obstacles: List[Box],
+    containers: Optional[Dict[str, Box]],
+) -> bool:
+    """True when a ``fan-out-row`` hop from ``src`` belongs in the ABOVE-row lane.
+
+    A fan-out hop has to leave its row, run across, and come back — the question
+    is which side of the row it runs on. The default has always been *below*, but
+    the band **above** a container's first row is free **by construction**: the
+    only thing between a container's caption strip and its topmost icons is
+    padding, and nothing is ever placed there. The band *below* a row is the
+    opposite — it is where the next tier's spine drops, the nested AZ boxes and
+    their captions all live, so a hop routed there dips through other structure
+    and needs the caption-avoidance machinery to stay legal.
+
+    So: when ``src`` sits in the **topmost row inside its enclosing container**,
+    the hop runs above the row. The predicate is exactly that — no node in the
+    same container sits on a higher row — which makes the lane free without
+    having to prove it, and is cheap and pure enough to be evaluated twice (the
+    pipeline needs it to pick the exit band, the router to pick the lane).
+
+    Returns ``False`` when there is no enclosing container, when the caption
+    strip leaves no room for a lane with padding, or when any container-mate sits
+    higher — in which case the caller keeps the below-row lane.
+
+    (This reproduces both lane moves in the reviewer's hand-route of the AWS HA
+    landscape: ``WAF -> CDN`` in the account edge tier and
+    ``app -> object-store`` in the first AZ row, each lifted out of the crowded
+    below-row band into the empty lane above.)
+    """
+    container = _enclosing_container(src, containers)
+    if container is None:
+        return False
+    lane_low = container.y + CONTAINER_LABEL_BAND
+    if src.y - lane_low < 2 * GRID:
+        return False        # caption strip leaves no room for a lane with padding
+    for b in obstacles:
+        if b.id == src.id:
+            continue
+        if b.y < src.y and _box_contains(container, b):
+            return False    # a higher row in this container → the band is not free
+    return True
 
 
 def route_spine(
@@ -1855,7 +2026,16 @@ def route_spine(
     # entry row, then run across into the left face.
     top_entry = entry_pt[1] <= 0.0
     if top_entry:
-        step_y = _snap(entry[1] - GRID)         # one grid step above the top face
+        # Approach lane above the TARGET's row, ALLOCATED from the same
+        # ``hcorr-above:<row>`` namespace every long-haul corridor uses (v1.6.0).
+        # It used to be a hard-coded ``entry_y - GRID``, which is the first line of
+        # that band — so a cross-region or fan-out run that legitimately allocated
+        # the same line ended up sharing the corridor with this step-across
+        # (``l9``x``l10``). Allocating it makes the lane distinct by construction.
+        band_lo, band_hi = _hcorridor_band(edge, tgt, tgt, False, containers)
+        step_y = _snap(_allocate_or_first(
+            allocator, f"hcorr-above:{int(tgt.y)}", band_lo, band_hi
+        ))
         waypoints = [
             first,
             (corridor_x, step_y),               # drop in the side corridor
@@ -1878,15 +2058,25 @@ def route_fan_out_row(
     entry_pt: Contact,
     allocator: "CorridorAllocator",
     obstacles: List[Box],
+    containers: Optional[Dict[str, Box]] = None,
+    lane_above: Optional[bool] = None,
 ) -> List[Point]:
-    """Route a ``fan-out-row`` edge in its own below-row lane (Req 7.4).
+    """Route a ``fan-out-row`` edge in its own off-row lane (Req 7.4).
 
     Shape (right exit, the default): exit the source right (the stair moves both
-    axes), drop one ``GRID`` into a below-row corridor allocated for this edge,
-    run across **below the row** to the gap immediately left of the target, then
-    turn **up** into the target's left face. Each fan-out edge takes its own
-    below-row lane so parallel runs never merge (``check_corridor_sharing``
-    clean).
+    axes), step one ``GRID`` into an off-row corridor allocated for this edge, run
+    across **clear of the row** to the gap immediately left of the target, then
+    turn back into the target's left face. Each fan-out edge takes its own lane so
+    parallel runs never merge (``check_corridor_sharing`` clean).
+
+    **Lane side (v1.6.0).** The lane runs **above** the row when the source sits
+    in the topmost row of its container and **below** otherwise — see
+    :func:`_fanout_above_row` for why the above-row band is the better lane when
+    it exists. The pipeline reads the same predicate to pick the exit band
+    (:func:`_place_and_route` step 2b4), so an above-lane hop leaves from the
+    *upper* band and a below-lane hop from the *lower* one; the stub therefore
+    always leaves toward the lane it will run in and never crosses a sibling on
+    the way there.
 
     Shape (BOTTOM exit — the overflow-valve spill, v1.5.1): when the source's
     RIGHT face is over-connected, the pipeline (:func:`_place_and_route` step 1d)
@@ -1907,20 +2097,29 @@ def route_fan_out_row(
     entry = _contact_point(tgt, entry_pt)
     exit_abs = _contact_point(src, exit_pt)
 
-    # Below-row lane: an allocated grid line in the row gap under the source,
-    # starting BELOW the source's LABEL BAND (Rule F). A fan-out run one grid step
-    # under the icon would cross the service caption drawn beneath it; insetting
-    # the lane past ``ICON_SIZE + LABEL_BAND`` keeps the run clear of every
-    # caption in the row. Keyed by the physical row band so several fan-out edges
-    # from the same row get distinct below-row lanes rather than merging on one.
-    row_low = src.y + ICON_SIZE + LABEL_BAND + GRID
-    row_high = src.y + ROW_STEP
-    lane_y = _snap(_allocate_or_first(allocator, f"fanout-row:{int(src.y)}", row_low, row_high))
-
-    # Turn up in the gap just LEFT of the target (target_x - ~half a gap).
-    up_x = _snap(tgt.x - (COL_STEP - ICON_SIZE) // 2)
-
     bottom_exit = exit_pt[1] is not None and exit_pt[1] >= 1.0
+
+    # Lane side (v1.6.0). ABOVE the row when the pipeline said so
+    # (:func:`decide_lane_sides`), else the local default — the topmost row in a
+    # container has a free band above it (:func:`_fanout_above_row`). A BOTTOM-face
+    # exit (the overflow-valve spill) always stays below: it leaves the source
+    # going down, so an above-row lane would make it double back across its own
+    # caption. The band itself and its caption clamps are the one shared definition
+    # every long-haul router uses (:func:`_hcorridor_band`), and so is the lane
+    # namespace — a fan-out and a cross-region run in the same physical band get
+    # DISTINCT grid lines (``check_corridor_sharing`` clean by construction).
+    if lane_above is None:
+        above = not bottom_exit and _fanout_above_row(src, obstacles, containers)
+    else:
+        above = not bottom_exit and lane_above
+    row_low, row_high = _hcorridor_band(edge, src, tgt, not above, containers)
+    side = "above" if above else "below"
+    lane_y = _snap(_allocate_or_first(allocator, f"hcorr-{side}:{int(src.y)}", row_low, row_high))
+
+    # Turn back toward the row in the gap just LEFT of the target (target_x -
+    # ~half a gap): UP from a below-row lane, DOWN from an above-row one.
+    turn_x = _snap(tgt.x - (COL_STEP - ICON_SIZE) // 2)
+
     if bottom_exit:
         # Honour the bottom exit: drop STRAIGHT DOWN from the bottom contact into
         # this edge's own below-row lane, then run across and up into the target
@@ -1931,15 +2130,15 @@ def route_fan_out_row(
         drop_x = _snap(exit_abs[0])
         waypoints = [
             (drop_x, lane_y),               # straight drop into the below-row lane
-            (up_x, lane_y),                 # run across below the row
-            (up_x, _snap(entry[1])),        # turn up into the target's left face
+            (turn_x, lane_y),               # run across below the row
+            (turn_x, _snap(entry[1])),      # turn up into the target's left face
         ]
         waypoints = _dedupe_axis_collapse(waypoints, waypoints[0])
         route = [exit_abs] + waypoints + [entry]
         route = _detour_clockwise_if_blocked(route, others)
         return _interior_waypoints(route)
 
-    first = _stair_first_waypoint(src, exit_pt, toward_down=True)
+    first = _stair_first_waypoint(src, exit_pt, toward_down=lane_y > src.y)
 
     # Step-out vertical leg: an allocated column line in the gap right of the
     # source, shared with every other vertical leg in that gap (see
@@ -1950,13 +2149,231 @@ def route_fan_out_row(
     waypoints = [
         first,
         (first[0], lane_y),
-        (up_x, lane_y),
-        (up_x, _snap(entry[1])),
+        (turn_x, lane_y),
+        (turn_x, _snap(entry[1])),
     ]
     waypoints = _dedupe_axis_collapse(waypoints, first)
     route = [_contact_point(src, exit_pt)] + waypoints + [entry]
     route = _detour_clockwise_if_blocked(route, others)
     return _interior_waypoints(route)
+
+
+def _hcorridor_below(src: Box, tgt: Box) -> bool:
+    """True when a long horizontal run from ``src`` uses the corridor BELOW its row.
+
+    Two reasons to run below rather than above: there is no room above (the source
+    sits in the top band, so an above corridor would rise out of the account box),
+    or the target sits a full row or more **below** — a downward hop reads better
+    routed downward, and routing it above makes it climb over its own row only to
+    come back down.
+
+    Shared by :func:`route_cross_region` and :func:`route_back_edge` so that the
+    exit band chosen by the pipeline (:func:`_place_and_route` step 2b4) is on the
+    same side as the corridor the router will actually allocate. ``route_back_edge``
+    used to decide this on canvas room alone, which sent the worker→API-tier hop
+    UP over the edge tier and back down the far side of the diagram even though its
+    target was two rows below it."""
+    return (src.y - ROW_STEP) <= CONTAINER_PAD or tgt.y >= src.y + ROW_STEP
+
+
+def _exit_band_rank(
+    edge: EdgeSpec,
+    kind: str,
+    placed: Dict[str, Box],
+    lane_above: Dict[str, bool],
+) -> int:
+    """Rank an edge along its exit face: negative = upper, 0 = centre, positive = lower.
+
+    The rank is read off the route the edge will actually take — ``lane_above``
+    holds the corridor side the pipeline already decided for it — which is what
+    makes the band ordering correct rather than cosmetic:
+
+    * a branch whose corridor runs **above** the row must leave from an **upper**
+      band and one running **below** from a **lower** band. Leave from the wrong
+      side and the stub has to travel back across the face to reach its lane,
+      cutting through every sibling on the way — the ``l19``/``l20`` tangle, where
+      a descending fan-out left from *above* the level run it then crossed.
+    * a **level** branch (a straight run to a same-row neighbour) ranks 0 and keeps
+      the centre: a straight line is the most readable route and it is the one
+      route with no turn for a sibling to cross.
+    * among branches on the same side, one that runs **back** (turns and heads
+      left) ranks outermost. Its turn column is necessarily the *nearest* lane to
+      the face, so a sibling turning farther out would cross it at the stub
+      (``dns -> lb_a`` cutting ``dns -> lb_b``).
+    """
+    src, tgt = placed[edge.source], placed[edge.target]
+    if kind == "straight":
+        return 0
+    if kind in ("fan-out-row", "cross-region", "back-edge"):
+        above = lane_above.get(edge.id, False)
+    elif kind == "spine":
+        above = tgt.y < src.y
+    else:
+        return 0
+    back = tgt.x <= src.x          # the run heads LEFT after its turn
+    if above:
+        return -2 if back else -1
+    return 2 if back else 1
+
+
+def decide_lane_sides(
+    spec: DiagramSpec,
+    placed: Dict[str, Box],
+    containers: Optional[Dict[str, Box]],
+    exits: Dict[str, Contact],
+    entries: Dict[str, Contact],
+) -> Dict[str, bool]:
+    """Decide, per long-haul edge, whether its horizontal corridor runs ABOVE its row.
+
+    A fan-out, a cross-region hop and a back-edge all run one long horizontal leg
+    in a row gap. *Which* gap used to be decided inside each router from purely
+    local rules — fan-out: always below; cross-region and back-edge: whether there
+    was canvas room above — and a local rule cannot see the two things that
+    actually decide it:
+
+    * **The band above a container's first row is empty by construction**
+      (:func:`_fanout_above_row`), so it is the better lane for a fan-out — *unless*
+      an inbound TOP-entry approach has to cross it, in which case the fan-out
+      would cut that approach. That is the ``l7``-into-``db_a2`` case: the drop
+      into the lower AZ arrives through exactly the band the fan-out wanted. The
+      test is per-run: an approach column strictly inside the run's horizontal
+      extent blocks the above lane; one outside it (``l3`` dropping into
+      ``app_a1`` at the far left, while the fan-out runs off to the right) does
+      not.
+    * **Two long runs leaving the same row in the same direction must not take the
+      same side**, or the second's turn leg crosses the first's run — the two
+      replication hops ``l10``x``l11``. They alternate: the first (by marker)
+      keeps its natural side, the next flips, and so on. A flip is only taken when
+      the other side is legal (there is no room above a top-row source, which is
+      why the edge tier's two back-edges both stay below).
+
+    Among several above-capable fan-out branches from ONE source, only the
+    **farthest** takes the above lane and the rest stay below, so the two sides
+    are used one each instead of stacking on one. That is the reviewer's split of
+    ``app_a1``'s fan-out: the long ``-> object-store`` run gets the empty lane
+    above, the shorter ``-> database`` run keeps the band below.
+
+    Returns ``{edge_id: True}`` for an above corridor, ``False`` for below; edges
+    with no horizontal corridor are absent.
+    """
+    order_index = {e.id: i for i, e in enumerate(spec.edges)}
+    obstacles = list(placed.values())
+
+    def _mk(eid: str):
+        m = spec.edges[order_index[eid]].marker
+        return (0, int(m)) if m.isdigit() else (1, m)
+
+    # Approach columns: the x of every TOP-face entry, grouped by the target's row.
+    # A fan-out lane above that row would cut any approach whose column falls
+    # inside the run.
+    approach_cols: Dict[float, List[float]] = {}
+    for edge in spec.edges:
+        fx, fy = entries[edge.id]
+        if fy is not None and fy <= 0.0:
+            tgt = placed[edge.target]
+            approach_cols.setdefault(tgt.y, []).append(
+                tgt.x + (fx if fx is not None else 0.5) * tgt.w
+            )
+
+    sides: Dict[str, bool] = {}
+
+    # --- fan-out-row -------------------------------------------------------
+    above_capable: Dict[str, List[str]] = {}
+    for edge in spec.edges:
+        if classify_edge(edge, placed) != "fan-out-row":
+            continue
+        sides[edge.id] = False
+        ey = exits[edge.id][1]
+        if ey is not None and ey >= 1.0:
+            continue        # a bottom-face spill leaves downward → below lane
+        src, tgt = placed[edge.source], placed[edge.target]
+        if not _fanout_above_row(src, obstacles, containers):
+            continue
+        run_lo, run_hi = src.right, tgt.x - (COL_STEP - ICON_SIZE) // 2
+        if any(run_lo < col < run_hi for col in approach_cols.get(src.y, ())):
+            continue        # an inbound approach must cross this band
+        above_capable.setdefault(edge.source, []).append(edge.id)
+    for src_id, eids in sorted(above_capable.items()):
+        src = placed[src_id]
+        farthest = min(
+            eids,
+            key=lambda e: (-(placed[spec.edges[order_index[e]].target].x - src.x), _mk(e)),
+        )
+        sides[farthest] = True
+
+    # --- cross-region / back-edge -----------------------------------------
+    # One band, non-overlapping runs. Two long horizontal runs in one row band do
+    # get distinct *lanes* from the allocator, but distinct lanes are not enough:
+    # each run turns vertically at its ends, and when two runs' horizontal extents
+    # overlap, those turn legs cut through the sibling's lane whichever lane each
+    # got. (``l8``'s turn down into the object store slicing ``l10``'s replication
+    # run, both in the band above the app row — and symmetrically ``l10``'s rise
+    # slicing ``l8``'s run, so no lane ordering fixes it.) Overlapping extents
+    # therefore belong on OPPOSITE sides of the row.
+    #
+    # So: claim extents per (row, side). The fan-out runs decided above are seeded
+    # first, because their side is forced by the container geometry, then each
+    # long-haul edge takes the first side whose claims it does not overlap,
+    # preferring its natural side. This is what puts the two replication hops on
+    # opposite sides of the app row — the near one below with the fan-out that
+    # overlaps it, the far one above where nothing does.
+    claimed: Dict[Tuple[float, bool], List[Tuple[float, float]]] = {}
+
+    def _span(src: Box, tgt: Box) -> Tuple[float, float]:
+        """The horizontal extent a long run covers, conservatively."""
+        return (min(src.x, tgt.x), max(src.right, tgt.right))
+
+    def _overlaps(a: Tuple[float, float], b: Tuple[float, float]) -> bool:
+        return a[0] < b[1] and b[0] < a[1]
+
+    for eid, above in sorted(sides.items()):
+        edge = spec.edges[order_index[eid]]
+        src, tgt = placed[edge.source], placed[edge.target]
+        run_lo, run_hi = src.right, tgt.x - (COL_STEP - ICON_SIZE) // 2
+        claimed.setdefault((src.y, above), []).append(
+            (min(run_lo, run_hi), max(run_lo, run_hi))
+        )
+
+    for edge in sorted(
+        (e for e in spec.edges
+         if classify_edge(e, placed) in ("cross-region", "back-edge")),
+        key=lambda e: _mk(e.id),
+    ):
+        src, tgt = placed[edge.source], placed[edge.target]
+        natural = not _hcorridor_below(src, tgt)
+        room_above = (src.y - ROW_STEP) > CONTAINER_PAD
+        span = _span(src, tgt)
+        options = [natural, not natural] if room_above else [False]
+        chosen = options[0]
+        for above in options:
+            if not any(_overlaps(span, s) for s in claimed.get((src.y, above), ())):
+                chosen = above
+                break
+        sides[edge.id] = chosen
+        claimed.setdefault((src.y, chosen), []).append(span)
+
+    return sides
+
+
+def _assign_exit_bands(ranked: List[Tuple[str, int]]) -> Dict[str, float]:
+    """Hand out distinct bands on ONE exit face, top to bottom, honouring ranks.
+
+    ``ranked`` is ``(edge_id, rank)`` already sorted by ``(rank, marker)``. A
+    level branch (rank 0) keeps the face **centre** (Req 5.1); the others take the
+    band on the side their own route leaves toward, so every stub diverges from
+    the glyph instead of crossing a sibling to reach its lane. Bands come from the
+    same three-step ladder as before (0.25 / 0.5 / 0.75), each ≥
+    :data:`MERGE_THRESHOLD` apart, so ``check_exit_thirds`` stays clean.
+    """
+    if len(ranked) == 1:
+        return {ranked[0][0]: 0.5}
+    if len(ranked) == 2:
+        (a_id, a_rank), (b_id, _b_rank) = ranked
+        if a_rank < 0:
+            return {a_id: _UPPER_QUARTER, b_id: 0.5}
+        return {a_id: 0.5, b_id: _LOWER_QUARTER}
+    bands = (_UPPER_QUARTER, 0.5, _LOWER_QUARTER)
+    return {eid: band for (eid, _r), band in zip(ranked, bands)}
 
 
 def _has_free_left_approach(tgt: Box, obstacles: List[Box]) -> bool:
@@ -1983,6 +2400,11 @@ def _target_container_top(
 ) -> Optional[float]:
     """Return the top y of the SMALLEST container enclosing the target box.
 
+    Superseded for corridor sizing by :func:`_caption_free_band` (v1.6.0), which
+    considers **every** container in the band rather than only the target's
+    innermost one; kept because the adaptive-entry decisions still ask "where does
+    the target's own container start?".
+
     A long-haul corridor that drops into a target inside a VPC must not run
     along that VPC's top caption band. This returns the enclosing container's
     top edge so the router can keep its horizontal corridor ABOVE it (a
@@ -1998,6 +2420,161 @@ def _target_container_top(
     return best.y if best is not None else None
 
 
+def _box_contains(outer: Box, inner: Box) -> bool:
+    """True when ``inner`` sits wholly within ``outer``."""
+    return (
+        outer.x <= inner.x
+        and outer.y <= inner.y
+        and inner.right <= outer.right
+        and inner.bottom <= outer.bottom
+    )
+
+
+def _caption_free_band(
+    row_low: float,
+    row_high: float,
+    containers: Optional[Dict[str, Box]],
+    src: Box,
+) -> Tuple[float, float]:
+    """Narrow a horizontal corridor band so it excludes every container caption.
+
+    A draw.io group draws its caption *inside* its own top edge, so the strip
+    ``[c.y, c.y + CONTAINER_LABEL_BAND)`` of every container is occupied by text.
+    A corridor lane allocated in that strip runs along the caption — the
+    ``edge-crosses-container-label`` finding.
+
+    Before v1.6.0 only ``_target_container_top`` guarded this, and only in two
+    routers, and only against the target's **innermost** enclosing container. That
+    left three real gaps, all of which the re-connected landscape hit:
+
+    * a run whose target is in an **AZ** was capped against the AZ's top and still
+      crossed the enclosing **VPC**'s caption (the worker→API-tier hop);
+    * a run between two nodes that are **both outside** the container it passes had
+      no cap at all (the account-row WAF→CDN hop dipping into the VPC caption);
+    * a run **inside** a container cannot be fixed by capping above that
+      container's top — that would push the lane outside the box it belongs to.
+      It has to sit **below** the caption instead.
+
+    So each intersecting caption band narrows the corridor to one of two
+    sub-bands — **above** the container top, or **below** its caption — and the
+    preferred side is the one that keeps the run on the correct side of that
+    container: a source *inside* the container prefers below (stay in the box,
+    under the text), a source outside prefers above (stay out of the box). When
+    the preferred sub-band collapses (the caption straddles the corridor's own
+    lower edge, which is what the account-row fan-out hit), the other side is
+    taken instead; when both collapse the original band stands, so the WARNING
+    still surfaces rather than the router emitting a degenerate lane. Containers
+    are visited top-down, so the result is deterministic.
+    """
+    if not containers:
+        return row_low, row_high
+    for c in sorted(containers.values(), key=lambda b: (b.y, b.id)):
+        cap_lo, cap_hi = c.y, c.y + CONTAINER_LABEL_BAND
+        if cap_hi <= row_low or cap_lo >= row_high:
+            continue  # this caption band is outside the corridor band
+        above = (row_low, min(row_high, cap_lo))
+        below = (max(row_low, cap_hi), row_high)
+        options = (below, above) if _box_contains(c, src) else (above, below)
+        for lo, hi in options:
+            if hi - lo >= GRID:
+                row_low, row_high = lo, hi
+                break
+    return row_low, row_high
+
+
+def _column_is_clear(
+    x: float, y_lo: float, y_hi: float, obstacles: List[Box], skip: Tuple[str, ...]
+) -> bool:
+    """True when no node box other than ``skip`` sits on the vertical line ``x``
+    between ``y_lo`` and ``y_hi``."""
+    lo, hi = sorted((y_lo, y_hi))
+    for b in obstacles:
+        if b.id in skip:
+            continue
+        if b.x <= x <= b.right and not (b.bottom <= lo or b.y >= hi):
+            return False
+    return True
+
+
+def _free_drop_column(
+    tgt: Box,
+    across: float,
+    from_y: float,
+    obstacles: List[Box],
+    containers: Optional[Dict[str, Box]],
+) -> float:
+    """Return a free column to descend in before entering ``tgt``'s TOP face.
+
+    The natural drop column for a top entry is the target's own centre
+    (``across``), and when that column is clear between the corridor and the
+    target it is also the best one — one turn, no detour. But when the target sits
+    at the bottom of a **stacked column** (load balancer over app tier over API
+    tier, all at one x), that column is full: the drop cuts through every icon
+    above the target, and the clockwise detour then pushes it a couple of pixels
+    off their right border, where a long vertical reads as a second rail beside the
+    services.
+
+    So: prefer ``across``; else the midway line in the gap to the target's **left**
+    (kept ≥ one grid step inside the enclosing container and the target column);
+    else the midway line in the gap to its **right**. The first candidate whose
+    column is clear wins. When none is, fall back to ``across`` and let the detour
+    handle it — the honest failure, not a silently wrong route.
+    """
+    if _column_is_clear(across, from_y, tgt.y, obstacles, (tgt.id,)):
+        return across
+    container = _enclosing_container(tgt, containers)
+    left_edge = container.x if container is not None else 0.0
+    right_edge = container.right if container is not None else tgt.right + COL_STEP
+    candidates = []
+    if tgt.x - left_edge >= 2 * GRID:
+        centre = (left_edge + tgt.x) / 2.0
+        candidates.append(_snap(min(max(centre, left_edge + GRID), tgt.x - GRID)))
+    if right_edge - tgt.right >= 2 * GRID:
+        centre = (tgt.right + right_edge) / 2.0
+        candidates.append(_snap(max(min(centre, right_edge - GRID), tgt.right + GRID)))
+    for x in candidates:
+        if _column_is_clear(x, from_y, tgt.y, obstacles, (tgt.id,)):
+            return x
+    return across
+
+
+def _hcorridor_band(
+    edge: EdgeSpec,
+    src: Box,
+    tgt: Box,
+    below: bool,
+    containers: Optional[Dict[str, Box]],
+) -> Tuple[float, float]:
+    """Return the ``(low, high)`` band a long horizontal run may use on one side.
+
+    One definition for all three long-haul routers (cross-region, back-edge,
+    fan-out), because it *is* one physical band:
+
+    * **below** — the gap under the source row, starting past the source's own
+      LABEL BAND (Rule F) so the run does not cross the captions of the row it
+      leaves;
+    * **above** — the gap over the source row, starting past the LABEL BAND of the
+      row above, for the same reason.
+
+    Then two clamps, both about container captions: cap the band at the target
+    container's top edge when that edge falls inside it, and remove every
+    container caption strip the band still overlaps
+    (:func:`_caption_free_band`). Callers allocate their lane from the returned
+    band, sharing one ``hcorr-<side>:<row>`` namespace so any two runs in the same
+    physical band get DISTINCT grid lines.
+    """
+    if below:
+        row_low = src.y + ICON_SIZE + LABEL_BAND + GRID
+        row_high = src.y + ROW_STEP
+    else:
+        row_low = (src.y - ROW_STEP) + ICON_SIZE + LABEL_BAND + GRID
+        row_high = src.y
+    ceil = _target_container_top(edge, containers, tgt)
+    if ceil is not None and row_low < ceil < row_high:
+        row_high = _snap(ceil)
+    return _caption_free_band(row_low, row_high, containers, src)
+
+
 def route_cross_region(
     edge: EdgeSpec,
     exit_pt: Contact,
@@ -2005,6 +2582,7 @@ def route_cross_region(
     allocator: "CorridorAllocator",
     obstacles: List[Box],
     containers: Optional[Dict[str, Box]] = None,
+    lane_above: Optional[bool] = None,
 ) -> List[Point]:
     """Route a ``cross-region`` A→B hop through its own over-row corridor (Req 7.5).
 
@@ -2027,12 +2605,16 @@ def route_cross_region(
     # route caused), and a left entry into a row-rightmost target is clean. Taken
     # only when the caller pinned a LEFT entry AND the approach is free; else the
     # default over/below-row + top-entry route stands.
+    below = _hcorridor_below(src, tgt) if lane_above is None else not lane_above
     left_entry = entry_pt[0] is not None and entry_pt[0] <= 0.0
     if left_entry and _has_free_left_approach(tgt, others):
-        # Below-row corridor: the gap under the source row, past its label band.
-        row_low = src.y + ICON_SIZE + LABEL_BAND + GRID
-        row_high = src.y + ROW_STEP
-        lane_y = _snap(_allocate_or_first(allocator, f"xregion-below:{int(src.y)}", row_low, row_high))
+        # Inter-row corridor on the side the pipeline chose (v1.6.0): the gap under
+        # the source row by default, or the one above it when a same-row sibling
+        # already took the lane below (``decide_lane_sides`` alternates them, which
+        # is what stops the two replication hops crossing each other).
+        row_low, row_high = _hcorridor_band(edge, src, tgt, below, containers)
+        side = "below" if below else "above"
+        lane_y = _snap(_allocate_or_first(allocator, f"hcorr-{side}:{int(src.y)}", row_low, row_high))
         rise_x = _gap_column_x(allocator, src, edge.id)
         exit_abs = _contact_point(src, exit_pt)
         entry_left = _contact_point(tgt, entry_pt)
@@ -2048,12 +2630,10 @@ def route_cross_region(
         route = _detour_clockwise_if_blocked(route, others)
         return _interior_waypoints(route)
 
-    # Choose the horizontal corridor side: above the source by default, but
-    # BELOW when the source is in the top band (no room above → the run would
-    # leave the canvas / rise above the account box) or the target sits clearly
-    # below the source (a downward hop like dns→passive-region-LB reads better
-    # routed below). This keeps the corridor on the grid and inside the account.
-    below = (src.y - ROW_STEP) <= CONTAINER_PAD or tgt.y >= src.y + ROW_STEP
+    # The horizontal corridor side (``below``) was chosen above: the pipeline's
+    # ``decide_lane_sides`` value when it supplied one, else the local default
+    # (:func:`_hcorridor_below` — above the source unless it is in the top band or
+    # the target sits clearly lower).
     first = _stair_first_waypoint(src, exit_pt, toward_down=below)
     # Vertical leg in the gap right of the source, distinct per gap.
     rise_x = _gap_column_x(allocator, src, edge.id)
@@ -2064,40 +2644,8 @@ def route_cross_region(
     # band + side, so two cross-region runs leaving the same source row (e.g.
     # db_a1->db_b1 and obj_a1->obj_b1) get DISTINCT lanes from the shared
     # allocator instead of merging (the corridor-sharing regression this fixes).
-    if below:
-        # A BELOW corridor must clear the source's LABEL BAND (Rule F), else the
-        # horizontal run crosses the caption drawn under the source icon (edge 1
-        # crossing the dns / waf caption).
-        row_low = src.y + ICON_SIZE + LABEL_BAND + GRID
-        row_high = src.y + ROW_STEP
-        side = "below"
-        # v1.5.1: when the target sits inside a VPC, keep the corridor ABOVE the
-        # VPC's TOP EDGE so the horizontal run does not slice the VPC's top
-        # caption (the edge-2 → ``vpc-passive`` label defect). The clean lane is
-        # the gap between the source row's own captions (``row_low``, already
-        # past the source LABEL_BAND) and the VPC top edge (``ceil``): cap
-        # ``row_high`` at the VPC top, NOT at the caption band below it — the
-        # corridor sits in [row_low, vpc_top), e.g. y=210 between the account
-        # row captions (~198) and the VPC top (220). Only apply when that lane is
-        # non-degenerate; if the VPC top is at/below row_low there is no clean
-        # lane, so leave the default (the container-label WARNING then flags it).
-        ceil = _target_container_top(edge, containers, tgt)
-        if ceil is not None and row_low < ceil < row_high:
-            row_high = _snap(ceil)
-    else:
-        # An ABOVE corridor sits in the gap between the row above and the source
-        # row; it must clear the UPPER row's LABEL BAND (Rule F), else it runs
-        # along that row's captions (edge 10 over the service-row labels).
-        row_low = (src.y - ROW_STEP) + ICON_SIZE + LABEL_BAND + GRID
-        row_high = src.y
-        side = "above"
-        # v1.5.1: when the target sits inside an AZ/VPC whose TOP edge falls
-        # inside this corridor band, cap the corridor above that top so the run
-        # does not lie along the target container's caption (the cross-region
-        # obj_a1→obj_b1 rep line slicing the ``az-b1`` caption at y≈400).
-        ceil = _target_container_top(edge, containers, tgt)
-        if ceil is not None and row_low < ceil < row_high:
-            row_high = _snap(ceil)
+    row_low, row_high = _hcorridor_band(edge, src, tgt, below, containers)
+    side = "below" if below else "above"
     # Shared horizontal-corridor namespace (``hcorr``) keyed by the physical band
     # + side, so ANY long horizontal run in this band (cross-region OR back-edge)
     # gets a DISTINCT lane from the shared allocator — two edges in different
@@ -2125,6 +2673,7 @@ def route_back_edge(
     allocator: "CorridorAllocator",
     obstacles: List[Box],
     containers: Optional[Dict[str, Box]] = None,
+    lane_above: Optional[bool] = None,
 ) -> List[Point]:
     """Route a ``back-edge`` (target left of source) out the right and back (Req 7.6).
 
@@ -2139,43 +2688,65 @@ def route_back_edge(
 
     entry = _contact_point(tgt, entry_pt)
     # Loop corridor above the source by default, but BELOW when the source is in
-    # the top band (no room above → the loop would rise above the account box),
-    # mirroring route_cross_region so a top-row back-edge stays inside the canvas.
-    below = (src.y - ROW_STEP) <= CONTAINER_PAD
+    # the top band (no room above → the loop would rise above the account box) OR
+    # when the target sits a full row or more below — the same rule
+    # ``route_cross_region`` uses (:func:`_hcorridor_below`). Deciding this on
+    # canvas room alone sent a downward back-edge (the worker → API-tier hop, whose
+    # target is two rows below) UP into the edge tier's gap and then back down the
+    # length of the diagram, when the clean lane was the inter-row gap right below
+    # the source.
+    below = (_hcorridor_below(src, tgt) if lane_above is None else not lane_above)
     first = _stair_first_waypoint(src, exit_pt, toward_down=below)
     # Vertical leg in the gap right of the source, distinct per gap.
     rise_x = _gap_column_x(allocator, src, edge.id)
     first = (rise_x, first[1])
 
-    # Dedicated loop corridor in the row gap above (default) or below (top-band)
-    # the source row, keyed by the physical row band + side so parallel back-edges
-    # from the same row get distinct loop lanes rather than merging on one.
-    if below:
-        # Clear the source LABEL BAND (Rule F) so the loop run doesn't cross the
-        # caption under the source icon.
-        row_low = src.y + ICON_SIZE + LABEL_BAND + GRID
-        row_high = src.y + ROW_STEP
-        side = "below"
-    else:
-        # Clear the UPPER row's LABEL BAND (Rule F) so the loop doesn't run along
-        # the captions of the row above.
-        row_low = (src.y - ROW_STEP) + ICON_SIZE + LABEL_BAND + GRID
-        row_high = src.y
-        side = "above"
+    # Dedicated loop corridor in the row gap on the chosen side, keyed by the
+    # physical row band + side so parallel back-edges from the same row get
+    # distinct loop lanes rather than merging on one. The band and its two caption
+    # clamps are the shared definition (:func:`_hcorridor_band`).
+    row_low, row_high = _hcorridor_band(edge, src, tgt, below, containers)
+    side = "below" if below else "above"
     # Shared horizontal-corridor namespace (see route_cross_region): a back-edge
     # and a cross-region run in the same band+side get distinct lanes.
     loop_y = _snap(_allocate_or_first(allocator, f"hcorr-{side}:{int(src.y)}", row_low, row_high))
 
     if entry_pt[1] <= 0.0:
         # TOP entry (Rule G: the target has no left gap — set by the pipeline):
-        # run the loop corridor to above the target centre and drop into the top.
+        # run the loop corridor across, drop toward the target, and enter its top.
         across = _snap(entry[0])
-        waypoints = [
-            first,
-            (first[0], loop_y),
-            (across, loop_y),
-            (across, _snap(entry[1])),
-        ]
+        # v1.6.0: the DROP COLUMN must be free. ``across`` is the target's own
+        # centre x, which is the right answer only when nothing else stands in that
+        # column. On a stacked column — a load balancer over an app tier over the
+        # API tier, all at one x — the drop ran straight through every icon above
+        # the target, and ``_detour_clockwise_if_blocked`` then shoved it a few
+        # pixels off their right border: a 370px vertical running two pixels from
+        # two service glyphs, which reads as a second rail beside the column and is
+        # exactly what diagram-standards forbids. Drop in a free gap column beside
+        # the target instead and step across in the lane just above it.
+        drop_x = _free_drop_column(tgt, across, loop_y, others, containers)
+        if drop_x == across:
+            waypoints = [
+                first,
+                (first[0], loop_y),
+                (across, loop_y),
+                (across, _snap(entry[1])),
+            ]
+        else:
+            # Approach lane above the target's row, from the shared namespace (see
+            # route_spine) so it cannot land on another run's corridor.
+            band_lo, band_hi = _hcorridor_band(edge, tgt, tgt, False, containers)
+            approach_y = _snap(_allocate_or_first(
+                allocator, f"hcorr-above:{int(tgt.y)}", band_lo, band_hi
+            ))
+            waypoints = [
+                first,
+                (first[0], loop_y),
+                (drop_x, loop_y),                 # run across to the free column
+                (drop_x, approach_y),             # drop beside the column
+                (across, approach_y),             # step in above the target
+                (across, _snap(entry[1])),        # descend into the top face
+            ]
     else:
         # LEFT entry: run left in the loop corridor to the gap just left of the
         # target, then drop into its left face. Clamp so the turn stays on-canvas.
@@ -2251,6 +2822,7 @@ def route_edge(
     allocator: "CorridorAllocator",
     obstacles: List[Box],
     containers: Optional[Dict[str, Box]] = None,
+    lane_above: Optional[bool] = None,
 ) -> List[Point]:
     """Classify ``edge`` and dispatch to the matching ``route_<kind>`` router.
 
@@ -2258,13 +2830,25 @@ def route_edge(
     :class:`UnclassifiableEdgeError` (via :func:`classify_edge`) for an edge that
     matches no class — the engine never guesses a route (Req 7.1).
 
-    ``containers`` (optional) lets the long-haul routers (cross-region,
-    back-edge) keep their over-row corridor clear of a target VPC's top caption
-    band (v1.5.1). It is only consulted by those two routers; the others ignore
-    it, so synthetic specs that pass no containers are byte-unchanged."""
+    ``containers`` (optional) lets the corridor routers keep their horizontal lane
+    clear of a container's top caption band (v1.5.1; generalised to every
+    container in the band by :func:`_caption_free_band` in v1.6.0, which also
+    brought ``fan-out-row`` into the set — an account-row fan-out reaching past a
+    region VPC otherwise dipped into its caption). Routers that allocate no
+    horizontal corridor ignore it, so synthetic specs that pass no containers are
+    byte-unchanged.
+
+    ``lane_above`` (optional, v1.6.0) carries the corridor side the pipeline chose
+    for this edge (:func:`decide_lane_sides`) — a whole-row decision no single
+    router can make. ``None`` means "use your own default", so a router called
+    directly is unchanged."""
     placed = {b.id: b for b in obstacles}
     kind = classify_edge(edge, placed)
-    if kind in ("cross-region", "back-edge", "spine"):
+    if kind in ("cross-region", "back-edge", "fan-out-row"):
+        return ROUTERS[kind](
+            edge, exit_pt, entry_pt, allocator, obstacles, containers, lane_above
+        )
+    if kind == "spine":
         return ROUTERS[kind](edge, exit_pt, entry_pt, allocator, obstacles, containers)
     return ROUTERS[kind](edge, exit_pt, entry_pt, allocator, obstacles)
 
@@ -2285,12 +2869,28 @@ def _allocate_or_first(
 ) -> float:
     """Allocate a corridor line, tolerating a degenerate (empty) gap.
 
-    A router occasionally faces a gap too narrow to hold a grid line (adjacent
-    boxes). Rather than fail, fall back to the gap midpoint snapped to the grid
-    — the repair loop (Task 8) widens genuinely exhausted gaps; here the router
-    just needs a deterministic corridor coordinate to emit a waypoint on."""
+    A router occasionally faces a gap too narrow to hold a stride-spaced line
+    (adjacent boxes, or a row gap trimmed to 30px by a container caption strip).
+    Rather than fail, step down through progressively tighter options:
+
+    1. the normal **strided** allocation (``2·GRID`` apart — visibly separate);
+    2. a **dense** allocation at ``GRID`` spacing
+       (:meth:`CorridorAllocator.allocate_dense`) — tighter but still distinct;
+    3. only then the gap **midpoint**, which may coincide with another run.
+
+    Step 2 exists because step 3 silently merges corridors: three runs asking for
+    the one strided line above the app row all fell back to the same midpoint, so
+    two of them shared a lane and the repair loop could not separate them (they
+    were not *allocated* anywhere, so bumping one moved it onto the other). The
+    repair loop still widens genuinely exhausted gaps; here the router just needs a
+    deterministic corridor coordinate, and preferring a free line over a colliding
+    one is strictly better."""
     try:
         return allocator.allocate(gap_id, low, high)
+    except CorridorExhaustedError:
+        pass
+    try:
+        return allocator.allocate_dense(gap_id, low, high)
     except CorridorExhaustedError:
         return _snap((low + high) / 2.0)
 
@@ -2654,6 +3254,48 @@ def _bump_edge_corridor(pe: "PlacedEdge", step: int = GRID) -> "PlacedEdge":
     return PlacedEdge(spec=pe.spec, exit=pe.exit, entry=pe.entry, points=moved)
 
 
+def orthogonalise_candidate(candidate: "PlacedDiagram") -> "PlacedDiagram":
+    """Re-align every edge of a placed diagram (:func:`orthogonalise_route`).
+
+    Run as a **finishing pass** after placement and after **every** repair, so the
+    oracle always judges the geometry that will actually be emitted.
+
+    The second part matters more than it looks. ``_bump_edge_corridor`` moves an
+    edge's interior waypoints by one grid step to separate two merged corridors,
+    but deliberately leaves the **pinned contact points** alone — so a route whose
+    first leg was level with its exit comes back diagonal, because the waypoint
+    moved and the contact did not. That is why aligning only inside
+    ``_place_and_route`` was not enough: any edge the corridor-sharing repair
+    touched (the landscape's ``dns → lb_b`` standby hop among them) lost the
+    alignment again before it was written out.
+    """
+    edges = []
+    for pe in candidate.edges:
+        src = candidate.nodes.get(pe.spec.source)
+        tgt = candidate.nodes.get(pe.spec.target)
+        if src is None or tgt is None:
+            edges.append(pe)
+            continue
+        pts = orthogonalise_route(
+            _contact_point(src, pe.exit),
+            pe.points,
+            _contact_point(tgt, pe.entry),
+            contact_faces(*pe.exit),
+            contact_faces(*pe.entry),
+        )
+        edges.append(
+            PlacedEdge(spec=pe.spec, exit=pe.exit, entry=pe.entry, points=pts)
+        )
+    return PlacedDiagram(
+        spec=candidate.spec,
+        nodes=candidate.nodes,
+        containers=candidate.containers,
+        edges=edges,
+        legend_x=candidate.legend_x,
+        legend_w=candidate.legend_w,
+    )
+
+
 def _repair(
     candidate: "PlacedDiagram", findings: "OracleFindings"
 ) -> "PlacedDiagram":
@@ -2755,15 +3397,23 @@ def _place_and_route(spec: DiagramSpec) -> "PlacedDiagram":
             left_gap_x = tgt.x - (COL_STEP - ICON_SIZE) // 2
             if left_gap_x < CONTAINER_PAD + GRID:
                 entries[edge.id] = (0.5, 0.0)   # no left gap → top-centre (Rule G)
-        elif kind == "spine" and spec.compact:
-            # Exception I (compact flow only): a spine to a target DIRECTLY BELOW
-            # in the same column with nothing between (the summary's lb→app→db
-            # vertical chain) drops STRAIGHT — bottom-centre exit into top-centre
-            # entry — instead of the exit-right → side-corridor → step-back-left
-            # hook. A straight drop removes the excessive hook (a crossing-like
-            # defect) and only grazes the source's OWN caption, which reads clean
-            # at the summary's wide tier spacing. Scoped to ``compact`` so the
-            # dense landscape keeps its caption-avoiding side corridor.
+        elif kind == "spine":
+            # Exception I: a spine to a target DIRECTLY BELOW in the same column
+            # with nothing between (the summary's lb→app→db vertical chain) drops
+            # STRAIGHT — bottom-centre exit into top-centre entry — instead of the
+            # exit-right → side-corridor → step-back-left hook. A straight drop
+            # removes the excessive hook (a crossing-like defect) and only grazes
+            # the source's OWN caption.
+            #
+            # v1.6.0: this was gated on ``spec.compact``, on the theory that a
+            # dense landscape needs the caption-avoiding side corridor. The side
+            # corridor turned out to cost far more than it saved: a hooked spine
+            # descends through the row gaps where every long-haul corridor runs, so
+            # each one crossed several of them AND consumed a lane in the narrow
+            # band above its target (three requests for the one line that fits
+            # above the app row). A straight drop in a clear column crosses nothing
+            # and allocates nothing. The precondition is already the strict one —
+            # same column, nothing in between — so it is applied on both classes.
             src = placed[edge.source]
             tgt = placed[edge.target]
             others = [b for nid, b in placed.items()
@@ -2771,30 +3421,24 @@ def _place_and_route(spec: DiagramSpec) -> "PlacedDiagram":
             if _box_directly_below(src, tgt, others):
                 exits[edge.id] = (0.5, 1.0)     # bottom-centre
                 entries[edge.id] = (0.5, 0.0)   # top-centre → straight drop
-        elif kind == "spine":
-            # Adaptive LEFT corridor (v1.5.1, edge-4 generalisation). A spine to
-            # a target in the SAME COLUMN but PAST an intermediate node (so the
-            # straight drop is blocked) routes down the column's LEFT gap and
-            # enters the target's LEFT face — WHEN that gap is free
-            # (_free_left_corridor_x). Pin the bottom exit + left entry here so
-            # the stored contacts match the route the spine router then draws;
-            # both faces are contract-legal, so edge-direction is unaffected. When
-            # the left gap is not usable this does nothing and the default
-            # right-corridor + top-entry route stands.
-            src = placed[edge.source]
-            tgt = placed[edge.target]
-            others = [b for nid, b in placed.items()
-                      if nid not in (edge.source, edge.target)]
-            same_column_blocked = (
-                abs(src.x - tgt.x) < 1e-9
-                and tgt.y > src.y
-                and not _box_directly_below(src, tgt, others)
-            )
-            if same_column_blocked and _free_left_corridor_x(
-                src, tgt, others, containers, edge.id
-            ) is not None:
-                exits[edge.id] = (0.5, 1.0)     # bottom-centre → into the left gap
-                entries[edge.id] = (0.0, 0.5)   # target LEFT face
+            else:
+                # Adaptive LEFT corridor (v1.5.1, edge-4 generalisation). A spine
+                # to a target in the SAME COLUMN but PAST an intermediate node (so
+                # the straight drop above is blocked) routes down the column's LEFT
+                # gap and enters the target's LEFT face — WHEN that gap is free
+                # (_free_left_corridor_x). Pin the bottom exit + left entry here so
+                # the stored contacts match the route the spine router then draws;
+                # both faces are contract-legal, so edge-direction is unaffected.
+                # When the left gap is not usable this does nothing and the default
+                # right-corridor + top-entry route stands.
+                same_column_blocked = (
+                    abs(src.x - tgt.x) < 1e-9 and tgt.y > src.y
+                )
+                if same_column_blocked and _free_left_corridor_x(
+                    src, tgt, others, containers, edge.id
+                ) is not None:
+                    exits[edge.id] = (0.5, 1.0)     # bottom-centre → left gap
+                    entries[edge.id] = (0.0, 0.5)   # target LEFT face
 
     # 1c. Two-sided fan-out for a SOURCE node (v1.5.1, variant A). A node that is
     #     the *start* of several downward flows — a load balancer or DNS that
@@ -2841,6 +3485,44 @@ def _place_and_route(spec: DiagramSpec) -> "PlacedDiagram":
             exits[eid] = (0.5, 1.0)              # bottom-centre → straight drop
             entries[eid] = (0.5, 0.0)            # into the target's top-centre
 
+    # 1c2. Crowded-right relief via the straight drop (v1.6.0). Step 1c above only
+    #     fires when a source has >= 2 *downward* edges, so it misses the very
+    #     common shape where a node fans out sideways along its row AND has one
+    #     branch to the tier directly below it: three exits pile onto the right
+    #     face, and the downward one — whose target is in the same column — has to
+    #     turn, run back left under the row, and cross both siblings on the way
+    #     (``app_a2``'s l19/l20/l21, where l20 crossed l21 twice and l19 once).
+    #
+    #     That branch has a clean vertical available, which is what the standard
+    #     asks for anyway ("the branch whose target is directly below in the same
+    #     column exits the bottom"). Take it: bottom-centre to top-centre, no
+    #     turns, no lane, nothing to cross. The right face drops to two exits, so
+    #     the overflow valve below no longer needs to spill anything either.
+    #
+    #     Scoped tight: the face must be genuinely crowded (>= MAX_SIDE_EXITS
+    #     exits) and there must be EXACTLY ONE directly-below branch, so we never
+    #     have to choose between two bottom stubs.
+    right_count: Dict[str, List[str]] = {}
+    for edge in spec.edges:
+        if _exit_side(exits[edge.id]) == "right":
+            right_count.setdefault(edge.source, []).append(edge.id)
+    for src_id, eids in sorted(right_count.items()):
+        if len(eids) < MAX_SIDE_EXITS:
+            continue
+        src = placed[src_id]
+        straight_down = [
+            eid for eid in eids
+            if _box_directly_below(
+                src, placed[spec.edges[order_index[eid]].target],
+                [b for nid, b in placed.items()
+                 if nid not in (src_id, spec.edges[order_index[eid]].target)],
+            )
+        ]
+        if len(straight_down) == 1:
+            eid = straight_down[0]
+            exits[eid] = (0.5, 1.0)              # bottom-centre
+            entries[eid] = (0.5, 0.0)            # into the target's top-centre
+
     # 1d. Overflow valve (v1.5.1). A node's RIGHT face has room for only so many
     #     distinct fan-out lanes before their below-row corridors start crossing
     #     one another and the straight stub of an adjacent target (app→cache/db/obj:
@@ -2860,9 +3542,22 @@ def _place_and_route(spec: DiagramSpec) -> "PlacedDiagram":
         s, t = placed[edge.source], placed[edge.target]
         if is_right and t.x > s.x:               # a right-going fan-out edge
             right_by_src.setdefault(edge.source, []).append(edge.id)
+    #
+    #     v1.6.0: the valve's premise — "the right face has room for only two
+    #     distinct fan-out lanes" — was true only while every fan-out ran BELOW its
+    #     row. Now that a fan-out can also run in the free band ABOVE the row
+    #     (:func:`decide_lane_sides`), a three-exit face can be served without
+    #     spilling anything: one branch above, one level, one below, each leaving
+    #     toward its own lane. So the valve stands down when the face has a branch
+    #     that can use the above lane and is within MAX_SIDE_EXITS — which is the
+    #     reviewer's own split of ``app_a1``'s fan-out. It still fires when every
+    #     branch is stuck in the below band.
+    pre_sides = decide_lane_sides(spec, placed, containers, exits, entries)
     for src_id, eids in right_by_src.items():
         if len(eids) <= MAX_SIDE_EXITS - 1:      # <= 2 right exits → no overflow
             continue
+        if len(eids) <= MAX_SIDE_EXITS and any(pre_sides.get(eid) for eid in eids):
+            continue                             # a free above-row lane absorbs it
         src = placed[src_id]
         # Keep the two NEAREST targets on the right face; spill the rest (farthest
         # first). "Adjacent" straight targets (a same-row neighbour) are always
@@ -2930,27 +3625,6 @@ def _place_and_route(spec: DiagramSpec) -> "PlacedDiagram":
         for eid, pt in spread_entries(group):
             entries[eid] = pt
 
-    # 2b2. Rule H — for a long-haul exit that the spread ALREADY shifted OFF the
-    #     centre (a 2nd/3rd edge on the side), choose WHICH quarter by its
-    #     corridor side: a run rising into an ABOVE-row corridor takes the UPPER
-    #     quarter, one dropping into a BELOW-row corridor the LOWER quarter, so
-    #     its stub leaves toward the corridor it will run in and two long runs
-    #     from one row don't cross each other's stubs (edge 2 "exit higher").
-    #     The FIRST edge on the side (kept at centre 0.5 by the spread) is left
-    #     untouched — "перший по центру" (edge 1 stays centred).
-    for edge in spec.edges:
-        kind = classify_edge(edge, placed)
-        if kind not in ("cross-region", "back-edge"):
-            continue
-        ex, ey = exits[edge.id]
-        if abs(ey - 0.5) < 1e-9:
-            continue  # this is the centred first edge on its side — don't move it
-        # A shifted long-haul exit leaves the UPPER quarter ("вийти вище") so its
-        # stub sits clear ABOVE the centred first edge's down-path, then it drops
-        # into its own (lower/over) corridor lane — the two stubs no longer merge
-        # at the glyph (edge 2 above edge 1).
-        exits[edge.id] = (ex, _UPPER_QUARTER)
-
     # 2b3. Rule H-bottom (v1.5.1): a BOTTOM-face fan-out branch that turns toward
     #     the LEFT corridor (its entry is the target's LEFT face) must leave from
     #     the bottom-LEFT band, and the straight-down sibling (entry TOP) keeps
@@ -2961,13 +3635,69 @@ def _place_and_route(spec: DiagramSpec) -> "PlacedDiagram":
     #     diverge from the start — the straight one drops centre, the left one
     #     steps out left — with no crossing. Only touches bottom exits whose
     #     entry is a left face; a top-entry straight drop is left centred.
+    #
+    #     v1.6.0 guard: this runs AFTER the spread, so moving EVERY left-entry
+    #     bottom branch to the one left band re-merges them when a source has more
+    #     than one such branch (three downward edges from one node: two spilled
+    #     left-entry branches both landing on 0.25, an ``exit-thirds``
+    #     "bottom-exits-merge"). Keeping two stubs DISTINCT matters more than
+    #     which band each takes, so the left bias is applied only when the source
+    #     has exactly one left-entry bottom branch; otherwise the spread's
+    #     already-distinct bands stand.
+    _left_bottom_by_src: Dict[str, List[str]] = {}
     for edge in spec.edges:
         ex, ey = exits[edge.id]
         if ey is None or ey < 1.0:
             continue  # not a bottom exit
         nx, _ny = entries[edge.id]
         if nx is not None and nx <= 0.0:          # left-corridor branch
-            exits[edge.id] = (_UPPER_QUARTER, ey)  # bottom-LEFT band (0.25)
+            _left_bottom_by_src.setdefault(edge.source, []).append(edge.id)
+    for eids in _left_bottom_by_src.values():
+        if len(eids) != 1:
+            continue                              # keep the spread's distinct bands
+        eid = eids[0]
+        exits[eid] = (_UPPER_QUARTER, exits[eid][1])  # bottom-LEFT band (0.25)
+
+    # 2b4. Monotone exit bands on the RIGHT face (v1.6.0), replacing the old
+    #     Rule H. Rule H had the right idea — "a run rising into an above-row
+    #     corridor takes the upper quarter, one dropping into a below-row corridor
+    #     the lower quarter" — but the code it shipped pinned EVERY shifted
+    #     long-haul exit to the UPPER quarter regardless of where its corridor
+    #     actually ran, and it only looked at cross-region / back-edge kinds. A
+    #     descending branch therefore left from ABOVE the level sibling it then had
+    #     to cross on the way down to its lane: the l19/l20 tangle (a fan-out
+    #     crossing a level run, then its own sibling twice), the l14/l15 pair, and
+    #     the s1/s5 pair in every summary. Four crossings per landscape that the
+    #     metric could not even see until its shared-endpoint exemption was lifted.
+    #
+    #     Instead, rank every branch on a face by the route it will actually take
+    #     (:func:`_exit_band_rank`) and hand out the bands top-to-bottom in rank
+    #     order (:func:`_assign_exit_bands`): above-going branches leave high,
+    #     level runs keep the centre, below-going branches leave low, and a
+    #     back-runner — whose turn column is necessarily the nearest lane — goes
+    #     outermost so no sibling crosses it at the glyph. Every stub then diverges
+    #     from the face toward its own lane.
+    #
+    #     Runs AFTER 2b/2b3 so it sees the final faces (the bottom-face spills are
+    #     already out of the right-face groups) and it only rewrites the along-face
+    #     band, never the face itself — so the directional contract and
+    #     ``check_exit_thirds`` are untouched.
+    lane_sides = decide_lane_sides(spec, placed, containers, exits, entries)
+    right_face: Dict[str, List[str]] = {}
+    for edge in spec.edges:
+        if _exit_side(exits[edge.id]) == "right":
+            right_face.setdefault(edge.source, []).append(edge.id)
+    for src_id, eids in sorted(right_face.items()):
+        ranked = sorted(
+            ((eid, _exit_band_rank(
+                spec.edges[order_index[eid]],
+                classify_edge(spec.edges[order_index[eid]], placed),
+                placed, lane_sides,
+            )) for eid in eids),
+            key=lambda pair: (pair[1], _mk(pair[0])),
+        )
+        for eid, band in _assign_exit_bands(ranked).items():
+            exits[eid] = _with_band(exits[eid], "right", band)
 
     # 2c. Snap every contact FRACTION so its absolute point lands on the grid
     #     (icon centre 0.5 → x0+39 is off-grid; a grid-snapped waypoint would
@@ -2983,7 +3713,24 @@ def _place_and_route(spec: DiagramSpec) -> "PlacedDiagram":
     allocator = CorridorAllocator()
     placed_edges: List[PlacedEdge] = []
     for edge in spec.edges:
-        pts = route_edge(edge, exits[edge.id], entries[edge.id], allocator, obstacles, containers)
+        pts = route_edge(
+            edge, exits[edge.id], entries[edge.id], allocator, obstacles, containers,
+            lane_sides.get(edge.id),
+        )
+        # Orthogonalise once, centrally (v1.6.0). Every router computes its
+        # corridor correctly but emits the waypoint next to a contact from the
+        # corridor's coordinates rather than the contact's, leaving a diagonal
+        # leg that draw.io resolves into a corner of its own choosing. Rewriting
+        # the finished polyline here fixes all eight routers at once and keeps the
+        # rewrite in one testable place.
+        src_box, tgt_box = placed[edge.source], placed[edge.target]
+        pts = orthogonalise_route(
+            _contact_point(src_box, exits[edge.id]),
+            pts,
+            _contact_point(tgt_box, entries[edge.id]),
+            contact_faces(*exits[edge.id]),
+            contact_faces(*entries[edge.id]),
+        )
         placed_edges.append(
             PlacedEdge(spec=edge, exit=exits[edge.id], entry=entries[edge.id], points=list(pts))
         )
@@ -3142,7 +3889,10 @@ def layout(spec: DiagramSpec) -> "PlacedDiagram":
     for _ in range(MAX_REPAIR_ITERS):
         if findings.clean:
             return _normalise_origin(candidate, margins)
-        candidate = _repair(candidate, findings)
+        # Re-align after each repair: a corridor bump moves interior waypoints but
+        # not the pinned contacts, so an aligned end leg comes back diagonal
+        # (see orthogonalise_candidate).
+        candidate = orthogonalise_candidate(_repair(candidate, findings))
         findings = _run_oracle(candidate)
 
     if findings.clean:

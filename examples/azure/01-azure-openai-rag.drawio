@@ -40,46 +40,45 @@
         <mxCell id="AzureSqlDB" parent="1" style="image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/databases/SQL_Database.svg" value="AzureSqlDB" vertex="1">
           <mxGeometry height="64" width="64" x="1120" y="640" as="geometry" />
         </mxCell>
-        <mxCell id="e1" edge="1" parent="1" source="User" style="edgeStyle=orthogonalEdgeStyle;endArrow=open;endFill=0;strokeWidth=1.5;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="AppGateway" value="1">
+        <mxCell id="e1" edge="1" parent="1" source="User" style="edgeStyle=orthogonalEdgeStyle;endArrow=open;endFill=0;strokeWidth=1.5;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.4688;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="AppGateway" value="1">
+          <mxGeometry relative="1" as="geometry">
+            
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e2" edge="1" parent="1" source="AppGateway" style="edgeStyle=orthogonalEdgeStyle;endArrow=open;endFill=0;strokeWidth=1.5;html=1;exitX=1;exitY=0.4688;exitDx=0;exitDy=0;entryX=0;entryY=0.4688;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="ApiFunction" value="2">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" edge="1" parent="1" source="ApiFunction" style="edgeStyle=orthogonalEdgeStyle;endArrow=open;endFill=0;strokeWidth=1.5;html=1;dashed=1;exitX=1;exitY=0.1562;exitDx=0;exitDy=0;entryX=0;entryY=0.4688;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="ServiceBus" value="3">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="140" y="472" />
+              <mxPoint x="650.00" y="450.00" />
+              <mxPoint x="650.00" y="250.00" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="e2" edge="1" parent="1" source="AppGateway" style="edgeStyle=orthogonalEdgeStyle;endArrow=open;endFill=0;strokeWidth=1.5;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="ApiFunction" value="2">
+        <mxCell id="e4" edge="1" parent="1" source="ServiceBus" style="edgeStyle=orthogonalEdgeStyle;endArrow=open;endFill=0;strokeWidth=1.5;html=1;dashed=1;exitX=1;exitY=0.4688;exitDx=0;exitDy=0;entryX=0;entryY=0.4688;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="IngestFunction" value="4">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e3" edge="1" parent="1" source="ApiFunction" style="edgeStyle=orthogonalEdgeStyle;endArrow=open;endFill=0;strokeWidth=1.5;html=1;dashed=1;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="ServiceBus" value="3">
+        <mxCell id="e5" edge="1" parent="1" source="ApiFunction" style="edgeStyle=orthogonalEdgeStyle;endArrow=open;endFill=0;strokeWidth=1.5;html=1;exitX=1;exitY=0.4688;exitDx=0;exitDy=0;entryX=0;entryY=0.4688;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="AzureOpenAI" value="5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" edge="1" parent="1" source="ApiFunction" style="edgeStyle=orthogonalEdgeStyle;endArrow=open;endFill=0;strokeWidth=1.5;html=1;exitX=0.4688;exitY=1;exitDx=0;exitDy=0;entryX=0.4688;entryY=0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="KeyVault" value="6">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" edge="1" parent="1" source="IngestFunction" style="edgeStyle=orthogonalEdgeStyle;endArrow=open;endFill=0;strokeWidth=1.5;html=1;exitX=0.4688;exitY=1;exitDx=0;exitDy=0;entryX=0.4688;entryY=0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="BlobStorage" value="7">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" edge="1" parent="1" source="IngestFunction" style="edgeStyle=orthogonalEdgeStyle;endArrow=open;endFill=0;strokeWidth=1.5;html=1;exitX=1;exitY=0.4688;exitDx=0;exitDy=0;entryX=0.4688;entryY=0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="AzureSqlDB" value="8">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="572" y="252" />
+              <mxPoint x="1150.00" y="250.00" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="e4" edge="1" parent="1" source="ServiceBus" style="edgeStyle=orthogonalEdgeStyle;endArrow=open;endFill=0;strokeWidth=1.5;html=1;dashed=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="IngestFunction" value="4">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e5" edge="1" parent="1" source="ApiFunction" style="edgeStyle=orthogonalEdgeStyle;endArrow=open;endFill=0;strokeWidth=1.5;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="AzureOpenAI" value="5">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e6" edge="1" parent="1" source="ApiFunction" style="edgeStyle=orthogonalEdgeStyle;endArrow=open;endFill=0;strokeWidth=1.5;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="KeyVault" value="6">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e7" edge="1" parent="1" source="IngestFunction" style="edgeStyle=orthogonalEdgeStyle;endArrow=open;endFill=0;strokeWidth=1.5;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="BlobStorage" value="7">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e8" edge="1" parent="1" source="IngestFunction" style="edgeStyle=orthogonalEdgeStyle;endArrow=open;endFill=0;strokeWidth=1.5;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="AzureSqlDB" value="8">
+        <mxCell id="e9" edge="1" parent="1" source="AzureOpenAI" style="edgeStyle=orthogonalEdgeStyle;endArrow=open;endFill=0;strokeWidth=1.5;html=1;exitX=0.4688;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.4688;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="AzureSqlDB" value="9">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="1152" y="252" />
-            </Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="e9" edge="1" parent="1" source="AzureOpenAI" style="edgeStyle=orthogonalEdgeStyle;endArrow=open;endFill=0;strokeWidth=1.5;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" target="AzureSqlDB" value="9">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="752" y="672" />
+              <mxPoint x="750.00" y="670.00" />
             </Array>
           </mxGeometry>
         </mxCell>
