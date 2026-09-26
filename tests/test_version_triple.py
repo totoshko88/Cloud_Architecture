@@ -30,12 +30,30 @@ from rule_engine.version_guard import (
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 
+#: ``VERSION`` is **git-ignored** and written by CI at tag time
+#: (`.gitlab-ci.yml` → ``echo "${RELEASE_VERSION}" > VERSION``), so a fresh clone
+#: legitimately has no such file. That is the designed state, not drift — CI's own
+#: release gate checks the tag against the CHANGELOG instead
+#: (``version_guard CHANGELOG.md "${RELEASE_VERSION}"``).
+#:
+#: The tests that build their **own** trees below therefore always run; only the
+#: four that read the **real** repository are conditional. Whenever the file does
+#: exist — a developer's working tree, or a CI job after the tag stage — they run
+#: and a disagreement fails, which is exactly the 1.5.4 drift this module was
+#: written to catch. Asserting the file's presence unconditionally would instead
+#: turn every bare-checkout pipeline red.
+requires_version_file = pytest.mark.skipif(
+    read_version_file(_REPO_ROOT) is None,
+    reason="VERSION is git-ignored and written by CI at tag time; absent in a bare checkout",
+)
+
 
 # ---------------------------------------------------------------------------
 # The real repository
 # ---------------------------------------------------------------------------
 
 
+@requires_version_file
 def test_this_repository_has_a_consistent_version_triple():
     """The shipped tree's three version sources agree.
 
@@ -46,12 +64,29 @@ def test_this_repository_has_a_consistent_version_triple():
     assert agreed, "the agreed version must be a non-empty Semantic Version"
 
 
+@requires_version_file
 def test_repo_version_sources_are_all_present():
     """Each of the three sources is readable and carries a version."""
     versions = version_triple(_REPO_ROOT)
     assert set(versions) == {VERSION_FILE, PYPROJECT_FILE, CHANGELOG_FILE}
     for name, value in versions.items():
         assert value, f"{name} records no version"
+
+
+def test_the_two_committed_sources_always_agree():
+    """``pyproject.toml`` and the top CHANGELOG heading are both **committed**, so
+    they must agree in every checkout — including a bare one with no ``VERSION``.
+
+    This is the part of the triple that a fresh clone can still check, and it is
+    the half that a version bump actually has to edit by hand.
+    """
+    pyproject = read_pyproject_version(_REPO_ROOT)
+    changelog = read_changelog_version(_REPO_ROOT)
+    assert pyproject, "pyproject.toml records no version"
+    assert pyproject == changelog, (
+        f"pyproject.toml={pyproject!r} but the newest CHANGELOG section is "
+        f"{changelog!r}; both are committed, so they must agree"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -188,6 +223,7 @@ def test_cli_triple_rejects_extra_arguments(capsys):
     assert main(["--triple", "a", "b"]) == 2
 
 
+@requires_version_file
 def test_cli_triple_on_this_repository(capsys):
     """The CLI mode CI runs passes against the real tree."""
     assert main(["--triple", str(_REPO_ROOT)]) == 0

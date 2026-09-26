@@ -127,13 +127,18 @@ def test_power_plugin_version_matches_the_engine():
 
     It sat at ``1.0.0`` through nine engine releases, so a user could not tell
     which engine a Power install carried.
+
+    Compared against ``pyproject.toml`` rather than ``VERSION``: both are
+    **committed**, so this holds in every checkout. ``VERSION`` is git-ignored and
+    written by CI at tag time, and the three-way agreement between it,
+    ``pyproject.toml`` and the CHANGELOG is ``tests/test_version_triple.py``'s job.
     """
     import json
 
-    from rule_engine.version_guard import read_version_file
+    from rule_engine.version_guard import read_pyproject_version
 
     plugin = json.loads(
         (_REPO_ROOT / "powers" / "rule-engine-artifacts" / "plugin.json")
         .read_text(encoding="utf-8")
     )
-    assert plugin["version"] == read_version_file(_REPO_ROOT)
+    assert plugin["version"] == read_pyproject_version(_REPO_ROOT)
