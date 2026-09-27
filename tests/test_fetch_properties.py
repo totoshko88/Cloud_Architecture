@@ -21,6 +21,8 @@ from __future__ import annotations
 import hashlib
 import io
 import urllib.request
+
+import pytest
 from pathlib import Path
 from typing import List, Optional, Sequence
 
@@ -416,6 +418,7 @@ def test_unpack_fresh_rejects_zip_slip_entry(tmp_path):
 #   services as candidates — it never guesses an arbitrary winner.
 
 from rule_engine.asset_index import (  # noqa: E402
+    _BUILTIN_STENCILS,
     _STRIP_TOKENS,
     index_provider,
     normalize_slug,
@@ -433,7 +436,11 @@ _core_token = st.text(
     alphabet="abcdefghijklmnopqrstuvwxyz",
     min_size=3,
     max_size=8,
-).filter(lambda t: t not in _MEANINGFUL_WORDS and t not in _STRIP_TOKENS)
+).filter(
+    lambda t: t not in _MEANINGFUL_WORDS
+    and t not in _STRIP_TOKENS
+    and t not in _BUILTIN_STENCILS["aws"]
+)
 
 # One or two core tokens joined by a space form a base service name like
 # "private link" — a realistic multi-word service without any stripped word.
@@ -517,6 +524,239 @@ def test_ambiguous_exact_slug_is_unresolved_with_candidates(
     assert r.source == "unresolved"
     assert r.asset_path is None and r.stencil is None
     assert {display_a, display_b} <= set(r.candidates)
+
+
+# --------------------------------------------------------------------------- #
+# Preservation (honest-gates-slug-builtin-flake, task 2)
+# Property 2: Preservation — Non-Built-in Ambiguity And Slug Retention Unchanged
+# --------------------------------------------------------------------------- #
+#
+# Observation-first: the behaviours below are what the fix must PRESERVE, and
+# they already hold on the UNFIXED suite. They are captured as their own
+# deterministic property tests so the baseline is pinned independently of the
+# flaky R6.7 test (whose ``_core_token`` generator is still under-constrained
+# until task 3 and so can wander into the built-in bug condition).
+#
+#   * leg 1 (R6.6) — meaningful words survive vendor-stripping. This is exactly
+#     ``test_slug_retains_meaningful_words`` above, which passes unchanged; it is
+#     the retention leg of Property 2 and needs no duplicate here.
+#
+#   * leg 2 (R6.7, non-built-in) — an ambiguous slug that is NOT a curated
+#     built-in stencil slug resolves to ``unresolved`` with both display names in
+#     ``candidates`` (e.g. the ``core='vpc'`` control from design.md). This is
+#     the fail-honest behaviour the fix must leave intact for every non-built-in
+#     ambiguous core.
+
+#: A single-token collision core guaranteed NOT to be a curated built-in AWS
+#: stencil slug — so this preservation test only ever exercises the non-built-in
+#: ambiguous path (the behaviour to preserve), never the built-in bug condition
+#: that task 1 surfaces. Referencing ``_BUILTIN_STENCILS['aws']`` (the real
+#: table) keeps it correct if a future built-in is added.
+_non_builtin_collision_core = st.lists(_core_token, min_size=1, max_size=2).map(
+    lambda ts: "-".join(ts)
+).filter(lambda slug: slug not in _BUILTIN_STENCILS["aws"])
+
+
+# Feature: honest-gates-slug-builtin-flake, Property 2: Preservation — Non-Built-in Ambiguity And Slug Retention Unchanged
+# **Validates: Requirements 3.1, 3.2, 3.3**
+@fs_settings
+@given(core=_non_builtin_collision_core, prefixes=_vendor_prefix_pair)
+def test_non_builtin_ambiguous_slug_preserved_unresolved(
+    core, prefixes, tmp_path_factory
+):
+    """R6.7 (non-built-in): an ambiguous, non-built-in slug stays ``unresolved``.
+
+    The preservation baseline: for any ambiguous slug that is NOT a curated
+    built-in stencil slug (the ``core='vpc'`` control generalised), the resolver
+    is fail-honest — ``source='unresolved'``, no asset/stencil guessed, and every
+    competing display name listed as a candidate. Production code is unchanged,
+    so this must continue to hold after the task-3 generator fix.
+    """
+    prefix_a, prefix_b = prefixes
+    slug = core  # both files vendor-strip to exactly this slug
+    display_a = f"{prefix_a} {core.replace('-', ' ')}"
+    display_b = f"{prefix_b} {core.replace('-', ' ')}"
+
+    root = tmp_path_factory.mktemp("awspack") / "aws"
+    svc = root / "Architecture-Service-Icons_07312026"
+    (svc / "Arch_A" / "32").mkdir(parents=True)
+    (svc / "Arch_A" / "32" / f"Arch_{prefix_a}-{core}_32.svg").write_text("<svg/>")
+    (svc / "Arch_B" / "32").mkdir(parents=True)
+    (svc / "Arch_B" / "32" / f"Arch_{prefix_b}-{core}_32.svg").write_text("<svg/>")
+
+    idx = index_provider("aws", str(root))
+
+    # The non-built-in slug is recorded as ambiguous with BOTH display names.
+    assert slug not in _BUILTIN_STENCILS["aws"]
+    assert slug in idx.ambiguous
+    assert {display_a, display_b} <= set(idx.ambiguous[slug])
+
+    # Fail-honest: unresolved, nothing guessed, every competitor a candidate.
+    r = resolve_asset("aws", slug, idx)
+    assert r.source == "unresolved"
+    assert r.asset_path is None and r.stencil is None
+    assert {display_a, display_b} <= set(r.candidates)
+
+
+# --------------------------------------------------------------------------- #
+# Bug condition exploration → pinned expected behaviour
+# (honest-gates-slug-builtin-flake, task 1 → task 3.2)
+# Property 1: Bug Condition — Ambiguity Test Never Collides With A Built-in Slug
+# --------------------------------------------------------------------------- #
+#
+# ORIGIN (task 1, bug-condition demonstration). This test began as the
+# bug-condition exploration for the latent flake in
+# ``test_ambiguous_exact_slug_is_unresolved_with_candidates`` (R6.7): its
+# ``_core_token`` strategy could draw a ``core`` that is also a single-token
+# curated AWS built-in stencil slug (``eks``/``s3``/``rds``/``sqs``/``lambda``/
+# ``bedrock``). For such a core, ``resolve_asset`` correctly short-circuits to
+# ``source='builtin'`` (step 1 of the documented resolution order) BEFORE the
+# ambiguous map the R6.7 test tries to exercise — so the pre-fix ``unresolved``
+# assertion failed, which is what demonstrated the flake existed.
+#
+# It is scoped (parametrized) to the concrete cores rather than left to
+# Hypothesis, so it exercises the reported counterexample ``core='eks'`` and its
+# five siblings deterministically on every run.
+#
+# TRANSITION (task 3.2, pinned expected behaviour). Once task 3.1 constrained
+# ``_core_token`` to never draw a built-in slug, the flake is resolved and the
+# bug-condition demonstration has done its job. A bug-condition test's pre-fix
+# assertion is NOT the expected behaviour after the fix — leaving the old
+# ``unresolved`` assertion here would hard-fail against the correct resolver
+# (which returns ``builtin`` for a built-in core) and break the checkpoint.
+# So the assertion is now flipped to the CORRECT post-fix expected behaviour:
+# for a built-in core the resolver returns ``source='builtin'`` (built-in
+# priority, step 1 of ``asset-packs.md`` "Icon Resolution Order"). This is
+# Property 3 (built-in priority) generalised across ALL six single-token
+# built-in slugs, and it is exactly why the R6.7 generator must exclude them.
+#
+# EXPECTED OUTCOME: all six parametrized cases PASS — ``resolve_asset`` returns
+# ``source='builtin'`` with the stencil id set and ``asset_path``/``candidates``
+# unused — pinning built-in-over-ambiguous priority for every single-token
+# built-in AWS slug.
+
+#: The single-token members of ``_BUILTIN_STENCILS['aws']`` — every core the
+#: ``_core_token`` strategy can draw that collides with resolver step 1.
+#: ``secrets-manager`` is excluded: it is two tokens, so it can never be a
+#: single core token.
+_SINGLE_TOKEN_BUILTIN_AWS_SLUGS = ("eks", "s3", "rds", "sqs", "lambda", "bedrock")
+
+
+# Feature: honest-gates-slug-builtin-flake, Property 1: Bug Condition — Ambiguity Test Never Collides With A Built-in Slug
+# **Validates: Requirements 1.1, 1.2**
+@pytest.mark.parametrize("core", _SINGLE_TOKEN_BUILTIN_AWS_SLUGS)
+def test_bug_condition_ambiguous_builtin_slug_collides(core, tmp_path):
+    """Built-in priority pinned across every single-token built-in AWS slug.
+
+    Build the same two-file AWS pack as
+    ``test_ambiguous_exact_slug_is_unresolved_with_candidates`` — two display
+    names differing only by a stripped vendor prefix, both normalising to
+    ``core`` — where ``core`` is a single-token curated AWS built-in stencil
+    slug. The slug IS recorded as ambiguous, yet ``resolve_asset`` consults
+    ``_BUILTIN_STENCILS`` (step 1 of the ``asset-packs.md`` "Icon Resolution
+    Order") BEFORE the ambiguous map (step 2), so it returns
+    ``source='builtin'`` with the stencil id set and ``asset_path``/
+    ``candidates`` unused.
+
+    This began (task 1) as the bug-condition exploration and asserted the
+    pre-fix ``unresolved`` expectation to demonstrate the flake. Once task 3.1
+    constrained ``_core_token`` to never draw a built-in slug, the flake was
+    resolved; per task 3.2 the assertion is flipped to the CORRECT post-fix
+    behaviour (built-in priority), Property 3 generalised across all six
+    single-token built-in slugs. Leaving the old ``unresolved`` assertion here
+    would hard-fail against the correct resolver and break the checkpoint.
+    """
+    prefix_a, prefix_b = ("Amazon", "AWS")
+    slug = core  # both files vendor-strip to exactly this slug
+    display_a = f"{prefix_a} {core.replace('-', ' ')}"
+    display_b = f"{prefix_b} {core.replace('-', ' ')}"
+
+    root = tmp_path / "aws"
+    svc = root / "Architecture-Service-Icons_07312026"
+    (svc / "Arch_A" / "32").mkdir(parents=True)
+    (svc / "Arch_A" / "32" / f"Arch_{prefix_a}-{core}_32.svg").write_text("<svg/>")
+    (svc / "Arch_B" / "32").mkdir(parents=True)
+    (svc / "Arch_B" / "32" / f"Arch_{prefix_b}-{core}_32.svg").write_text("<svg/>")
+
+    idx = index_provider("aws", str(root))
+
+    # The slug is genuinely ambiguous with BOTH distinct display names — exactly
+    # as the R6.7 test sets up (these asserts pass; the collision is real).
+    assert slug in idx.ambiguous
+    assert {display_a, display_b} <= set(idx.ambiguous[slug])
+
+    # Post-fix expected behaviour: resolve_asset consults _BUILTIN_STENCILS
+    # (step 1) before the ambiguous map (step 2), so a built-in core resolves to
+    # source='builtin' (e.g. mxgraph.aws4.eks) with the stencil id set and no
+    # asset path / candidate list used.
+    r = resolve_asset("aws", slug, idx)
+    assert r.source == "builtin"
+    assert r.stencil == _BUILTIN_STENCILS["aws"][slug]
+    assert r.asset_path is None
+    assert not r.candidates
+
+
+# --------------------------------------------------------------------------- #
+# Built-in priority contract (honest-gates-slug-builtin-flake, task 3.1)
+# Property 3: Built-in Priority — A Built-in Slug That Is Also Ambiguous
+#             Resolves To Built-in
+# --------------------------------------------------------------------------- #
+#
+# The companion to the bug-condition test above. It documents, as a DELIBERATE
+# contract rather than an accident, that the resolver's built-in stencil (step 1
+# of the asset-packs.md "Icon Resolution Order") takes priority over the
+# ambiguous-slug fail-honest path (which lives inside step 2). This is exactly
+# why the R6.7 ambiguity test must never draw a built-in slug as its collision
+# core — and the reason the ``_core_token`` generator is now constrained to
+# exclude ``_BUILTIN_STENCILS['aws']``.
+#
+# A plain deterministic unit test (not property-based): the input is a single
+# concrete built-in slug that is ALSO ambiguous, and the asserted outcome is
+# fixed.
+
+
+# Feature: honest-gates-slug-builtin-flake, Property 3: Built-in Priority — A Built-in Slug That Is Also Ambiguous Resolves To Built-in
+# **Validates: Requirements 2.2**
+def test_builtin_slug_that_is_also_ambiguous_resolves_to_builtin(tmp_path):
+    """R2.2: a built-in slug that is also ambiguous resolves to ``builtin``.
+
+    Build the same two-file AWS pack the R6.7 test uses, colliding on ``eks`` —
+    a single-token curated AWS built-in stencil slug. The index genuinely
+    records ``eks`` as ambiguous (two distinct display names), yet
+    ``resolve_asset`` consults ``_BUILTIN_STENCILS`` (step 1) BEFORE the
+    ambiguous map (step 2), so it returns ``source='builtin'`` with the stencil
+    id set and ``asset_path``/``candidates`` unused. This pins built-in priority
+    as a deliberate contract.
+    """
+    core = "eks"  # a single-token curated AWS built-in stencil slug
+    assert core in _BUILTIN_STENCILS["aws"]  # guard: the premise still holds
+
+    prefix_a, prefix_b = ("Amazon", "AWS")
+    slug = core  # both files vendor-strip to exactly this slug
+    display_a = f"{prefix_a} {core}"
+    display_b = f"{prefix_b} {core}"
+
+    root = tmp_path / "aws"
+    svc = root / "Architecture-Service-Icons_07312026"
+    (svc / "Arch_A" / "32").mkdir(parents=True)
+    (svc / "Arch_A" / "32" / f"Arch_{prefix_a}-{core}_32.svg").write_text("<svg/>")
+    (svc / "Arch_B" / "32").mkdir(parents=True)
+    (svc / "Arch_B" / "32" / f"Arch_{prefix_b}-{core}_32.svg").write_text("<svg/>")
+
+    idx = index_provider("aws", str(root))
+
+    # The slug IS genuinely ambiguous in the index (the collision is real) ...
+    assert slug in idx.ambiguous
+    assert {display_a, display_b} <= set(idx.ambiguous[slug])
+
+    # ... but the built-in stencil (step 1) wins over the ambiguous path (step 2):
+    # source='builtin', the stencil id is set, and no asset/candidate is used.
+    r = resolve_asset("aws", slug, idx)
+    assert r.source == "builtin"
+    assert r.stencil == _BUILTIN_STENCILS["aws"][slug]
+    assert r.asset_path is None
+    assert not r.candidates
+
 
 # --------------------------------------------------------------------------- #
 # Property 25 — Pin rewriting preserves everything else (R6.5)

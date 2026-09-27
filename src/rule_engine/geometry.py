@@ -58,6 +58,13 @@ from rule_engine.drawio_model import Page, absolute_origin
 # are expected to be whole multiples of it (diagram-standards Layout Geometry).
 GRID = 10
 
+# The mandated container padding per side (diagram-standards Container Padding /
+# ``diagram_layout.CONTAINER_PAD`` = 30). ``check_container_dead_space`` grows
+# each child's footprint by this on all four sides to compute the container's
+# minimum legitimate area demand. ``diagram_layout`` imports ``geometry`` only
+# lazily (inside functions), so this top-level import is cycle-safe.
+from rule_engine.diagram_layout import CONTAINER_PAD
+
 # The label band drawn *below* a node's icon (``verticalLabelPosition=bottom``).
 # A node's on-canvas footprint is not just its 78x78 icon box — the service name
 # renders in a band beneath it, and that band collides with the next row / the
@@ -1409,6 +1416,73 @@ def check_node_connectivity(geo: DiagramGeometry) -> List[str]:
         for nid in geo.nodes
         if nid not in endpoints and nid not in geo.overlay_nodes
     )
+
+
+# Calibrated dead-space threshold (placement-and-gates task 8). Measured across
+# the 57 shipped corpus containers: the sparsest legitimate container packs at a
+# ratio of 4.536 (container area / summed direct-child footprint+padding demand).
+# The threshold is set to 5.0 — above the sparsest tier with headroom — so that
+# 0 of 57 shipped containers flag. A container above this is sized far larger
+# than its children legitimately demand: the opposite defect from
+# ``container-padding`` (which checks the *minimum* clearance).
+DEAD_SPACE_RATIO = 5.0
+
+
+def check_container_dead_space(
+    geo: DiagramGeometry,
+    pad: int = CONTAINER_PAD,
+    threshold: float = DEAD_SPACE_RATIO,
+    label_band: float = LABEL_BAND,
+) -> List[Tuple[str, float]]:
+    """Return ``(container_id, ratio)`` for containers with excessive dead space.
+
+    The mirror of :func:`check_container_padding`: where padding checks the
+    *minimum* clearance a container leaves its children, this checks the
+    *maximum* slack. For each Boundary container the ratio measured is
+
+        ratio = container_area / Σ(direct-child footprint grown by ``pad`` on all 4 sides)
+
+    A **direct child** is a node or nested container whose *tightest* enclosing
+    container is this one (mirrors :func:`_tightest_enclosing`), so a node inside
+    a nested AZ counts against the AZ, and the VPC counts the AZ (a nested
+    container) as its child — exactly as ``check_container_padding`` attributes
+    padding per parent tier. A node's demand is its **footprint** (icon + label
+    band) grown by ``pad``; a nested container's demand is its own box grown by
+    ``pad``. Summing that lower-bound demand and dividing the container's actual
+    area by it yields a dead-space ratio: ~1.0 means packed to the mandated
+    minimum, a large ratio means sized far larger than its children need.
+
+    A container **with no direct children is skipped** (a childless container is
+    not "dead space around children", and the ratio would divide by zero). The
+    threshold defaults to the calibrated :data:`DEAD_SPACE_RATIO`, above the
+    sparsest legitimate corpus tier so no Shipped_Diagram false-positives. Pure
+    function of the parsed geometry; advisory (never blocks on its own).
+    """
+    boxes = list(geo.containers.values())
+    out: List[Tuple[str, float]] = []
+    for cbox in boxes:
+        demand = 0.0
+        # Nodes whose tightest enclosing container is this one (by footprint).
+        for node in geo.nodes.values():
+            fp = node.footprint(label_band)
+            parent = _tightest_enclosing(fp, boxes)
+            if parent is not None and parent.id == cbox.id:
+                demand += (fp.w + 2 * pad) * (fp.h + 2 * pad)
+        # Nested containers whose tightest enclosing container is this one.
+        for child in boxes:
+            if child.id == cbox.id:
+                continue
+            parent = _tightest_enclosing(child, boxes)
+            if parent is not None and parent.id == cbox.id:
+                demand += (child.w + 2 * pad) * (child.h + 2 * pad)
+        if demand <= 0:
+            # No direct children — skip, never divide by zero (design Error
+            # Handling: a container with no children is skipped).
+            continue
+        ratio = (cbox.w * cbox.h) / demand
+        if ratio > threshold:
+            out.append((cbox.id, ratio))
+    return out
 
 
 # --------------------------------------------------------------------------- #

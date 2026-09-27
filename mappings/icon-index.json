@@ -1,11 +1,11 @@
 {
   "pack_summary": {
     "aws": {
-      "count": 1131,
+      "count": 1133,
       "sha256": "d2d166c453526471749d520e0db022c459abef759d2946cf2dd1d1c992dc6526"
     },
     "azure": {
-      "count": 634,
+      "count": 637,
       "sha256": "921594ccd1bf3d9c0a1bd7b6d924e050551a59342f2b353bb74bdcf761c35141"
     },
     "gcp": {

@@ -174,6 +174,7 @@ RULE_MERMAID_TYPE = "mermaid-type"
 RULE_MIN_FONT_SIZE = "min-font-size"
 RULE_GRID_ALIGNMENT = "grid-alignment"
 RULE_CONTAINER_PADDING = "container-padding"
+RULE_CONTAINER_DEAD_SPACE = "container-dead-space"
 RULE_EDGE_ROUTING = "edge-routing"
 RULE_NODE_OVERLAP = "node-overlap"
 RULE_ARROW_STYLE = "arrow-style"
@@ -1012,6 +1013,26 @@ def _check_container_padding(a: Artifact):
     return RuleHit(offenders=_offender_ids(findings), reason="padding")
 
 
+def _check_container_dead_space(a: Artifact):
+    """container-dead-space: a container is sized far larger than its children.
+
+    The mirror of ``container-padding``: it flags a Boundary container whose area
+    exceeds the summed footprint+padding demand of its direct children by more
+    than the calibrated ratio (``geometry.DEAD_SPACE_RATIO`` = 5.0, set above the
+    sparsest legitimate corpus tier so no shipped diagram false-positives).
+    Advisory WARNING on both classes; a container with no direct children is
+    skipped, never divided by zero (placement-and-gates Part C, R3.1/3.2/3.4).
+    """
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    findings = _geo.check_container_dead_space(geo)
+    if not findings:
+        return False
+    return RuleHit(offenders=_offender_ids(findings), reason="dead-space")
+
+
 def _check_edge_routing(a: Artifact):
     """edge-routing: a non-orthogonal edge, or an edge whose run crosses a node.
 
@@ -1472,6 +1493,13 @@ RULES: Tuple[Tuple[RuleSpec, Callable[[Artifact], _PredicateResult]], ...] = (
         RuleSpec(RULE_CONTAINER_PADDING, Severity.WARNING, landscape=Severity.ERROR),
         _check_container_padding,
     ),
+    # container-dead-space: advisory WARNING on BOTH classes (the mirror of
+    # container-padding — a container sized far larger than its children). Never
+    # blocks alone; no landscape escalation (placement-and-gates Part C).
+    (
+        RuleSpec(RULE_CONTAINER_DEAD_SPACE, Severity.WARNING),
+        _check_container_dead_space,
+    ),
     # edge-routing: a bare non-orthogonal edge is a WARNING, but a run cutting
     # through an icon it does not connect (``*-through-*``) or into its own
     # target from the wrong side (``pierces-target-*``) is an ERROR on either
@@ -1790,6 +1818,7 @@ __all__ = [
     "RULE_MIN_FONT_SIZE",
     "RULE_GRID_ALIGNMENT",
     "RULE_CONTAINER_PADDING",
+    "RULE_CONTAINER_DEAD_SPACE",
     "RULE_EDGE_ROUTING",
     "RULE_NODE_OVERLAP",
     "RULE_ARROW_STYLE",

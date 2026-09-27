@@ -1,0 +1,429 @@
+{
+  "pbtResults": {},
+  "executionHistory": {
+    "1.1 Write the property test for placement-variant legality and non-emptiness": [
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790508999511
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790512805011
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790513251939
+      }
+    ],
+    "2.1 Write the property test: placement argmin never worse than the base": [
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790508999563
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790512805963
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790513253013
+      }
+    ],
+    "2.2 Write the property test: placement determinism": [
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790508999627
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790512807338
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790513254300
+      }
+    ],
+    "3.1 Regenerate any Shipped_Diagram a move improves; re-baseline the Ratchet": [
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790508999670
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790514039832
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790514603672
+      }
+    ],
+    "4. Checkpoint A — placement loop in, deterministic, defects held or improved, gates green": [
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790508999711
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790514609966
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790514677371
+      }
+    ],
+    "5. Implement the raw-JSON → role mapper `reconcile.role_of`": [
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790508999762
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790509019559
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790509339050
+      }
+    ],
+    "6.1 Wire `rule-engine-reconcile` into CI as part of the Gate_Suite": [
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790508999810
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790513274236
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790514031904
+      }
+    ],
+    "6.2 Write the property/example test: reconciliation catches an omission": [
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790508999845
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790512808306
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790513250554
+      }
+    ],
+    "7. Checkpoint B — reconciliation gate blocks omissions, green on the shipped corpus": [
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790508999883
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790514611342
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790514678802
+      }
+    ],
+    "8. Measure container area/child-footprint ratios across the shipped corpus": [
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790508999916
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790509020532
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790509340016
+      }
+    ],
+    "9.1 Record the rule in `diagram-lint.md`; keep the rule-table/code sync test green": [
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790508999945
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790513275588
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790514033252
+      }
+    ],
+    "9.2 Write the property test: no corpus false-positive at the calibrated threshold": [
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790508999983
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790512810173
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790513255291
+      }
+    ],
+    "10. Checkpoint C — dead-space rule added, corpus clean, no rule weakened": [
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790509000019
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790514612780
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790514679807
+      }
+    ],
+    "11.1 Rebuild and commit `mappings/icon-index.json`; confirm byte-identical re-run": [
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790509000062
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790509362123
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790512780904
+      }
+    ],
+    "11.2 Write the property test for slug-disambiguation determinism": [
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790509000101
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790509363101
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790512782252
+      }
+    ],
+    "12. Checkpoint D — collisions resolved deterministically, index stable, roles unaffected": [
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790509000142
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790514613834
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790514681057
+      }
+    ],
+    "13.1 Bump the power pins (`plugin.json`, `bootstrap.sh`, workspace-init hook tag) to 1.9.0; keep `test_version_pins` green": [
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790509000186
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790514792384
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790515098815
+      }
+    ],
+    "13.2 Write the CHANGELOG 1.9.0 section (all four parts) and mark the four Open gaps Resolved (1.9.0) in `docs/REVIEW.md`": [
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790509000220
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790514792502
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790515100246
+      }
+    ],
+    "13.3 Keep CI 3.11–3.14 and run the new tests alongside the Gate_Suite": [
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790509000261
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790514792547
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790515097071
+      }
+    ],
+    "14. Final checkpoint — full suite, Gate_Suite (incl. `rule-engine-reconcile`), and version-triple guard green on 3.11–3.14": [
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790509000309
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790515107058
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790515251268
+      }
+    ],
+    "1. Implement `generate_placement_variants(spec)` in `layout/variants.py`": [
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790509018178
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790509337661
+      }
+    ],
+    "11. Implement a total, deterministic disambiguation order in `asset_index.build_icon_index`": [
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790509021763
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790509341331
+      }
+    ],
+    "2. Implement `solver.solve_placement(spec)` — the outer order-score-commit loop": [
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790509357951
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790512777178
+      }
+    ],
+    "6. Implement `rule-engine-reconcile` (CLI + `reconcile.reconcile`)": [
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790509359310
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790512778562
+      }
+    ],
+    "9. Implement `geometry.check_container_dead_space` + the `container-dead-space` rule (WARNING)": [
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790509360721
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790512779508
+      }
+    ],
+    "3. Wire the placement loop into the default `layout()`; keep `--legacy`": [
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790513276625
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790514034162
+      }
+    ],
+    "13. Bump the version triple to 1.9.0 (`VERSION` via CI, `pyproject.toml`, CHANGELOG heading); keep `version_guard` / `test_version_triple` green": [
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790514700956
+      },
+      {
+        "executionId": "72b40832-dc25-40c6-baa5-00f079cdc27d",
+        "chatSessionId": "sess_3bf48f0b-500b-4dab-82a7-0882256e4168",
+        "timestamp": 1790515100283
+      }
+    ]
+  }
+}

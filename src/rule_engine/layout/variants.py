@@ -37,23 +37,28 @@ deterministic function of its inputs (no randomness, no wall-clock, no
 dict-iteration-order dependence), so the solver built on it stays deterministic
 (R4.1).
 
-**Placement seam (R5.4).** :func:`generate` is the per-edge *route*-variant
-generator. Its boundary is deliberately shaped so a future
-``generate_placement_variants()`` can be an **outer loop** over the same
-score-and-commit machinery — placement variants would each fix a node/tier
-position and then call this generator per edge. That outer generator is a
-non-goal for 1.8.0 and is **not** implemented here; only the clean seam is left
-in (see :func:`_placement_seam_note`).
+**Placement variants (1.9.0, Part A).** :func:`generate` is the per-edge
+*route*-variant generator. :func:`generate_placement_variants` is its
+placement-level analogue (design.md §Component A1): a pure, spec-only function
+that enumerates a small, rank-ordered, deterministic set of
+:class:`PlacementVariant` descriptors — the identity (rank 0, no move) plus the
+three :class:`PlacementMove` moves, each guarded so it is emitted only where its
+target defect can occur. The outer :func:`solver.solve_placement` loop (task 2)
+applies each move, re-runs the whole ``place → size → centre → solve → repair``
+inner pipeline, scores the finished candidate with the shared ``route_cost``, and
+keeps the ``argmin`` — with the identity always a candidate, so the loop can
+never do worse than 1.8.0.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Dict, List
+from typing import TYPE_CHECKING, Dict, List, Tuple
 
 try:  # package-relative import when used as ``rule_engine.layout.variants``
-    from .model import Contact, EdgeSpec
+    from .model import Contact, EdgeSpec, DiagramSpec, NodeSpec
+    from .base import LANE_INDEX
     from .contacts import (
         select_contacts,
         _box_directly_below,
@@ -61,7 +66,8 @@ try:  # package-relative import when used as ``rule_engine.layout.variants``
         _LOWER_QUARTER,
     )
 except ImportError:  # pragma: no cover - fallback for flat-module execution
-    from layout.model import Contact, EdgeSpec  # type: ignore[no-redef]
+    from layout.model import Contact, EdgeSpec, DiagramSpec, NodeSpec  # type: ignore[no-redef]
+    from layout.base import LANE_INDEX  # type: ignore[no-redef]
     from layout.contacts import (  # type: ignore[no-redef]
         select_contacts,
         _box_directly_below,
@@ -71,7 +77,6 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from ..geometry import Box  # noqa: F401
-    from .model import DiagramSpec  # noqa: F401
 
 
 class RoutePlan(str, Enum):
@@ -450,27 +455,482 @@ def _dedupe_by_id(variants: List[RouteVariant]) -> List[RouteVariant]:
     return out
 
 
-# ---------------------------------------------------------------------------
-# Placement seam (R5.4) — documented, NOT implemented
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# Placement variants (1.9.0, Part A — design.md §Component A1)
+# ===========================================================================
+#
+# The three sanctioned placement moves, each keyed off a recorded placement
+# defect (design.md §Architecture → "Sanctioned placement moves"):
+#
+#   * widen-gap      — grow a Network Boundary's (vpc) side gap by whole COL_STEP
+#                      multiples so a tier-skip corridor clears an icon column
+#                      (the *tier-skip rail*).
+#   * shift-neighbour — move one hub neighbour one column so the hub's free
+#                      approach column no longer lies inside its own fan-out (the
+#                      *GCP/OCI hub*).
+#   * reorder-tier   — swap two peers within a row so two opposed long runs
+#                      leaving the top row no longer overlap in extent (the
+#                      *edge-tier band*).
+#
+# generate_placement_variants(spec) is a PURE function of the spec: it reads only
+# the coordinate-free declaration (nodes' lane/region/slot/container, edges'
+# source/target, containers' kind/region/parent) — no allocator, no placement
+# geometry, no randomness, no wall-clock, no dict-iteration-order dependence
+# (Decision D4, R1.6). It emits DESCRIPTORS; the solver (task 2) applies each
+# move and re-runs place → size → centre so the moved layout stays grid-aligned
+# and lint-clean by construction. A move that would break container nesting or
+# padding is NOT enumerated (R1.6): every move keeps a node inside its declared
+# container, and a swap only pairs peers of the same container membership.
 
-def _placement_seam_note() -> None:  # pragma: no cover - documentation only
-    """Placement-variant scoring is a non-goal for 1.8.0 (R5.4, Decision D2).
 
-    :func:`generate` is the per-edge **route**-variant generator. A future
-    release can add placement scoring as an **outer loop** over the *same*
-    score-and-commit machinery, without re-architecting this module:
+class PlacementMove(str, Enum):
+    """The three sanctioned placement moves, plus the identity (design.md
+    §Component A1). ``IDENTITY`` is the base placement (no move) and is always
+    the rank-0 variant, so the placement loop's ``argmin`` can never do worse
+    than 1.8.0."""
 
-    * a ``generate_placement_variants(spec, placed, containers)`` would enumerate
-      candidate node/tier positions (each a re-``place_nodes`` with one node or
-      tier moved) as its own ranked, deterministic variant list;
-    * the solver would, for each placement variant, run the existing per-edge
-      route loop (this :func:`generate` + score + commit) and score the whole
-      resulting diagram;
-    * it would ``argmin`` over placements exactly as it ``argmin``s over routes.
+    IDENTITY = "identity"           # the base placement — no move (rank 0)
+    WIDEN_GAP = "widen-gap"         # grow a vpc side gap (tier-skip rail)
+    SHIFT_NEIGHBOUR = "shift-neighbour"  # move one hub neighbour one column
+    REORDER_TIER = "reorder-tier"   # swap two peers within a row
 
-    The two recorded placement defects (``gcp/01`` = ``(4, 0)``, the landscapes =
-    ``(3, 2)``) are therefore **held, not fixed** in 1.8.0: no code here moves a
-    node or a tier. Only this route-variant seam is in place; the placement outer
-    loop is intentionally absent.
+
+@dataclass(frozen=True)
+class PlacementVariant:
+    """One sanctioned placement — a single node/tier move applied to the base
+    placement (design.md §Data Models → *PlacementVariant*).
+
+    Fields:
+
+    * ``id`` — stable ``"<spec>/<move>/<target>"`` (``"<spec>/identity"`` for the
+      base). Used, with ``rank``, in the solver's total argmin tie-break so the
+      selected placement is a deterministic function of the spec.
+    * ``move`` — the :class:`PlacementMove` this variant applies
+      (``IDENTITY`` for the base).
+    * ``rank`` — deterministic preference; ``0`` is always the identity, then the
+      moves in a fixed family / target order. Lower is tried/preferred first.
+    * ``params`` — a frozen tuple of ``(key, value)`` pairs the solver reads to
+      **apply** the move (which container to widen, which neighbour to shift,
+      which peers to swap, and by how much). Empty for the identity. Kept as a
+      sorted tuple (not a dict) so the descriptor is hashable and its repr is
+      order-stable — a byte-identity aid for determinism (Decision D4).
     """
+
+    id: str
+    move: PlacementMove
+    rank: int
+    params: Tuple[Tuple[str, object], ...] = field(default=())
+
+    def param(self, key: str, default: object = None) -> object:
+        """Read one applied-move parameter by ``key`` (``default`` if absent)."""
+        for k, v in self.params:
+            if k == key:
+                return v
+        return default
+
+
+def _params(**kwargs: object) -> Tuple[Tuple[str, object], ...]:
+    """Freeze move parameters into a sorted, hashable ``(key, value)`` tuple.
+
+    Sorted by key so two calls with the same parameters produce the identical
+    tuple regardless of keyword order — the descriptor is then a pure function of
+    its inputs (Decision D4)."""
+    return tuple(sorted(kwargs.items(), key=lambda kv: kv[0]))
+
+
+# ---------------------------------------------------------------------------
+# Spec-only structural helpers (no geometry — a pure read of the declaration)
+# ---------------------------------------------------------------------------
+
+def _nodes_by_id(spec: "DiagramSpec") -> Dict[str, "NodeSpec"]:
+    return {n.id: n for n in spec.nodes}
+
+
+def _lane_i(node: "NodeSpec") -> int:
+    """The node's lane ordinal (its primary-axis tier index). Unknown lanes are
+    validated away by :func:`_validate_spec` before layout, but this generator is
+    a pure read that may run on a raw spec, so an unknown lane sorts last rather
+    than raising."""
+    return LANE_INDEX.get(node.lane, len(LANE_INDEX))
+
+
+def _same_container(a: "NodeSpec", b: "NodeSpec") -> bool:
+    """True when two nodes share the same declared container membership (both in
+    the same ``az`` / ``vpc``, or both container-free). A move that reorders or
+    shifts across a container boundary would change which box owns a node — which
+    can break nesting / padding — so such a move is never enumerated (R1.6)."""
+    return a.container == b.container and a.region == b.region
+
+
+def _region_of_container(spec: "DiagramSpec") -> Dict[str, str]:
+    return {c.id: c.region for c in spec.containers}
+
+
+def _tier_skip_edges(spec: "DiagramSpec") -> List["EdgeSpec"]:
+    """Edges that skip a tier **within one region**: source and target in the
+    same region, at least two lanes apart, with an intermediate node occupying a
+    lane strictly between them in that region.
+
+    This is the spec-only signature of the *tier-skip rail* defect (a corridor
+    that must pass an intervening icon column). It is pure structure — lane
+    ordinals and region membership — never geometry."""
+    nodes = _nodes_by_id(spec)
+    out: List["EdgeSpec"] = []
+    for edge in spec.edges:
+        src = nodes.get(edge.source)
+        tgt = nodes.get(edge.target)
+        if src is None or tgt is None:
+            continue
+        if src.region != tgt.region:
+            continue
+        lo, hi = sorted((_lane_i(src), _lane_i(tgt)))
+        if hi - lo < 2:
+            continue
+        # An intermediate node sits in a lane strictly between them, same region.
+        if any(
+            n.region == src.region and lo < _lane_i(n) < hi
+            for n in spec.nodes
+            if n.id not in (src.id, tgt.id)
+        ):
+            out.append(edge)
+    return out
+
+
+def _hub_neighbours(spec: "DiagramSpec") -> List[Tuple["NodeSpec", "NodeSpec"]]:
+    """``(hub, neighbour)`` pairs where a fan-out hub has a same-region neighbour
+    one slot away in the same lane.
+
+    A *hub* is a ``platform``-lane node with a fan-out (≥ 2 outgoing edges); the
+    defect is that the hub's free approach column lies inside its own fan-out, so
+    shifting a neighbour one column opens the approach. The neighbour must share
+    the hub's container (so shifting it one slot cannot spill it out of its box —
+    R1.6)."""
+    nodes = _nodes_by_id(spec)
+    out_degree: Dict[str, int] = {}
+    for edge in spec.edges:
+        if edge.source in nodes:
+            out_degree[edge.source] = out_degree.get(edge.source, 0) + 1
+
+    pairs: List[Tuple["NodeSpec", "NodeSpec"]] = []
+    for hub in spec.nodes:
+        if hub.lane != "platform" or out_degree.get(hub.id, 0) < 2:
+            continue
+        for other in spec.nodes:
+            if other.id == hub.id:
+                continue
+            if other.lane != hub.lane or other.region != hub.region:
+                continue
+            if abs(other.slot - hub.slot) != 1:
+                continue
+            if not _same_container(hub, other):
+                continue
+            pairs.append((hub, other))
+    return pairs
+
+
+def _top_tier_peers(spec: "DiagramSpec") -> List[Tuple["NodeSpec", "NodeSpec"]]:
+    """Adjacent ``(a, b)`` peer pairs in the region's **top occupied tier** that
+    each source a *long run* (an edge to a different region, or a tier-skip),
+    where swapping the pair could separate two opposed long runs leaving the row.
+
+    The pair must share a container and lane (a genuine row swap that cannot break
+    nesting), sit one slot apart, and both be long-run sources — otherwise a swap
+    changes nothing about the overlapping-extent defect it targets."""
+    nodes = _nodes_by_id(spec)
+
+    # Which nodes source a long run (cross-region edge, or a tier-skip)?
+    tier_skip_sources = {e.source for e in _tier_skip_edges(spec)}
+    long_run_source: set = set(tier_skip_sources)
+    for edge in spec.edges:
+        src = nodes.get(edge.source)
+        tgt = nodes.get(edge.target)
+        if src is not None and tgt is not None and src.region != tgt.region:
+            long_run_source.add(edge.source)
+
+    # The top occupied tier per region = the minimum lane ordinal present.
+    top_lane_i: Dict[str, int] = {}
+    for n in spec.nodes:
+        li = _lane_i(n)
+        if n.region not in top_lane_i or li < top_lane_i[n.region]:
+            top_lane_i[n.region] = li
+
+    pairs: List[Tuple["NodeSpec", "NodeSpec"]] = []
+    for a in spec.nodes:
+        if _lane_i(a) != top_lane_i.get(a.region):
+            continue
+        if a.id not in long_run_source:
+            continue
+        for b in spec.nodes:
+            if b.id == a.id or _lane_i(b) != _lane_i(a) or b.region != a.region:
+                continue
+            if b.id not in long_run_source:
+                continue
+            if b.slot - a.slot != 1:  # adjacent, a left of b (ordered → no dup)
+                continue
+            if not _same_container(a, b):
+                continue
+            pairs.append((a, b))
+    return pairs
+
+
+# ---------------------------------------------------------------------------
+# The placement-variant generator (Component A1)
+# ---------------------------------------------------------------------------
+
+def generate_placement_variants(spec: "DiagramSpec") -> List[PlacementVariant]:
+    """Return the sanctioned :class:`PlacementVariant`\\ s for ``spec`` in rank
+    order (design.md §Component A1, R1.1 / R1.2 / R1.6).
+
+    The returned list:
+
+    * **always begins with the identity** (``rank == 0``,
+      :attr:`PlacementMove.IDENTITY`, no move) — the Base_Placement is always a
+      candidate, so the placement loop's ``argmin`` can never do worse than 1.8.0
+      (R1.1, the Part A analogue of Property 1);
+    * enumerates **only the three sanctioned moves**, each **guarded** so it is
+      emitted only where its target defect can occur (R1.2) — widen-gap only
+      where a within-region tier-skip crosses an intervening column, shift-
+      neighbour only for a fan-out hub with an adjacent same-container neighbour,
+      reorder-tier only for two long-run peers in the region's top tier;
+    * enumerates **no move that would break container nesting or padding** (R1.6):
+      every move keeps a node inside its declared container, and a swap only
+      pairs peers of the same container membership;
+    * is **rank-ordered** and fully **deterministic** — a pure function of the
+      spec with no randomness, wall-clock, or dict-iteration-order dependence
+      (Decision D4): every guard iterates ``spec.nodes`` / ``spec.edges`` in
+      declared order, and the emitted moves are sorted on a spec-only key before
+      rank assignment.
+
+    This is the placement-level analogue of :func:`generate`: it lays no
+    coordinates and moves no node — it emits descriptors the solver
+    (:func:`rule_engine.layout.solver.solve_placement`, task 2) applies by
+    re-running ``place → size → centre`` with the move's parameters, so the moved
+    layout stays grid-aligned and lint-clean by construction.
+    """
+    prefix = spec.diagram_id
+
+    # The identity is ALWAYS rank 0 (R1.1). Its params are empty — the solver
+    # runs the base placement unchanged for it.
+    variants: List[PlacementVariant] = [
+        PlacementVariant(id=f"{prefix}/identity", move=PlacementMove.IDENTITY, rank=0)
+    ]
+
+    # Collect each move family's descriptors as (sort_key, move, target, params)
+    # so the whole set can be ordered by one spec-only key before ranking — the
+    # family order (widen-gap, shift-neighbour, reorder-tier) is the primary key
+    # so ranks are stable and grouped, then the target id breaks ties.
+    pending: List[Tuple[Tuple[int, str], PlacementMove, str, Tuple[Tuple[str, object], ...]]] = []
+
+    region_of = _region_of_container(spec)
+
+    # --- widen-gap: one per vpc that owns / borders a within-region tier-skip ---
+    # The corridor for a within-region tier-skip runs in the region's vpc side
+    # gap; widening that gap by whole COL_STEP multiples clears the intervening
+    # column. Emit one variant per vpc whose region has a tier-skip. Growing a
+    # side gap only enlarges the container, so it can never break nesting/padding.
+    tier_skip_regions = {
+        _nodes_by_id(spec)[e.source].region for e in _tier_skip_edges(spec)
+    }
+    for c in spec.containers:
+        if c.kind != "vpc" or c.region not in tier_skip_regions:
+            continue
+        pending.append((
+            (0, c.id),
+            PlacementMove.WIDEN_GAP,
+            c.id,
+            _params(container=c.id, columns=1),
+        ))
+
+    # --- shift-neighbour: one per (hub, neighbour) fan-out pair ---
+    # Shift the neighbour one column AWAY from the hub (to the side that opens the
+    # hub's approach). The neighbour shares the hub's container, so a one-slot
+    # shift keeps it inside its box (re-placed and re-sized by the solver).
+    for hub, neighbour in _hub_neighbours(spec):
+        direction = 1 if neighbour.slot >= hub.slot else -1
+        pending.append((
+            (1, neighbour.id),
+            PlacementMove.SHIFT_NEIGHBOUR,
+            neighbour.id,
+            _params(node=neighbour.id, hub=hub.id, columns=direction),
+        ))
+
+    # --- reorder-tier: one per adjacent long-run peer pair in the top tier ---
+    # Swap the two peers' slots. Both share a container and lane, so the swap is a
+    # pure within-row reorder that cannot change container membership.
+    for a, b in _top_tier_peers(spec):
+        target = f"{a.id}~{b.id}"
+        pending.append((
+            (2, target),
+            PlacementMove.REORDER_TIER,
+            target,
+            _params(node_a=a.id, node_b=b.id),
+        ))
+
+    # Order by the spec-only key and assign consecutive ranks from 1 (the
+    # identity holds rank 0). Sorting on the (family, target) key makes the rank
+    # a deterministic function of the spec regardless of the order the guards ran.
+    pending.sort(key=lambda item: item[0])
+    for rank, (_key, move, target, params) in enumerate(pending, start=1):
+        variants.append(
+            PlacementVariant(
+                id=f"{prefix}/{move.value}/{target}",
+                move=move,
+                rank=rank,
+                params=params,
+            )
+        )
+
+    return variants
+
+
+# ---------------------------------------------------------------------------
+# Applying a placement move (1.9.0, Part A — the solver's move-applier)
+# ---------------------------------------------------------------------------
+#
+# A PlacementVariant is a coordinate-free DESCRIPTOR; the solver applies it by
+# transforming the spec's node ``slot``s (never geometry) and re-running the pure
+# ``place → size → centre`` pipeline. Because every move is expressed as a
+# whole-slot translation of a node / tier within its own declared container, the
+# re-placed layout stays grid-aligned and inside its container by construction —
+# so a move can never break nesting or padding (R1.6), which is also why the
+# generator only enumerates moves that keep a node in its box.
+#
+# The applier is a PURE function of ``(spec, variant)``: it reads only the
+# coordinate-free declaration, rebuilds the frozen ``NodeSpec`` tuple in the
+# spec's declared order, and returns a new frozen ``DiagramSpec``. No randomness,
+# no wall-clock, no dict-iteration-order dependence (Decision D4), so the moved
+# spec — and therefore the finished candidate the solver scores — is a
+# deterministic function of the base spec and the variant.
+
+
+def _replace_node(node: "NodeSpec", *, slot: int) -> "NodeSpec":
+    """Return a copy of ``node`` with a new ``slot`` (every other field kept).
+
+    A :class:`NodeSpec` is frozen, so a move rebuilds it rather than mutating it;
+    keeping the rebuild in one helper makes it self-evident that a move touches
+    **only** the slot (the secondary-axis position), never the lane, region, or
+    container membership — which is what guarantees the node stays inside its
+    declared box (R1.6)."""
+    return NodeSpec(
+        id=node.id,
+        role=node.role,
+        lane=node.lane,
+        region=node.region,
+        slot=slot,
+        sub=node.sub,
+        container=node.container,
+        overlay=node.overlay,
+    )
+
+
+def _rebuild_spec(spec: "DiagramSpec", new_slots: Dict[str, int]) -> "DiagramSpec":
+    """Return a copy of ``spec`` with the ``slot`` of every node in ``new_slots``
+    replaced, preserving the declared node order (Decision D4).
+
+    Nodes absent from ``new_slots`` are carried through unchanged. Only the
+    ``nodes`` tuple is rebuilt — edges, containers, and every diagram-level field
+    are shared by reference, since a placement move changes only where nodes sit
+    on the secondary axis, never the topology or the container tree."""
+    nodes = tuple(
+        _replace_node(n, slot=new_slots[n.id]) if n.id in new_slots else n
+        for n in spec.nodes
+    )
+    return DiagramSpec(
+        diagram_id=spec.diagram_id,
+        diagram_name=spec.diagram_name,
+        axis=spec.axis,
+        nodes=nodes,
+        edges=spec.edges,
+        containers=spec.containers,
+        flow_lines=spec.flow_lines,
+        title=spec.title,
+        compact=spec.compact,
+    )
+
+
+def apply_placement_move(spec: "DiagramSpec", variant: "PlacementVariant") -> "DiagramSpec":
+    """Apply ``variant``'s move to ``spec`` and return the moved spec (R1.3).
+
+    The identity (rank 0) returns ``spec`` unchanged — the Base_Placement is run
+    exactly as the 1.8.0 pipeline runs it, so the placement loop's ``argmin`` can
+    never do worse than the base (R1.4). The three sanctioned moves are expressed
+    as whole-slot translations of a node / tier within its own container:
+
+    * **widen-gap** — open a side gap in the tier-skip region's VPC by shifting
+      **every node in that region** one slot along the secondary axis
+      (``columns`` slots). This grows the enclosing VPC and creates the clear
+      side corridor the tier-skip rail needs, and — because it shifts the whole
+      region block together — it never changes which container owns a node
+      (R1.6).
+    * **shift-neighbour** — move the hub's neighbour ``columns`` slot(s) away from
+      the hub, opening the hub's free approach column. A collision with the slot
+      the neighbour lands on is resolved by cascading every node at or beyond that
+      slot (in the same lane+region) one further slot, so slots stay unique
+      (:func:`_validate_spec`) and the shift stays within the container.
+    * **reorder-tier** — swap the ``slot`` of the two named peers, a pure
+      within-row reorder that leaves every container membership intact.
+
+    Pure and deterministic (Decision D4): it reads only the coordinate-free
+    declaration and rebuilds the frozen node tuple in declared order, so
+    ``apply_placement_move`` run twice on the same inputs yields an identical
+    spec. It moves no coordinate — the solver re-runs ``place → size → centre``
+    on the returned spec to derive the moved geometry.
+    """
+    if variant.move is PlacementMove.IDENTITY:
+        return spec
+
+    nodes = _nodes_by_id(spec)
+
+    if variant.move is PlacementMove.WIDEN_GAP:
+        container_id = variant.param("container")
+        columns = int(variant.param("columns", 1))
+        region = next(
+            (c.region for c in spec.containers if c.id == container_id), None
+        )
+        if region is None:
+            return spec  # unknown container — no-op (guarded away by the generator)
+        new_slots = {
+            n.id: n.slot + columns for n in spec.nodes if n.region == region
+        }
+        return _rebuild_spec(spec, new_slots)
+
+    if variant.move is PlacementMove.SHIFT_NEIGHBOUR:
+        node_id = variant.param("node")
+        columns = int(variant.param("columns", 1))
+        node = nodes.get(node_id)
+        if node is None or columns == 0:
+            return spec
+        target_slot = node.slot + columns
+        # Cascade any node that would collide with target_slot in the same
+        # lane+region, so slots stay unique. Nodes are pushed in the shift
+        # direction (away from the hub), preserving their relative order.
+        peers = [
+            n for n in spec.nodes
+            if n.lane == node.lane and n.region == node.region and n.id != node.id
+        ]
+        new_slots: Dict[str, int] = {node_id: target_slot}
+        if columns > 0:
+            for peer in sorted(peers, key=lambda p: p.slot):
+                if peer.slot >= target_slot and peer.slot < target_slot + columns:
+                    new_slots[peer.id] = peer.slot - columns
+        else:
+            for peer in sorted(peers, key=lambda p: -p.slot):
+                if peer.slot <= target_slot and peer.slot > target_slot + columns:
+                    new_slots[peer.id] = peer.slot - columns
+        # Simplest total resolution: if the target slot is occupied, swap with the
+        # occupant so both slots stay unique and inside the row.
+        occupant = next((n for n in peers if n.slot == target_slot), None)
+        if occupant is not None:
+            new_slots = {node_id: target_slot, occupant.id: node.slot}
+        return _rebuild_spec(spec, new_slots)
+
+    if variant.move is PlacementMove.REORDER_TIER:
+        a_id = variant.param("node_a")
+        b_id = variant.param("node_b")
+        a = nodes.get(a_id)
+        b = nodes.get(b_id)
+        if a is None or b is None:
+            return spec
+        return _rebuild_spec(spec, {a_id: b.slot, b_id: a.slot})
+
+    return spec  # pragma: no cover - exhaustive over PlacementMove

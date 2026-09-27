@@ -43,6 +43,7 @@ every applicable rule against every artifact.
 | `flow-legend` | A diagram uses numeric flow markers on edges but has no `Flow` legend cell covering every marker. | WARNING | diagram-standards Numbered Flow Legend |
 | `edge-routing` | A diagram edge is not orthogonally routed, crosses a node icon, shares a corridor with a parallel edge, overlaps a label/legend, or two edges leave/enter one node side on the same contact point. **Raised to ERROR** when an edge's run cuts through a node icon — an unrelated node (`*-through-*`) or its own target reached from the wrong side (`pierces-target-*`). | WARNING/ERROR | diagram-standards Edge Routing |
 | `container-padding` | A container border sits flush against or straddles a child node (no grid-step padding). Raised to ERROR for `landscape`. | WARNING/ERROR | diagram-standards Container Padding |
+| `container-dead-space` | A Boundary container is sized far larger than its direct children: its area exceeds the summed child footprint-plus-padding demand by more than a calibrated ratio (5.0, set above the sparsest legitimate corpus tier). The mirror of `container-padding` (which checks the minimum clearance). Advisory on both classes; a childless container is skipped. | WARNING | diagram-standards Container Padding |
 | `min-font-size` | A diagram carries on-diagram text below the 12px minimum font size. | WARNING | diagram-standards Accessibility & Contrast |
 | `grid-alignment` | A diagram node's absolute x or y is not a whole multiple of the grid step (default 10). | WARNING | diagram-standards Layout Geometry |
 | `node-overlap` | Two diagram node icon boxes overlap (intersecting rectangles). | WARNING | diagram-standards Layout Geometry |
@@ -212,6 +213,34 @@ every applicable rule against every artifact.
   raised to an **ERROR**, because nested labelled containers are the primary
   device that keeps a large as-built legible, so a padding defect must block
   publication rather than merely warn.
+
+- **`container-dead-space` (WARNING)** — *Geometry-enforced from the parsed
+  `.drawio` model.* The **mirror** of `container-padding`: where padding checks
+  the *minimum* clearance a Boundary container leaves its children, this checks
+  the *maximum* slack — a container sized far larger than its children
+  legitimately demand. For each Boundary container the rule measures
+
+      ratio = container_area / Σ(direct-child footprint grown by one pad on all four sides)
+
+  where a **direct child** is a node or nested container whose *tightest*
+  enclosing container is this one (the same attribution
+  `container-padding` uses, so a node inside a nested AZ counts against the AZ
+  and the VPC counts the AZ as its child), a node's demand is its **footprint**
+  (icon + label band, ~30px) and a nested container's demand is its own box,
+  each grown by the mandated `CONTAINER_PAD` (30) on all four sides. A ratio near
+  `1.0` means packed to the mandated minimum; a large ratio means the container
+  is mostly empty around its children. The threshold is the calibrated
+  `DEAD_SPACE_RATIO` = **5.0**, *measured across the shipped corpus first*: the
+  57 shipped containers' sparsest legitimate tier packs at ~4.536, so 5.0 sits
+  above it with headroom and **0 of 57 shipped containers flag** (Property 5). A
+  container **with no direct children is skipped** — a childless container is not
+  "dead space around children", and the ratio would divide by zero. The rule is
+  **advisory: a WARNING on both classes** — it is *not* escalated to ERROR for
+  `landscape` (unlike `container-padding`), because a container sized generously
+  is a quality concern, not a correctness failure. Like every WARNING it **never
+  blocks publication on its own**; it only surfaces the defect so an author can
+  tighten the container. Diagrams whose containers hug their children are
+  unaffected. (placement-and-gates Part C.)
 
 - **`orphan-landscape` (ERROR)** — A `landscape`-class diagram must declare a
   `summary_of` cross-link (in its companion `.diagram.md` frontmatter) naming
