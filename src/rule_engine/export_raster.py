@@ -151,6 +151,26 @@ def _diagram_class_of(source: Path) -> str:
     return m.group(1).strip().lower() if m else "flow"
 
 
+def _diagram_background_of(source: Path) -> str:
+    """Return ``raster_background`` from the .drawio's companion doc (default white).
+
+    Any value other than ``transparent`` falls back to ``"white"`` (the safe
+    default), matching the raster gate's :func:`raster_gate._diagram_background_of`
+    so the exporter and the checker never disagree on the mode (Requirement 4,
+    item D)."""
+    companion = Path(str(source)[: -len(".drawio")] + ".diagram.md") if str(source).endswith(".drawio") else None
+    if companion is None or not companion.is_file():
+        return "white"
+    try:
+        text = companion.read_text(encoding="utf-8")
+    except OSError:
+        return "white"
+    m = re.search(r"""^raster_background:\s*['"]?([A-Za-z_]+)['"]?\s*(?:\#.*)?$""", text, re.MULTILINE)
+    if not m:
+        return "white"
+    return "transparent" if m.group(1).strip().lower() == "transparent" else "white"
+
+
 def _mime_for(path: Path) -> str:
     suffix = path.suffix.lower()
     if suffix == ".svg":
@@ -308,16 +328,23 @@ def export_one(
         tmp_copy.write_text(inlined, encoding="utf-8")
         export_input = str(tmp_copy)
 
+    # Background mode (Requirement 4, item D): a "transparent" companion exports
+    # a dark/light-safe raster (alpha channel, no forced white); "white"/absent
+    # keeps the existing opaque-white export unchanged (AC 4.3, 4.4).
+    background = _diagram_background_of(source)
+    cmd = [
+        drawio, "--export", "--format", "png",
+        "--scale", _format_scale(scale),
+        "--border", EXPORT_BORDER,
+        "--theme", EXPORT_THEME,
+    ]
+    if background == "transparent":
+        cmd.append("--transparent")
+    cmd += ["--output", str(out_png), export_input]
+
     try:
         subprocess.run(
-            [
-                drawio, "--export", "--format", "png",
-                "--scale", _format_scale(scale),
-                "--border", EXPORT_BORDER,
-                "--theme", EXPORT_THEME,
-                "--output", str(out_png),
-                export_input,
-            ],
+            cmd,
             check=True,
             timeout=EXPORT_TIMEOUT,
         )

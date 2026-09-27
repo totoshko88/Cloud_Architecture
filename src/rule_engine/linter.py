@@ -28,6 +28,7 @@ artifact as blocked from publication.
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import re
@@ -203,6 +204,20 @@ RULE_EDGE_APPROACH = "edge-approach"
 RULE_PARSE_ERROR = "parse-error"
 RULE_EDGE_ENDPOINT = "edge-endpoint"
 RULE_SOURCE_FORMAT = "source-format"
+# provider-diagram-conventions 1.10.0 (Part A / Requirement 1).
+#   edge-bidirectional — a double-headed arrow (both a non-``none`` startArrow
+#                        and a non-``none`` endArrow); WARNING, both classes.
+RULE_EDGE_BIDIRECTIONAL = "edge-bidirectional"
+# provider-diagram-conventions 1.10.0 (Part B / Requirement 2).
+#   node-label-length — a service-node label longer than the word / char cap;
+#                       WARNING, both classes. Legend/Flow/title/callout text
+#                       cells are not node labels and are exempt.
+RULE_NODE_LABEL_LENGTH = "node-label-length"
+# provider-diagram-conventions 1.10.0 (Part C / Requirement 3).
+#   ip-range — on-diagram text in a Network_Diagram carries a Public_IP_Literal
+#              (a routable public IP that is neither a Documentation_Range nor
+#              private); WARNING. Only a Network_Diagram is evaluated.
+RULE_IP_RANGE = "ip-range"
 
 # ``RULE_SEVERITIES`` and ``CLASS_ESCALATIONS`` are DERIVED from the ``RULES``
 # registry (defined near the end of this module, once every predicate exists) —
@@ -230,6 +245,59 @@ MIN_FONT_SIZE = 12
 
 # Matches every ``fontSize=<n>`` occurrence in a draw.io style string.
 _FONT_SIZE_RE = re.compile(r"fontSize=([0-9]+)")
+
+# Node-label length caps (provider-diagram-conventions 1.10.0, Part B / R2 AC1).
+# A service-node label exceeding EITHER cap trips ``node-label-length``: node
+# labels stay short (the service name); explanatory prose belongs in a callout
+# (``overlay=callout``), not in the icon label. AWS diagram guidance: "do not
+# embed explanatory text into images; use short labels; use callouts".
+LABEL_WORD_CAP = 4
+LABEL_CHAR_CAP = 40
+
+# Documentation IP ranges (provider-diagram-conventions 1.10.0, Part C / R3).
+# These are the ranges reserved for documentation and examples: the IPv4
+# TEST-NET blocks (RFC5737) and the IPv6 documentation prefix (RFC3849). An
+# on-diagram address in one of these — or in a private range — is never a
+# ``ip-range`` finding; only a routable *public* literal in a Network_Diagram is.
+# IPv6 must be written per RFC5952 (lowercase, compressed) in on-diagram text.
+DOCUMENTATION_RANGES = tuple(
+    ipaddress.ip_network(cidr)
+    for cidr in (
+        "192.0.2.0/24",  # RFC5737 TEST-NET-1
+        "198.51.100.0/24",  # RFC5737 TEST-NET-2
+        "203.0.113.0/24",  # RFC5737 TEST-NET-3
+        "2001:db8::/32",  # RFC3849 documentation prefix
+    )
+)
+
+# Shared-address / carrier-grade-NAT ranges that ``ipaddress.is_private`` does
+# not classify as private on every stdlib version: RFC6598 (100.64.0.0/10) and
+# RFC6815 (the benchmarking range 198.18.0.0/15). Treated as non-public so a
+# lab/benchmark address in a diagram is not flagged.
+_EXTRA_NONPUBLIC_RANGES = tuple(
+    ipaddress.ip_network(cidr)
+    for cidr in (
+        "100.64.0.0/10",  # RFC6598 shared address space (CGNAT)
+        "198.18.0.0/15",  # RFC6815 / RFC2544 benchmarking range
+    )
+)
+
+# Diagram types (companion ``diagram_type``) that, alongside a ``landscape``
+# class, make a diagram a Network_Diagram for the ``ip-range`` rule (R3.3).
+_NETWORK_DIAGRAM_TYPES = frozenset({"network", "infrastructure", "deployment"})
+
+# Conservative IPv4 / IPv6 literal matcher used to pull candidate addresses out
+# of on-diagram text. A match that does not parse under ``ipaddress`` is ignored
+# (never a finding), so prose that merely looks address-like is not mis-flagged.
+_IP_CANDIDATE_RE = re.compile(
+    r"(?<![\w.])"  # not preceded by a word char or dot
+    r"(?:"
+    r"\d{1,3}(?:\.\d{1,3}){3}"  # dotted-quad IPv4
+    r"|"
+    r"(?:[0-9A-Fa-f]{0,4}:){2,7}[0-9A-Fa-f]{0,4}"  # colon-hex IPv6
+    r")"
+    r"(?![\w.])"  # not followed by a word char or dot
+)
 
 # Allowed unquoted character set for a node name (Requirement 1 AC6 / 7 AC6).
 _UNQUOTED_NODE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -1103,6 +1171,154 @@ def _check_arrow_style(a: Artifact):
     return RuleHit(offenders=_offender_ids(findings), reason=_first_reason(findings))
 
 
+def _check_edge_bidirectional(a: Artifact):
+    """edge-bidirectional: a double-headed arrow (WARNING, both classes).
+
+    A two-way relationship is drawn as two single-ended edges (preferred) or an
+    edge annotated request/response — never a single double-headed arrow, which
+    hides an ambiguous dependency (AWS ``diagram-as-code``). An edge trips this
+    when it sets both a non-``none`` ``startArrow`` and a non-``none``
+    ``endArrow``; a single-head edge (the common case) never does. Requirement
+    1 (Part A)."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    findings = _geo.check_edge_bidirectional(geo)
+    if not findings:
+        return False
+    return RuleHit(offenders=_offender_ids(findings), reason=_first_reason(findings))
+
+
+def _check_node_label_length(a: Artifact):
+    """node-label-length: a service-node label is too long (WARNING, both classes).
+
+    Node labels stay short — the service name — and explanatory prose belongs in
+    a callout (``overlay=callout``), not crammed into the icon label, so the
+    diagram stays localizable and accessible (AWS ``diagram-as-code``: "do not
+    embed explanatory text into images; use short labels; use callouts"). A
+    label trips the rule when it exceeds the word cap (> 4 whitespace-delimited
+    words) OR the character cap (> 40 characters).
+
+    The rule reads ``a.node_names`` only, which the CLI populates from **service
+    icon cells** — Legend, Flow, title, and callout text cells are structurally
+    excluded from ``node_names`` (they are text cells / the title cell), so a
+    long legend or callout is never flagged. Requirement 2 (Part B)."""
+    if not _is_diagram(a):
+        return False
+    offenders: List[str] = []
+    for name in a.node_names:
+        if not name:
+            continue
+        words = name.split()
+        if len(words) > LABEL_WORD_CAP or len(name) > LABEL_CHAR_CAP:
+            offenders.append(name)
+    if not offenders:
+        return False
+    return RuleHit(offenders=offenders, reason="label-too-long")
+
+
+def _is_documentation_ip(ip: "ipaddress._BaseAddress") -> bool:
+    """True when ``ip`` falls inside a reserved Documentation_Range.
+
+    The documentation ranges are the IPv4 TEST-NET blocks (RFC5737) and the
+    IPv6 documentation prefix (RFC3849) — the ranges an example diagram should
+    use. Part C / R3.2."""
+    return any(ip in net for net in DOCUMENTATION_RANGES)
+
+
+def _is_private_ip(ip: "ipaddress._BaseAddress") -> bool:
+    """True when ``ip`` is private / non-routable and so not a public literal.
+
+    Covers stdlib ``is_private`` (RFC1918 and friends, loopback, link-local,
+    unspecified, reserved, multicast) plus the shared-address / benchmarking
+    ranges RFC6598 and RFC6815 that older ``is_private`` implementations miss.
+    Part C / R3.2."""
+    if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast:
+        return True
+    if getattr(ip, "is_unspecified", False) or getattr(ip, "is_reserved", False):
+        return True
+    return any(ip in net for net in _EXTRA_NONPUBLIC_RANGES)
+
+
+def _is_network_diagram(a: Artifact) -> bool:
+    """True when ``a`` is a Network_Diagram for the purposes of ``ip-range``.
+
+    A Network_Diagram is a diagram whose ``diagram_class`` is ``landscape`` OR
+    whose companion ``diagram_type`` is one of network / infrastructure /
+    deployment. A flow/application diagram that incidentally mentions an address
+    is not evaluated (R3.3)."""
+    if not _is_diagram(a):
+        return False
+    if (a.diagram_class or DIAGRAM_CLASS_FLOW).lower() == DIAGRAM_CLASS_LANDSCAPE:
+        return True
+    dtype = (a.diagram_type or "").strip().lower()
+    return dtype in _NETWORK_DIAGRAM_TYPES
+
+
+def _on_diagram_text(a: Artifact) -> List[str]:
+    """Collect the artifact's on-diagram text: node labels, edge labels, the
+    Legend, and the Flow list (which carries callout-style prose lines).
+
+    These are the text surfaces ``ip-range`` scans for an address literal
+    (design C3). Each source is optional; a programmatic Artifact that sets only
+    some of them contributes just those."""
+    texts: List[str] = []
+    for name in a.node_names:
+        if name:
+            texts.append(str(name))
+    for edge in a.edges:
+        label = (
+            getattr(edge, "label", None)
+            if not isinstance(edge, Mapping)
+            else edge.get("label")
+        )
+        if label:
+            texts.append(str(label))
+    for lines in (a.legend_lines, a.flow_legend_lines):
+        if lines:
+            texts.extend(str(line) for line in lines if line)
+    if a.title_cell:
+        texts.append(str(a.title_cell))
+    return texts
+
+
+def _check_ip_range(a: Artifact):
+    """ip-range: a Network_Diagram's on-diagram text carries a public IP (WARNING).
+
+    Examples should use the reserved Documentation_Ranges (RFC5737 / RFC3849) or
+    a private range, never a routable public address that could leak or clash
+    with a real network (AWS Networking convention). The rule fires WHEN a
+    Public_IP_Literal — a parseable global IP that is neither a
+    Documentation_Range nor private — appears in the on-diagram text of a
+    Network_Diagram.
+
+    Scope (R3.3): only a Network_Diagram is evaluated — ``diagram_class ==
+    landscape`` OR companion ``diagram_type`` in {network, infrastructure,
+    deployment}. A flow/application diagram is skipped entirely.
+
+    A token that looks address-like but does not parse under ``ipaddress`` is
+    ignored (never a finding), so prose is not mis-flagged. Part C /
+    Requirement 3."""
+    if not _is_network_diagram(a):
+        return False
+    offenders: List[str] = []
+    for text in _on_diagram_text(a):
+        for match in _IP_CANDIDATE_RE.findall(text):
+            try:
+                ip = ipaddress.ip_address(match)
+            except ValueError:
+                continue  # address-like but not a real address — ignore.
+            if _is_documentation_ip(ip) or _is_private_ip(ip):
+                continue
+            if not ip.is_global:
+                continue
+            offenders.append(match)
+    if not offenders:
+        return False
+    return RuleHit(offenders=offenders, reason="public-ip-literal")
+
+
 def _check_container_overlap(a: Artifact):
     """container-overlap: two sibling boundary containers overlap.
 
@@ -1533,6 +1749,18 @@ RULES: Tuple[Tuple[RuleSpec, Callable[[Artifact], _PredicateResult]], ...] = (
     ),
     (RuleSpec(RULE_NODE_OVERLAP, Severity.WARNING), _check_node_overlap),
     (RuleSpec(RULE_ARROW_STYLE, Severity.WARNING), _check_arrow_style),
+    # edge-bidirectional: a double-headed arrow (WARNING, both classes). No
+    # landscape escalation — advisory on both, like arrow-style (1.10.0, Part A).
+    (RuleSpec(RULE_EDGE_BIDIRECTIONAL, Severity.WARNING), _check_edge_bidirectional),
+    # node-label-length: a service-node label longer than the word/char cap
+    # (WARNING, both classes). No landscape escalation — advisory on both; the
+    # cap is on the icon label only, callouts carry the prose (1.10.0, Part B).
+    (RuleSpec(RULE_NODE_LABEL_LENGTH, Severity.WARNING), _check_node_label_length),
+    # ip-range: a public IP literal in a Network_Diagram's on-diagram text
+    # (WARNING). No landscape escalation — advisory on both; the rule is already
+    # scoped to a Network_Diagram (landscape OR a network/infra/deployment
+    # diagram_type), so it does not fire on a flow diagram at all (1.10.0, Part C).
+    (RuleSpec(RULE_IP_RANGE, Severity.WARNING), _check_ip_range),
     # container-overlap: WARNING for flow, ERROR for landscape (sibling
     # boundaries must not overlap on an as-built).
     (

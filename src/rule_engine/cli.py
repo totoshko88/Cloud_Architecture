@@ -303,6 +303,7 @@ def _parse_drawio_page(path: str, page: Page, text: str) -> Artifact:
     diagram_class = "flow"
     summary_of = None
     detailed_view = None
+    diagram_type = None
     if fm:
         _cls = str(fm.get("diagram_class", "") or "").strip().lower()
         if _cls in ("flow", "landscape"):
@@ -311,6 +312,11 @@ def _parse_drawio_page(path: str, page: Page, text: str) -> Artifact:
         summary_of = str(_so).strip() if _so else None
         _dv = fm.get("detailed_view")
         detailed_view = str(_dv).strip() if _dv else None
+        # ``diagram_type`` is descriptive companion metadata (Requirement 6),
+        # not the enforced class — but ``ip-range`` (Part C) scopes on it: a
+        # network / infrastructure / deployment diagram is a Network_Diagram.
+        _dt = fm.get("diagram_type")
+        diagram_type = str(_dt).strip() if _dt else None
 
     # Overlay vocabulary coverage (R1.12). Overlay markers come from the
     # ``overlay`` style key of each cell; a term is documented only when it
@@ -367,6 +373,7 @@ def _parse_drawio_page(path: str, page: Page, text: str) -> Artifact:
         is_drawio=True,
         has_companion_doc=os.path.isfile(companion),
         diagram_class=diagram_class,
+        diagram_type=diagram_type,
         summary_of=summary_of,
         detailed_view=detailed_view,
         overlay_markers=overlay_markers,

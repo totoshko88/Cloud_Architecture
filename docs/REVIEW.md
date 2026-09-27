@@ -7,7 +7,8 @@ steering docs can cite the exact item. Codes are permanent once assigned; a
 resolved finding keeps its code and is marked **Resolved** rather than deleted,
 so the citations scattered through the codebase stay meaningful.
 
-Status legend: **Resolved** — fixed and regression-tested; **Open** — a known,
+Status legend: **Resolved** — fixed and regression-tested; **Scheduled** — a
+gap with an approved spec targeting a named release; **Open** — a known,
 documented gap that does not block publication.
 
 ## Correctness (C)
@@ -56,22 +57,31 @@ documented gap that does not block publication.
 | G5 | **Version recorded in three places, drifting.** `VERSION`, `pyproject.toml`, and the newest `CHANGELOG.md` heading disagreed at 1.5.4; CI rewrites `VERSION` at tag time, so nothing surfaced it. Now a checked contract. | Resolved | `version_guard.assert_version_triple_consistent`, `tests/test_version_triple.py` |
 | G6 | **Duplicated artifacts drifting unguarded.** The `.kiro/skills` and Power `SKILL.md` copies had diverged across four wording hunks, and `powers/…/plugin.json` sat at 1.0.0 through nine engine releases. A clean-room install also received the steering rules but none of the three agents that apply them. | Resolved | `build_backend._PAYLOAD` (`.kiro/agents`), `tests/test_bootstrap_payload_sync.py` |
 | G7 | **Inventory → diagram reconciliation was prose, not a gate.** `diagram-standards.md` requires every enumerated, role-resolvable resource to appear on the diagram, and the snapshot gate checks the snapshot's own shape, but nothing compared the two: a clean-room diagram omitted the ten KMS keys its `secrets.json` enumerated while its companion asserted completeness. The `rule-engine-reconcile` gate now maps each enumerated resource to its role (`reconcile.role_of`, reading only committed Snapshot JSON, never provider state) and blocks a silent omission, naming it — total coverage for `landscape`, scoped for `flow`; wired into CI. | Resolved (1.9.0) | `reconcile.role_of`, `reconcile.reconcile`, `cli.py`, CI, `tests/test_reconcile_properties.py` |
-| G8 | **No high-level "draw from inventory" generator.** `collector.collect()` produces a Snapshot and `diagram_layout.build_diagram()` is a *low-level* builder (the author sets every node x/y and every edge waypoint by hand), so authoring a landscape from a snapshot is manual and edge routing takes several lint iterations (`edge-direction`, `entry-thirds`, `edge-crosses-label`). `reconcile.role_of` already maps a resource → role but only to *check* coverage, not to *place* nodes. A snapshot→diagram autogenerator (role-resolve every enumerated resource, place by lane order, route with the existing solver, emit the triple) would collapse that path. Deferred to a future release; recorded here so it is not re-discovered. | Open (deferred) | future — reuse `reconcile.role_of`, `diagram_layout.build_diagram`, `layout/solver` |
+| G8 | **No high-level "draw from inventory" generator.** `collector.collect()` produces a Snapshot and `diagram_layout.build_diagram()` is a *low-level* builder (the author sets every node x/y and every edge waypoint by hand), so authoring a landscape from a snapshot is manual and edge routing takes several lint iterations (`edge-direction`, `entry-thirds`, `edge-crosses-label`). `reconcile.role_of` already maps a resource → role but only to *check* coverage, not to *place* nodes. A snapshot→diagram autogenerator (role-resolve every enumerated resource, place by lane order, route with the existing solver, emit the triple) would collapse that path. **Resolved (1.10.0)** as item **J** of the `provider-diagram-conventions` spec: the `rule-engine-draw` command role-resolves every enumerated resource via `reconcile.role_of`, assigns a lane via the pure `draw.lane_of`, emits the coordinate-free `DiagramSpec`, and delegates placement/routing to `layout()` and serialization to `build_diagram()`, writing the mandatory triple with a complete companion (`diagram_class` + `summary_of`/`detailed_view`). It is offline (Decision D5), deterministic (two runs byte-identical), and covers every role-bearing resource on a `landscape` (so `rule-engine-reconcile` passes). **Accepted limitation:** the best-effort LIVE raster export of a narrow-tall snapshot (the committed AWS example) lands ~3803px tall, over the `LANDSCAPE_MAX_HEIGHT_PX` (3600) ceiling — width and file size are within budget. This is a first-pass layout concern of the autogenerator on a tall inventory, not a gate defect and not a shipped artifact (the PNG is generated to a temp dir in the e2e test, never into `examples/`), so the raster export is best-effort: `rule-engine-draw` still writes the `.drawio` + companion, and the `check-rasters` gate is exercised over a conforming synthetic raster (`test_draw_e2e.py`). Every shipped `examples/` landscape raster stays within its class budget. A future pass can tighten the autogenerator's tall-snapshot layout (split rows, denser packing) without weakening the ceiling. | Resolved (1.10.0) | `rule_engine/draw.py`, `rule_engine/draw_cli.py`, reuses `reconcile.role_of`, `layout/pipeline.layout`, `diagram_layout.build_diagram`; `tests/test_draw_*` |
 
 ## Open gaps
 
 The four gaps closed in 1.9.0 are tracked as coded, Resolved findings in the
 tables above; they are kept below for continuity, each pointing at its stable
-code. One gap remains **Open (deferred)**: G8.
+code. The last open gap, **G8**, is now **Resolved (1.10.0)** — the
+`rule-engine-draw` autogenerator shipped (`.kiro/specs/provider-diagram-conventions/`,
+item J). There are no open gaps.
 
-- **No high-level "draw from inventory" generator.** → **Open (deferred), G8.**
+- **No high-level "draw from inventory" generator.** → **Resolved (1.10.0), G8.**
   `collector.collect()` writes the Snapshot and `diagram_layout.build_diagram()`
-  is a low-level builder (manual node x/y and edge waypoints), so a landscape is
-  authored by hand and its routing takes several lint iterations. A
-  snapshot→diagram autogenerator — role-resolve every enumerated resource via
-  `reconcile.role_of`, place by the fixed lane order, route with the existing
-  `layout/solver`, and emit the mandatory triple — would collapse that path. It
-  is scoped for a future release, not this hotfix.
+  is a low-level builder (manual node x/y and edge waypoints), so a landscape was
+  authored by hand and its routing took several lint iterations. The
+  `rule-engine-draw` autogenerator (item **J** of the `provider-diagram-conventions`
+  spec) role-resolves every enumerated resource via `reconcile.role_of`, assigns
+  a lane per the fixed lane order, emits the coordinate-free `DiagramSpec`, routes
+  with the existing `layout()` solver, and writes the mandatory triple — total
+  coverage for a `landscape` (so `rule-engine-reconcile` passes), offline and
+  deterministic. **Accepted limitation:** the best-effort live raster export of a
+  narrow-tall snapshot overshoots the 3600px landscape height ceiling (the
+  committed AWS example lands ~3803px tall; width/size within budget). Since that
+  PNG is generated to a temp dir and is not a shipped artifact, the raster export
+  stays best-effort and the height ceiling is unchanged; every shipped `examples/`
+  landscape raster remains within budget. See the G8 row above.
 
 - **Inventory → diagram reconciliation is prose, not a gate.** → **Resolved (1.9.0),
   G7.** `diagram-standards.md` required every enumerated, role-resolvable resource

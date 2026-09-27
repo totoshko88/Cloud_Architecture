@@ -120,6 +120,36 @@ def _diagram_class_of(source: str | Path) -> str:
     )
     return m.group(1).strip().lower() if m else "flow"
 
+
+def _diagram_background_of(source: str | Path) -> str:
+    """Return the ``raster_background`` declared in a ``.drawio``'s companion doc.
+
+    Reads ``raster_background`` from the sibling ``NN-topic.diagram.md`` YAML
+    frontmatter (Requirement 4, item D). Any value other than ``transparent``
+    falls back to ``"white"`` (the safe default), so a typo never silently drops
+    the opaque-white check, and every pre-1.10.0 companion (which has no such
+    key) keeps the white budget unchanged (AC 4.1, 4.4). Kept as a small regex
+    so the gate stays dependency-free (stdlib only, no PyYAML), matching
+    :func:`_diagram_class_of`.
+    """
+    src = Path(source)
+    companion = Path(str(src)[: -len(".drawio")] + ".diagram.md") if str(src).endswith(".drawio") else None
+    if companion is None or not companion.is_file():
+        return "white"
+    try:
+        text = companion.read_text(encoding="utf-8")
+    except OSError:
+        return "white"
+    m = re.search(
+        r"""^raster_background:\s*['"]?([A-Za-z_]+)['"]?\s*(?:\#.*)?$""",
+        text,
+        re.MULTILINE,
+    )
+    if not m:
+        return "white"
+    value = m.group(1).strip().lower()
+    return "transparent" if value == "transparent" else "white"
+
 EXIT_OK = 0
 EXIT_OVER_BUDGET = 1
 EXIT_USAGE = 2
@@ -145,6 +175,8 @@ class RasterRef:
     provenance: Optional[str] = None   # source sha256 recorded in the PNG tEXt
     source_sha256: Optional[str] = None  # sha256 of the current source .drawio
     row0_all_white: Optional[bool] = None  # first row opaque white (None: unknown)
+    raster_background: str = "white"   # "white" (default) or "transparent"
+    row0_transparent: Optional[bool] = None  # first pixel alpha == 0 (None: unknown)
 
     @property
     def max_width(self) -> int:
@@ -186,12 +218,25 @@ class RasterRef:
 
     @property
     def background_ok(self) -> bool:
-        """True when the raster is an opaque white-background PNG.
+        """True when the raster's background matches its declared mode.
 
-        Requires colour type 0 (grayscale) or 2 (truecolour) — i.e. no alpha
-        channel — with no ``tRNS`` chunk, and a first scanline that is entirely
-        white. ``row0_all_white is None`` means the row could not be
-        reconstructed, which is treated as not-OK (fail closed)."""
+        Branches on ``raster_background`` (Requirement 4, item D):
+
+        * ``white`` (default / absent) — the existing, unchanged opaque-white
+          check: colour type 0 (grayscale) or 2 (truecolour) — i.e. no alpha
+          channel — with no ``tRNS`` chunk, and a first scanline that is entirely
+          white. This is byte-for-byte the pre-1.10.0 behaviour (AC 4.4).
+        * ``transparent`` — a dark/light-safe raster: require an alpha channel
+          (colour type 4 gray+alpha or 6 RGBA) and a transparent first pixel
+          (alpha == 0) rather than the opaque white a light target wants (AC 4.2).
+
+        A ``None`` reconstruction verdict means the row could not be rebuilt,
+        which is treated as not-OK (fail closed) in either mode."""
+        if self.raster_background == "transparent":
+            return (
+                self.color_type in (4, 6)
+                and self.row0_transparent is True
+            )
         return (
             self.color_type in (0, 2)
             and not self.has_trns
@@ -371,11 +416,13 @@ class RasterFacts:
     has_trns: bool = False
     provenance: Optional[str] = None       # source sha256 recorded in the PNG
     row0_all_white: Optional[bool] = None  # None when it could not be reconstructed
+    row0_transparent: Optional[bool] = None  # first-pixel alpha == 0 (None: unknown)
 
 
 def read_png_facts(path: str | Path) -> RasterFacts:
-    """Parse ``path`` and return its height, colour type, tRNS, provenance and
-    a reconstructed-first-row white-background verdict.
+    """Parse ``path`` and return its height, colour type, tRNS, provenance,
+    a reconstructed-first-row white-background verdict, and (for an alpha colour
+    type) whether the first pixel is transparent.
 
     Raises :class:`RasterReadError` on a non-PNG / truncated file.
     """
@@ -411,6 +458,13 @@ def read_png_facts(path: str | Path) -> RasterFacts:
                 facts.row0_all_white = all(
                     b == 0xFF for b in row0[:colour_channels]
                 )
+                # For an alpha colour type (4 gray+alpha, 6 RGBA) the alpha
+                # sample is the final channel of the first pixel; a transparent
+                # background has alpha == 0 there (Requirement 4, item D). A
+                # non-alpha colour type has no alpha sample, so the verdict is
+                # left None (transparent mode requires an alpha channel anyway).
+                if facts.color_type in (4, 6):
+                    facts.row0_transparent = row0[channels - 1] == 0x00
     return facts
 
 
@@ -469,8 +523,11 @@ def check_rasters(
         rel_src = os.path.relpath(src, repo_root)
         rel_png = os.path.relpath(png, repo_root)
         dclass = _diagram_class_of(src)
+        background = _diagram_background_of(src)
         if not os.path.isfile(png):
-            refs.append(RasterRef(rel_src, rel_png, False, None, None, dclass))
+            refs.append(
+                RasterRef(rel_src, rel_png, False, None, None, dclass, raster_background=background)
+            )
             continue
         size = os.path.getsize(png)
         try:
@@ -502,6 +559,8 @@ def check_rasters(
                 provenance=facts.provenance,
                 source_sha256=cur_sha,
                 row0_all_white=facts.row0_all_white,
+                raster_background=background,
+                row0_transparent=facts.row0_transparent,
             )
         )
     return refs
@@ -627,19 +686,31 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if bad_bg:
         failed = True
         print(
-            "BLOCKING: raster(s) are not opaque white-background PNGs "
-            "(need colour type 0/2, no tRNS, a white first row):",
+            "BLOCKING: raster(s) do not match their declared raster_background "
+            "(white: colour type 0/2, no tRNS, a white first row; "
+            "transparent: colour type 4/6, a transparent first pixel):",
             file=sys.stderr,
         )
         for r in bad_bg:
             reason = []
-            if r.color_type not in (0, 2):
-                reason.append(f"colour-type {r.color_type}")
-            if r.has_trns:
-                reason.append("tRNS present")
-            if r.row0_all_white is not True:
-                reason.append("first row not white")
-            print(f"    - {r.png} ({', '.join(reason) or 'not white'})", file=sys.stderr)
+            if r.raster_background == "transparent":
+                if r.color_type not in (4, 6):
+                    reason.append(f"colour-type {r.color_type} (need 4/6 for alpha)")
+                if r.row0_transparent is not True:
+                    reason.append("first pixel not transparent")
+                default = "not transparent"
+            else:
+                if r.color_type not in (0, 2):
+                    reason.append(f"colour-type {r.color_type}")
+                if r.has_trns:
+                    reason.append("tRNS present")
+                if r.row0_all_white is not True:
+                    reason.append("first row not white")
+                default = "not white"
+            print(
+                f"    - {r.png} [{r.raster_background}] ({', '.join(reason) or default})",
+                file=sys.stderr,
+            )
 
     if missing:
         if args.allow_missing:
