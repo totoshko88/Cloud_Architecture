@@ -221,8 +221,8 @@ connect.
 
 ## Node Quoting Rule
 
-- Enclose a node name in double quotes whenever it contains a space character or any character outside the set of ASCII letters, ASCII digits, hyphen (`-`), and underscore (`_`). Allowed unquoted set: `[A-Za-z0-9_-]`.
-- A special-character node name that is not quoted is a lint ERROR (`node-quote`).
+- **draw.io labels are exempt.** In a draw.io cell the `value` is the node's *display label* — free text rendered on the canvas — not an identifier. Write it naturally (`IAM user sep`, not `IAM-user-sep`); do **not** add double quotes, which would render on the canvas. `node-quote` does not flag a draw.io label.
+- **PlantUML / Mermaid only:** enclose a node *identifier* in double quotes whenever it contains a space character or any character outside the set of ASCII letters, ASCII digits, hyphen (`-`), and underscore (`_`). Allowed unquoted set: `[A-Za-z0-9_-]`. A special-character identifier that is not quoted is a lint ERROR (`node-quote`). (Since draw.io is the only publishable source per D1, this bites only an intermediate `.puml`/`.mmd` sketch.)
 
 ## Mandatory Edge Labels
 
@@ -528,7 +528,7 @@ endlegend
 - [ ] Orientation matches diagram type: North–South (top→bottom) for infra/deployment, left→right for flow/application
 - [ ] Lanes ordered actors → edge → router → async messaging → workers → platform core → data → on-premises
 - [ ] ≤ 12 nodes (else split + index document)
-- [ ] Special-character node names double-quoted
+- [ ] draw.io labels written as natural display text (no literal quotes); node-quote applies to `.puml`/`.mmd` identifiers only
 - [ ] Every edge carries a non-empty label (numeric marker `N` counts)
 - [ ] Numbered flow markers used; prose moved to a right-side `Flow` legend
 - [ ] Orthogonal edge routing; no edge crosses an icon; entries left/top, exits right/bottom

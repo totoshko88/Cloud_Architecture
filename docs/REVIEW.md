@@ -56,12 +56,22 @@ documented gap that does not block publication.
 | G5 | **Version recorded in three places, drifting.** `VERSION`, `pyproject.toml`, and the newest `CHANGELOG.md` heading disagreed at 1.5.4; CI rewrites `VERSION` at tag time, so nothing surfaced it. Now a checked contract. | Resolved | `version_guard.assert_version_triple_consistent`, `tests/test_version_triple.py` |
 | G6 | **Duplicated artifacts drifting unguarded.** The `.kiro/skills` and Power `SKILL.md` copies had diverged across four wording hunks, and `powers/…/plugin.json` sat at 1.0.0 through nine engine releases. A clean-room install also received the steering rules but none of the three agents that apply them. | Resolved | `build_backend._PAYLOAD` (`.kiro/agents`), `tests/test_bootstrap_payload_sync.py` |
 | G7 | **Inventory → diagram reconciliation was prose, not a gate.** `diagram-standards.md` requires every enumerated, role-resolvable resource to appear on the diagram, and the snapshot gate checks the snapshot's own shape, but nothing compared the two: a clean-room diagram omitted the ten KMS keys its `secrets.json` enumerated while its companion asserted completeness. The `rule-engine-reconcile` gate now maps each enumerated resource to its role (`reconcile.role_of`, reading only committed Snapshot JSON, never provider state) and blocks a silent omission, naming it — total coverage for `landscape`, scoped for `flow`; wired into CI. | Resolved (1.9.0) | `reconcile.role_of`, `reconcile.reconcile`, `cli.py`, CI, `tests/test_reconcile_properties.py` |
+| G8 | **No high-level "draw from inventory" generator.** `collector.collect()` produces a Snapshot and `diagram_layout.build_diagram()` is a *low-level* builder (the author sets every node x/y and every edge waypoint by hand), so authoring a landscape from a snapshot is manual and edge routing takes several lint iterations (`edge-direction`, `entry-thirds`, `edge-crosses-label`). `reconcile.role_of` already maps a resource → role but only to *check* coverage, not to *place* nodes. A snapshot→diagram autogenerator (role-resolve every enumerated resource, place by lane order, route with the existing solver, emit the triple) would collapse that path. Deferred to a future release; recorded here so it is not re-discovered. | Open (deferred) | future — reuse `reconcile.role_of`, `diagram_layout.build_diagram`, `layout/solver` |
 
 ## Open gaps
 
-The four gaps recorded here were closed in 1.9.0 and are now tracked as coded,
-Resolved findings in the tables above. They are kept below for continuity, each
-pointing at its stable code.
+The four gaps closed in 1.9.0 are tracked as coded, Resolved findings in the
+tables above; they are kept below for continuity, each pointing at its stable
+code. One gap remains **Open (deferred)**: G8.
+
+- **No high-level "draw from inventory" generator.** → **Open (deferred), G8.**
+  `collector.collect()` writes the Snapshot and `diagram_layout.build_diagram()`
+  is a low-level builder (manual node x/y and edge waypoints), so a landscape is
+  authored by hand and its routing takes several lint iterations. A
+  snapshot→diagram autogenerator — role-resolve every enumerated resource via
+  `reconcile.role_of`, place by the fixed lane order, route with the existing
+  `layout/solver`, and emit the mandatory triple — would collapse that path. It
+  is scoped for a future release, not this hotfix.
 
 - **Inventory → diagram reconciliation is prose, not a gate.** → **Resolved (1.9.0),
   G7.** `diagram-standards.md` required every enumerated, role-resolvable resource

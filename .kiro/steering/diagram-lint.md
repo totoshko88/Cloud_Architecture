@@ -32,7 +32,7 @@ every applicable rule against every artifact.
 | --- | --- | --- | --- |
 | `node-count` | Too many nodes for the diagram class: `flow` &gt; 12 (ERROR); `landscape` &gt; 30 (WARNING), &gt; 50 (ERROR). | ERROR/WARNING | R7 AC4 / R1 AC4 / diagram-standards Diagram Class |
 | `edge-label` | A diagram edge has no non-empty label. | WARNING | R7 AC5 / R1 AC7 |
-| `node-quote` | A node name contains a space or any character outside `[A-Za-z0-9_-]` and is not enclosed in double quotes. | ERROR | R7 AC6 / R1 AC6 |
+| `node-quote` | A **non-draw.io** (`.puml`/`.mmd`) node *identifier* contains a space or any character outside `[A-Za-z0-9_-]` and is not enclosed in double quotes. A draw.io cell `value` is display text, not an identifier, so it is never flagged. | ERROR | R7 AC6 / R1 AC6 |
 | `legend-present` | A diagram has no Legend, identified structurally (a text cell whose first non-empty line is `Legend`) rather than by any occurrence of the word `legend`. | ERROR | R7 AC7 / R5 AC11 / R1 AC11 |
 | `companion-doc` | A `.drawio` file has no matching `.diagram.md` Companion Document. | ERROR | R7 AC8 / R1 AC10 |
 | `frontmatter` | A generated KB document breaks the `kb-frontmatter.md` contract: a missing/empty required key, a bad `status` enum, a non-calendar date, an out-of-bound `tags`/`related_docs` list, unparsable YAML, or (KB documents only) a document-structure violation. Each finding names the offending key or constraint. | CRITICAL | R7 AC9 / R8 / R2 |
@@ -80,7 +80,11 @@ every applicable rule against every artifact.
   summary cross-link.
 - **`edge-label` (WARNING)** — Every edge must carry a non-empty, descriptive text
   label. An edge with a missing or empty label produces a WARNING.
-- **`node-quote` (ERROR)** — The allowed unquoted character set for a node name is
+- **`node-quote` (ERROR)** — Applies to **PlantUML/Mermaid identifier sources only**.
+  A draw.io cell's `value` is a **display label** (free text rendered on the
+  canvas), not an identifier; quoting it would render literal quotes, so a
+  draw.io label is never flagged (draw.io is the only publishable source per
+  D1). For a `.puml`/`.mmd` source, the allowed unquoted character set for a node name is
   `[A-Za-z0-9_-]`. A node name containing a space or any character outside that set
   must be enclosed in double quotes; an unquoted special-character node name is an
   ERROR.

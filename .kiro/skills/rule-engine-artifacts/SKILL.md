@@ -138,6 +138,18 @@ Do not restate rule values from memory. The binding sources are always-on:
 
 ## Inventory workflow
 
+**Before collecting, ask the user for scope — do not guess.** A cloud account
+is huge (AWS alone is 30+ regions and 300+ services), so a collection that is
+not scoped by the user silently misses whole domains — the *omitted EFS /
+omitted AWS Batch* class of defect. Ask for, at minimum: (1) the **region(s)**
+to enumerate (never assume one — check where resources actually live); (2) a
+short **description of the system** and what it is built from (so you know
+which domains matter — e.g. lifecycle mechanics like aws-nuke / Terraform /
+STS, not just org/governance); and (3) **what specifically to look for**.
+Warn the user explicitly that anything outside the stated scope may be missed,
+and enumerate the full §6 domain set regardless so nothing is dropped by
+assumption.
+
 - Execute only the read-only verbs declared in the provider profile; the count
   of state-mutating verbs per run is zero.
 - **Enumerate the full set of service domains** in `inventory-standards.md` §6 —
@@ -151,6 +163,16 @@ Do not restate rule values from memory. The binding sources are always-on:
   one JSON per service domain and a per-resource subfolder under `resources/`.
 - Record metadata only — never secret values, key material, or SecureString
   contents.
+- **Even a control-plane inventory needs `resources/<...>` subfolders.** The
+  snapshot gate (§5) requires one per-resource subfolder for **each enumerated
+  item**, and for a control-plane collection a "resource" is an OU / account /
+  policy — so create a subfolder per OU/account too, not just for data-plane
+  resources, or `resources-empty` blocks the snapshot.
+- **Raster provenance is automatic.** `rule-engine-export-raster` stamps the
+  source `.drawio` sha256 into the PNG (the `rule-engine:source-sha256` chunk)
+  so `rule-engine-check-rasters` accepts it. Do not hand-stamp it — that manual
+  step was only ever needed on a stale install lacking the exporter (fixed in
+  1.9.1; a stale CLI is now upgraded by the bootstrap in 1.9.3).
 
 ## After inventory: offer the diagram type (simple / summary / landscape)
 
@@ -179,7 +201,7 @@ is part of it. If a resource has no role, add one and re-run
 rule-engine-lint --all --fail-on error,critical      # zero CRITICAL/ERROR to publish
 rule-engine-validate-schema --schema schemas/inventory.schema.json --targets 'examples/**/*.json'
 rule-engine-check-asset-paths                         # mapping icon paths + OCI slugs exist
-rule-engine-check-rasters                             # exported PNGs within the D7 budget
+rule-engine-check-rasters --examples .                # exported PNGs within the D7 budget (use --examples . when diagrams sit at the workspace root, not under examples/)
 rule-engine-check-snapshot --strict                   # Snapshot folder shape (§3-§5)
 pytest -q                                             # unit + property-based tests
 ```

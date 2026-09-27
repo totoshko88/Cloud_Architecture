@@ -490,7 +490,19 @@ def main(argv: Optional[list[str]] = None) -> int:
         "Required for GCP/OCI icons to actually render (AWS/Azure are built into "
         "draw.io; GCP/OCI icons are file/stencil assets that are not committed).",
     )
+    parser.add_argument(
+        "--version", action="store_true",
+        help="Print the installed engine version and exit. Lets the power "
+        "bootstrap compare the installed engine against its pinned release "
+        "and upgrade a stale install rather than reusing old rules.",
+    )
     args = parser.parse_args(argv)
+
+    # --version is answerable with no source tree (a bare install), so it is
+    # handled before resolve_source, which can fail on a fresh machine.
+    if args.version:
+        print(_engine_version())
+        return EXIT_OK
 
     source = resolve_source(args.source)
     if source is None:

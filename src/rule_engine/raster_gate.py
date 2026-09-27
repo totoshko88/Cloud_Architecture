@@ -440,10 +440,30 @@ def check_rasters(
     # likewise excluded from the raster gate: like scratch copies, they are not
     # publishable golden artifacts, so a reference triple must not fail the
     # triple/PNG budget check nor be treated as a diagram to regenerate.
-    from rule_engine.cli import _is_reference_artifact, _is_scratch_copy
+    # Vendor/build directories carry .drawio files that are INPUTS, not
+    # publishable artifacts — most notably the OCI style guide's own .drawio
+    # under assets/vendor/oci-style/. The linter's --all scan already skips
+    # these via _EXCLUDED_DIRS; the raster gate must use the SAME exclusion so
+    # a workspace pointed at its root (where diagrams sit beside assets/) does
+    # not have to pass --allow-missing just to tolerate a vendor .drawio with
+    # no companion/PNG (v1.9.3).
+    from rule_engine.cli import (
+        _EXCLUDED_DIRS,
+        _is_reference_artifact,
+        _is_scratch_copy,
+    )
+    examples_root = Path(examples_dir)
     for src in sorted(glob.glob(str(examples_dir / "**" / "*.drawio"), recursive=True)):
         base = os.path.basename(src)
         if _is_scratch_copy(base) or _is_reference_artifact(base):
+            continue
+        # Skip any source whose path (relative to the scan root) descends
+        # through an excluded directory (assets, .build-tools, build, .git, …).
+        try:
+            parts = set(Path(src).resolve().relative_to(examples_root.resolve()).parts)
+        except ValueError:
+            parts = set(Path(src).parts)
+        if parts & _EXCLUDED_DIRS:
             continue
         png = src + ".png"
         rel_src = os.path.relpath(src, repo_root)

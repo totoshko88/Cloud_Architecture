@@ -80,6 +80,18 @@ them MUST have a length between **100 and 200 words inclusive**. (AC 8.3, 8.7)
 - `Troubleshooting` — 100–200 words
 - `See Also` — 100–200 words
 
+## Prose Line Wrapping (authoring guidance)
+
+Write descriptive prose as **one logical line per paragraph** and let the
+editor/renderer soft-wrap it. Do **not** hard-wrap sentences at a fixed column
+(the ~78-char break every line mid-sentence style): hard wraps survive into the
+rendered document and every downstream diff, make a one-word edit reflow a whole
+block, and read as ragged breaks in Markdown viewers that already wrap. This is
+authoring guidance, not a lint rule — the word-count bounds above are unaffected
+by wrapping — but generated companion and KB documents should follow it so the
+prose stays clean to read and to edit. Fenced code blocks, tables, and list
+items are exempt (they wrap by their own rules).
+
 ## Heading Rule
 
 Each document MUST contain **exactly one H1 heading**. Zero H1 headings and two

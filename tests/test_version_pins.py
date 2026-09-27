@@ -84,12 +84,24 @@ def stub_env(tmp_path):
     bin_dir.mkdir()
     tool_bin.mkdir(parents=True)
     log = tmp_path / "calls.log"
-    init_stub = f'#!/bin/sh\necho "rule-engine-init $*" >> "{log}"\nexit 0\n'
+    # The installed rule-engine-init stub logs its args AND answers --version
+    # with the version the install baked in (default: the current pin), so the
+    # bootstrap's stale-check can read it. Tests that model a stale/older
+    # pre-installed CLI override INSTALLED_VERSION.
+    def _init_stub(version: str) -> str:
+        return (
+            '#!/bin/sh\n'
+            'if [ "$1" = "--version" ]; then echo "' + version + '"; exit 0; fi\n'
+            f'echo "rule-engine-init $*" >> "{log}"\n'
+            'exit 0\n'
+        )
+    init_stub = _init_stub(_engine_version())
     # `uv tool install X` "installs" rule-engine-init into the tool bin dir;
     # `uv tool dir --bin` reports that dir (not yet on PATH, like a fresh machine).
     _write_stub(
         bin_dir / "uv",
         f'echo "uv $*" >> "{log}"\n'
+        # `uv tool install [--force] <spec>` installs the init stub (pinned version).
         f'if [ "$1 $2" = "tool install" ]; then printf \'%s\' \'{init_stub}\' > "{tool_bin}/rule-engine-init"; '
         f'chmod +x "{tool_bin}/rule-engine-init"; fi\n'
         f'if [ "$1 $2 $3" = "tool dir --bin" ]; then echo "{tool_bin}"; fi\n'
@@ -120,7 +132,7 @@ def test_bootstrap_prefers_uv_and_installs_the_pinned_tag(stub_env):
     result = _run_bootstrap(env, cwd)
     assert result.returncode == 0, result.stderr
     calls = log.read_text(encoding="utf-8")
-    expected = f"uv tool install git+https://github.com/totoshko88/Cloud_Architecture.git@v{_engine_version()}"
+    expected = f"uv tool install --force git+https://github.com/totoshko88/Cloud_Architecture.git@v{_engine_version()}"
     assert expected in calls
     assert f"rule-engine-init {cwd / 'ws'}" in calls
     assert f"rule-engine-init --check {cwd / 'ws'}" in calls
@@ -133,7 +145,7 @@ def test_bootstrap_uses_pip_when_pip_is_set(stub_env):
     assert result.returncode == 0, result.stderr
     calls = log.read_text(encoding="utf-8")
     assert "uv tool install" not in calls
-    assert f"pip install git+https://github.com/totoshko88/Cloud_Architecture.git@v{_engine_version()}" in calls
+    assert f"pip install --upgrade git+https://github.com/totoshko88/Cloud_Architecture.git@v{_engine_version()}" in calls
 
 
 @pytest.mark.skipif(os.name != "posix", reason="bootstrap.sh is a bash script")
@@ -142,6 +154,58 @@ def test_bootstrap_version_override_changes_the_tag(stub_env):
     result = _run_bootstrap(env, cwd, {"RULE_ENGINE_VERSION": "9.9.9"})
     assert result.returncode == 0, result.stderr
     assert "Cloud_Architecture.git@v9.9.9" in log.read_text(encoding="utf-8")
+
+
+@pytest.mark.skipif(os.name != "posix", reason="bootstrap.sh is a bash script")
+def test_bootstrap_upgrades_a_stale_preinstalled_engine(stub_env):
+    """A user who bootstrapped an OLDER release keeps an on-PATH rule-engine-init;
+    the bootstrap must UPGRADE it to the pin rather than reuse the stale rules
+    (the 1.9.0-stuck defect this hotfix closes)."""
+    env, log, _pip, cwd = stub_env
+    # Pre-install a stale CLI on PATH that reports an older version.
+    stale_bin = cwd / "prebin"
+    stale_bin.mkdir()
+    stale = stale_bin / "rule-engine-init"
+    stale.write_text(
+        '#!/bin/sh\n'
+        'if [ "$1" = "--version" ]; then echo "1.0.0"; exit 0; fi\n'
+        f'echo "STALE-init $*" >> "{log}"\nexit 0\n',
+        encoding="utf-8",
+    )
+    stale.chmod(0o755)
+    env = dict(env, PATH=f"{stale_bin}:{env['PATH']}")
+    result = _run_bootstrap(env, cwd)
+    assert result.returncode == 0, result.stderr
+    calls = log.read_text(encoding="utf-8")
+    # It saw the stale version and upgraded via uv --force to the pinned tag.
+    assert "older than the pinned" in result.stdout
+    assert f"uv tool install --force git+https://github.com/totoshko88/Cloud_Architecture.git@v{_engine_version()}" in calls
+
+
+@pytest.mark.skipif(os.name != "posix", reason="bootstrap.sh is a bash script")
+def test_bootstrap_does_not_reinstall_an_up_to_date_engine(stub_env):
+    """When the installed engine already satisfies the pin, the bootstrap must
+    NOT reinstall — it just runs rule-engine-init against the workspace."""
+    env, log, _pip, cwd = stub_env
+    current_bin = cwd / "prebin"
+    current_bin.mkdir()
+    cur = current_bin / "rule-engine-init"
+    cur.write_text(
+        '#!/bin/sh\n'
+        f'if [ "$1" = "--version" ]; then echo "{_engine_version()}"; exit 0; fi\n'
+        f'echo "rule-engine-init $*" >> "{log}"\nexit 0\n',
+        encoding="utf-8",
+    )
+    cur.chmod(0o755)
+    env = dict(env, PATH=f"{current_bin}:{env['PATH']}")
+    result = _run_bootstrap(env, cwd)
+    assert result.returncode == 0, result.stderr
+    assert "not reinstalling" in result.stdout
+    calls = log.read_text(encoding="utf-8")
+    assert "uv tool install" not in calls
+    assert "pip install" not in calls
+    # It still bootstrapped the workspace.
+    assert f"rule-engine-init {cwd / 'ws'}" in calls
 
 
 def test_bootstrap_script_is_valid_bash():
