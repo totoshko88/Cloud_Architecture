@@ -142,6 +142,114 @@ Rules:
   appear** on the landscape (or on the simple/summary when it is in scope) — see
   *Inventory completeness → diagram* below.
 
+## C4 layering & progressive disclosure (guidance)
+
+Do not encode a whole system on one canvas when the reader is asking a broad
+question. Follow the **C4 model's progressive disclosure**: start from the widest
+view and drill down deliberately, one level at a time. The engine's classes and
+types map onto the C4 levels so an author can pick the right level directly:
+
+| C4 level | Engine analogue | Answers |
+| --- | --- | --- |
+| **Context** | a `simple` `flow` (the widest single view) | who uses the system and what it talks to |
+| **Container** | a `summary` `flow` (≈ the shape, ≤ 12 nodes) | the deployable units and how a request moves between them |
+| **Component / Deployment** | a `landscape` (the full as-built) | every runtime piece and how it is actually deployed at once |
+
+The principle is **layer, don't overload**: a context/container view carries the
+shape; the component/deployment view carries the detail. Reach for a `landscape`
+when the question is "what is actually deployed" — not to answer "how does a
+request flow", which a `flow` summary answers more clearly.
+
+The layering **mechanism is the existing `summary_of` / `detailed_view` pair**
+(see *Diagram Class* and *Choosing the diagram type after inventory* above): the
+≤12-node `flow` summary carries the container-level shape and names its
+`detailed_view`; the `landscape` carries the component/deployment-level as-built
+and names its `summary_of` back. That cross-link is how a reader moves down a
+level — read the summary for the shape, then open the linked landscape for the
+detail. This item is **guidance only**; the enforced contract remains
+`diagram_class` and the `orphan-landscape` cross-link rule.
+
+## Diagram-type taxonomy (`diagram_type`, guidance)
+
+A companion `.diagram.md` MAY declare an optional **`diagram_type`** key naming
+the artifact's *intent*. It is **descriptive metadata, not an enforced class** —
+the lint-enforced class stays `diagram_class` (`flow` / `landscape`). `diagram_type`
+is already read by the tooling (it scopes the `ip-range` rule to a
+Network_Diagram: a diagram whose `diagram_class` is `landscape` OR whose
+`diagram_type` is `network` / `infrastructure` / `deployment`). Recognised types
+and the primary axis each expects (the axis source of truth stays *Diagram
+Orientation* above):
+
+| `diagram_type` | Primary axis | Lane reading |
+| --- | --- | --- |
+| `context` | left → right | actors/edge on the left, the system to the right |
+| `container` | left → right | lanes read left → right along the request flow |
+| `component` | left → right | container/component boxes read left → right, nested per level |
+| `deployment` | **top → bottom (North–South)** | external/internet at the top, internal tiers descending; AZ peers side by side |
+| `data-flow` | left → right | ordered lanes follow the data flow |
+| `sequence` | left → right | participants left → right, time descending |
+| `state` | left → right | states read left → right along transitions |
+| `network` | **top → bottom (North–South)** | ingress at the top, internal networks descending; redundancy East–West |
+| `user-flow` | left → right | steps read left → right along the journey |
+
+A **Network_Diagram may be split into two complementary views** when one axis
+cannot carry both concerns: an **East–West** view for redundancy / availability
+zones / peer relationships, and a **North–South** view for the ingress-to-internal
+traffic descent. Keep each view on a single fixed axis (do not mix North–South and
+left→right in one canvas — see *Diagram Orientation*), and cross-link the pair the
+same way a summary/landscape pair is linked. This item is **guidance only** — no
+lint rule reads `diagram_type` as a class.
+
+## Accuracy over simplicity; retire inaccurate diagrams (guidance)
+
+**Do not sacrifice accuracy for simplicity.** A diagram that is easy to read but
+wrong teaches the reader something false, which is worse than a slightly busier
+diagram that is correct. The canonical example is a **PaaS service reached through
+a private endpoint**: the service is not *in* the subnet, but a simplified drawing
+that places it inside the subnet box implies it is. Draw the private endpoint
+inside the subnet and the PaaS service outside it, connected by the endpoint — the
+accurate shape — rather than collapsing the two for a tidier picture.
+
+**Retire a diagram that no longer answers an active stakeholder question.** A
+stale as-built that shows a topology that no longer exists is a liability: readers
+trust it and act on wrong information. When a diagram stops matching reality or
+stops answering a question anyone is asking, update it or remove it — do not leave
+it published for the sake of completeness.
+
+Accuracy is not only a judgement call: it is **enforced for inventory-driven
+diagrams** by the *Inventory completeness → diagram* rule above (every enumerated,
+role-bearing resource must appear on the landscape; a dropped resource is a
+completeness defect caught by `rule-engine-reconcile`). This guidance states the
+*principle*; that rule is its enforced companion. This item is otherwise
+**guidance only** — no new lint rule.
+
+## Grouping strategies (guidance)
+
+Group resources by **one** consistent strategy per diagram (or per nesting level),
+so the reader can tell at a glance why two resources share a box. The four
+sanctioned strategies, drawn as Boundary / Network Boundary containers and tied to
+the existing *Container Nesting* and *Lane Order* rules:
+
+- **By function (tier).** Group web / app / data tiers together. This is the
+  default and it maps directly onto the fixed lane order
+  (`actors → edge → router → async messaging → workers → platform core → data →
+  on-premises`): a functional group is a contiguous run of lanes.
+- **By environment.** Group `dev` / `staging` / `prod` as sibling boundaries. Peer
+  environments are **disjoint sibling containers** (never partial overlap), each a
+  strict subtree per *Container Nesting*.
+- **By availability zone.** Group per-AZ resources into AZ boxes nested inside the
+  Network Boundary (Account ⊃ Region/VPC ⊃ Availability Zone ⊃ tier). Redundant AZ
+  peers sit **side by side on the same row** (East–West), matching the North–South
+  orientation convention.
+- **By security boundary.** Group by trust zone — public vs private subnet, a DMZ,
+  a security-group perimeter — as nested Boundary containers, so a cross-boundary
+  edge visibly crosses the boundary it traverses.
+
+Whichever strategy is chosen, it must respect the nesting tree (a child is fully
+inside its parent with padding, siblings are disjoint) and the fixed lane order.
+This item is **guidance only** — no new lint rule; the enforced companions are
+*Container Nesting*, *Container Padding*, and *Lane Order*.
+
 ## Inventory completeness → diagram (draw what was enumerated)
 
 When a diagram is generated **from an inventory snapshot**, it MUST represent
@@ -195,6 +303,7 @@ WARNING). The canonical vocabulary:
 | Spec requires, not deployed | dashed rectangle overlay | red `#D64550` | `spec-required-not-deployed` |
 | Observability overlay | stroked box | blue `#0062AD` | `observability-overlay` |
 | Passive peer, edges omitted | dashed node outline | — (never repaint a pack glyph) | `standby` |
+| Explanatory annotation | text callout box | — | `callout` |
 | New in version N | badge on node | — | 🆕 |
 | Changed in version N | badge on node | — | 🔄 |
 
@@ -218,6 +327,19 @@ deliberately declares **no colour**: *Icon Fidelity* forbids recolouring a pack
 glyph, so the marker is additive only. Use it for a genuine symmetric mirror — a
 passive region, a standby AZ — never to excuse a node the author simply forgot to
 connect.
+
+**`callout` (v1.10.0).** A **node label stays short — the service name** — so the
+diagram stays localizable and accessible; the provider guidance (AWS
+`diagram-as-code`) is explicit: "do not embed explanatory text into images; use
+short labels; use callouts". Explanation that will not fit in a short label goes
+in a **callout**: a text annotation box carrying `overlay=callout`. A callout is
+a **text cell, not a node** — it is not counted toward the node budget and its
+own text is never subject to the node-label cap — and, like every overlay term,
+it is documented in the Legend when used (`overlay-legend-coverage`). The
+enforcement side is the **`node-label-length`** lint rule (WARNING, both classes):
+a service-node label exceeding **4 words** or **40 characters** is flagged, which
+is the signal to move the prose into a callout. Legend, Flow, title, and callout
+cells are not node labels and are exempt.
 
 ## Node Quoting Rule
 
@@ -265,6 +387,8 @@ A fourth, related rule: **collapse an overshoot.** A run that passes the contact
 **Contacts are grid-resolved along the face they sit on.** A fraction such as `exitY=0.25` on a 78px icon resolves to `y0 + 19.5` — half a pixel off the 10-grid every waypoint snaps to — which leaves a permanent kink that reads as a bent arrowhead. Nudge the *fraction* until the absolute contact lands on the grid, but snap **only the along-face coordinate**: for a right face only the y, for a top face only the x. Snapping the face coordinate would pull the contact *inside* the glyph whenever the icon is not grid-commensurate (a 64px icon at `x=540` has its right edge at 604; rounding to 600 moves the contact off its own face and silently breaks the directional contract).
 
 Generated diagrams get all of this for free — the layout engine re-aligns every route after each repair pass, and the shared builder aligns at render time — so these rules bite on hand-authored sources and on edges dragged in the draw.io GUI. `scripts/orthogonalise_drawio.py` applies the same rewrite to a `.drawio` in place. (Distilled from a reviewer's hand-edit of the AWS landscape, 2026-09-26: three edges, all three instances of this one defect.)
+
+**No double-headed arrows (draw a two-way relationship as two edges).** An edge carries a **single** arrowhead showing the direction of the flow. A two-way relationship is drawn as **two single-ended edges** (preferred — one per direction, each with its own label), or as one edge annotated with the request/response it represents; it is **never** a single double-headed arrow. A double head (a non-`none` `startArrow` *and* a non-`none` `endArrow`) hides which side depends on which and reads as an ambiguous dependency (AWS `diagram-as-code`). This is the `edge-bidirectional` lint rule (WARNING, both classes): the common single-head edge — start `none`, end set — is never flagged; only an edge with a head explicitly placed on both ends trips it.
 
 **The directional contract (the one hard rule — stated first).** Every edge with explicit contact points **exits** its source on the **right or bottom** and **enters** its target on the **left or top**. In draw.io unit-square fractions: a valid exit leans right (`exitX >= 0.5`, which admits the right edge and the top-right / bottom-right corners) or sits on the bottom edge (`exitY == 1`); a valid entry leans left (`entryX <= 0.5`) or sits on the top edge (`entryY == 0`). A left-edge exit (`exitX=0`) or a right-edge entry (`entryX=1`) is the defect. This single rule removes most crossings on a dense diagram and is enforced by the `edge-direction` lint rule — WARNING for `flow`, **ERROR for `landscape`**. Exceptions are the documented corner-exit and back-edge patterns below (both still exit right/bottom, enter left/top).
 
@@ -430,9 +554,25 @@ Every diagram must be legible for reviewers and meet baseline accessibility, ali
 
 - **Minimum font size 12px.** No on-diagram text — node labels, edge labels, boundary captions, title, `Flow`/`Legend` cells — renders below **12px**. The shared builder pins label and text styles at `rule_engine.diagram_layout.MIN_FONT_SIZE` (12). Text below 12px trips the advisory `min-font-size` lint rule.
 - **Contrast ratio ≥ 4.5:1.** Text and lines must reach at least a 4.5:1 contrast ratio against the background. On a white background use a dark text/line color (`#000000` or `#16191F`); never light-gray-on-white. Text inside a filled icon may use the fill's appropriate on-color (e.g. white on a saturated brand fill).
-- **Defined background.** Use an explicit white (`#FFFFFF`) background for the exported raster — do not leave it transparent unless the publication target requires a dark/light-adaptive image, in which case use a mid-gray (`#7E7E7E`) for lines/text that balances against both schemes.
+- **Defined background.** Use an explicit white (`#FFFFFF`) background for the exported raster — do not leave it transparent unless the publication target requires a dark/light-adaptive image, in which case use a mid-gray (`#7E7E7E`) for lines/text that balances against both schemes. The default vs the transparent exception, and how each is enforced, are documented under *Raster Export Dimensions → Raster background mode (`raster_background`)*.
 - **Never encode meaning by color alone (double-encode).** Any distinction carried by color (for example the removed/blocked "red" change marker) must also be carried by a second channel — a shape, a text label, or a legend entry — so the diagram survives grayscale printing and color-vision deficiency. The numbered-flow legend and the change-marker glyphs (🆕 / 🔄) already provide this second channel; keep them.
 - **Lines and arrows.** Minimum stroke width **1pt** (the shared builder draws edges at 1.5pt via `diagram_layout.EDGE_STROKE_WIDTH`); solid = primary flow, dashed = secondary/asynchronous; use **open** arrowheads (`endArrow=open;endFill=0`) rather than heavy filled heads. The `arrow-style` lint rule enforces this.
+
+## Documentation IP Ranges (network diagrams)
+
+A network diagram that shows addressing must use the **reserved documentation ranges**, never a routable public address that could leak internal detail or collide with a real network (AWS Networking convention). Use one of:
+
+| Family | Documentation range | Source |
+| --- | --- | --- |
+| IPv4 | `192.0.2.0/24` (TEST-NET-1) | RFC5737 |
+| IPv4 | `198.51.100.0/24` (TEST-NET-2) | RFC5737 |
+| IPv4 | `203.0.113.0/24` (TEST-NET-3) | RFC5737 |
+| IPv6 | `2001:db8::/32` | RFC3849 |
+
+A **private** range (RFC1918 `10/8` · `172.16/12` · `192.168/16`, RFC6598 `100.64/10`, RFC6815 `198.18/15`) is equally acceptable for an internal-addressing example. A **public** literal outside these ranges is a defect: replace it with a documentation-range address before publishing.
+
+- Write every IPv6 address per **RFC5952** — lowercase hex, and the longest run of zero groups compressed with `::` (for example `2001:db8::1`, never `2001:0DB8:0000:0000:0000:0000:0000:0001`).
+- This is enforced by the `ip-range` lint rule (WARNING), which scans a Network_Diagram's on-diagram text — node labels, edge labels, the Legend, and the Flow list — for a public IP literal. A **Network_Diagram** is a diagram whose `diagram_class` is `landscape` OR whose companion `diagram_type` is `network` / `infrastructure` / `deployment`; a flow/application diagram that merely mentions an address is not evaluated.
 
 ## Raster Alt Text
 
@@ -468,6 +608,20 @@ Rules:
 - A `landscape` raster may run up to **3600px** and **under 2MB** — do **not** split a comprehensive as-built to fit the flow width, since that destroys the one thing it exists to show. `rule-engine-export-raster` (packaged; `scripts/export_raster.py` is a thin shim) picks the export width from the diagram's `diagram_class` automatically (flow → 1600px, landscape → 3400px).
 - The **model** canvas may be larger than the export width (draw.io units); it is the **exported image** that carries the width/size budget. Choose an export scale that lands the image within its class budget.
 - The class-aware budget **is** enforced — by the raster gate (`rule-engine-check-rasters`), which reads each `.drawio`'s companion `diagram_class` and applies the matching width/size ceiling. (The linter still evaluates only the `.drawio` source and companion, not the PNG; the raster gate is the pixel/byte enforcement point.)
+
+### Raster background mode (`raster_background`)
+
+The exported raster's background is chosen by an optional companion frontmatter key `raster_background`, one of **`white`** (the default when the key is absent) or **`transparent`**. The two exist because the official guidance points two ways for two publication targets, and both are valid:
+
+- **`white` (default).** The AWS icon-styling guide wants an explicit white (`#FFFFFF`) background for a crisp, consistent render across viewers. This is the behaviour every diagram has always had, so every pre-1.10.0 companion — which declares no `raster_background` — keeps the exact opaque-white export and the exact opaque-white gate check, unchanged. Use a dark text/line colour (`#000000` / `#16191F`) on it.
+- **`transparent`.** The AWS Networking docs guide wants a transparent, dark/light-adaptive raster so one image reads on both a light and a dark page. When `raster_background: transparent` is set, the exporter renders **without forcing white** (draw.io `--transparent`), producing an alpha-channel PNG, and text and lines use a mid-gray **`#7E7E7E`** that balances against both schemes (never black-on-transparent, which vanishes on a dark page, nor white-on-transparent, which vanishes on a light one).
+
+Any value other than `transparent` (a typo, an unexpected token) falls back to `white`, so the safe opaque-white check is never silently dropped.
+
+Enforcement (`rule-engine-check-rasters`, reading the companion `raster_background`):
+
+- `white`/absent — the raster **must** be an opaque white-background PNG: colour type 0/2 (no alpha channel), no `tRNS` chunk, and a white first scanline. Byte-for-byte the pre-1.10.0 check.
+- `transparent` — the raster **must** carry an alpha channel (colour type 4 gray+alpha or 6 RGBA) and a **transparent** first pixel, rather than the opaque white a light target wants.
 
 ## Title Cell Format
 

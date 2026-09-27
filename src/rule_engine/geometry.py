@@ -143,6 +143,12 @@ class EdgeGeom:
     end_arrow: Optional[str] = None
     end_fill: Optional[int] = None
     stroke_width: Optional[float] = None
+    # Start-arrowhead form (draw.io ``startArrow`` token). An unspecified
+    # ``startArrow`` resolves to ``none`` (a single-head edge), so this is
+    # ``None`` for the common case. Used by ``edge-bidirectional`` (1.10.0,
+    # Requirement 1): an edge with a non-``none`` start AND a non-``none`` end
+    # arrowhead is a double-headed (bidirectional) edge.
+    start_arrow: Optional[str] = None
 
 
 @dataclass
@@ -262,6 +268,7 @@ def build_geometry(page: Page) -> DiagramGeometry:
                 end_arrow=_style_token(st, "endArrow"),
                 end_fill=(int(_style_num(st, "endFill")) if _style_num(st, "endFill") is not None else None),
                 stroke_width=_style_num(st, "strokeWidth"),
+                start_arrow=_style_token(st, "startArrow"),
             )
         )
 
@@ -1894,4 +1901,35 @@ def check_arrow_style(geo: DiagramGeometry, min_stroke: float = 1.0) -> List[Tup
             out.append((e.id, f"filled-arrowhead-{ea}"))
         if e.stroke_width is not None and e.stroke_width < min_stroke:
             out.append((e.id, f"stroke-width-{e.stroke_width}<{min_stroke}"))
+    return out
+
+
+def check_edge_bidirectional(geo: DiagramGeometry) -> List[Tuple[str, str]]:
+    """Return ``(edge_id, reason)`` for double-headed (bidirectional) edges.
+
+    Provider guidance (AWS ``diagram-as-code``) is to draw a two-way
+    relationship as **two single-ended edges**, or annotate one edge with
+    request/response — never a single double-headed arrow, which hides an
+    ambiguous dependency. An edge is a Bidirectional_Edge when its style sets
+    **both** a non-``none`` ``startArrow`` and a non-``none`` ``endArrow``.
+
+    Arrow-token defaults are resolved exactly as draw.io does: an unspecified
+    ``startArrow`` is ``none`` (no start head), so the common single-head edge
+    (start ``none``, end set or defaulted) is never flagged; an unspecified
+    ``endArrow`` inherits the default head. So the rule fires only when the
+    author has *explicitly* placed a head on the start too. Advisory
+    (``edge-bidirectional``, WARNING, both classes; Requirement 1).
+    """
+    out: List[Tuple[str, str]] = []
+    for e in geo.edges:
+        # An unspecified startArrow resolves to "none": a single-head edge.
+        sa = (e.start_arrow or "none").lower()
+        if sa == "none":
+            continue
+        # startArrow is a real head; the edge is bidirectional unless the end
+        # was explicitly turned off (endArrow=none).
+        ea = (e.end_arrow or "").lower()
+        if ea == "none":
+            continue
+        out.append((e.id, f"double-head-start-{sa}-end-{ea or 'default'}"))
     return out

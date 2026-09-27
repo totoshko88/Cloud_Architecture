@@ -380,6 +380,76 @@ def test_non_white_first_row_fails(tmp_path):
         assert facts.row0_all_white is False, f"filter {filt} should read non-white"
 
 
+# --- raster_background mode (v1.10.0, Part D) ------------------------------
+
+
+def test_transparent_companion_requires_alpha(tmp_path):
+    """A companion declaring raster_background: transparent accepts an RGBA PNG
+    with a transparent first pixel, and the gate passes."""
+    repo = tmp_path
+    src = repo / "examples/aws/01-t.drawio"
+    _write_text(str(src), "<mxfile/>")
+    _write_text(
+        str(repo / "examples/aws/01-t.diagram.md"),
+        "---\nraster_background: transparent\n---\n# x\n",
+    )
+    body = encode_png(
+        PngModel(width=800, height=100, color_type=6, first_pixel_white=False)
+    )
+    _write_bytes(
+        str(repo / "examples/aws/01-t.drawio.png"),
+        insert_provenance(body, source_sha256(src)),
+    )
+
+    refs = check_rasters(repo / "examples", repo)
+    assert refs[0].raster_background == "transparent"
+    assert refs[0].color_type == 6
+    assert refs[0].row0_transparent is True
+    assert refs[0].background_ok is True
+    assert refs[0].within_budget is True
+    assert main(["--examples", str(repo / "examples"), "--repo-root", str(repo)]) == 0
+
+
+def test_transparent_companion_rejects_opaque_white(tmp_path):
+    """An opaque white RGB raster fails the gate when the companion asks for
+    transparent (it has no alpha channel)."""
+    repo = tmp_path
+    src = repo / "examples/aws/01-tw.drawio"
+    _write_text(str(src), "<mxfile/>")
+    _write_text(
+        str(repo / "examples/aws/01-tw.diagram.md"),
+        "---\nraster_background: transparent\n---\n# x\n",
+    )
+    _write_conforming(repo / "examples/aws/01-tw.drawio.png", src, 800)
+
+    refs = check_rasters(repo / "examples", repo)
+    assert refs[0].raster_background == "transparent"
+    assert refs[0].color_type == 2  # RGB, no alpha
+    assert refs[0].background_ok is False
+    assert main(["--examples", str(repo / "examples"), "--repo-root", str(repo)]) == 1
+
+
+def test_white_companion_rejects_transparent_png(tmp_path):
+    """A transparent RGBA raster fails the gate in the default white mode
+    (the pre-1.10.0 opaque-white check is unchanged for white/absent)."""
+    repo = tmp_path
+    src = repo / "examples/aws/01-wt.drawio"
+    _write_text(str(src), "<mxfile/>")
+    # No companion at all -> background defaults to white.
+    body = encode_png(
+        PngModel(width=800, height=100, color_type=6, first_pixel_white=False)
+    )
+    _write_bytes(
+        str(repo / "examples/aws/01-wt.drawio.png"),
+        insert_provenance(body, source_sha256(src)),
+    )
+
+    refs = check_rasters(repo / "examples", repo)
+    assert refs[0].raster_background == "white"
+    assert refs[0].background_ok is False  # alpha colour type fails the white check
+    assert main(["--examples", str(repo / "examples"), "--repo-root", str(repo)]) == 1
+
+
 def test_check_rasters_excludes_vendor_and_build_dirs(tmp_path):
     """v1.9.3: a .drawio under assets/vendor/ (e.g. the OCI style guide) or any
     excluded build dir is NOT a publishable artifact, so check_rasters skips it —

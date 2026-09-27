@@ -244,6 +244,175 @@ def test_property_8_malformed_yaml_is_a_named_yaml_parse_violation(
 
 
 # --------------------------------------------------------------------------- #
+# provider-diagram-conventions Property 5: optional companion metadata
+# --------------------------------------------------------------------------- #
+#
+# Requirement 7 (item G): the optional companion keys ``change_log`` (a list of
+# ``{date, note}`` entries, each ``date`` an ISO 8601 calendar date) and
+# ``external_refs`` (a list). They are OPTIONAL: absent raises no finding; a bad
+# ``change_log`` date or shape raises a ``frontmatter`` finding naming the key.
+# These tests build on a forced-valid base mapping so the only findings that can
+# appear are the ones the optional keys introduce.
+
+
+def _valid_change_log_entries(draw: st.DrawFn):
+    """A list of well-formed ``{date, note}`` change-log entries."""
+    return draw(
+        st.lists(
+            st.fixed_dictionaries(
+                {
+                    "date": st.dates().map(lambda d: d.isoformat()),
+                    "note": st.text(max_size=30),
+                }
+            ),
+            max_size=4,
+        )
+    )
+
+
+@st.composite
+def _base_with_change_log(draw: st.DrawFn, *, valid_date: bool):
+    """A valid frontmatter mapping plus a ``change_log`` (dates valid or not)."""
+    fm = dict(draw(frontmatter_mappings(valid=True)))
+    entries = _valid_change_log_entries(draw)
+    if not valid_date:
+        # Guarantee at least one entry, then corrupt one entry's date.
+        if not entries:
+            entries = [{"date": "2025-01-15", "note": "seed"}]
+        bad = draw(
+            st.sampled_from(
+                ["2025-13-40", "not-a-date", "2025/01/15", "2025-2-3", "20250115"]
+            )
+        )
+        idx = draw(st.integers(min_value=0, max_value=len(entries) - 1))
+        entries = list(entries)
+        entries[idx] = {"date": bad, "note": "bad"}
+    fm["change_log"] = entries
+    return fm
+
+
+# Feature: provider-diagram-conventions, Property 5: optional companion metadata
+@given(fm=frontmatter_mappings(valid=True))
+def test_property_5_absent_optional_keys_are_clean(fm) -> None:
+    """A valid mapping with no ``change_log``/``external_refs`` stays clean.
+
+    The optional keys must never become required: a document that omits them
+    raises no finding at all (Requirement 7.3).
+
+    Validates: Requirements 7.3
+    """
+    assert "change_log" not in fm
+    assert "external_refs" not in fm
+    assert validate_frontmatter(fm) == []
+
+
+# Feature: provider-diagram-conventions, Property 5: optional companion metadata
+@given(fm=_base_with_change_log(valid_date=True))
+def test_property_5_present_valid_change_log_is_clean(fm) -> None:
+    """A present, well-formed ``change_log`` introduces no finding.
+
+    Every entry is a ``{date, note}`` mapping with a valid ISO 8601 date, so a
+    forced-valid base document stays clean (Requirement 7.1, 7.2).
+
+    Validates: Requirements 7.1, 7.2
+    """
+    assert validate_frontmatter(fm) == []
+
+
+# Feature: provider-diagram-conventions, Property 5: optional companion metadata
+@given(fm=_base_with_change_log(valid_date=False))
+def test_property_5_present_bad_change_log_date_warns(fm) -> None:
+    """A ``change_log`` entry with an invalid date is a finding naming the key.
+
+    On an otherwise-valid document, the only finding is the change-log date one,
+    and it names ``change_log`` (Requirement 7.2).
+
+    Validates: Requirements 7.2
+    """
+    violations = validate_frontmatter(fm)
+    assert violations, "a bad change_log date must be rejected"
+    date_findings = [v for v in violations if v.constraint == "change_log-date"]
+    assert date_findings, "expected a change_log-date finding"
+    for v in date_findings:
+        assert v.key == "change_log"
+    # No other constraint fires (the base mapping is valid).
+    assert {v.constraint for v in violations} == {"change_log-date"}
+
+
+# Feature: provider-diagram-conventions, Property 5: optional companion metadata
+@given(
+    fm=frontmatter_mappings(valid=True),
+    bad=st.one_of(
+        st.text(max_size=10),
+        st.integers(),
+        st.dictionaries(st.text(max_size=4), st.text(max_size=4), max_size=2),
+    ),
+)
+def test_property_5_non_list_optional_keys_warn_and_name_the_key(fm, bad) -> None:
+    """A non-list ``change_log``/``external_refs`` is a finding naming the key.
+
+    A scalar or mapping value for either optional key breaks its shape contract,
+    which is a ``frontmatter`` finding naming the offending key (Requirement 7.1).
+
+    Validates: Requirements 7.1
+    """
+    fm_cl = dict(fm)
+    fm_cl["change_log"] = bad
+    cl_violations = validate_frontmatter(fm_cl)
+    assert {v.constraint for v in cl_violations} == {"change_log-shape"}
+    assert all(v.key == "change_log" for v in cl_violations)
+
+    fm_er = dict(fm)
+    fm_er["external_refs"] = bad
+    er_violations = validate_frontmatter(fm_er)
+    assert {v.constraint for v in er_violations} == {"external_refs-shape"}
+    assert all(v.key == "external_refs" for v in er_violations)
+
+
+# Feature: provider-diagram-conventions, Property 5: optional companion metadata
+@given(
+    fm=frontmatter_mappings(valid=True),
+    refs=st.lists(st.text(max_size=40), max_size=5),
+)
+def test_property_5_present_valid_external_refs_is_clean(fm, refs) -> None:
+    """A present ``external_refs`` list introduces no finding (Requirement 7.1).
+
+    Validates: Requirements 7.1
+    """
+    fm = dict(fm)
+    fm["external_refs"] = refs
+    assert validate_frontmatter(fm) == []
+
+
+def test_property_5_change_log_missing_date_is_named() -> None:
+    """A ``change_log`` entry with no ``date`` key is a shape finding named.
+
+    An entry that is a mapping but omits ``date`` breaks the ``{date, note}``
+    shape (Requirement 7.1), reported as ``change_log-shape`` naming the key.
+
+    Validates: Requirements 7.1
+    """
+    base = {
+        "id": "x",
+        "title": "t",
+        "kb_namespace": "kb",
+        "section": "s",
+        "category": "c",
+        "status": "draft",
+        "updated": "2025-01-15",
+        "owner": "team",
+        "author": "agent",
+        "next_review_date": "2025-07-15",
+        "tags": ["a"],
+        "related_docs": [],
+        "change_log": [{"note": "no date here"}],
+    }
+    violations = validate_frontmatter(base)
+    assert {v.constraint for v in violations} == {"change_log-shape"}
+    assert all(v.key == "change_log" for v in violations)
+
+
+# --------------------------------------------------------------------------- #
 # Property 9: Structural validation matches a document model
 # --------------------------------------------------------------------------- #
 #

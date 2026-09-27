@@ -9,7 +9,7 @@ backend-path = ["."]
 
 [project]
 name = "rule-engine"
-version = "1.9.3"
+version = "1.10.0"
 description = "Diagram & Inventory Rule Engine — a cloud-agnostic Kiro project for deterministic diagram and inventory generation."
 readme = "README.md"
 # The engine supports Python 3.11 through 3.14 (the CI test matrix, task 21.5).
@@ -69,6 +69,13 @@ rule-engine-verify-icon = "rule_engine.verify_icon:main"
 # is silently absent from the diagram (the "ten KMS keys omitted while the
 # companion asserted completeness" defect). Part of the Gate_Suite in CI.
 rule-engine-reconcile = "rule_engine.reconcile:main"
+# Snapshot→diagram autogenerator (v1.10.0): read a committed inventory Snapshot
+# and emit the mandatory triple (.drawio + .diagram.md + best-effort raster) by
+# resolving every resource to a role, laning it, and handing the coordinate-free
+# DiagramSpec to the existing layout()+build_diagram() pipeline. Closes the
+# deferred docs/REVIEW.md gap G8. Offline and deterministic; the raster export is
+# best-effort so a missing draw.io CLI never blocks the .drawio + companion.
+rule-engine-draw = "rule_engine.draw_cli:main"
 # Init-time icon-set builder (v1.3.x): fetch the official provider icon packs and
 # build the committed mappings/icon-index.json (per-role resolved icon per
 # provider + pack summary). Run at installation; --check verifies it is current.

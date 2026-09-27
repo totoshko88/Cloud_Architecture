@@ -48,6 +48,9 @@ every applicable rule against every artifact.
 | `grid-alignment` | A diagram node's absolute x or y is not a whole multiple of the grid step (default 10). | WARNING | diagram-standards Layout Geometry |
 | `node-overlap` | Two diagram node icon boxes overlap (intersecting rectangles). | WARNING | diagram-standards Layout Geometry |
 | `arrow-style` | A diagram edge uses a filled/heavy arrowhead (or an unspecified head that defaults to filled), or a stroke width below 1pt. | WARNING | diagram-standards Accessibility & Contrast |
+| `edge-bidirectional` | A diagram edge is double-headed: its style sets both a non-`none` `startArrow` and a non-`none` `endArrow`. Draw a two-way relationship as two single-ended edges instead. | WARNING | diagram-standards Edge Routing (no double-headed arrow) / R1 |
+| `node-label-length` | A service-node label exceeds the length cap: more than 4 words or more than 40 characters. Node labels stay short (the service name); explanation goes in a `callout`. Legend/Flow/title/callout text cells are not node labels and are exempt. | WARNING | diagram-standards Overlay Vocabulary (short labels + callout) / R2 |
+| `ip-range` | On-diagram text in a Network_Diagram carries a public IP literal (a routable global IPv4/IPv6 that is neither a documentation range — 192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24, 2001:db8::/32 — nor private). Only a Network_Diagram (`landscape` class OR companion `diagram_type` in network/infrastructure/deployment) is evaluated. | WARNING | diagram-standards Documentation IP Ranges / R3 |
 | `orphan-landscape` | A `landscape`-class diagram declares no valid `summary_of` cross-link to a `flow` summary. | ERROR | diagram-standards Diagram Class |
 | `overlay-legend-coverage` | A diagram carries an overlay marker (findings/state vocabulary) whose term does not appear as a whole token in a Legend line. | WARNING | diagram-standards Overlay Vocabulary / R1 AC12 |
 | `exit-thirds` | A node fans out **more than three** edges on one side, or two same-side exits sit closer than ~⅕ of the side (they merge into one doubled line). | WARNING | diagram-standards Label-safe exits |
@@ -384,6 +387,45 @@ every applicable rule against every artifact.
   (`endArrow=open;endFill=0`) over a heavy filled head, and keep stroke width at ≥ 1pt.
   An edge with a filled head (`block`/`classic`/`diamond`/`oval`, fill on), an unspecified
   head (which defaults to filled `classic`), or a sub-1pt `strokeWidth` produces a WARNING.
+- **`edge-bidirectional` (WARNING)** — *New in 1.10.0. Geometry-enforced.* A
+  two-way relationship drawn as one **double-headed** arrow hides which side
+  depends on which; the provider guidance (AWS `diagram-as-code`) is to draw
+  **two single-ended edges** (preferred) or annotate one edge with
+  request/response. An edge trips this when its style sets **both** a
+  non-`none` `startArrow` and a non-`none` `endArrow`. Arrow-token defaults are
+  resolved as draw.io does: an unspecified `startArrow` is `none`, so the common
+  single-head edge is never flagged; the rule fires only when the author has
+  explicitly placed a head on the start too (and has not turned the end head
+  off). WARNING on both classes.
+- **`node-label-length` (WARNING)** — *New in 1.10.0.* A node's label is the
+  short display name of a service, not a place for explanatory prose (AWS
+  `diagram-as-code`: "do not embed explanatory text into images; use short
+  labels; use callouts"). A **service-node** label trips the rule when it
+  exceeds **4 whitespace-delimited words** OR **40 characters** — whichever is
+  exceeded first. The rule reads the parsed `node_names` only, which the CLI
+  populates from **service icon cells**; a Legend, Flow, title, or `callout`
+  text cell is structurally excluded from `node_names` (it is a text cell / the
+  title cell), so a long legend line or a wordy callout is **never** flagged.
+  Explanation that will not fit in a short label belongs in a callout cell keyed
+  `overlay=callout` (documented in the Legend, `overlay-legend-coverage`), not
+  in the icon label. WARNING on both classes.
+- **`ip-range` (WARNING)** — *New in 1.10.0.* An example network diagram should
+  use the reserved documentation ranges, never a routable public address that
+  could leak or collide with a real network (AWS Networking convention). The
+  rule scans the artifact's **on-diagram text** — node labels, edge labels, the
+  Legend and the Flow list (which carry callout-style prose) — for an IP
+  literal, then classifies each with the stdlib `ipaddress` module. A
+  **Public_IP_Literal** — a parseable *global* IP that is neither a
+  **Documentation_Range** (IPv4 `192.0.2.0/24`, `198.51.100.0/24`,
+  `203.0.113.0/24`; IPv6 `2001:db8::/32`) nor **private** (RFC1918 / RFC6598 /
+  RFC6815, loopback, link-local, …) — is a finding. A token that looks
+  address-like but does not parse under `ipaddress` is **ignored** (never a
+  finding), so prose is not mis-flagged. The rule is **scoped to a
+  Network_Diagram** and evaluates nothing else: a diagram is a Network_Diagram
+  when its `diagram_class` is `landscape` OR its companion `diagram_type` is one
+  of `network` / `infrastructure` / `deployment`; a flow/application diagram
+  that incidentally mentions an address is not evaluated. WARNING on both
+  classes.
 - **`parse-error` (ERROR)** — *New in 1.7.0.* The Linter parses every `.drawio`
   with an XML parser (`rule_engine.drawio_model`), not with regexes, so a "clean"
   result means a clean diagram rather than an unparsed file. When a file does not

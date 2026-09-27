@@ -74,6 +74,14 @@ STATUS_VALUES = ("draft", "review", "published")
 #: The two frontmatter keys that must be ISO 8601 calendar dates.
 _DATE_KEYS = ("updated", "next_review_date")
 
+#: Optional companion metadata keys (Requirement 7, item G). Both are optional:
+#: absent raises no finding. ``change_log`` is a list of ``{date, note}`` maps,
+#: each ``date`` an ISO 8601 calendar date reusing ``_valid_iso_date``;
+#: ``external_refs`` is a list. Neither is a *required* key — they never appear
+#: in ``REQUIRED_FRONTMATTER_KEYS`` — so a document without them stays clean.
+_CHANGE_LOG_KEY = "change_log"
+_EXTERNAL_REFS_KEY = "external_refs"
+
 #: The four sections every generated document must contain, each 100–200 words
 #: (§ Required Sections). Compared casefolded against level-≥2 headings.
 REQUIRED_SECTIONS = ("Overview", "Main Content", "Troubleshooting", "See Also")
@@ -269,7 +277,83 @@ def validate_frontmatter(fm: Mapping) -> List[KbViolation]:
         _validate_list(fm, "related_docs", _RELATED_DOCS_BOUNDS, "related_docs-count")
     )
 
+    # Optional companion metadata (Requirement 7, item G): change_log /
+    # external_refs. Both optional — absent raises nothing.
+    violations.extend(_validate_change_log(fm))
+    violations.extend(_validate_external_refs(fm))
+
     return violations
+
+
+def _validate_change_log(fm: Mapping) -> List[KbViolation]:
+    """Validate the optional ``change_log`` key (Requirement 7.1, 7.2, 7.3).
+
+    Absent: no finding. Present, it must be a list of ``{date, note}`` mappings,
+    each ``date`` a valid ISO 8601 calendar date (reusing ``_valid_iso_date``).
+    A bad shape or a bad date raises a ``frontmatter`` finding naming the key.
+    """
+    if _CHANGE_LOG_KEY not in fm:
+        return []
+    value = fm[_CHANGE_LOG_KEY]
+    if not isinstance(value, list):
+        return [
+            KbViolation(
+                "change_log-shape",
+                _CHANGE_LOG_KEY,
+                f"{_CHANGE_LOG_KEY} must be a list of {{date, note}} entries, "
+                f"got {type(value).__name__}",
+            )
+        ]
+    violations: List[KbViolation] = []
+    for index, entry in enumerate(value):
+        if not isinstance(entry, Mapping):
+            violations.append(
+                KbViolation(
+                    "change_log-shape",
+                    _CHANGE_LOG_KEY,
+                    f"{_CHANGE_LOG_KEY}[{index}] must be a {{date, note}} mapping, "
+                    f"got {type(entry).__name__}",
+                )
+            )
+            continue
+        if "date" not in entry:
+            violations.append(
+                KbViolation(
+                    "change_log-shape",
+                    _CHANGE_LOG_KEY,
+                    f"{_CHANGE_LOG_KEY}[{index}] is missing its 'date'",
+                )
+            )
+        elif not _valid_iso_date(entry["date"]):
+            violations.append(
+                KbViolation(
+                    "change_log-date",
+                    _CHANGE_LOG_KEY,
+                    f"{_CHANGE_LOG_KEY}[{index}] date {entry['date']!r} is not a "
+                    "real calendar date in YYYY-MM-DD form",
+                )
+            )
+    return violations
+
+
+def _validate_external_refs(fm: Mapping) -> List[KbViolation]:
+    """Validate the optional ``external_refs`` key (Requirement 7.1, 7.3).
+
+    Absent: no finding. Present, it must be a list (of URLs or citations); a
+    non-list value raises a ``frontmatter`` finding naming the key.
+    """
+    if _EXTERNAL_REFS_KEY not in fm:
+        return []
+    value = fm[_EXTERNAL_REFS_KEY]
+    if not isinstance(value, list):
+        return [
+            KbViolation(
+                "external_refs-shape",
+                _EXTERNAL_REFS_KEY,
+                f"{_EXTERNAL_REFS_KEY} must be a list, got {type(value).__name__}",
+            )
+        ]
+    return []
 
 
 def _valid_iso_date(value: Any) -> bool:

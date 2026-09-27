@@ -1,0 +1,192 @@
+{
+  "pbtResults": {},
+  "executionHistory": {
+    "1. Add `edge-bidirectional` lint rule (Part A)": [
+      {
+        "executionId": "5968e2c8-1cec-4f21-bbbd-2378578632d2",
+        "chatSessionId": "sess_c6ecab6e-cd34-4a06-ae03-7e80ea02ee73",
+        "timestamp": 1790533841304
+      },
+      {
+        "executionId": "5968e2c8-1cec-4f21-bbbd-2378578632d2",
+        "chatSessionId": "sess_c6ecab6e-cd34-4a06-ae03-7e80ea02ee73",
+        "timestamp": 1790533849347
+      },
+      {
+        "executionId": "5968e2c8-1cec-4f21-bbbd-2378578632d2",
+        "chatSessionId": "sess_c6ecab6e-cd34-4a06-ae03-7e80ea02ee73",
+        "timestamp": 1790534326002
+      }
+    ],
+    "2. Add `node-label-length` lint rule and the `callout` overlay term (Part B)": [
+      {
+        "executionId": "5968e2c8-1cec-4f21-bbbd-2378578632d2",
+        "chatSessionId": "sess_c6ecab6e-cd34-4a06-ae03-7e80ea02ee73",
+        "timestamp": 1790533841368
+      },
+      {
+        "executionId": "5968e2c8-1cec-4f21-bbbd-2378578632d2",
+        "chatSessionId": "sess_c6ecab6e-cd34-4a06-ae03-7e80ea02ee73",
+        "timestamp": 1790534335564
+      },
+      {
+        "executionId": "5968e2c8-1cec-4f21-bbbd-2378578632d2",
+        "chatSessionId": "sess_c6ecab6e-cd34-4a06-ae03-7e80ea02ee73",
+        "timestamp": 1790534734659
+      }
+    ],
+    "3. Add `ip-range` lint rule (Part C)": [
+      {
+        "executionId": "5968e2c8-1cec-4f21-bbbd-2378578632d2",
+        "chatSessionId": "sess_c6ecab6e-cd34-4a06-ae03-7e80ea02ee73",
+        "timestamp": 1790533841433
+      },
+      {
+        "executionId": "5968e2c8-1cec-4f21-bbbd-2378578632d2",
+        "chatSessionId": "sess_c6ecab6e-cd34-4a06-ae03-7e80ea02ee73",
+        "timestamp": 1790534738950
+      },
+      {
+        "executionId": "5968e2c8-1cec-4f21-bbbd-2378578632d2",
+        "chatSessionId": "sess_c6ecab6e-cd34-4a06-ae03-7e80ea02ee73",
+        "timestamp": 1790535186915
+      }
+    ],
+    "4. Add `raster_background` companion mode (Part D)": [
+      {
+        "executionId": "5968e2c8-1cec-4f21-bbbd-2378578632d2",
+        "chatSessionId": "sess_c6ecab6e-cd34-4a06-ae03-7e80ea02ee73",
+        "timestamp": 1790533841472
+      },
+      {
+        "executionId": "5968e2c8-1cec-4f21-bbbd-2378578632d2",
+        "chatSessionId": "sess_c6ecab6e-cd34-4a06-ae03-7e80ea02ee73",
+        "timestamp": 1790535192010
+      },
+      {
+        "executionId": "5968e2c8-1cec-4f21-bbbd-2378578632d2",
+        "chatSessionId": "sess_c6ecab6e-cd34-4a06-ae03-7e80ea02ee73",
+        "timestamp": 1790535628639
+      }
+    ],
+    "5. Add optional companion metadata keys `change_log` and `external_refs` (Part G)": [
+      {
+        "executionId": "5968e2c8-1cec-4f21-bbbd-2378578632d2",
+        "chatSessionId": "sess_c6ecab6e-cd34-4a06-ae03-7e80ea02ee73",
+        "timestamp": 1790533841510
+      },
+      {
+        "executionId": "5968e2c8-1cec-4f21-bbbd-2378578632d2",
+        "chatSessionId": "sess_c6ecab6e-cd34-4a06-ae03-7e80ea02ee73",
+        "timestamp": 1790535634790
+      },
+      {
+        "executionId": "5968e2c8-1cec-4f21-bbbd-2378578632d2",
+        "chatSessionId": "sess_c6ecab6e-cd34-4a06-ae03-7e80ea02ee73",
+        "timestamp": 1790535973452
+      }
+    ],
+    "6. Steering guidance blocks E, F, H, I (guidance only)": [
+      {
+        "executionId": "5968e2c8-1cec-4f21-bbbd-2378578632d2",
+        "chatSessionId": "sess_c6ecab6e-cd34-4a06-ae03-7e80ea02ee73",
+        "timestamp": 1790533841547
+      },
+      {
+        "executionId": "5968e2c8-1cec-4f21-bbbd-2378578632d2",
+        "chatSessionId": "sess_c6ecab6e-cd34-4a06-ae03-7e80ea02ee73",
+        "timestamp": 1790535978291
+      },
+      {
+        "executionId": "5968e2c8-1cec-4f21-bbbd-2378578632d2",
+        "chatSessionId": "sess_c6ecab6e-cd34-4a06-ae03-7e80ea02ee73",
+        "timestamp": 1790536287076
+      }
+    ],
+    "7. Autogenerator core: role→lane + Snapshot→DiagramSpec (Part J)": [
+      {
+        "executionId": "5968e2c8-1cec-4f21-bbbd-2378578632d2",
+        "chatSessionId": "sess_c6ecab6e-cd34-4a06-ae03-7e80ea02ee73",
+        "timestamp": 1790533841597
+      },
+      {
+        "executionId": "5968e2c8-1cec-4f21-bbbd-2378578632d2",
+        "chatSessionId": "sess_c6ecab6e-cd34-4a06-ae03-7e80ea02ee73",
+        "timestamp": 1790536292004
+      },
+      {
+        "executionId": "5968e2c8-1cec-4f21-bbbd-2378578632d2",
+        "chatSessionId": "sess_c6ecab6e-cd34-4a06-ae03-7e80ea02ee73",
+        "timestamp": 1790536768075
+      }
+    ],
+    "8. Autogenerator command: `rule-engine-draw` + companion + triple (Part J)": [
+      {
+        "executionId": "5968e2c8-1cec-4f21-bbbd-2378578632d2",
+        "chatSessionId": "sess_c6ecab6e-cd34-4a06-ae03-7e80ea02ee73",
+        "timestamp": 1790533841638
+      },
+      {
+        "executionId": "5968e2c8-1cec-4f21-bbbd-2378578632d2",
+        "chatSessionId": "sess_c6ecab6e-cd34-4a06-ae03-7e80ea02ee73",
+        "timestamp": 1790536773071
+      },
+      {
+        "executionId": "5968e2c8-1cec-4f21-bbbd-2378578632d2",
+        "chatSessionId": "sess_c6ecab6e-cd34-4a06-ae03-7e80ea02ee73",
+        "timestamp": 1790537504804
+      }
+    ],
+    "9. Autogenerator end-to-end verification (Part J)": [
+      {
+        "executionId": "5968e2c8-1cec-4f21-bbbd-2378578632d2",
+        "chatSessionId": "sess_c6ecab6e-cd34-4a06-ae03-7e80ea02ee73",
+        "timestamp": 1790533841680
+      },
+      {
+        "executionId": "5968e2c8-1cec-4f21-bbbd-2378578632d2",
+        "chatSessionId": "sess_c6ecab6e-cd34-4a06-ae03-7e80ea02ee73",
+        "timestamp": 1790537513713
+      },
+      {
+        "executionId": "5968e2c8-1cec-4f21-bbbd-2378578632d2",
+        "chatSessionId": "sess_c6ecab6e-cd34-4a06-ae03-7e80ea02ee73",
+        "timestamp": 1790537960274
+      }
+    ],
+    "10. Corpus regression and rule-table sync (Requirement 11)": [
+      {
+        "executionId": "5968e2c8-1cec-4f21-bbbd-2378578632d2",
+        "chatSessionId": "sess_c6ecab6e-cd34-4a06-ae03-7e80ea02ee73",
+        "timestamp": 1790533841722
+      },
+      {
+        "executionId": "5968e2c8-1cec-4f21-bbbd-2378578632d2",
+        "chatSessionId": "sess_c6ecab6e-cd34-4a06-ae03-7e80ea02ee73",
+        "timestamp": 1790537965514
+      },
+      {
+        "executionId": "5968e2c8-1cec-4f21-bbbd-2378578632d2",
+        "chatSessionId": "sess_c6ecab6e-cd34-4a06-ae03-7e80ea02ee73",
+        "timestamp": 1790538383987
+      }
+    ],
+    "11. Version bump to 1.10.0 and CHANGELOG (Requirement 12)": [
+      {
+        "executionId": "5968e2c8-1cec-4f21-bbbd-2378578632d2",
+        "chatSessionId": "sess_c6ecab6e-cd34-4a06-ae03-7e80ea02ee73",
+        "timestamp": 1790533841763
+      },
+      {
+        "executionId": "5968e2c8-1cec-4f21-bbbd-2378578632d2",
+        "chatSessionId": "sess_c6ecab6e-cd34-4a06-ae03-7e80ea02ee73",
+        "timestamp": 1790538388919
+      },
+      {
+        "executionId": "5968e2c8-1cec-4f21-bbbd-2378578632d2",
+        "chatSessionId": "sess_c6ecab6e-cd34-4a06-ae03-7e80ea02ee73",
+        "timestamp": 1790538706887
+      }
+    ]
+  }
+}

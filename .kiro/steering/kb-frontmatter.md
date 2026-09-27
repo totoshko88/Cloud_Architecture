@@ -65,6 +65,41 @@ related_docs: []         # 0–20 entries
 ---
 ```
 
+## Optional Frontmatter
+
+Beyond the twelve required keys, a companion `.diagram.md` (and any generated KB
+document) MAY carry the following **optional** metadata keys. They are never
+required: a document that omits them is fully conformant and raises no finding.
+When a key **is** present, it MUST satisfy the format below, or the document is
+rejected with a `frontmatter` finding that **names the offending key**.
+
+| Key | Required | Value format / constraint |
+|---|---|---|
+| `change_log` | no | List of `{date, note}` entries; each `date` an ISO 8601 calendar date `YYYY-MM-DD` |
+| `external_refs` | no | List of external references (URLs or citations) |
+
+Value rules, restated for precision:
+
+- `change_log`, WHEN present, MUST be a **list**. Each entry MUST be a mapping
+  carrying a `date` key whose value is a real calendar date in `YYYY-MM-DD` form
+  (the same ISO 8601 validation applied to `updated` / `next_review_date`), plus
+  a free-text `note`. A non-list value, a non-mapping entry, a missing `date`, or
+  an invalid `date` is a `frontmatter` finding naming `change_log`.
+- `external_refs`, WHEN present, MUST be a **list** (of URLs or citations). A
+  non-list value is a `frontmatter` finding naming `external_refs`.
+- Both keys are optional and backward-compatible: absent, they raise no finding,
+  and they are never added to the required-frontmatter set.
+
+### Optional Frontmatter Template
+
+```yaml
+change_log:              # optional; list of {date, note}
+  - date: 2025-01-15     # YYYY-MM-DD
+    note: <what changed>
+external_refs:           # optional; list of URLs or citations
+  - https://example.com/reference
+```
+
 ## Document Length
 
 Each generated Markdown document MUST have a total length between **300 and
