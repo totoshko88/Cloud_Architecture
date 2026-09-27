@@ -5,8 +5,9 @@ Diagram & Inventory Rule Engine in a Kiro workspace.
 
 ## Prerequisites
 
-- **Python 3.14 or newer** — the core components and CLIs target `python_requires >= 3.14`.
-  (Python 3.10 reaches end-of-life in October 2026; the engine targets a supported runtime.)
+- **Python 3.11 or newer** — the core components and CLIs target `requires-python >= 3.11`
+  (supported through 3.14). As of release 1.7.0 the lower bound is 3.11; the code uses no
+  newer language features, so any of 3.11, 3.12, 3.13 or 3.14 works.
 - **pip** — used to install the project and its dependencies (a virtual environment such
   as `venv` is recommended so the console scripts land on your `PATH` cleanly).
 - **Kiro** — the workspace host that reads the always-on steering documents and runs the
@@ -72,8 +73,9 @@ Follow these steps in order.
    init-time builder:
 
    ```bash
-   rule-engine-build-icon-sets            # download packs + build mappings/icon-index.json
-   rule-engine-build-icon-sets --check    # verify the committed index is current (CI)
+   rule-engine-build-icon-sets              # download pinned packs + build mappings/icon-index.json
+   rule-engine-build-icon-sets --check      # verify the committed index is current (CI)
+   rule-engine-build-icon-sets --update-pins # re-download, refresh pack pins, rebuild the index
    ```
 
    This downloads each pack declared in `mappings/asset-sources.yaml` into the
@@ -81,8 +83,15 @@ Follow these steps in order.
    and writes `mappings/icon-index.json` (each diagram role → its resolved official icon
    per provider). The vendor binaries stay uncommitted; only the index is committed, so
    the linter and generators resolve and verify role→icon wiring without the packs
-   present. Re-run it whenever a provider refreshes its icon pack — a new or renamed icon
-   is a re-index, not a code change. Linting and schema checks (steps 4–5) do **not**
+   present.
+
+   Since release 1.7.0 each pack is **pinned by digest**: `mappings/asset-sources.yaml`
+   carries a `sha256` + `size` per provider, the fetcher verifies the pin (over HTTPS
+   only, at every redirect) before unpacking, and the index records each pack's `sha256`
+   in `pack_summary`. When a vendor refreshes a pack, run
+   `rule-engine-build-icon-sets --update-pins` — it re-downloads, writes the fresh pins
+   back into `mappings/asset-sources.yaml`, and rebuilds the index in one step; commit the
+   updated pins and index together. Linting and schema checks (steps 4–5) do **not**
    require this step.
 
 7. **Confirm the always-on steering documents are picked up.** Open the project in Kiro
@@ -143,7 +152,15 @@ Follow these steps in order.
     It installs the `rule-engine` package when `rule-engine-init` is absent, then copies
     `.kiro/steering/`, `.kiro/agents/`, `.kiro/hooks/`, `mappings/`, `schemas/`, and
     `profiles/` into the current workspace from the payload **bundled inside the installed
-    package** (no repo checkout needed). The three agents — diagram-author,
+    package** (no repo checkout needed).
+
+    Since release 1.7.0 `rule-engine-init` writes a **workspace lock file**
+    (`.kiro/rule-engine-init.lock.json`) recording the engine version and the sha256 of
+    every copied file. On a later upgrade, `rule-engine-init --check` reports missing,
+    edited, stale and extra files **separately** (exit non-zero if any file is missing or
+    stale, and it does not create the target directory); a plain `rule-engine-init`
+    updates only the files whose hash still matches the lock and leaves your edited files
+    untouched; `--force` backs up every edited file before overwriting it. The three agents — diagram-author,
     inventory-collector, rule-engine-reviewer — ship from v1.6.0; before that a fresh
     workspace got the always-on rules but none of the roles that apply them. The skill's always-on `dev.kiro/` steering instructs the agent to run this
     before generating any artifact. Steps 1–5 above remain the path for a full repo/CI

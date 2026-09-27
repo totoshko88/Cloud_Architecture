@@ -15,6 +15,15 @@ from __future__ import annotations
 
 from rule_engine import geometry as geo
 from rule_engine.geometry import Box, DiagramGeometry, EdgeGeom
+
+
+def _build_geometry(text: str):
+    """Build geometry from ``.drawio`` text via the single parser (R1)."""
+    from rule_engine.drawio_model import parse_drawio
+
+    return geo.build_geometry(parse_drawio(text, path="<test>.drawio")[0])
+
+
 from rule_engine.linter import (
     RULE_FLOW_LEGEND,
     RULE_LEGEND_PLACEMENT,
@@ -310,14 +319,14 @@ _DRAWIO_WITH_OVERLAY = """<mxfile><diagram><mxGraphModel><root>
 
 
 def test_build_geometry_records_the_overlay_term_per_node():
-    g = geo.build_geometry(_DRAWIO_WITH_OVERLAY)
+    g = _build_geometry(_DRAWIO_WITH_OVERLAY)
     assert g.overlay_nodes == {"app_passive": "standby"}
     assert set(g.nodes) == {"app", "app_passive"}
 
 
 def test_overlay_marked_node_is_exempt_end_to_end():
     """Parsed from real XML: only the unmarked node is reported."""
-    g = geo.build_geometry(_DRAWIO_WITH_OVERLAY)
+    g = _build_geometry(_DRAWIO_WITH_OVERLAY)
     assert geo.check_node_connectivity(g) == ["app"]
 
 
@@ -340,14 +349,14 @@ _DRAWIO_WITH_TEXT = """<mxfile><diagram><mxGraphModel><root>
 def test_text_cells_are_captured_separately_from_nodes():
     """A text cell must never be counted as a node, but its box is still needed
     to judge the right margin."""
-    g = geo.build_geometry(_DRAWIO_WITH_TEXT)
+    g = _build_geometry(_DRAWIO_WITH_TEXT)
     assert "flow-legend" not in g.nodes
     assert g.text_boxes["flow-legend"].x == 40
     assert g.text_headings["flow-legend"] == "Flow"
 
 
 def test_left_margin_flow_cell_is_flagged_end_to_end():
-    g = geo.build_geometry(_DRAWIO_WITH_TEXT)
+    g = _build_geometry(_DRAWIO_WITH_TEXT)
     assert geo.check_legend_placement(g) == [
         ("flow-legend", "left-of-diagram-body")
     ]

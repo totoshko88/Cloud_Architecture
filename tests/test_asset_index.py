@@ -80,7 +80,11 @@ def test_normalize_slug_basic():
 
 def test_normalize_slug_strips_size_and_ext():
     assert normalize_slug("Arch_Amazon-EKS_32.svg", strip_vendor=True) == "eks"
-    assert normalize_slug("Cloud_Storage-512-color.svg", strip_vendor=True) == "storage"
+    # ``cloud`` is meaningful and no longer stripped (R6.6).
+    assert (
+        normalize_slug("Cloud_Storage-512-color.svg", strip_vendor=True)
+        == "cloud-storage"
+    )
 
 
 def test_normalize_slug_empty():
@@ -197,10 +201,12 @@ def test_index_provider_warns_on_slug_collision(tmp_path, caplog):
 
     root = tmp_path / "aws"
     svc = root / "Architecture-Service-Icons_07312026"
-    # "AWS Cloud Storage" and "AWS Storage" both vendor-strip to slug "storage",
-    # but carry distinct display names — a genuine collision.
+    # "Amazon Storage" and "AWS Storage" both vendor-strip to slug "storage"
+    # (``amazon`` and ``aws`` are stripped) but carry distinct display names —
+    # a genuine collision. (``cloud`` is intentionally no longer stripped, so a
+    # "Cloud Storage" would keep its own slug per R6.6.)
     (svc / "Arch_Storage" / "32").mkdir(parents=True)
-    (svc / "Arch_Storage" / "32" / "Arch_AWS-Cloud-Storage_32.svg").write_text("<svg/>")
+    (svc / "Arch_Storage" / "32" / "Arch_Amazon-Storage_32.svg").write_text("<svg/>")
     (svc / "Arch_Storage" / "32" / "Arch_AWS-Storage_32.svg").write_text("<svg/>")
 
     with caplog.at_level(logging.WARNING, logger="rule_engine.asset_index"):
@@ -208,6 +214,58 @@ def test_index_provider_warns_on_slug_collision(tmp_path, caplog):
 
     assert "storage" in idx  # last-writer-wins keeps one entry
     assert any("slug collision" in r.message for r in caplog.records)
+
+
+# ---------------------------------------------------------------------------
+# R6.6: meaningful words (service / cloud / public) are NOT stripped
+# ---------------------------------------------------------------------------
+
+
+def test_normalize_slug_keeps_meaningful_words():
+    """`service`, `cloud` and `public` carry meaning, so two names that differ
+    only by them must get different slugs (R6.6)."""
+    assert normalize_slug("Private Link", strip_vendor=True) == "private-link"
+    assert (
+        normalize_slug("Private Link Service", strip_vendor=True)
+        == "private-link-service"
+    )
+    assert normalize_slug("Private Link", strip_vendor=True) != normalize_slug(
+        "Private Link Service", strip_vendor=True
+    )
+    # `cloud` and `public` survive stripping too.
+    assert normalize_slug("Cloud SQL", strip_vendor=True) == "cloud-sql"
+    assert normalize_slug("Public IP", strip_vendor=True) == "public-ip"
+
+
+# ---------------------------------------------------------------------------
+# R6.7: an ambiguous exact slug resolves to unresolved + candidates
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_ambiguous_slug_is_unresolved_with_candidates(tmp_path):
+    root = tmp_path / "aws"
+    svc = root / "Architecture-Service-Icons_07312026"
+    # Two distinct services that vendor-strip to the same slug "widget".
+    (svc / "Arch_A" / "32").mkdir(parents=True)
+    (svc / "Arch_A" / "32" / "Arch_Amazon-Widget_32.svg").write_text("<svg/>")
+    (svc / "Arch_B" / "32").mkdir(parents=True)
+    (svc / "Arch_B" / "32" / "Arch_AWS-Widget_32.svg").write_text("<svg/>")
+
+    idx = index_provider("aws", str(root))
+    assert "widget" in idx.ambiguous
+
+    r = resolve_asset("aws", "widget", idx)
+    assert r.source == "unresolved"
+    assert r.asset_path is None and r.stencil is None
+    assert set(r.candidates) == {"Amazon Widget", "AWS Widget"}
+
+
+def test_resolve_unambiguous_slug_still_resolves(aws_pack):
+    """A slug claimed by only one service resolves normally (no candidates)."""
+    idx = index_provider("aws", aws_pack)
+    r = resolve_asset("aws", "Security agent", idx)
+    assert r.source == "official-asset"
+    assert r.candidates == ()
 
 
 def test_index_provider_svg_over_png_same_service_no_warning(aws_pack, caplog):

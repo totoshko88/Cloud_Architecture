@@ -28,18 +28,22 @@ artifact as blocked from publication.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from dataclasses import dataclass, field
 from enum import Enum
-from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
-# Narrow raw-content secret vocabulary (single source of truth, REVIEW.md U2).
-# The linter scans RAW snapshot content, so it uses the value-oriented
-# SECRET_CONTENT_MARKERS — not the broad key-name list — to avoid false CRITICAL
-# findings on secret-free metadata (e.g. the type value ``secrets_store``).
-from rule_engine.constants import SECRET_CONTENT_MARKERS as _SECRET_MARKERS
+# honest-gates 1.7.0 (task 10.3): the ``frontmatter`` and ``secret-safety`` rules
+# delegate to the shared single-source modules rather than to substring lists.
+# ``kb_validator`` implements the whole ``kb-frontmatter.md`` contract; ``secret_safety``
+# is the one secret vocabulary the Collector, Normalizer and Linter share (design §5),
+# so the redactor and the Linter cannot disagree about what a secret is. The pre-1.7
+# substring scan (``constants.SECRET_CONTENT_MARKERS`` via ``_content_has_secret``) is
+# gone: it produced both false CRITICALs on metadata and false negatives on real secrets.
+from rule_engine import kb_validator as _kb_validator
+from rule_engine import secret_safety as _secret_safety
 
 
 # ---------------------------------------------------------------------------
@@ -53,6 +57,107 @@ class Severity(str, Enum):
     CRITICAL = "CRITICAL"
     ERROR = "ERROR"
     WARNING = "WARNING"
+
+
+# The two diagram classes. ``flow`` (default) keeps every legacy rule exactly
+# as before, so all pre-1.3.0 artifacts lint unchanged. ``landscape`` branches
+# the node-count severity and enables the pair-contract and overlay rules.
+# (Defined here, ahead of ``RuleSpec``, because ``RuleSpec.severity_for`` uses
+# ``DIAGRAM_CLASS_FLOW`` as a default argument.)
+DIAGRAM_CLASS_FLOW = "flow"
+DIAGRAM_CLASS_LANDSCAPE = "landscape"
+
+
+# ---------------------------------------------------------------------------
+# Rule registry model (honest-gates 1.7.0, task 10.1 / R1.13, R10.1)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class RuleSpec:
+    """Declarative description of one lint rule.
+
+    A rule's per-class and per-reason severity escalations move out of the
+    predicate bodies and into data here, so the ``diagram-lint.md`` rule table
+    (parsed by the sync test, R10.1) and the runtime severities can be checked
+    against one another, and so a predicate only has to report *what* it found
+    (the offender ids and a reason) rather than *how severe* the class makes it.
+
+    Attributes
+    ----------
+    name:
+        The stable rule name (``node-count``, ``edge-direction``, …).
+    default:
+        The severity when the condition holds on a ``flow`` diagram — the rule's
+        baseline severity, and the value exported through ``RULE_SEVERITIES``.
+    landscape:
+        The severity when the condition holds on a ``landscape`` diagram, when
+        it differs from ``default``. ``None`` means the class does not change the
+        severity. This replaces the per-predicate ``if landscape: return
+        Severity.ERROR`` branches for ``container-padding``, ``edge-direction``,
+        ``edge-float``, ``entry-thirds`` and ``container-overlap``.
+    reason_escalations:
+        A mapping of reason *substring* → severity. When a finding's ``reason``
+        contains one of these keys, that severity applies (independent of
+        class). This models the ``edge-routing`` escalation, where an
+        icon-crossing reason (``knee-through-``, ``straight-through-``,
+        ``pierces-target-``) is an ERROR on either class while a bare
+        non-orthogonal edge stays a WARNING.
+    """
+
+    name: str
+    default: Severity
+    landscape: Optional[Severity] = None
+    reason_escalations: Mapping[str, Severity] = field(default_factory=dict)
+
+    def severity_for(self, diagram_class: str = DIAGRAM_CLASS_FLOW, reason: str = "") -> Severity:
+        """Resolve the severity for one finding of this rule.
+
+        A matching ``reason_escalations`` substring wins first (a routing
+        icon-crossing is an ERROR regardless of class), then the ``landscape``
+        class escalation, otherwise the ``default``.
+        """
+        if reason and self.reason_escalations:
+            for marker, sev in self.reason_escalations.items():
+                if marker in reason:
+                    return sev
+        if (
+            self.landscape is not None
+            and (diagram_class or DIAGRAM_CLASS_FLOW).lower() == DIAGRAM_CLASS_LANDSCAPE
+        ):
+            return self.landscape
+        return self.default
+
+
+@dataclass(frozen=True)
+class RuleHit:
+    """One finding produced by a rule predicate.
+
+    A predicate may return a single ``RuleHit``, a list of them, or (for
+    backward compatibility with programmatic callers) a bare ``bool`` /
+    ``Severity``. The offender ids and the reason are the values the geometry
+    checks already compute today and the pre-1.7.0 ``lint()`` threw away.
+
+    Attributes
+    ----------
+    offenders:
+        The identifiers of the offending node(s), edge(s) or container(s).
+    reason:
+        A short machine-readable reason string (e.g. ``knee-through-rds`` or a
+        constraint name), also used to resolve ``reason_escalations``.
+    severity:
+        An explicit severity override for this hit (used by ``node-count``,
+        whose severity depends on the node count, not the class alone). ``None``
+        means "use the RuleSpec's ``severity_for``".
+    """
+
+    offenders: Tuple[str, ...] = ()
+    reason: str = ""
+    severity: Optional[Severity] = None
+
+
+# A predicate returns a hit or hits, a bare bool, or an explicit Severity.
+_PredicateResult = Union[RuleHit, List[RuleHit], bool, Severity]
 
 
 # Stable rule names, aligned with the authoritative ruleset table.
@@ -87,78 +192,23 @@ RULE_LEGEND_PLACEMENT = "legend-placement"
 RULE_FLOW_LEGEND = "flow-legend"
 RULE_NODE_CONNECTIVITY = "node-connectivity"
 RULE_EDGE_APPROACH = "edge-approach"
+# honest-gates 1.7.0 (task 10.2): three new rules.
+#   parse-error   — the artifact could not be parsed (R1.8/R1.9); a Blocking
+#                   ERROR that short-circuits every other rule for that artifact.
+#   edge-endpoint — an edge references a missing/dangling source or target
+#                   (R1.10); WARNING for flow, ERROR for landscape.
+#   source-format — a diagram authored in a non-canonical source (.puml/.mmd);
+#                   draw.io is the only publishable diagram source (D1, R10.3).
+RULE_PARSE_ERROR = "parse-error"
+RULE_EDGE_ENDPOINT = "edge-endpoint"
+RULE_SOURCE_FORMAT = "source-format"
 
-# Severity assigned to each rule when its condition holds (authoritative table).
-RULE_SEVERITIES: Dict[str, Severity] = {
-    RULE_NODE_COUNT: Severity.ERROR,
-    RULE_EDGE_LABEL: Severity.WARNING,
-    RULE_NODE_QUOTE: Severity.ERROR,
-    RULE_LEGEND_PRESENT: Severity.ERROR,
-    RULE_COMPANION_DOC: Severity.ERROR,
-    RULE_FRONTMATTER: Severity.CRITICAL,
-    RULE_ICON_RESOLVED: Severity.ERROR,
-    RULE_SECRET_SAFETY: Severity.CRITICAL,
-    RULE_TITLE_VERSIONED: Severity.WARNING,
-    RULE_MERMAID_TYPE: Severity.WARNING,
-    RULE_MIN_FONT_SIZE: Severity.WARNING,
-    RULE_GRID_ALIGNMENT: Severity.WARNING,
-    RULE_CONTAINER_PADDING: Severity.WARNING,
-    RULE_EDGE_ROUTING: Severity.WARNING,
-    RULE_NODE_OVERLAP: Severity.WARNING,
-    RULE_ARROW_STYLE: Severity.WARNING,
-    RULE_ORPHAN_LANDSCAPE: Severity.ERROR,
-    RULE_OVERLAY_LEGEND_COVERAGE: Severity.WARNING,
-    # container-overlap and edge-direction default to WARNING; both are raised
-    # to ERROR for the ``landscape`` class (see their predicates), where nested
-    # boundaries and a strict directional contract are what keep a large
-    # as-built legible.
-    RULE_CONTAINER_OVERLAP: Severity.WARNING,
-    RULE_EDGE_DIRECTION: Severity.WARNING,
-    # Text-box padding and long-edge corridor sharing are WARNINGs for both
-    # classes. edge-float (no explicit contact points) is a WARNING for flow and
-    # raised to ERROR for landscape (a dense diagram must fix every contact side).
-    RULE_TEXT_PADDING: Severity.WARNING,
-    RULE_CORRIDOR_SHARING: Severity.WARNING,
-    RULE_EDGE_FLOAT: Severity.WARNING,
-    # Same-side fan-out must use the centred / even-thirds split, and a side may
-    # carry at most three exits (diagram-standards → Label-safe exits). A WARNING
-    # for both classes: it surfaces cramped or lopsided fan-outs without blocking.
-    RULE_EXIT_THIRDS: Severity.WARNING,
-    # entry-thirds (v1.5.1): the entry-side mirror of exit-thirds — several edges
-    # arriving on one target face at the same/merged contact point. WARNING for
-    # flow; raised to ERROR for landscape (see the predicate), matching the other
-    # routing-family escalations.
-    RULE_ENTRY_THIRDS: Severity.WARNING,
-    # An edge whose routed polyline crosses another node's label band (caption
-    # strip below the icon). Advisory WARNING for both classes: it catches a run
-    # cutting through a service name that the icon-box geometry rules miss.
-    RULE_EDGE_CROSSES_LABEL: Severity.WARNING,
-    # edge-crosses-container-label (v1.5.1): a routed edge whose polyline runs
-    # through a Boundary container's top caption band (e.g. a cross-region
-    # corridor slicing the ``vpc-passive`` label). Advisory WARNING for both
-    # classes — the mirror of edge-crosses-label for container captions.
-    RULE_EDGE_CROSSES_CONTAINER_LABEL: Severity.WARNING,
-    # legend-placement (v1.6.0): the Flow/Legend furniture must sit in the right
-    # margin, past the outermost container and clear of the cloud boxes. A
-    # clean-room install parked both blocks in the LEFT margin and linted clean.
-    RULE_LEGEND_PLACEMENT: Severity.WARNING,
-    # flow-legend: numeric flow markers on edges require a ``Flow`` legend cell
-    # covering every marker. Documented in diagram-lint.md since v1.0.0 but only
-    # IMPLEMENTED in v1.6.0 — a ruleset/code drift of the same kind 1.5.3/1.5.4
-    # closed for other rules.
-    RULE_FLOW_LEGEND: Severity.WARNING,
-    # node-connectivity (v1.6.0): a role-bearing node drawn with zero incident
-    # edges. The engine draws an inventory rather than an architecture when two
-    # thirds of the nodes float (the 2026-09-25 audit's headline finding: 20 of
-    # 34 nodes on every HA landscape). WARNING for both classes to start.
-    RULE_NODE_CONNECTIVITY: Severity.WARNING,
-    # edge-approach (v1.6.0): a route leg that is not axis-aligned, or a contact
-    # leg that does not meet its face head-on. An orthogonalEdgeStyle edge never
-    # draws a diagonal — draw.io inserts its OWN corner and picks the direction —
-    # so an unaligned pair is a corner the author did not specify, and every other
-    # geometry check reads the points as given and cannot see it.
-    RULE_EDGE_APPROACH: Severity.WARNING,
-}
+# ``RULE_SEVERITIES`` and ``CLASS_ESCALATIONS`` are DERIVED from the ``RULES``
+# registry (defined near the end of this module, once every predicate exists) —
+# see ``_derive_severities``. The registry is the single source of truth for a
+# rule's default severity, its ``landscape`` escalation, and its
+# ``reason_escalations`` (task 10.1 / R10.1), so the ``diagram-lint.md`` rule
+# table and the runtime severities can be checked against one another.
 
 # Maximum node count for a single diagram (Requirement 1 AC4 / 7 AC4).
 MAX_NODES = 12
@@ -170,12 +220,6 @@ MAX_NODES = 12
 # cross-link contract.
 LANDSCAPE_NODE_WARN = 30
 LANDSCAPE_NODE_ERROR = 50
-
-# The two diagram classes. ``flow`` (default) keeps every legacy rule exactly
-# as before, so all pre-1.3.0 artifacts lint unchanged. ``landscape`` branches
-# the node-count severity and enables the pair-contract and overlay rules.
-DIAGRAM_CLASS_FLOW = "flow"
-DIAGRAM_CLASS_LANDSCAPE = "landscape"
 
 # Minimum on-diagram font size, in px. AWS diagram conventions require a >= 12px
 # floor for text readability/accessibility (diagram-standards.md "Accessibility &
@@ -303,6 +347,18 @@ class Artifact:
     edges: Sequence[Edge] = field(default_factory=list)
     has_legend: bool = True
     icons: Sequence[Any] = field(default_factory=list)
+    # honest-gates 1.7.0 (task 10.4 / R4.5): the manifest-resolvable icon
+    # references the CLI extracts from the parsed page — ``resIcon`` / ``grIcon``
+    # (aws4), ``azure2`` and ``oci-slug`` / ``oci-glyph`` refs. ``icon-resolved``
+    # resolves each against the committed manifests (``aws4-icons.json``,
+    # ``azure2-shapes.json``, ``oci-stencil-digests.json``) via
+    # ``icon_refs.resolve`` and emits an ERROR (with the offending cell id) for an
+    # unknown id — a guessed/typo stencil id renders as an empty box. File-path
+    # (``image``) refs are left to the Icon_Verifier (assets may be absent at lint
+    # time), and a ``skipped`` status (a manifest not present) never blocks. Each
+    # entry is a ``rule_engine.icon_refs.IconRef``; empty for a programmatic
+    # artifact, so this half of the rule then no-ops.
+    icon_refs: Sequence[Any] = field(default_factory=list)
     # Font sizes (px) of the diagram's text-bearing cells, harvested from the
     # draw.io ``fontSize=<n>`` style tokens. ``min-font-size`` flags any below
     # ``MIN_FONT_SIZE``. Empty means "not parsed" and the rule is skipped.
@@ -353,6 +409,45 @@ class Artifact:
     is_snapshot_file: bool = False
     contains_secret: bool = False
     content: Optional[str] = None
+
+    # honest-gates 1.7.0 (task 9.3): fields the parsed-model CLI populates. A
+    # multi-page ``.drawio`` yields one Artifact per page; ``page`` names it and
+    # ``label`` is ``<file>#<page>`` for a multi-page file (plain ``<file>`` for a
+    # single page), which the Lint_CLI prints (R1.3, R1.13).
+    page: Optional[str] = None
+    label: Optional[str] = None
+    # Parse failures (R1.8): a ``DrawioParseError`` or a geometry exception makes
+    # the CLI hand back an Artifact carrying the machine-readable cause string(s)
+    # here. The ``parse-error`` rule (task 10.2) fires on a non-empty list; every
+    # other rule is skipped for such an artifact.
+    parse_errors: Sequence[str] = field(default_factory=list)
+    # The model grid step (``mxGraphModel@gridSize``, else 10), carried through
+    # from the parsed Page (R1.7).
+    grid_size: int = 10
+    # The rendered lines of the structurally-detected Legend cell (a text cell
+    # whose first non-empty line, casefolded, is ``legend``). Used by the
+    # structural legend/overlay checks (R1.11, R1.12). None means "not parsed".
+    legend_lines: Optional[Sequence[str]] = None
+    # Per-edge endpoint status (R1.10): one string per edge naming a broken
+    # endpoint (``missing-source``, ``missing-target``, ``dangling-source:<id>``,
+    # ``dangling-target:<id>``). The ``edge-endpoint`` rule (task 10.2) reports
+    # these; an edge with both endpoints resolved contributes nothing.
+    edge_endpoints: Sequence[str] = field(default_factory=list)
+    # True when the artifact lives inside an ``inventory-*`` snapshot folder, so
+    # ``secret-safety`` applies to its text regardless of kind (R3.5, discovery
+    # is task 9.4).
+    in_snapshot: bool = False
+    # The raw UTF-8 text of a non-diagram snapshot/document artifact, scanned by
+    # ``secret-safety`` (task 10.3). None for a diagram.
+    text: Optional[str] = None
+    # True when a Markdown document is a generated KB document the structural
+    # KB checks apply to (design §4 / R2.8). The CLI sets this from
+    # ``cli._is_kb_document(path)``: a companion / versioned KB document is
+    # ``is_kb=True`` (frontmatter *and* structure are validated), while a
+    # snapshot ``00-MANIFEST.md`` is ``is_kb=False`` (D5 — it is scanned only for
+    # secrets, as an in-snapshot text file). Programmatic ``Artifact(frontmatter=…)``
+    # callers leave it False, so only the frontmatter checks run for them.
+    is_kb: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -411,18 +506,6 @@ def _icon_is_unresolved(icon: Any) -> bool:
     return icon is None
 
 
-# The heuristic markers for secret material in raw snapshot content are the
-# shared _SECRET_MARKERS imported at the top of this module (REVIEW.md U2), used
-# only when the caller has not set the explicit ``contains_secret`` flag.
-
-
-def _content_has_secret(content: Optional[str]) -> bool:
-    if not content:
-        return False
-    lowered = content.lower()
-    return any(marker in lowered for marker in _SECRET_MARKERS)
-
-
 # ---------------------------------------------------------------------------
 # Individual rule checks — each returns True when its finding condition holds
 # ---------------------------------------------------------------------------
@@ -477,7 +560,16 @@ def _check_node_quote(a: Artifact) -> bool:
 
 
 def _check_legend_present(a: Artifact) -> bool:
-    """legend-present: a diagram has no Legend (ERROR)."""
+    """legend-present: a diagram has no Legend (ERROR).
+
+    Structural in 1.7.0 (R1.11): the CLI sets ``has_legend`` from the parsed
+    model — true only when a *text cell* whose first non-empty line, casefolded,
+    is ``legend`` exists (its lines are captured in ``legend_lines``). A stray
+    occurrence of the word ``legend`` in an id or a note no longer satisfies the
+    rule. The predicate simply reads that structural flag, so it stays correct
+    for both the parsed CLI path and programmatic callers that set ``has_legend``
+    directly.
+    """
     return _is_diagram(a) and not a.has_legend
 
 
@@ -500,60 +592,308 @@ def _check_companion_doc(a: Artifact) -> bool:
 _EMPTY_LIST_ALLOWED_KEYS = frozenset({"related_docs"})
 
 
-def _check_frontmatter(a: Artifact) -> bool:
-    """frontmatter: a Markdown document is missing/empty a required key (CRITICAL).
+def _violation_hit(violation: "_kb_validator.KbViolation") -> RuleHit:
+    """Turn one :class:`kb_validator.KbViolation` into a CRITICAL ``RuleHit``.
 
-    A key is missing when it is absent, ``None``, a blank string, or an empty
-    collection — except that a key in :data:`_EMPTY_LIST_ALLOWED_KEYS` may hold
-    an explicitly empty *list* (``related_docs: []``), which kb-frontmatter
-    permits. ``tags`` still needs at least one entry.
+    ``reason`` is the machine-readable constraint (``status-enum``,
+    ``date-format``, ``section-length``, …); the offender is the key or section
+    the violation names, else the constraint itself, so every finding names what
+    it is about (kb-frontmatter AC 8.9 / AC 8.10, R2.7).
+    """
+    offender = violation.key if violation.key else violation.constraint
+    return RuleHit(offenders=(offender,), reason=violation.constraint)
+
+
+def _check_frontmatter(a: Artifact):
+    """frontmatter: a KB document breaks the ``kb-frontmatter.md`` contract (CRITICAL).
+
+    honest-gates 1.7.0 (task 10.3 / R2): the whole contract is delegated to
+    :mod:`rule_engine.kb_validator`, so a document with ``status: bogus`` or the
+    impossible date ``2026-02-30`` is rejected, not merely a document with an
+    absent key. The rule returns **one CRITICAL** :class:`RuleHit` **per**
+    :class:`~rule_engine.kb_validator.KbViolation`, each carrying the constraint
+    as its ``reason`` and the offending key/section as its offender.
+
+    The **frontmatter** checks (the twelve keys, the ``status`` enum, the date
+    format, the list bounds) run for every Markdown document **except an
+    in-snapshot manifest** — a ``00-MANIFEST.md`` (or other in-snapshot Markdown
+    that is not a KB document) is excluded from the KB rule entirely under D5
+    (R2.8) and scanned only for secrets. The **structural** checks (length, the
+    four required sections, the H1 count, list depth, table width, the
+    Anti-patterns section) run **only for a KB document** (``a.is_kb``), and a
+    programmatic ``Artifact(frontmatter=…)`` caller (``is_kb`` False, no
+    ``text``) gets only the frontmatter checks.
+
+    When the artifact carries its raw ``text``, the validator sees the real
+    document (so the ``yaml-parse`` case — a frontmatter block that is not valid
+    YAML — is a finding rather than a lenient fallback, R2.5); a programmatic
+    artifact with only a ``frontmatter`` mapping is validated as that mapping.
     """
     if not _is_document(a):
         return False
-    fm = a.frontmatter
-    if fm is None:
-        # A Markdown document with no frontmatter at all is missing every key.
-        return True
-    for key in REQUIRED_FRONTMATTER_KEYS:
-        if key not in fm:
-            return True
-        value = fm[key]
-        if value is None:
-            return True
-        if isinstance(value, str) and value.strip() == "":
-            return True
-        if isinstance(value, (list, tuple)) and len(value) == 0:
-            if key in _EMPTY_LIST_ALLOWED_KEYS:
-                continue
-            return True
-        if isinstance(value, dict) and len(value) == 0:
-            return True
-    return False
+
+    # D5 (R2.8): a snapshot ``00-MANIFEST.md`` — and any other in-snapshot
+    # Markdown that is not a generated KB document — is *excluded from the KB
+    # rule entirely*, not merely from its structural half. The Collector's table
+    # manifest is owned by ``snapshot_gate``; the Linter runs only
+    # ``secret-safety`` on it (design §2 — "the Lint_CLI no longer applies the KB
+    # rule to it"). Such an artifact is marked ``in_snapshot`` and ``is_kb`` is
+    # False, so the whole frontmatter/structure contract is skipped here. A
+    # companion / versioned KB document inside the same folder is ``is_kb=True``
+    # and still validated; a programmatic ``Artifact(frontmatter=…)`` caller is
+    # ``in_snapshot=False`` and unaffected.
+    if getattr(a, "in_snapshot", False) and not a.is_kb:
+        return False
+
+    violations: List["_kb_validator.KbViolation"] = []
+
+    if a.text is not None:
+        # The real document: split off the frontmatter block and validate it,
+        # then (for a KB document only) the body structure.
+        block, body = _kb_validator.split_frontmatter(a.text)
+        if block is None:
+            # No frontmatter block at all: every required key is missing.
+            violations.extend(
+                _kb_validator.KbViolation(
+                    "missing-key", key, f"required key {key!r} is absent"
+                )
+                for key in REQUIRED_FRONTMATTER_KEYS
+            )
+        else:
+            fm, load_violations = _kb_validator.load_frontmatter(block)
+            if fm is None:
+                violations.extend(load_violations)
+            else:
+                violations.extend(_kb_validator.validate_frontmatter(fm))
+        if a.is_kb:
+            violations.extend(_kb_validator.validate_structure(body))
+    else:
+        # Programmatic caller: validate the parsed frontmatter mapping. A
+        # ``None`` mapping means the document had no (parseable) frontmatter, so
+        # every required key is missing. No ``text`` means no structural checks.
+        fm = a.frontmatter
+        if fm is None:
+            violations.extend(
+                _kb_validator.KbViolation(
+                    "missing-key", key, f"required key {key!r} is absent"
+                )
+                for key in REQUIRED_FRONTMATTER_KEYS
+            )
+        else:
+            violations.extend(_kb_validator.validate_frontmatter(fm))
+
+    if not violations:
+        return False
+    return [_violation_hit(v) for v in violations]
 
 
-def _check_icon_resolved(a: Artifact) -> bool:
-    """icon-resolved: a diagram icon is an unresolved placeholder (ERROR)."""
+# honest-gates 1.7.0 (task 10.4 / R4.5): the icon-reference kinds the linter
+# resolves against the **committed manifests** via ``icon_refs.resolve``. An
+# ``unresolved`` status among them is an ERROR naming the offending cell id — a
+# guessed/typo id renders as an empty box:
+#
+#   * ``resIcon`` / ``grIcon`` — an ``mxgraph.aws4.<id>`` against ``aws4-icons.json``;
+#   * ``azure2``               — an ``img/lib/azure2/…`` path against ``azure2-shapes.json``;
+#   * ``oci-slug``             — an ``ociSlug=<slug>`` marker against ``oci-stencil-digests.json``.
+#
+# Deliberately excluded here (design §6, R4.5):
+#   * ``image`` (file-path) refs — the on-disk asset may be absent at lint time,
+#     so path→asset verification is the Icon_Verifier's business, not the
+#     linter's; the linter never blocks on a well-formed asset path.
+#   * ``oci-glyph`` — the page-level glyph digest binds to a **slug** only when
+#     both are present, a page-level pairing the standalone linter cannot do
+#     (``icon_refs._glyph_sibling_slug`` returns ``None`` on the linter path).
+#     A committed OCI golden example carries the embedded glyph but no
+#     ``ociSlug=`` marker yet (task 5.2 emits the marker from the builder), so
+#     the glyph→slug binding is the Icon_Verifier's job (R4.1), which walks the
+#     whole page. The linter would otherwise reverse-look-up a page-wide digest
+#     against per-slug digests and never match — a false ERROR on every OCI node.
+#   * ``generic-shape`` — a base draw.io shape, resolved against
+#     ``generic-icons.yaml`` by the verifier, not a manifest id.
+_MANIFEST_REF_KINDS = frozenset({"resIcon", "grIcon", "azure2", "oci-slug"})
+
+
+def _workspace_root_for(path: Optional[str]):
+    """Best-effort workspace root for an artifact path.
+
+    Walk up from the artifact's directory to the nearest ancestor that contains
+    a ``mappings/`` directory (the committed manifests live there). When none is
+    found — a programmatic artifact, or a file outside a workspace — return
+    ``None`` so ``icon_refs.load_sources`` falls back to the manifests bundled
+    with the package (design §6 — "committed manifests only", never the fetched
+    packs).
+    """
+    from pathlib import Path as _Path
+
+    if not path:
+        return None
+    try:
+        here = _Path(path).resolve().parent
+    except OSError:
+        return None
+    for candidate in (here, *here.parents):
+        if (candidate / "mappings").is_dir():
+            return candidate
+    return None
+
+
+# ``icon_refs.load_sources`` reads several JSON/YAML manifests off disk; cache
+# the loaded :class:`IconSources` per workspace root so linting a whole tree does
+# not re-read the manifests for every page. Keyed by the resolved root (or
+# ``None`` for the bundled fallback).
+_ICON_SOURCES_CACHE: Dict[Any, Any] = {}
+
+
+def _icon_sources_for(path: Optional[str]):
+    """Return the cached :class:`icon_refs.IconSources` for ``path``'s workspace."""
+    from pathlib import Path as _Path
+
+    from rule_engine import icon_refs as _icon_refs
+
+    root = _workspace_root_for(path)
+    key = str(root) if root is not None else None
+    if key not in _ICON_SOURCES_CACHE:
+        _ICON_SOURCES_CACHE[key] = _icon_refs.load_sources(
+            root if root is not None else _Path(".")
+        )
+    return _ICON_SOURCES_CACHE[key]
+
+
+def _check_icon_resolved(a: Artifact):
+    """icon-resolved: an unresolved placeholder OR an unknown manifest id (ERROR).
+
+    honest-gates 1.7.0 (task 10.4 / R4.5) keeps the pre-1.7 **placeholder**
+    behaviour — an empty style, ``shape=none``, or a ``data:image/svg`` URI is an
+    unresolved icon — *and* additionally resolves the parsed
+    ``resIcon`` / ``grIcon`` / ``azure2`` / ``oci-*`` references against the
+    **committed manifests** (``aws4-icons.json``, ``azure2-shapes.json``,
+    ``oci-stencil-digests.json``) via :func:`icon_refs.resolve`. An
+    ``unresolved`` status among those kinds — a guessed or mistyped stencil id
+    that would render as an empty box — is an ERROR whose offender is the
+    **cell id** carrying it.
+
+    File-path (``image``) refs are **not** resolved here: they are the
+    Icon_Verifier's business because the referenced asset may be absent at lint
+    time (design §6). A ``skipped`` status (a manifest not committed) never
+    blocks — fail-honest — and a ``resolved`` id passes silently.
+    """
     if not _is_diagram(a):
         return False
-    return any(_icon_is_unresolved(icon) for icon in a.icons)
+
+    hits: List[RuleHit] = []
+
+    # (1) Placeholder markers — unchanged pre-1.7 behaviour.
+    if any(_icon_is_unresolved(icon) for icon in a.icons):
+        hits.append(RuleHit(reason="unresolved-placeholder"))
+
+    # (2) Manifest-backed resolution of the parsed references (committed
+    # manifests only). Import lazily so a programmatic artifact with no
+    # ``icon_refs`` never pays the manifest-load cost.
+    refs = list(getattr(a, "icon_refs", ()) or ())
+    manifest_refs = [r for r in refs if getattr(r, "kind", None) in _MANIFEST_REF_KINDS]
+    if manifest_refs:
+        from rule_engine import icon_refs as _icon_refs
+
+        sources = _icon_sources_for(a.path)
+        for ref in manifest_refs:
+            status, detail = _icon_refs.resolve(ref, sources)
+            if status == _icon_refs.UNRESOLVED:
+                hits.append(
+                    RuleHit(
+                        offenders=(ref.cell_id,) if ref.cell_id else (),
+                        reason=detail or f"unresolved-{ref.kind}",
+                    )
+                )
+
+    return hits if hits else False
 
 
-def _check_secret_safety(a: Artifact) -> bool:
-    """secret-safety: a snapshot file contains a secret/key/SecureString (CRITICAL)."""
-    if not _is_snapshot(a):
+def _secret_applies(a: Artifact) -> bool:
+    """True when ``secret-safety`` applies to this artifact.
+
+    It applies to any snapshot file, and — per R3.5 — to *any* artifact inside
+    an ``inventory-*`` folder regardless of kind (a KB ``.md`` companion in a
+    snapshot folder is scanned for secrets as well as validated as a document).
+    """
+    return _is_snapshot(a) or bool(getattr(a, "in_snapshot", False))
+
+
+def _secret_hits(a: Artifact) -> List[RuleHit]:
+    """Return the ``secret-safety`` hits for one artifact (offenders locate only).
+
+    honest-gates 1.7.0 (task 10.3 / R3): a ``.json`` snapshot is parsed and walked
+    with :func:`secret_safety.find_secrets` (RFC 6901 pointers); any other text —
+    ``.md`` / ``.yaml`` / ``.txt`` / ``.csv``, or a ``.json`` that does not parse —
+    goes through :func:`secret_safety.scan_text` (``line:<n>`` locations). Every
+    offender is a **JSON pointer or a line number**; a secret *value* is never
+    placed in a finding (design §2 — "a finding never includes a secret value").
+    An unparsable ``.json`` snapshot is scanned as text here *and* also carries a
+    ``parse-error`` (set by ``cli._parse_snapshot``); the two coexist because a
+    snapshot has no model to skip.
+    """
+    text = a.text if a.text is not None else a.content
+    is_json = bool(a.path) and str(a.path).lower().endswith(".json")
+
+    hits: List["_secret_safety.SecretHit"] = []
+    if text is not None:
+        if is_json:
+            try:
+                parsed = json.loads(text)
+            except (json.JSONDecodeError, ValueError):
+                # An unparsable snapshot .json: fall back to a text scan so a
+                # secret in a malformed file is still caught (the parse-error is
+                # reported separately by the parse-error rule).
+                hits = _secret_safety.scan_text(text)
+            else:
+                hits = _secret_safety.find_secrets(parsed)
+        else:
+            hits = _secret_safety.scan_text(text)
+
+    rule_hits = [
+        RuleHit(offenders=(hit.location,) if hit.location else (), reason=hit.kind)
+        for hit in hits
+    ]
+    if a.contains_secret and not rule_hits:
+        # A programmatic caller that asserts the file contains a secret without
+        # supplying text: honour the flag with a value-free finding.
+        rule_hits.append(RuleHit(reason="contains-secret"))
+    return rule_hits
+
+
+def _check_secret_safety(a: Artifact):
+    """secret-safety: a snapshot file contains a secret/key/SecureString (CRITICAL).
+
+    Delegates to :mod:`rule_engine.secret_safety`, the single shared vocabulary
+    (design §5), so the Linter and the redactor cannot disagree about what a
+    secret is. Applies to any snapshot file and any in-snapshot text (R3.5). Each
+    finding's offender is a JSON pointer or a ``line:<n>`` location only — never
+    the secret value.
+    """
+    if not _secret_applies(a):
         return False
-    if a.contains_secret:
-        return True
-    return _content_has_secret(a.content)
+    hits = _secret_hits(a)
+    return hits if hits else False
 
 
 def _check_title_versioned(a: Artifact) -> bool:
-    """title-versioned: a title cell has no version identifier or no date (WARNING)."""
+    """title-versioned: a diagram has no fully-formed versioned title (WARNING).
+
+    Structural in 1.7.0 (R1.11): the CLI sets ``title_cell`` only when a text
+    cell's label matches the *whole* title format
+    (``<provider> <workload> — <boundary> / <region> | <date> | vN``) **and**
+    ``date`` is a real calendar date. So a ``title_cell`` of ``None`` means no
+    cell matched the full format — the rule fires. A stray ``vN`` token in an
+    unrelated cell no longer satisfies it.
+
+    For programmatic callers that still pass a plain title string, the legacy
+    version+date substring check is kept as a fallback so a partial title
+    (missing the version or the date) also fires.
+    """
     if not _is_diagram(a):
         return False
     title = a.title_cell
     if title is None:
-        # No title cell at all lacks both the version and the date.
+        # No cell matched the full versioned-title format.
         return True
     has_version = bool(_VERSION_RE.search(title))
     has_date = bool(_ISO_DATE_RE.search(title))
@@ -595,31 +935,81 @@ def _geometry_of(a: Artifact):
     return getattr(a, "geometry", None) if _is_diagram(a) else None
 
 
-def _check_grid_alignment(a: Artifact) -> bool:
+def _offender_ids(findings) -> Tuple[str, ...]:
+    """Flatten a geometry check's return value into a tuple of offender ids.
+
+    The geometry checks return either ``List[str]`` (node/edge ids),
+    ``List[Tuple[str, str]]`` (an id pair, or an ``(id, reason)`` pair), or
+    ``List[Tuple[str, str, float]]`` (id pair + gap). Every leading string in
+    each tuple that is not the trailing reason is an offender id. To keep the
+    behaviour simple and stable, we collect every ``str`` element of each entry
+    that is not the last element when the last element is a reason string; for
+    ``(id, reason)`` shapes this keeps the id, and for ``(idA, idB)`` /
+    ``(idA, idB, gap)`` shapes it keeps both ids. Duplicates are removed while
+    preserving order.
+    """
+    ids: List[str] = []
+
+    def _add(value: str) -> None:
+        if value and value not in ids:
+            ids.append(value)
+
+    for entry in findings:
+        if isinstance(entry, str):
+            _add(entry)
+        elif isinstance(entry, (tuple, list)):
+            for element in entry:
+                if isinstance(element, str):
+                    _add(element)
+    return tuple(ids)
+
+
+def _first_reason(findings) -> str:
+    """Return the first reason string among the geometry findings, if any.
+
+    Used to drive ``reason_escalations`` (e.g. ``edge-routing``'s
+    ``*-through-*`` / ``pierces-target-*`` crossing escalation). For an
+    ``(id, reason)`` tuple the reason is the last element; a bare-id shape has
+    no reason.
+    """
+    reasons = []
+    for entry in findings:
+        if isinstance(entry, (tuple, list)) and len(entry) >= 2 and isinstance(entry[-1], str):
+            reasons.append(entry[-1])
+    # Prefer a reason that triggers an escalation so the strongest severity wins
+    # even when it is not the first offender in document order.
+    for reason in reasons:
+        if ("through-" in reason) or ("pierces-" in reason):
+            return reason
+    return reasons[0] if reasons else ""
+
+
+def _check_grid_alignment(a: Artifact):
     """grid-alignment: a node's absolute x/y is not a multiple of the grid (WARNING)."""
     geo = _geometry_of(a)
     if geo is None:
         return False
     from rule_engine import geometry as _geo
-    return bool(_geo.check_grid_alignment(geo))
+    findings = _geo.check_grid_alignment(geo)
+    if not findings:
+        return False
+    return RuleHit(offenders=_offender_ids(findings), reason="off-grid")
 
 
 def _check_container_padding(a: Artifact):
     """container-padding: a node sits <1 grid step from / straddles a container.
 
-    WARNING for ``flow`` (unchanged). Raised to ERROR for ``landscape``, where
-    nested labelled containers are what keep a big as-built legible, so a
-    padding defect must block publication (v1.3.0).
+    WARNING for ``flow``; the ``landscape`` escalation to ERROR now lives in the
+    ``RuleSpec`` (task 10.1), so the predicate only reports the offenders.
     """
     geo = _geometry_of(a)
     if geo is None:
         return False
     from rule_engine import geometry as _geo
-    if not bool(_geo.check_container_padding(geo)):
+    findings = _geo.check_container_padding(geo)
+    if not findings:
         return False
-    if (a.diagram_class or DIAGRAM_CLASS_FLOW).lower() == DIAGRAM_CLASS_LANDSCAPE:
-        return Severity.ERROR
-    return True
+    return RuleHit(offenders=_offender_ids(findings), reason="padding")
 
 
 def _check_edge_routing(a: Artifact):
@@ -636,7 +1026,12 @@ def _check_edge_routing(a: Artifact):
     whose real *orthogonal knee* path (not the raw diagonal between points)
     slices an unrelated icon (``knee-through-<node>``) — the devoxx ``e8``
     horizontal stub cutting the RDS glyph. It matches the same ``through-``
-    escalation below, so it blocks publication like any other icon crossing."""
+    escalation below, so it blocks publication like any other icon crossing.
+
+    The icon-crossing escalation now lives in the ``RuleSpec``'s
+    ``reason_escalations`` (task 10.1); the predicate reports the offending edge
+    ids and a reason, and the RuleSpec raises ``*-through-*`` /
+    ``pierces-target-*`` to ERROR on either class."""
     geo = _geometry_of(a)
     if geo is None:
         return False
@@ -644,31 +1039,31 @@ def _check_edge_routing(a: Artifact):
     findings = _geo.check_edge_routing(geo)
     if not findings:
         return False
-    # A run cutting through a node icon — an unrelated node (``*-through-*``) or
-    # the edge's own target reached from the wrong side (``pierces-target-*``) —
-    # is a hard routing defect and blocks publication. A bare non-orthogonal
-    # edge (no crossing) stays a WARNING.
-    if any(("through-" in r) or ("pierces-" in r) for _eid, r in findings):
-        return Severity.ERROR
-    return True
+    return RuleHit(offenders=_offender_ids(findings), reason=_first_reason(findings))
 
 
-def _check_node_overlap(a: Artifact) -> bool:
+def _check_node_overlap(a: Artifact):
     """node-overlap: two node icon boxes overlap (WARNING)."""
     geo = _geometry_of(a)
     if geo is None:
         return False
     from rule_engine import geometry as _geo
-    return bool(_geo.check_node_overlap(geo))
+    findings = _geo.check_node_overlap(geo)
+    if not findings:
+        return False
+    return RuleHit(offenders=_offender_ids(findings), reason="overlap")
 
 
-def _check_arrow_style(a: Artifact) -> bool:
+def _check_arrow_style(a: Artifact):
     """arrow-style: an edge uses a filled/heavy arrowhead or a sub-1pt stroke (WARNING)."""
     geo = _geometry_of(a)
     if geo is None:
         return False
     from rule_engine import geometry as _geo
-    return bool(_geo.check_arrow_style(geo))
+    findings = _geo.check_arrow_style(geo)
+    if not findings:
+        return False
+    return RuleHit(offenders=_offender_ids(findings), reason=_first_reason(findings))
 
 
 def _check_container_overlap(a: Artifact):
@@ -678,16 +1073,17 @@ def _check_container_overlap(a: Artifact):
     partially overlap put shared canvas area under two labelled groups at once,
     so a node there is ambiguous about which boundary owns it. WARNING for
     ``flow``; raised to ERROR for ``landscape``, where the nested boundary
-    hierarchy is the primary device keeping a big as-built legible (v1.3.x)."""
+    hierarchy is the primary device keeping a big as-built legible (v1.3.x). The
+    ``landscape`` escalation to ERROR now lives in the ``RuleSpec`` (task
+    10.1)."""
     geo = _geometry_of(a)
     if geo is None:
         return False
     from rule_engine import geometry as _geo
-    if not bool(_geo.check_container_overlap(geo)):
+    findings = _geo.check_container_overlap(geo)
+    if not findings:
         return False
-    if (a.diagram_class or DIAGRAM_CLASS_FLOW).lower() == DIAGRAM_CLASS_LANDSCAPE:
-        return Severity.ERROR
-    return True
+    return RuleHit(offenders=_offender_ids(findings), reason="sibling-overlap")
 
 
 def _check_edge_direction(a: Artifact):
@@ -696,17 +1092,16 @@ def _check_edge_direction(a: Artifact):
     Every edge with explicit contact points must exit its source on the right or
     bottom half and enter its target on the left or top half — the single
     directional rule that removes most crossings on a dense diagram. WARNING for
-    ``flow``; raised to ERROR for ``landscape``, where a violated contact side is
-    a routing defect that must block publication of the as-built (v1.3.x)."""
+    ``flow``; the ``landscape`` escalation to ERROR now lives in the ``RuleSpec``
+    (task 10.1)."""
     geo = _geometry_of(a)
     if geo is None:
         return False
     from rule_engine import geometry as _geo
-    if not bool(_geo.check_edge_direction(geo)):
+    findings = _geo.check_edge_direction(geo)
+    if not findings:
         return False
-    if (a.diagram_class or DIAGRAM_CLASS_FLOW).lower() == DIAGRAM_CLASS_LANDSCAPE:
-        return Severity.ERROR
-    return True
+    return RuleHit(offenders=_offender_ids(findings), reason=_first_reason(findings))
 
 
 def _check_text_padding(a: Artifact) -> bool:
@@ -721,43 +1116,57 @@ def _check_text_padding(a: Artifact) -> bool:
     offenders = a.text_padding_offenders
     if offenders is None:
         return False
-    return bool(offenders)
+    if not offenders:
+        return False
+    return RuleHit(offenders=tuple(str(o) for o in offenders), reason="no-inner-padding")
 
 
-def _check_corridor_sharing(a: Artifact) -> bool:
+def _check_corridor_sharing(a: Artifact):
     """corridor-sharing: two long edges share one straight corridor (WARNING)."""
     geo = _geometry_of(a)
     if geo is None:
         return False
     from rule_engine import geometry as _geo
-    return bool(_geo.check_corridor_sharing(geo))
+    findings = _geo.check_corridor_sharing(geo)
+    if not findings:
+        return False
+    return RuleHit(offenders=_offender_ids(findings), reason="shared-corridor")
 
 
-def _check_exit_thirds(a: Artifact) -> bool:
+def _check_exit_thirds(a: Artifact):
     """exit-thirds: same-side fan-out is not centred / even-thirds, or >3 exits (WARNING)."""
     geo = _geometry_of(a)
     if geo is None:
         return False
     from rule_engine import geometry as _geo
-    return bool(_geo.check_exit_thirds(geo))
+    findings = _geo.check_exit_thirds(geo)
+    if not findings:
+        return False
+    return RuleHit(offenders=_offender_ids(findings), reason=_first_reason(findings))
 
 
-def _check_edge_crosses_label(a: Artifact) -> bool:
+def _check_edge_crosses_label(a: Artifact):
     """edge-crosses-label: a routed edge polyline crosses another node's label band (WARNING)."""
     geo = _geometry_of(a)
     if geo is None:
         return False
     from rule_engine import geometry as _geo
-    return bool(_geo.check_edge_crosses_label(geo))
+    findings = _geo.check_edge_crosses_label(geo)
+    if not findings:
+        return False
+    return RuleHit(offenders=_offender_ids(findings), reason="crosses-label-band")
 
 
-def _check_edge_crosses_container_label(a: Artifact) -> bool:
+def _check_edge_crosses_container_label(a: Artifact):
     """edge-crosses-container-label: a routed edge crosses a container's top caption (WARNING)."""
     geo = _geometry_of(a)
     if geo is None:
         return False
     from rule_engine import geometry as _geo
-    return bool(_geo.check_edge_crosses_container_label(geo))
+    findings = _geo.check_edge_crosses_container_label(geo)
+    if not findings:
+        return False
+    return RuleHit(offenders=_offender_ids(findings), reason="crosses-container-caption")
 
 
 def _check_entry_thirds(a: Artifact):
@@ -768,33 +1177,34 @@ def _check_entry_thirds(a: Artifact):
     glyph (the buggy example's two ``EC2 → RDS`` edges both at ``entryX=0,
     entryY=0.5``). WARNING for ``flow``; raised to ERROR for ``landscape``, where
     a dense as-built must keep every arrival distinct — matching how the other
-    routing-family rules (``edge-direction``/``edge-float``) escalate."""
+    routing-family rules (``edge-direction``/``edge-float``) escalate. The
+    ``landscape`` escalation to ERROR now lives in the ``RuleSpec`` (task
+    10.1)."""
     geo = _geometry_of(a)
     if geo is None:
         return False
     from rule_engine import geometry as _geo
-    if not bool(_geo.check_entry_thirds(geo)):
+    findings = _geo.check_entry_thirds(geo)
+    if not findings:
         return False
-    if (a.diagram_class or DIAGRAM_CLASS_FLOW).lower() == DIAGRAM_CLASS_LANDSCAPE:
-        return Severity.ERROR
-    return True
+    return RuleHit(offenders=_offender_ids(findings), reason=_first_reason(findings))
 
 
 def _check_edge_float(a: Artifact):
     """edge-float: an edge declares no explicit exit/entry contact point.
 
-    WARNING for ``flow``; raised to ERROR for ``landscape``, where every edge
-    must fix its contact points so the directional contract is enforceable and
-    the perimeter router cannot drift a side (v1.3.x)."""
+    WARNING for ``flow``; the ``landscape`` escalation to ERROR now lives in the
+    ``RuleSpec`` (task 10.1), where every edge must fix its contact points so the
+    directional contract is enforceable and the perimeter router cannot drift a
+    side."""
     geo = _geometry_of(a)
     if geo is None:
         return False
     from rule_engine import geometry as _geo
-    if not bool(_geo.check_edge_float(geo)):
+    findings = _geo.check_edge_float(geo)
+    if not findings:
         return False
-    if (a.diagram_class or DIAGRAM_CLASS_FLOW).lower() == DIAGRAM_CLASS_LANDSCAPE:
-        return Severity.ERROR
-    return True
+    return RuleHit(offenders=_offender_ids(findings), reason="no-contact-points")
 
 
 # A numeric flow marker used as an on-edge label: "1", "2", … (see
@@ -849,7 +1259,7 @@ def _check_flow_legend(a: Artifact) -> bool:
     return not set(markers).issubset(covered)
 
 
-def _check_edge_approach(a: Artifact) -> bool:
+def _check_edge_approach(a: Artifact):
     """edge-approach: a route leg is not axis-aligned, or misses its face (WARNING).
 
     ``orthogonalEdgeStyle`` never draws a diagonal, so an unaligned pair of points
@@ -861,10 +1271,13 @@ def _check_edge_approach(a: Artifact) -> bool:
     if geo is None:
         return False
     from rule_engine import geometry as _geo
-    return bool(_geo.check_edge_approach(geo))
+    findings = _geo.check_edge_approach(geo)
+    if not findings:
+        return False
+    return RuleHit(offenders=_offender_ids(findings), reason=_first_reason(findings))
 
 
-def _check_node_connectivity(a: Artifact) -> bool:
+def _check_node_connectivity(a: Artifact):
     """node-connectivity: a role-bearing node is drawn with no incident edge (WARNING).
 
     The audit's headline finding (2026-09-25): each HA landscape drew 34 nodes
@@ -875,10 +1288,13 @@ def _check_node_connectivity(a: Artifact) -> bool:
     if geo is None:
         return False
     from rule_engine import geometry as _geo
-    return bool(_geo.check_node_connectivity(geo))
+    findings = _geo.check_node_connectivity(geo)
+    if not findings:
+        return False
+    return RuleHit(offenders=_offender_ids(findings), reason="no-incident-edge")
 
 
-def _check_legend_placement(a: Artifact) -> bool:
+def _check_legend_placement(a: Artifact):
     """legend-placement: a Flow/Legend box is not in the right margin (WARNING).
 
     The furniture must sit at least one grid step past the outermost container's
@@ -891,7 +1307,10 @@ def _check_legend_placement(a: Artifact) -> bool:
     if geo is None:
         return False
     from rule_engine import geometry as _geo
-    return bool(_geo.check_legend_placement(geo))
+    findings = _geo.check_legend_placement(geo)
+    if not findings:
+        return False
+    return RuleHit(offenders=_offender_ids(findings), reason=_first_reason(findings))
 
 
 def _stem_of(path_or_stem):
@@ -922,59 +1341,229 @@ def _check_orphan_landscape(a: Artifact) -> bool:
     return not _stem_of(a.summary_of)
 
 
-def _check_overlay_legend_coverage(a: Artifact) -> bool:
+def _check_overlay_legend_coverage(a: Artifact):
     """overlay-legend-coverage: an overlay marker is not covered by the Legend (WARNING).
 
     When a diagram carries double-encoded overlay markers (findings / state,
     e.g. "spec-required-not-deployed", "observability-overlay", change markers),
     every marker term must be documented in the Legend. An uncovered marker is a
     WARNING. Diagrams with no overlay markers are unaffected.
+
+    Structural in 1.7.0 (R1.12): overlay markers come from the ``overlay`` style
+    key of each cell, and a term is *covered* only when it appears as a **whole
+    token** in the structurally-detected Legend lines. The CLI computes
+    ``legend_overlay_terms`` by whole-token matching against ``legend_lines``
+    (the pre-1.7 check counted the marker's own style occurrences), so the
+    predicate reports any marker not present in that covered set, naming the
+    uncovered term(s) as the offenders.
     """
     if not _is_diagram(a):
         return False
     if not a.overlay_markers:
         return False
     covered = {str(t).strip().lower() for t in a.legend_overlay_terms}
-    for marker in a.overlay_markers:
-        if str(marker).strip().lower() not in covered:
-            return True
-    return False
+    uncovered = [
+        str(marker)
+        for marker in a.overlay_markers
+        if str(marker).strip().lower() not in covered
+    ]
+    if not uncovered:
+        return False
+    # De-duplicate while preserving document order.
+    offenders: List[str] = []
+    for term in uncovered:
+        if term not in offenders:
+            offenders.append(term)
+    return RuleHit(offenders=tuple(offenders), reason="undocumented-overlay")
 
 
-# Ordered rule registry: (rule name, predicate). Order defines finding order.
-_RULES = (
-    (RULE_NODE_COUNT, _check_node_count),
-    (RULE_EDGE_LABEL, _check_edge_label),
-    (RULE_NODE_QUOTE, _check_node_quote),
-    (RULE_LEGEND_PRESENT, _check_legend_present),
-    (RULE_COMPANION_DOC, _check_companion_doc),
-    (RULE_FRONTMATTER, _check_frontmatter),
-    (RULE_ICON_RESOLVED, _check_icon_resolved),
-    (RULE_SECRET_SAFETY, _check_secret_safety),
-    (RULE_TITLE_VERSIONED, _check_title_versioned),
-    (RULE_MERMAID_TYPE, _check_mermaid_type),
-    (RULE_MIN_FONT_SIZE, _check_min_font_size),
-    (RULE_GRID_ALIGNMENT, _check_grid_alignment),
-    (RULE_CONTAINER_PADDING, _check_container_padding),
-    (RULE_EDGE_ROUTING, _check_edge_routing),
-    (RULE_NODE_OVERLAP, _check_node_overlap),
-    (RULE_ARROW_STYLE, _check_arrow_style),
-    (RULE_CONTAINER_OVERLAP, _check_container_overlap),
-    (RULE_EDGE_DIRECTION, _check_edge_direction),
-    (RULE_TEXT_PADDING, _check_text_padding),
-    (RULE_CORRIDOR_SHARING, _check_corridor_sharing),
-    (RULE_EDGE_FLOAT, _check_edge_float),
-    (RULE_EXIT_THIRDS, _check_exit_thirds),
-    (RULE_ENTRY_THIRDS, _check_entry_thirds),
-    (RULE_EDGE_CROSSES_LABEL, _check_edge_crosses_label),
-    (RULE_EDGE_CROSSES_CONTAINER_LABEL, _check_edge_crosses_container_label),
-    (RULE_LEGEND_PLACEMENT, _check_legend_placement),
-    (RULE_FLOW_LEGEND, _check_flow_legend),
-    (RULE_NODE_CONNECTIVITY, _check_node_connectivity),
-    (RULE_EDGE_APPROACH, _check_edge_approach),
-    (RULE_ORPHAN_LANDSCAPE, _check_orphan_landscape),
-    (RULE_OVERLAY_LEGEND_COVERAGE, _check_overlay_legend_coverage),
+# ---------------------------------------------------------------------------
+# New rules (honest-gates 1.7.0, task 10.2)
+# ---------------------------------------------------------------------------
+
+
+def _check_parse_error(a: Artifact):
+    """parse-error: the artifact could not be parsed (ERROR, R1.8/R1.9).
+
+    A ``DrawioParseError`` (a file that does not parse as XML, a page that
+    cannot be decompressed, a DTD/entity declaration, a parent cycle, …) or a
+    geometry-construction exception makes ``cli.parse_artifacts`` hand back an
+    Artifact carrying the machine-readable cause string(s) in ``parse_errors``
+    instead of silently skipping the geometry rules. This rule fires on a
+    non-empty ``parse_errors`` and names the causes as offenders; ``lint()``
+    short-circuits every other rule for such an artifact (there is no model to
+    evaluate).
+    """
+    causes = list(a.parse_errors or ())
+    if not causes:
+        return False
+    return RuleHit(offenders=tuple(causes), reason="parse-error")
+
+
+def _check_edge_endpoint(a: Artifact):
+    """edge-endpoint: an edge references a missing/dangling source or target.
+
+    R1.10: the CLI records, per edge, ``missing-source``, ``missing-target``,
+    ``dangling-source:<id>`` or ``dangling-target:<id>`` in ``edge_endpoints``.
+    An edge with both endpoints resolved contributes nothing. WARNING for
+    ``flow``, ERROR for ``landscape`` (the class escalation lives in the
+    ``RuleSpec``), matching how the routing-family rules escalate on a dense
+    as-built.
+    """
+    if not _is_diagram(a):
+        return False
+    endpoints = list(a.edge_endpoints or ())
+    if not endpoints:
+        return False
+    return RuleHit(offenders=tuple(endpoints), reason="broken-edge-endpoint")
+
+
+def _check_source_format(a: Artifact):
+    """source-format: a diagram authored in a non-canonical source (ERROR).
+
+    draw.io is the only publishable diagram source in 1.7.0 (D1, R10.3). A
+    ``.puml`` / ``.mmd`` file is discovered by ``--all`` and carries its
+    ``source_format`` (``plantuml`` / ``mermaid``); it becomes a diagram
+    Artifact with ``is_drawio`` false. This rule fires on any diagram whose
+    source format is not ``drawio``, naming the format as the offender.
+    """
+    if not _is_diagram(a):
+        return False
+    # Only a discovered source *file* (a ``.puml`` / ``.mmd`` parsed by the CLI,
+    # which sets ``is_drawio=False`` and carries the raw ``text``) is judged. A
+    # programmatic diagram Artifact keeps the legacy ``source_format="plantuml"``
+    # default with no ``text`` and ``is_drawio`` unset, and must not trip this
+    # ERROR — that would block every hand-built test artifact.
+    if a.is_drawio or a.text is None:
+        return False
+    fmt = (a.source_format or "").lower()
+    if fmt in ("", "drawio"):
+        return False
+    return RuleHit(offenders=(fmt,), reason=f"non-drawio-source:{fmt}")
+
+
+# ---------------------------------------------------------------------------
+# The RULES registry (task 10.1 / R10.1) — the single source of truth
+# ---------------------------------------------------------------------------
+#
+# Each entry pairs a :class:`RuleSpec` (the rule's name, default severity, the
+# optional ``landscape`` class escalation, and any ``reason_escalations``) with
+# its predicate. Registry order defines the order findings appear in a result.
+#
+# ``RULE_SEVERITIES`` and ``CLASS_ESCALATIONS`` are derived from this registry
+# below, so a rule's severity is declared once, here, rather than in a parallel
+# dict plus an ``if landscape:`` branch inside the predicate.
+RULES: Tuple[Tuple[RuleSpec, Callable[[Artifact], _PredicateResult]], ...] = (
+    (RuleSpec(RULE_NODE_COUNT, Severity.ERROR), _check_node_count),
+    (RuleSpec(RULE_EDGE_LABEL, Severity.WARNING), _check_edge_label),
+    (RuleSpec(RULE_NODE_QUOTE, Severity.ERROR), _check_node_quote),
+    (RuleSpec(RULE_LEGEND_PRESENT, Severity.ERROR), _check_legend_present),
+    (RuleSpec(RULE_COMPANION_DOC, Severity.ERROR), _check_companion_doc),
+    (RuleSpec(RULE_FRONTMATTER, Severity.CRITICAL), _check_frontmatter),
+    (RuleSpec(RULE_ICON_RESOLVED, Severity.ERROR), _check_icon_resolved),
+    (RuleSpec(RULE_SECRET_SAFETY, Severity.CRITICAL), _check_secret_safety),
+    (RuleSpec(RULE_TITLE_VERSIONED, Severity.WARNING), _check_title_versioned),
+    (RuleSpec(RULE_MERMAID_TYPE, Severity.WARNING), _check_mermaid_type),
+    (RuleSpec(RULE_MIN_FONT_SIZE, Severity.WARNING), _check_min_font_size),
+    (RuleSpec(RULE_GRID_ALIGNMENT, Severity.WARNING), _check_grid_alignment),
+    # container-padding: WARNING for flow, ERROR for landscape (nested labelled
+    # containers are load-bearing on an as-built).
+    (
+        RuleSpec(RULE_CONTAINER_PADDING, Severity.WARNING, landscape=Severity.ERROR),
+        _check_container_padding,
+    ),
+    # edge-routing: a bare non-orthogonal edge is a WARNING, but a run cutting
+    # through an icon it does not connect (``*-through-*``) or into its own
+    # target from the wrong side (``pierces-target-*``) is an ERROR on either
+    # class. Modelled as reason_escalations so the sync test can read it.
+    (
+        RuleSpec(
+            RULE_EDGE_ROUTING,
+            Severity.WARNING,
+            reason_escalations={
+                "through-": Severity.ERROR,
+                "pierces-": Severity.ERROR,
+            },
+        ),
+        _check_edge_routing,
+    ),
+    (RuleSpec(RULE_NODE_OVERLAP, Severity.WARNING), _check_node_overlap),
+    (RuleSpec(RULE_ARROW_STYLE, Severity.WARNING), _check_arrow_style),
+    # container-overlap: WARNING for flow, ERROR for landscape (sibling
+    # boundaries must not overlap on an as-built).
+    (
+        RuleSpec(RULE_CONTAINER_OVERLAP, Severity.WARNING, landscape=Severity.ERROR),
+        _check_container_overlap,
+    ),
+    # edge-direction: WARNING for flow, ERROR for landscape (the directional
+    # contract is strict on a dense as-built).
+    (
+        RuleSpec(RULE_EDGE_DIRECTION, Severity.WARNING, landscape=Severity.ERROR),
+        _check_edge_direction,
+    ),
+    (RuleSpec(RULE_TEXT_PADDING, Severity.WARNING), _check_text_padding),
+    (RuleSpec(RULE_CORRIDOR_SHARING, Severity.WARNING), _check_corridor_sharing),
+    # edge-float: WARNING for flow, ERROR for landscape (every edge must pin its
+    # contact points on a dense diagram).
+    (
+        RuleSpec(RULE_EDGE_FLOAT, Severity.WARNING, landscape=Severity.ERROR),
+        _check_edge_float,
+    ),
+    (RuleSpec(RULE_EXIT_THIRDS, Severity.WARNING), _check_exit_thirds),
+    # entry-thirds: WARNING for flow, ERROR for landscape (arrivals on one face
+    # must stay distinct on a dense diagram).
+    (
+        RuleSpec(RULE_ENTRY_THIRDS, Severity.WARNING, landscape=Severity.ERROR),
+        _check_entry_thirds,
+    ),
+    (RuleSpec(RULE_EDGE_CROSSES_LABEL, Severity.WARNING), _check_edge_crosses_label),
+    (
+        RuleSpec(RULE_EDGE_CROSSES_CONTAINER_LABEL, Severity.WARNING),
+        _check_edge_crosses_container_label,
+    ),
+    (RuleSpec(RULE_LEGEND_PLACEMENT, Severity.WARNING), _check_legend_placement),
+    (RuleSpec(RULE_FLOW_LEGEND, Severity.WARNING), _check_flow_legend),
+    (RuleSpec(RULE_NODE_CONNECTIVITY, Severity.WARNING), _check_node_connectivity),
+    (RuleSpec(RULE_EDGE_APPROACH, Severity.WARNING), _check_edge_approach),
+    (RuleSpec(RULE_ORPHAN_LANDSCAPE, Severity.ERROR), _check_orphan_landscape),
+    (
+        RuleSpec(RULE_OVERLAY_LEGEND_COVERAGE, Severity.WARNING),
+        _check_overlay_legend_coverage,
+    ),
+    # honest-gates 1.7.0 (task 10.2). ``source-format`` is an ERROR: draw.io is
+    # the only publishable diagram source (D1). ``edge-endpoint`` is WARNING for
+    # flow, ERROR for landscape (a dense as-built must resolve every endpoint).
+    (RuleSpec(RULE_SOURCE_FORMAT, Severity.ERROR), _check_source_format),
+    (
+        RuleSpec(RULE_EDGE_ENDPOINT, Severity.WARNING, landscape=Severity.ERROR),
+        _check_edge_endpoint,
+    ),
 )
+
+# ``parse-error`` is not iterated with the other rules: when it fires, every
+# other rule is skipped for that artifact (there is no model to evaluate), so
+# ``lint()`` checks it first and short-circuits. Its RuleSpec is declared here so
+# its severity is derived into ``RULE_SEVERITIES`` like every other rule.
+PARSE_ERROR_SPEC = RuleSpec(RULE_PARSE_ERROR, Severity.ERROR)
+
+# Severity assigned to each rule when its condition holds, DERIVED from the
+# RULES registry (authoritative table). ``RULE_SEVERITIES`` is a rule's default
+# (flow) severity; ``CLASS_ESCALATIONS`` maps a rule to its ``landscape``
+# severity when it differs (used by the diagram-lint.md sync test, R10.1).
+RULE_SEVERITIES: Dict[str, Severity] = {
+    PARSE_ERROR_SPEC.name: PARSE_ERROR_SPEC.default,
+    **{spec.name: spec.default for spec, _ in RULES},
+}
+CLASS_ESCALATIONS: Dict[str, Severity] = {
+    spec.name: spec.landscape for spec, _ in RULES if spec.landscape is not None
+}
+
+# The RuleSpec for each rule, keyed by name, for callers that need the full
+# declaration (severity_for, reason_escalations).
+RULE_SPECS: Dict[str, RuleSpec] = {
+    PARSE_ERROR_SPEC.name: PARSE_ERROR_SPEC,
+    **{spec.name: spec for spec, _ in RULES},
+}
 
 
 # ---------------------------------------------------------------------------
@@ -984,123 +1573,50 @@ _RULES = (
 _BLOCKING_SEVERITIES = frozenset({Severity.CRITICAL, Severity.ERROR})
 
 
+def _as_hits(result: _PredicateResult) -> List[RuleHit]:
+    """Normalize a predicate return value into a list of :class:`RuleHit`.
+
+    Accepts a ``RuleHit``, a list of ``RuleHit``, a bare ``True`` (one hit with
+    no offenders and the rule's default severity), or an explicit ``Severity``
+    (one hit whose severity overrides ``severity_for`` — used by ``node-count``).
+    A falsy result never reaches here (the caller skips it).
+    """
+    if isinstance(result, RuleHit):
+        return [result]
+    if isinstance(result, Severity):
+        return [RuleHit(severity=result)]
+    if isinstance(result, list):
+        hits: List[RuleHit] = []
+        for item in result:
+            if isinstance(item, RuleHit):
+                hits.append(item)
+            elif isinstance(item, Severity):
+                hits.append(RuleHit(severity=item))
+            else:
+                hits.append(RuleHit())
+        return hits
+    # A bare True (or any other truthy non-hit): one default hit.
+    return [RuleHit()]
+
+
 # ---------------------------------------------------------------------------
 # Ruleset-unavailable handling (Requirement 7 AC14)
 # ---------------------------------------------------------------------------
 
-# The authoritative lint ruleset, relative to the workspace root.
-RULESET_RELATIVE_PATH = os.path.join(".kiro", "steering", "diagram-lint.md")
-
-# The error code the Linter returns when the ruleset is missing/unreadable.
-RULESET_UNAVAILABLE_ERROR = "ruleset-unavailable"
-
-
-class RulesetUnavailableError(RuntimeError):
-    """Raised when the authoritative ``diagram-lint.md`` ruleset cannot be read.
-
-    Carries the error code (``ruleset-unavailable``) and the resolved path that
-    was probed, so callers can surface a precise blocking reason.
-    """
-
-    def __init__(self, path: Optional[str] = None, reason: Optional[str] = None):
-        self.code = RULESET_UNAVAILABLE_ERROR
-        self.path = path
-        self.reason = reason
-        detail = f" ({reason})" if reason else ""
-        where = f" at {path}" if path else ""
-        super().__init__(
-            f"{RULESET_UNAVAILABLE_ERROR}: lint ruleset diagram-lint.md is "
-            f"missing or cannot be read{where}{detail}"
-        )
-
-
-def find_ruleset(
-    ruleset_path: Optional[str] = None,
-    workspace_root: Optional[str] = None,
-) -> Optional[str]:
-    """Locate the authoritative ``diagram-lint.md`` ruleset.
-
-    Resolution has two modes:
-
-    **Explicit mode** — when ``ruleset_path`` or ``workspace_root`` is provided,
-    only those explicit locations are probed (plus the ``RULE_ENGINE_RULESET``
-    environment variable). No implicit cwd/module fallbacks are consulted, so a
-    caller can deliberately point at a location with no ruleset (e.g. to test the
-    ruleset-unavailable path) and get ``None``.
-
-    **Implicit mode** — when neither argument is given, the search order is:
-
-    1. The ``RULE_ENGINE_RULESET`` environment variable, when set.
-    2. ``<cwd>/.kiro/steering/diagram-lint.md``.
-    3. A search upward from this module's location for a ``.kiro/steering``
-       directory (so the CLI works from within the installed package tree).
-
-    Returns the first candidate path that exists as a file, or ``None`` when no
-    candidate is found. Existence — not readability — is checked here;
-    :func:`ruleset_available` performs the read check.
-    """
-    candidates: List[str] = []
-    env_path = os.environ.get("RULE_ENGINE_RULESET")
-
-    explicit = bool(ruleset_path or workspace_root)
-    if explicit:
-        if ruleset_path:
-            candidates.append(ruleset_path)
-        if workspace_root:
-            candidates.append(os.path.join(workspace_root, RULESET_RELATIVE_PATH))
-        if env_path:
-            candidates.append(env_path)
-    else:
-        if env_path:
-            candidates.append(env_path)
-        candidates.append(os.path.join(os.getcwd(), RULESET_RELATIVE_PATH))
-        # Walk upward from this file toward filesystem root looking for the
-        # steering directory (covers `src/rule_engine/linter.py` -> workspace
-        # root layouts).
-        here = Path(__file__).resolve()
-        for parent in here.parents:
-            candidates.append(str(parent / RULESET_RELATIVE_PATH))
-        # Bundled-payload fallback (v1.5.1): a pip/Power install ships the
-        # steering rules inside the package at ``rule_engine/_bootstrap`` — but
-        # ``parents[2]`` is NOT the repo root there, so the upward walk above
-        # misses them, and the linter fail-closed on a correctly-installed
-        # package that had not yet run ``rule-engine-init``. Because setuptools
-        # drops dot-directories, the payload stores ``.kiro`` dot-free as
-        # ``kiro/``; probe both so the ruleset resolves with no workspace
-        # bootstrap.
-        bootstrap = Path(__file__).resolve().parent / "_bootstrap"
-        candidates.append(str(bootstrap / RULESET_RELATIVE_PATH))
-        candidates.append(
-            str(bootstrap / "kiro" / "steering" / "diagram-lint.md")
-        )
-
-    for candidate in candidates:
-        try:
-            if candidate and os.path.isfile(candidate):
-                return candidate
-        except OSError:
-            continue
-    return None
-
-
-def ruleset_available(
-    ruleset_path: Optional[str] = None,
-    workspace_root: Optional[str] = None,
-) -> bool:
-    """Return True when the authoritative ruleset exists and is readable.
-
-    A ruleset is considered available only when a candidate file is found and
-    its contents can be read without raising (Requirement 7 AC14). An empty file
-    is treated as unreadable/unavailable, since the ruleset would carry no rules.
-    """
-    resolved = find_ruleset(ruleset_path, workspace_root)
-    if resolved is None:
-        return False
-    try:
-        with open(resolved, "r", encoding="utf-8") as fh:
-            return bool(fh.read().strip())
-    except OSError:
-        return False
+# The ruleset location and the ``ruleset-unavailable`` handling moved to
+# :mod:`rule_engine.ruleset` in 1.7.0 (task 7.1 / Requirement 10.2), so the
+# Lint_CLI and the Contract locate the ruleset the same way and fail closed
+# identically. They are re-exported here so existing callers of
+# ``linter.find_ruleset`` / ``linter.ruleset_available`` / the constants keep
+# working unchanged.
+from rule_engine.ruleset import (  # noqa: E402  (re-export after module setup)
+    RULESET_RELATIVE_PATH,
+    RULESET_UNAVAILABLE_ERROR,
+    RulesetUnavailableError,
+    find_ruleset,
+    require_ruleset,
+    ruleset_available,
+)
 
 
 def _blocked_result(reason: str, resolved: Optional[str]) -> Dict[str, Any]:
@@ -1167,33 +1683,96 @@ def lint(artifact: Any) -> Dict[str, Any]:
         there are zero CRITICAL and zero ERROR findings (Requirement 7 AC2–AC3).
     """
     art = _coerce_artifact(artifact)
+    diagram_class = (getattr(art, "diagram_class", None) or DIAGRAM_CLASS_FLOW)
 
-    findings: List[Dict[str, str]] = []
-    for rule_name, predicate in _RULES:
+    findings: List[Dict[str, Any]] = []
+
+    # parse-error handling (task 10.2 / R1.8, R1.9). An artifact the CLI could
+    # not parse carries the cause(s) in ``parse_errors``. For a *diagram* there
+    # is no model, so parse-error is the ONLY finding and every other rule is
+    # skipped. A *snapshot* that carries a parse-error still has scannable text
+    # (an unparsable ``.json`` is scanned as text — task 10.3 / R3.5), so its
+    # parse-error is emitted and the remaining rules — chiefly ``secret-safety``
+    # — still run: the two findings coexist, exactly as the design requires.
+    parse_hit = _check_parse_error(art)
+    if parse_hit:
+        for hit in _as_hits(parse_hit):
+            findings.append(
+                {
+                    "rule": PARSE_ERROR_SPEC.name,
+                    "severity": PARSE_ERROR_SPEC.severity_for(
+                        diagram_class, hit.reason
+                    ).value,
+                    "offenders": list(hit.offenders),
+                    "reason": hit.reason,
+                }
+            )
+        # A snapshot / in-snapshot artifact with scannable text does not
+        # short-circuit — secret-safety must still see the text. Everything
+        # else (a diagram with no model, a binary snapshot with no text) does.
+        has_scannable_text = _secret_applies(art) and (
+            art.text is not None or art.content is not None
+        )
+        if not has_scannable_text:
+            return {
+                "findings": findings,
+                "eligible_for_publication": False,
+                "label": getattr(art, "label", None),
+            }
+
+    for spec, predicate in RULES:
         result = predicate(art)
         if not result:
             continue
-        # A predicate may return a bare True (use the rule's default severity
-        # from RULE_SEVERITIES) or an explicit Severity for class-dependent
-        # rules (e.g. node-count: ERROR for flow, WARNING/ERROR for landscape).
-        severity = result if isinstance(result, Severity) else RULE_SEVERITIES[rule_name]
-        findings.append({"rule": rule_name, "severity": severity.value})
+        # A predicate may return:
+        #   * a ``RuleHit`` (or list of hits) carrying offenders + reason;
+        #   * a bare ``True`` (use the RuleSpec's severity_for, no offenders); or
+        #   * an explicit ``Severity`` (node-count, whose severity depends on the
+        #     node count itself, not on the class alone).
+        for hit in _as_hits(result):
+            reason = hit.reason
+            if hit.severity is not None:
+                severity = hit.severity
+            else:
+                severity = spec.severity_for(diagram_class, reason)
+            findings.append(
+                {
+                    "rule": spec.name,
+                    "severity": severity.value,
+                    "offenders": list(hit.offenders),
+                    "reason": reason,
+                }
+            )
 
     eligible = not any(
         Severity(f["severity"]) in _BLOCKING_SEVERITIES for f in findings
     )
 
-    return {"findings": findings, "eligible_for_publication": eligible}
+    result_dict: Dict[str, Any] = {
+        "findings": findings,
+        "eligible_for_publication": eligible,
+        # Each result carries the artifact's label (``<file>#<page>`` for a
+        # multi-page file, else the file path) so the Lint_CLI can name what was
+        # evaluated (R1.13). ``None`` for a programmatic artifact with no label.
+        "label": getattr(art, "label", None),
+    }
+    return result_dict
 
 
 __all__ = [
     "Severity",
+    "RuleSpec",
+    "RuleHit",
+    "RULES",
+    "RULE_SPECS",
+    "CLASS_ESCALATIONS",
     "Edge",
     "Artifact",
     "lint",
     "lint_with_ruleset",
     "ruleset_available",
     "find_ruleset",
+    "require_ruleset",
     "RulesetUnavailableError",
     "RULESET_UNAVAILABLE_ERROR",
     "RULESET_RELATIVE_PATH",
@@ -1231,6 +1810,10 @@ __all__ = [
     "RULE_FLOW_LEGEND",
     "RULE_NODE_CONNECTIVITY",
     "RULE_EDGE_APPROACH",
+    "RULE_PARSE_ERROR",
+    "RULE_EDGE_ENDPOINT",
+    "RULE_SOURCE_FORMAT",
+    "PARSE_ERROR_SPEC",
     "LANDSCAPE_NODE_WARN",
     "LANDSCAPE_NODE_ERROR",
     "DIAGRAM_CLASS_FLOW",

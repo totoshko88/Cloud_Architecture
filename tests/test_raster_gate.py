@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import os
 import struct
+import sys
+from pathlib import Path
 
 from rule_engine.raster_gate import (
     LANDSCAPE_MAX_WIDTH_PX,
@@ -16,11 +18,18 @@ from rule_engine.raster_gate import (
     MAX_WIDTH_PX,
     RasterReadError,
     check_rasters,
+    insert_provenance,
     main,
     read_png_width,
+    source_sha256,
 )
 
 import pytest
+
+# ``tests/strategies.py`` is a sibling module, imported by path like the rest of
+# the honest-gates property suite.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from strategies import PngModel, encode_png  # noqa: E402
 
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
@@ -37,6 +46,33 @@ def _png_bytes(width: int, height: int = 100, pad: int = 0) -> bytes:
     dims = struct.pack(">II", width, height)
     rest = b"\x08\x02\x00\x00\x00"  # bit depth, color type, etc. (not parsed)
     return _PNG_SIGNATURE + ihdr_len + ihdr_type + dims + rest + (b"\x00" * pad)
+
+
+def _conforming_png(width: int, height: int = 100, pad: int = 0) -> bytes:
+    """A fully conforming PNG body sans provenance: RGB, no tRNS, white row 0.
+
+    Callers add provenance with :func:`insert_provenance` once the source
+    ``.drawio`` sha256 is known. ``pad`` is appended after ``IEND`` so the file
+    size can be driven independently of the pixels for the size-budget test.
+    """
+    body = encode_png(
+        PngModel(
+            width=width,
+            height=height,
+            color_type=2,          # RGB (no alpha)
+            row0_filter=0,
+            first_pixel_white=True,
+            trns=False,
+        )
+    )
+    return body + (b"\x00" * pad)
+
+
+def _write_conforming(png_path, src_path, width: int, height: int = 100, pad: int = 0):
+    """Write a conforming PNG whose provenance matches ``src_path``'s sha256."""
+    body = insert_provenance(_conforming_png(width, height), source_sha256(src_path))
+    body += b"\x00" * pad
+    _write_bytes(str(png_path), body)
 
 
 def _write_bytes(path, data: bytes):
@@ -72,8 +108,9 @@ def test_read_png_width_rejects_non_png(tmp_path):
 
 def test_within_budget_passes(tmp_path):
     repo = tmp_path
-    _write_text(str(repo / "examples/aws/01.drawio"), "<mxfile/>")
-    _write_bytes(str(repo / "examples/aws/01.drawio.png"), _png_bytes(1200))
+    src = repo / "examples/aws/01.drawio"
+    _write_text(str(src), "<mxfile/>")
+    _write_conforming(repo / "examples/aws/01.drawio.png", src, 1200)
 
     refs = check_rasters(repo / "examples", repo)
     assert len(refs) == 1
@@ -130,10 +167,11 @@ def test_missing_png_skipped_with_allow_missing(tmp_path):
     assert rc == 0
 
 
-def test_no_sources_is_ok(tmp_path):
+def test_no_sources_is_non_zero(tmp_path):
+    """No .drawio under --examples is exit 2, not a silent 0 (R8.3)."""
     repo = tmp_path
     os.makedirs(str(repo / "examples"), exist_ok=True)
-    assert main(["--examples", str(repo / "examples"), "--repo-root", str(repo)]) == 0
+    assert main(["--examples", str(repo / "examples"), "--repo-root", str(repo)]) == 2
 
 
 def test_repo_examples_within_budget():
@@ -154,12 +192,13 @@ def test_landscape_companion_raises_the_budget(tmp_path):
     """A .drawio whose companion declares diagram_class: landscape gets the wide
     budget — a 3000px raster that would fail as flow passes as landscape."""
     repo = tmp_path
-    _write_text(str(repo / "examples/aws/02-x-landscape.drawio"), "<mxfile/>")
+    src = repo / "examples/aws/02-x-landscape.drawio"
+    _write_text(str(src), "<mxfile/>")
     _write_text(
         str(repo / "examples/aws/02-x-landscape.diagram.md"),
         "---\ndiagram_class: landscape\nsummary_of: 02-x-summary\n---\n# x\n",
     )
-    _write_bytes(str(repo / "examples/aws/02-x-landscape.drawio.png"), _png_bytes(3000))
+    _write_conforming(repo / "examples/aws/02-x-landscape.drawio.png", src, 3000)
 
     refs = check_rasters(repo / "examples", repo)
     assert refs[0].diagram_class == "landscape"
@@ -212,3 +251,130 @@ def test_flow_default_keeps_narrow_budget(tmp_path):
     assert refs[0].max_width == MAX_WIDTH_PX
     assert refs[0].width_ok is False
     assert main(["--examples", str(repo / "examples"), "--repo-root", str(repo)]) == 1
+
+
+# --- provenance, height, background (R8.2 / R8.3, task 17.2) ---------------
+
+
+def test_provenance_round_trip():
+    """insert_provenance/read_provenance is a round trip and idempotent."""
+    from rule_engine.raster_gate import read_provenance
+
+    body = _conforming_png(64, 64)
+    digest = "a" * 64
+    stamped = insert_provenance(body, digest)
+    assert read_provenance(stamped) == digest
+    # Re-stamping replaces (not duplicates) the chunk.
+    restamped = insert_provenance(stamped, "b" * 64)
+    assert read_provenance(restamped) == "b" * 64
+    assert restamped.count(b"rule-engine:source-sha256") == 1
+
+
+def test_matching_provenance_passes(tmp_path):
+    repo = tmp_path
+    src = repo / "examples/aws/p.drawio"
+    _write_text(str(src), "<mxfile>fresh</mxfile>")
+    _write_conforming(repo / "examples/aws/p.drawio.png", src, 800)
+
+    refs = check_rasters(repo / "examples", repo)
+    assert refs[0].provenance_ok is True
+    assert refs[0].within_budget is True
+    assert main(["--examples", str(repo / "examples"), "--repo-root", str(repo)]) == 0
+
+
+def test_stale_raster_fails_when_source_changed(tmp_path):
+    """A PNG stamped for an old source is stale after the .drawio is edited."""
+    repo = tmp_path
+    src = repo / "examples/aws/s.drawio"
+    _write_text(str(src), "<mxfile>v1</mxfile>")
+    _write_conforming(repo / "examples/aws/s.drawio.png", src, 800)
+    # Edit the source after export: the recorded sha no longer matches.
+    _write_text(str(src), "<mxfile>v2-edited</mxfile>")
+
+    refs = check_rasters(repo / "examples", repo)
+    assert refs[0].provenance_ok is False
+    assert refs[0].within_budget is False
+    assert main(["--examples", str(repo / "examples"), "--repo-root", str(repo)]) == 1
+
+
+def test_missing_provenance_is_stale(tmp_path):
+    """A PNG with no provenance chunk at all is treated as stale."""
+    repo = tmp_path
+    src = repo / "examples/aws/n.drawio"
+    _write_text(str(src), "<mxfile/>")
+    _write_bytes(str(repo / "examples/aws/n.drawio.png"), _conforming_png(800))  # no provenance
+
+    refs = check_rasters(repo / "examples", repo)
+    assert refs[0].provenance is None
+    assert refs[0].provenance_ok is False
+    assert main(["--examples", str(repo / "examples"), "--repo-root", str(repo)]) == 1
+
+
+def test_over_height_fails(tmp_path):
+    """A flow PNG within width but taller than 1600px breaches the height ceiling."""
+    repo = tmp_path
+    src = repo / "examples/aws/h.drawio"
+    _write_text(str(src), "<mxfile/>")
+    _write_conforming(repo / "examples/aws/h.drawio.png", src, 800, height=1700)
+
+    refs = check_rasters(repo / "examples", repo)
+    assert refs[0].height == 1700
+    assert refs[0].height_ok is False
+    assert main(["--examples", str(repo / "examples"), "--repo-root", str(repo)]) == 1
+
+
+def test_alpha_background_fails(tmp_path):
+    """An RGBA (colour type 6) PNG is not an opaque white-background raster."""
+    repo = tmp_path
+    src = repo / "examples/aws/a.drawio"
+    _write_text(str(src), "<mxfile/>")
+    body = encode_png(
+        PngModel(width=800, height=100, color_type=6, first_pixel_white=True)
+    )
+    _write_bytes(
+        str(repo / "examples/aws/a.drawio.png"),
+        insert_provenance(body, source_sha256(src)),
+    )
+
+    refs = check_rasters(repo / "examples", repo)
+    assert refs[0].color_type == 6
+    assert refs[0].background_ok is False
+    assert main(["--examples", str(repo / "examples"), "--repo-root", str(repo)]) == 1
+
+
+def test_trns_background_fails(tmp_path):
+    """A tRNS chunk (transparency) disqualifies an otherwise-white RGB raster."""
+    repo = tmp_path
+    src = repo / "examples/aws/t.drawio"
+    _write_text(str(src), "<mxfile/>")
+    body = encode_png(
+        PngModel(width=800, height=100, color_type=2, first_pixel_white=True, trns=True)
+    )
+    _write_bytes(
+        str(repo / "examples/aws/t.drawio.png"),
+        insert_provenance(body, source_sha256(src)),
+    )
+
+    refs = check_rasters(repo / "examples", repo)
+    assert refs[0].has_trns is True
+    assert refs[0].background_ok is False
+    assert main(["--examples", str(repo / "examples"), "--repo-root", str(repo)]) == 1
+
+
+def test_non_white_first_row_fails(tmp_path):
+    """A raster whose first pixel is black fails the white-background check,
+    across every row-0 filter (the gate reconstructs row 0 from its filter)."""
+    from rule_engine.raster_gate import read_png_facts
+
+    for filt in range(5):
+        body = encode_png(
+            PngModel(
+                width=8, height=8, color_type=2,
+                row0_filter=filt, first_pixel_white=False,
+            )
+        )
+        p = tmp_path / f"blk-{filt}.png"
+        with open(p, "wb") as fh:
+            fh.write(body)
+        facts = read_png_facts(p)
+        assert facts.row0_all_white is False, f"filter {filt} should read non-white"

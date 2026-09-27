@@ -87,8 +87,8 @@ legible. Icons are the provider's official glyphs, resolved through `mappings/ic
 | **Azure** | [OpenAI RAG](examples/azure/01-azure-openai-rag.drawio) · [png](examples/azure/01-azure-openai-rag.drawio.png) | [summary](examples/azure/02-azure-ha-multiregion-summary.drawio) · [png](examples/azure/02-azure-ha-multiregion-summary.drawio.png) | [landscape](examples/azure/02-azure-ha-multiregion-landscape.drawio) · [png](examples/azure/02-azure-ha-multiregion-landscape.drawio.png) |
 | **GCP** | [Vertex pipeline](examples/gcp/01-gcp-vertex-pipeline.drawio) · [png](examples/gcp/01-gcp-vertex-pipeline.drawio.png) | [summary](examples/gcp/02-gcp-ha-multiregion-summary.drawio) · [png](examples/gcp/02-gcp-ha-multiregion-summary.drawio.png) | [landscape](examples/gcp/02-gcp-ha-multiregion-landscape.drawio) · [png](examples/gcp/02-gcp-ha-multiregion-landscape.drawio.png) |
 | **OCI** | [GenAI stack](examples/oci/01-oci-genai-stack.drawio) · [png](examples/oci/01-oci-genai-stack.drawio.png) | [summary](examples/oci/02-oci-ha-multiregion-summary.drawio) · [png](examples/oci/02-oci-ha-multiregion-summary.drawio.png) | [landscape](examples/oci/02-oci-ha-multiregion-landscape.drawio) · [png](examples/oci/02-oci-ha-multiregion-landscape.drawio.png) |
-| **generic** | [reference (PlantUML)](examples/generic/generic-reference-architecture.puml) · [png](examples/generic/generic-reference-architecture.png) | — | — |
-| **cross-cloud** | [C4 composition (PlantUML)](examples/cross-cloud/cross-cloud-composition.puml) · [png](examples/cross-cloud/cross-cloud-composition.png) | — | — |
+| **generic** | [reference architecture](examples/generic/01-generic-reference-architecture.drawio) · [png](examples/generic/01-generic-reference-architecture.drawio.png) | — | — |
+| **cross-cloud** | [C4 composition](examples/cross-cloud/01-cross-cloud-composition.drawio) · [png](examples/cross-cloud/01-cross-cloud-composition.drawio.png) | — | — |
 
 Icon mechanism per cloud: **AWS** built-in `mxgraph.aws4.*` stencils; **Azure** azure2
 file-path image shapes (`img/lib/azure2/*`); **GCP** official 2025 icons by file path

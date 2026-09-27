@@ -1,0 +1,33 @@
+<mxfile host="Electron" modified="2025-01-15T14:30:00.000Z" agent="draw.io/24.0.0" version="24.0.0" type="device" pages="2">
+  <diagram name="Overview" id="page-overview-0001">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="user" value="External User" style="shape=mxgraph.aws4.user;html=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="80" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="lambda" value="Order Function" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;html=1;" vertex="1" parent="1">
+          <mxGeometry x="300" y="80" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="e1" value="invoke" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=open;endFill=0;" edge="1" parent="1" source="user" target="lambda">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram name="Data Tier" id="page-data-0002">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="20" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="rds" value="Orders DB" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.rds;html=1;" vertex="1" parent="1">
+          <mxGeometry x="120" y="120" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="s3" value="Backups" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.s3;html=1;" vertex="1" parent="1">
+          <mxGeometry x="340" y="120" width="78" height="78" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

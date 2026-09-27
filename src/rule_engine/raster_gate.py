@@ -35,15 +35,22 @@ from __future__ import annotations
 
 import argparse
 import glob
+import hashlib
 import os
 import re
 import struct
 import sys
+import zlib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence, Tuple
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+#: The tEXt chunk keyword the exporter writes and the checker verifies. Its value
+#: is the hex sha256 of the source ``.drawio`` bytes at export time, so a raster
+#: exported from a since-edited source is caught as ``stale-raster`` (R8.2).
+PROVENANCE_KEY = "rule-engine:source-sha256"
 
 
 def _default_workspace_root() -> Path:
@@ -77,6 +84,12 @@ MAX_SIZE_BYTES = 500 * 1024  # 500KB
 
 LANDSCAPE_MAX_WIDTH_PX = 3600
 LANDSCAPE_MAX_SIZE_BYTES = 2 * 1024 * 1024  # 2MB
+
+# Height ceiling per class (R8.3). The class height ceiling mirrors the width
+# ceiling — flow 1600px, landscape 3600px — so an export that is within its
+# width budget but ran away vertically is still caught.
+MAX_HEIGHT_PX = 1600
+LANDSCAPE_MAX_HEIGHT_PX = 3600
 
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
@@ -126,6 +139,12 @@ class RasterRef:
     width: Optional[int]   # measured pixel width (None when absent/unreadable)
     size_bytes: Optional[int]  # file size in bytes (None when absent)
     diagram_class: str = "flow"  # "flow" (narrow budget) or "landscape" (wide)
+    height: Optional[int] = None       # measured pixel height (None when absent)
+    color_type: Optional[int] = None   # PNG colour type from IHDR
+    has_trns: bool = False             # a tRNS (transparency) chunk is present
+    provenance: Optional[str] = None   # source sha256 recorded in the PNG tEXt
+    source_sha256: Optional[str] = None  # sha256 of the current source .drawio
+    row0_all_white: Optional[bool] = None  # first row opaque white (None: unknown)
 
     @property
     def max_width(self) -> int:
@@ -136,6 +155,10 @@ class RasterRef:
         return LANDSCAPE_MAX_SIZE_BYTES if self.diagram_class == "landscape" else MAX_SIZE_BYTES
 
     @property
+    def max_height(self) -> int:
+        return LANDSCAPE_MAX_HEIGHT_PX if self.diagram_class == "landscape" else MAX_HEIGHT_PX
+
+    @property
     def width_ok(self) -> bool:
         return self.width is not None and self.width <= self.max_width
 
@@ -144,8 +167,47 @@ class RasterRef:
         return self.size_bytes is not None and self.size_bytes <= self.max_size
 
     @property
+    def height_ok(self) -> bool:
+        return self.height is not None and self.height <= self.max_height
+
+    @property
+    def provenance_ok(self) -> bool:
+        """True when the recorded provenance matches the current source sha256.
+
+        A missing provenance chunk (None) or a mismatch is a stale raster: the
+        PNG was exported from a source that has since changed (or from no
+        recorded source at all), so it may not reflect the committed ``.drawio``.
+        """
+        return (
+            self.provenance is not None
+            and self.source_sha256 is not None
+            and self.provenance == self.source_sha256
+        )
+
+    @property
+    def background_ok(self) -> bool:
+        """True when the raster is an opaque white-background PNG.
+
+        Requires colour type 0 (grayscale) or 2 (truecolour) — i.e. no alpha
+        channel — with no ``tRNS`` chunk, and a first scanline that is entirely
+        white. ``row0_all_white is None`` means the row could not be
+        reconstructed, which is treated as not-OK (fail closed)."""
+        return (
+            self.color_type in (0, 2)
+            and not self.has_trns
+            and self.row0_all_white is True
+        )
+
+    @property
     def within_budget(self) -> bool:
-        return self.exists and self.width_ok and self.size_ok
+        return (
+            self.exists
+            and self.width_ok
+            and self.size_ok
+            and self.height_ok
+            and self.provenance_ok
+            and self.background_ok
+        )
 
 
 def read_png_width(path: str | Path) -> int:
@@ -165,6 +227,196 @@ def read_png_width(path: str | Path) -> int:
         raise RasterReadError(f"{path} has no IHDR chunk where expected")
     (width,) = struct.unpack(">I", header[16:20])
     return width
+
+
+# --------------------------------------------------------------------------- #
+# PNG chunk parsing + provenance                                              #
+# --------------------------------------------------------------------------- #
+#
+# The gate needs more than the width now (R8.2/R8.3): the tEXt provenance chunk
+# (source sha256), the IHDR height and colour type, whether a tRNS chunk is
+# present, and the reconstructed first scanline for the white-background check.
+# All of it comes from parsing the chunk stream directly — still dependency-free
+# (no Pillow), stdlib ``struct`` + ``zlib`` only.
+
+
+def _iter_png_chunks(data: bytes) -> List[Tuple[bytes, bytes]]:
+    """Return ``[(type, data), …]`` for every chunk in ``data``.
+
+    Raises :class:`RasterReadError` on a bad signature or a truncated chunk.
+    """
+    if len(data) < 8 or data[:8] != _PNG_SIGNATURE:
+        raise RasterReadError("not a valid PNG (bad signature)")
+    chunks: List[Tuple[bytes, bytes]] = []
+    pos = 8
+    n = len(data)
+    while pos + 8 <= n:
+        (length,) = struct.unpack(">I", data[pos : pos + 4])
+        ctype = data[pos + 4 : pos + 8]
+        start = pos + 8
+        end = start + length
+        if end + 4 > n:
+            raise RasterReadError(f"truncated PNG chunk {ctype!r}")
+        chunks.append((ctype, data[start:end]))
+        pos = end + 4  # skip the 4-byte CRC
+        if ctype == b"IEND":
+            break
+    return chunks
+
+
+def insert_provenance(png_bytes: bytes, digest: str) -> bytes:
+    """Return ``png_bytes`` with a ``rule-engine:source-sha256`` tEXt chunk.
+
+    The chunk is inserted immediately before ``IEND`` (any existing provenance
+    chunk with the same keyword is dropped first, so re-inserting is
+    idempotent). ``digest`` is the hex sha256 of the source ``.drawio``. This is
+    the single writer of the provenance chunk, shared by the exporter
+    (``scripts/export_raster.py``) and used symmetrically by the checker below,
+    so the two never disagree on the chunk layout.
+    """
+    chunks = _iter_png_chunks(png_bytes)
+    text = PROVENANCE_KEY.encode("latin-1") + b"\x00" + digest.encode("latin-1")
+    prov = _png_chunk(b"tEXt", text)
+    out = bytearray(_PNG_SIGNATURE)
+    inserted = False
+    for ctype, cdata in chunks:
+        if ctype == b"tEXt" and cdata.split(b"\x00", 1)[0] == PROVENANCE_KEY.encode("latin-1"):
+            continue  # drop a stale provenance chunk; we rewrite it
+        if ctype == b"IEND" and not inserted:
+            out += prov
+            inserted = True
+        out += _png_chunk(ctype, cdata)
+    if not inserted:
+        # No IEND encountered (malformed input); append provenance then IEND.
+        out += prov
+        out += _png_chunk(b"IEND", b"")
+    return bytes(out)
+
+
+def _png_chunk(tag: bytes, data: bytes) -> bytes:
+    """Serialize one PNG chunk: length + type + data + CRC32(type+data)."""
+    return (
+        struct.pack(">I", len(data))
+        + tag
+        + data
+        + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF)
+    )
+
+
+def read_provenance(png_bytes: bytes) -> Optional[str]:
+    """Return the source sha256 from the provenance tEXt chunk, or None."""
+    key = PROVENANCE_KEY.encode("latin-1")
+    for ctype, cdata in _iter_png_chunks(png_bytes):
+        if ctype == b"tEXt":
+            k, _, v = cdata.partition(b"\x00")
+            if k == key:
+                return v.decode("latin-1")
+    return None
+
+
+def _paeth(a: int, b: int, c: int) -> int:
+    """PNG Paeth predictor."""
+    p = a + b - c
+    pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+    if pa <= pb and pa <= pc:
+        return a
+    if pb <= pc:
+        return b
+    return c
+
+
+def _reconstruct_row0(idat: bytes, width: int, channels: int) -> Optional[bytes]:
+    """Reconstruct the first scanline's raw samples from the IDAT stream.
+
+    Row 0 has no previous row, so the Up/Average/Paeth predictors reference an
+    all-zero row. Returns the ``width * channels`` reconstructed sample bytes, or
+    None when the stream is too short / undecodable.
+    """
+    try:
+        raw = zlib.decompress(idat)
+    except zlib.error:
+        return None
+    stride = width * channels
+    if len(raw) < 1 + stride:
+        return None
+    filter_byte = raw[0]
+    row = raw[1 : 1 + stride]
+    out = bytearray(stride)
+    for i in range(stride):
+        x = row[i]
+        a = out[i - channels] if i >= channels else 0  # left
+        b = 0  # up (previous row is all zero for row 0)
+        c = 0  # upper-left
+        if filter_byte == 0:      # None
+            out[i] = x & 0xFF
+        elif filter_byte == 1:    # Sub
+            out[i] = (x + a) & 0xFF
+        elif filter_byte == 2:    # Up
+            out[i] = (x + b) & 0xFF
+        elif filter_byte == 3:    # Average
+            out[i] = (x + ((a + b) >> 1)) & 0xFF
+        elif filter_byte == 4:    # Paeth
+            out[i] = (x + _paeth(a, b, c)) & 0xFF
+        else:
+            return None
+    return bytes(out)
+
+
+@dataclass
+class RasterFacts:
+    """Everything the gate needs from a PNG beyond width (R8.2/R8.3)."""
+
+    height: Optional[int] = None
+    color_type: Optional[int] = None
+    has_trns: bool = False
+    provenance: Optional[str] = None       # source sha256 recorded in the PNG
+    row0_all_white: Optional[bool] = None  # None when it could not be reconstructed
+
+
+def read_png_facts(path: str | Path) -> RasterFacts:
+    """Parse ``path`` and return its height, colour type, tRNS, provenance and
+    a reconstructed-first-row white-background verdict.
+
+    Raises :class:`RasterReadError` on a non-PNG / truncated file.
+    """
+    data = Path(path).read_bytes()
+    chunks = _iter_png_chunks(data)
+    facts = RasterFacts()
+    idat = bytearray()
+    width = 0
+    for ctype, cdata in chunks:
+        if ctype == b"IHDR":
+            if len(cdata) < 10:
+                raise RasterReadError("truncated IHDR")
+            width, height = struct.unpack(">II", cdata[:8])
+            facts.height = height
+            facts.color_type = cdata[9]
+        elif ctype == b"tRNS":
+            facts.has_trns = True
+        elif ctype == b"tEXt":
+            k, _, v = cdata.partition(b"\x00")
+            if k == PROVENANCE_KEY.encode("latin-1"):
+                facts.provenance = v.decode("latin-1")
+        elif ctype == b"IDAT":
+            idat += cdata
+    if facts.color_type is not None and idat and width:
+        channels = {0: 1, 2: 3, 4: 2, 6: 4}.get(facts.color_type)
+        if channels is not None:
+            row0 = _reconstruct_row0(bytes(idat), width, channels)
+            if row0 is not None:
+                # Opaque white: every colour sample of the first pixel is 0xFF.
+                # (For gray colour types one sample; for RGB three.) We check the
+                # whole first pixel's colour channels.
+                colour_channels = {0: 1, 2: 3, 4: 1, 6: 3}[facts.color_type]
+                facts.row0_all_white = all(
+                    b == 0xFF for b in row0[:colour_channels]
+                )
+    return facts
+
+
+def source_sha256(path: str | Path) -> str:
+    """Return the hex sha256 of a source ``.drawio`` file's bytes."""
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
 def check_rasters(
@@ -205,7 +457,33 @@ def check_rasters(
             width: Optional[int] = read_png_width(png)
         except RasterReadError:
             width = None
-        refs.append(RasterRef(rel_src, rel_png, True, width, size, dclass))
+        try:
+            facts = read_png_facts(png)
+        except RasterReadError:
+            facts = RasterFacts()
+        # The source sha256 the raster's provenance must match: hash the current
+        # .drawio bytes. A missing/unreadable source leaves it None (a mismatch,
+        # so the raster is reported stale).
+        try:
+            cur_sha: Optional[str] = source_sha256(src)
+        except OSError:
+            cur_sha = None
+        refs.append(
+            RasterRef(
+                rel_src,
+                rel_png,
+                True,
+                width,
+                size,
+                dclass,
+                height=facts.height,
+                color_type=facts.color_type,
+                has_trns=facts.has_trns,
+                provenance=facts.provenance,
+                source_sha256=cur_sha,
+                row0_all_white=facts.row0_all_white,
+            )
+        )
     return refs
 
 
@@ -225,11 +503,16 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                                            [--allow-missing]
 
     Exit codes:
-      0  every exported raster is within the width/size budget (missing PNGs
-         only tolerated with ``--allow-missing``).
-      1  a raster breaches the width or size budget, or a PNG is missing
-         (without ``--allow-missing``).
-      2  usage error.
+      0  every exported raster is within budget: width, size, height, an opaque
+         white background, and a provenance chunk matching the current source
+         (missing PNGs only tolerated with ``--allow-missing``).
+      1  a raster breaches the width/size/height budget, is stale (its
+         provenance chunk is missing or does not match the source .drawio), is
+         not an opaque white-background PNG, or a PNG is missing (without
+         ``--allow-missing``).
+      2  no ``.drawio`` source was found under ``--examples`` (the "no silent
+         zero" rule — an empty run in CI is a configuration error, not a pass),
+         or a usage error.
     """
     parser = argparse.ArgumentParser(
         prog="raster-gate",
@@ -247,14 +530,24 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     refs = check_rasters(args.examples, args.repo_root)
     if not refs:
-        print(f"raster-gate: no .drawio sources found under {args.examples}.")
-        return EXIT_OK
+        # No silent zero (R8.3): an empty run in CI means the gate was pointed
+        # at the wrong tree or the examples were never generated — that is a
+        # configuration failure, not a clean pass. Exit non-zero.
+        print(
+            f"BLOCKING: no .drawio sources found under {args.examples} "
+            "(nothing to check — refusing to report a silent pass).",
+            file=sys.stderr,
+        )
+        return EXIT_USAGE
 
     missing = [r for r in refs if not r.exists]
     present = [r for r in refs if r.exists]
     over_width = [r for r in present if not r.width_ok]
     over_size = [r for r in present if not r.size_ok]
+    over_height = [r for r in present if not r.height_ok]
     unreadable = [r for r in present if r.width is None]
+    stale = [r for r in present if r.width is not None and not r.provenance_ok]
+    bad_bg = [r for r in present if r.width is not None and not r.background_ok]
 
     failed = False
 
@@ -276,11 +569,57 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         for r in over_size:
             print(f"    - {_fmt(r)}", file=sys.stderr)
 
+    if over_height:
+        failed = True
+        print(
+            "BLOCKING: raster(s) exceed their class height budget:",
+            file=sys.stderr,
+        )
+        for r in over_height:
+            h = "?" if r.height is None else f"{r.height}px"
+            print(
+                f"    - {r.png} (height {h}; {r.diagram_class} budget "
+                f"{r.max_height}px)",
+                file=sys.stderr,
+            )
+
     if unreadable:
         failed = True
         print("BLOCKING: raster(s) are not readable PNGs:", file=sys.stderr)
         for r in unreadable:
             print(f"    - {r.png}", file=sys.stderr)
+
+    if stale:
+        failed = True
+        print(
+            "BLOCKING: stale-raster — provenance chunk missing or does not "
+            "match the source .drawio (re-export):",
+            file=sys.stderr,
+        )
+        for r in stale:
+            got = r.provenance or "<none>"
+            print(
+                f"    - {r.png} (recorded {got[:12]}…, source "
+                f"{(r.source_sha256 or '<none>')[:12]}…)",
+                file=sys.stderr,
+            )
+
+    if bad_bg:
+        failed = True
+        print(
+            "BLOCKING: raster(s) are not opaque white-background PNGs "
+            "(need colour type 0/2, no tRNS, a white first row):",
+            file=sys.stderr,
+        )
+        for r in bad_bg:
+            reason = []
+            if r.color_type not in (0, 2):
+                reason.append(f"colour-type {r.color_type}")
+            if r.has_trns:
+                reason.append("tRNS present")
+            if r.row0_all_white is not True:
+                reason.append("first row not white")
+            print(f"    - {r.png} ({', '.join(reason) or 'not white'})", file=sys.stderr)
 
     if missing:
         if args.allow_missing:

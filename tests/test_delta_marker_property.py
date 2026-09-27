@@ -76,22 +76,27 @@ def _resource(draw: Any) -> dict[str, Any]:
     return {
         "provider": draw(_providers),
         "resource_type": draw(_resource_types),
+        # boundary and region are part of the identity since 1.7 (R5.8).
+        "boundary": draw(st.sampled_from(["acct-1", "acct-2"])),
+        "region": draw(st.sampled_from(["us-east-1", "eu-west-1"])),
         "id": draw(_identity_keys),
         "config_digest": draw(_digests),
     }
 
 
 def _dedupe_by_identity(resources: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Keep one resource per ``(provider, resource_type, id)`` identity tuple.
+    """Keep one resource per identity tuple.
 
-    ``compute_delta`` indexes each Snapshot by identity, so duplicates within a
-    single Snapshot collapse. Deduping the generated input keeps the Snapshot a
-    faithful list-of-distinct-resources and avoids incidental last-wins noise.
+    ``compute_delta`` reports a repeated identity as ``duplicate`` rather than
+    classifying it added/changed/removed/unchanged. Deduping the generated input
+    on the full identity tuple ``(provider, resource_type, boundary, region,
+    id)`` keeps the Snapshot a faithful list-of-distinct-resources so this test
+    exercises only the four ordinary marker classifications.
     """
-    seen: set[tuple[str, str, str]] = set()
+    seen: set[tuple[str, str, str, str, str]] = set()
     out: list[dict[str, Any]] = []
     for r in resources:
-        key = (r["provider"], r["resource_type"], r["id"])
+        key = (r["provider"], r["resource_type"], r["boundary"], r["region"], r["id"])
         if key in seen:
             continue
         seen.add(key)

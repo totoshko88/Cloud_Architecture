@@ -27,7 +27,14 @@
         "message_queue",
         "secrets_store",
         "managed_k8s",
-        "llm_platform"
+        "llm_platform",
+        "compute_instance",
+        "file_system",
+        "cdn",
+        "dns",
+        "waf",
+        "lb",
+        "cache"
       ]
     },
     "native_type": { "type": "string", "minLength": 1 },

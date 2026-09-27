@@ -27,7 +27,7 @@ Design constraints learned while calibrating against the golden examples:
 
 Public interface::
 
-    build_geometry(drawio_text) -> DiagramGeometry
+    build_geometry(page) -> DiagramGeometry            # page: drawio_model.Page
     check_grid_alignment(geo, grid=10)  -> list[str]   # misaligned node ids
     check_node_overlap(geo)             -> list[tuple]  # overlapping id pairs
     check_container_padding(geo, pad=10)-> list[tuple]  # (node, container, pad)
@@ -46,6 +46,13 @@ from typing import Dict, List, Optional, Sequence, Tuple
 from rule_engine.constants import ROOT_LAYER_ID as _ROOT_LAYER_ID
 from rule_engine.constants import is_boundary_container_style as _is_boundary_style
 from rule_engine.constants import is_text_cell_style as _is_text_style
+
+# The single `.drawio` parser (honest-gates R1). ``build_geometry`` now consumes
+# a parsed :class:`~rule_engine.drawio_model.Page` rather than re-reading the XML
+# with local regexes, and resolves absolute origins through
+# :func:`~rule_engine.drawio_model.absolute_origin` — which raises
+# ``DrawioParseError`` on a parent cycle instead of silently returning ``(0, 0)``.
+from rule_engine.drawio_model import Page, absolute_origin
 
 # The model grid step (draw.io ``gridSize`` default). Spacings and node origins
 # are expected to be whole multiples of it (diagram-standards Layout Geometry).
@@ -70,16 +77,6 @@ LABEL_BAND = 30
 # node genuinely inside a sibling/parent tier further off is never mis-attributed.
 _SPILL_REACH = 160
 
-_CELL_RE = re.compile(r"<mxCell\b[^>]*?(?:/>|>.*?</mxCell>)", re.S)
-_GEOM_RE = re.compile(r"<mxGeometry\b[^>]*?(?:/>|>.*?</mxGeometry>)", re.S)
-_POINT_RE = re.compile(r'<mxPoint x="([-0-9.]+)" y="([-0-9.]+)"')
-
-
-def _attr(cell: str, name: str) -> Optional[str]:
-    m = re.search(rf'\b{name}="([^"]*)"', cell)
-    return m.group(1) if m else None
-
-
 def _style_num(cell: str, name: str) -> Optional[float]:
     """Read a numeric style token like ``exitX=0.25`` from a cell."""
     m = re.search(rf"\b{name}=([-0-9.]+)", cell)
@@ -90,41 +87,6 @@ def _style_token(cell: str, name: str) -> Optional[str]:
     """Read a string style token like ``endArrow=open`` from a cell."""
     m = re.search(rf"\b{name}=([A-Za-z0-9_]+)", cell)
     return m.group(1) if m else None
-
-
-# A draw.io cell ``value`` separates lines with the XML entity ``&#10;`` (what the
-# shared builder emits) or an HTML ``<br>``; markup may also wrap the text.
-_VALUE_BREAK_RE = re.compile(r"&#10;|&#xa;|<br\s*/?>", re.I)
-_TAG_RE = re.compile(r"<[^>]+>")
-
-
-def _first_line(value: str) -> str:
-    """Return the first rendered line of a cell ``value``, markup stripped.
-
-    Used to read a text box's heading (``Flow`` / ``Legend``) so the Flow/Legend
-    furniture can be told apart from an arbitrary note box.
-    """
-    first = _VALUE_BREAK_RE.split(value or "", 1)[0]
-    return _TAG_RE.sub("", first).strip()
-
-
-# An overlay marker on a cell, per the Overlay Vocabulary convention the CLI
-# already reads for ``overlay-legend-coverage``: ``overlay=<term>``.
-_OVERLAY_TERM_RE = re.compile(r"\boverlay=([A-Za-z0-9_\-]+)")
-
-
-def _geom(cell: str) -> Optional[Dict[str, object]]:
-    m = _GEOM_RE.search(cell)
-    if not m:
-        return None
-    g = m.group(0)
-
-    def n(a: str) -> Optional[float]:
-        mm = re.search(rf'\b{a}="([-0-9.]+)"', g)
-        return float(mm.group(1)) if mm else None
-
-    points = [(float(x), float(y)) for x, y in _POINT_RE.findall(cell)]
-    return {"x": n("x"), "y": n("y"), "w": n("width"), "h": n("height"), "points": points}
 
 
 @dataclass
@@ -200,96 +162,96 @@ class DiagramGeometry:
     #: node is exempt from ``node-connectivity``: a passive/standby peer may be
     #: drawn without edges precisely because the marker says so.
     overlay_nodes: Dict[str, str] = field(default_factory=dict)
+    #: The model grid step this geometry was built with (``page.grid_size`` in
+    #: ``build_geometry``, else the module :data:`GRID` default). Carried so the
+    #: grid-alignment check judges node origins against the *page's* declared
+    #: grid rather than a hard-coded 10 (honest-gates R1.7).
+    grid: int = GRID
 
 
-def build_geometry(text: str) -> DiagramGeometry:
-    """Parse ``.drawio`` XML into a :class:`DiagramGeometry`.
+def build_geometry(page: Page) -> DiagramGeometry:
+    """Build a :class:`DiagramGeometry` from a parsed
+    :class:`~rule_engine.drawio_model.Page`.
 
     Only top-level nodes (parented to the root layer or a boundary container)
     and the boundary containers themselves are placed; embedded glyph sub-cells
     are ignored, exactly as the node-count parser does.
+
+    Cells come from ``page.cells`` (the single ``.drawio`` parser owns the XML);
+    absolute origins are resolved with
+    :func:`~rule_engine.drawio_model.absolute_origin`, which raises
+    ``DrawioParseError("parent-cycle:<id>")`` on a parent cycle rather than
+    silently returning ``(0, 0)`` as the pre-1.7 local ``origin`` walker did. The
+    grid step comes from ``page.grid_size`` (``mxGraphModel@gridSize``, else 10),
+    not the module ``GRID`` default.
     """
-    cells = _CELL_RE.findall(text)
-    raw: Dict[str, Dict[str, object]] = {}
-    for c in cells:
-        cid = _attr(c, "id")
-        if not cid:
-            continue
-        raw[cid] = {
-            "cell": c,
-            "parent": _attr(c, "parent") or "",
-            "style": (_attr(c, "style") or ""),
-            "vertex": 'vertex="1"' in c,
-            "edge": 'edge="1"' in c,
-            "geom": _geom(c),
-            "source": _attr(c, "source"),
-            "target": _attr(c, "target"),
-        }
+    cells = page.cells
+
+    geo = DiagramGeometry(grid=page.grid_size)
 
     # Boundary containers first (needed to classify node parents).
     boundary_ids = {
         cid
-        for cid, d in raw.items()
-        if d["vertex"] and _is_boundary_style(cid, str(d["style"]).lower())
+        for cid, cell in cells.items()
+        if cell.vertex and _is_boundary_style(cid, cell.style.lower())
     }
     node_parents = {_ROOT_LAYER_ID} | boundary_ids
 
-    def origin(cid: str, seen: Optional[set] = None) -> Tuple[float, float]:
-        seen = seen or set()
-        if cid in ("0", _ROOT_LAYER_ID, None) or cid not in raw or cid in seen:
-            return (0.0, 0.0)
-        seen.add(cid)
-        g = raw[cid]["geom"] or {}
-        px, py = origin(str(raw[cid]["parent"]), seen)
-        return (px + (g.get("x") or 0.0), py + (g.get("y") or 0.0))
-
-    geo = DiagramGeometry()
-
     for cid in boundary_ids:
-        g = raw[cid]["geom"]
-        if g and g.get("w"):
-            ax, ay = origin(cid)
-            geo.containers[cid] = Box(cid, ax, ay, float(g["w"]), float(g["h"]))
-            geo.container_labels[cid] = _attr(str(raw[cid]["cell"]), "value") or ""
+        cell = cells[cid]
+        g = cell.geom
+        if g and g.w:
+            ax, ay = absolute_origin(page, cid)
+            geo.containers[cid] = Box(cid, ax, ay, float(g.w), float(g.h))
+            geo.container_labels[cid] = cell.label
 
-    for cid, d in raw.items():
-        if not d["vertex"] or cid in boundary_ids:
+    for cid, cell in cells.items():
+        if not cell.vertex or cid in boundary_ids:
             continue
-        g = d["geom"]
-        if _is_text_style(str(d["style"]).lower()):
+        g = cell.geom
+        if _is_text_style(cell.style.lower()):
             # A text cell is NOT a node (it must never be counted by node-count),
             # but its box is recorded separately so the Flow/Legend furniture can
             # be checked against the diagram body (legend-placement).
-            if g and g.get("w"):
-                ax, ay = origin(cid)
-                geo.text_boxes[cid] = Box(cid, ax, ay, float(g["w"]), float(g["h"]))
-                geo.text_headings[cid] = _first_line(
-                    _attr(str(d["cell"]), "value") or ""
-                )
+            if g and g.w:
+                ax, ay = absolute_origin(page, cid)
+                geo.text_boxes[cid] = Box(cid, ax, ay, float(g.w), float(g.h))
+                geo.text_headings[cid] = cell.lines[0] if cell.lines else ""
             continue
-        if d["parent"] not in node_parents:
+        if cell.parent not in node_parents:
             continue
-        if not g or not g.get("w"):
+        if not g or not g.w:
             continue
-        ax, ay = origin(cid)
-        geo.nodes[cid] = Box(cid, ax, ay, float(g["w"]), float(g["h"]))
-        overlay = _OVERLAY_TERM_RE.search(str(d["cell"]))
+        ax, ay = absolute_origin(page, cid)
+        geo.nodes[cid] = Box(cid, ax, ay, float(g.w), float(g.h))
+        overlay = cell.style_map.get("overlay")
         if overlay:
-            geo.overlay_nodes[cid] = overlay.group(1)
+            geo.overlay_nodes[cid] = overlay
 
-    for cid, d in raw.items():
-        if not d["edge"]:
+    for cid, cell in cells.items():
+        if not cell.edge:
             continue
-        st = str(d["cell"])
+        st = cell.style
+        # Waypoints are authored relative to the edge's parent cell, so an edge
+        # parented to a container carries container-relative points. Translate
+        # every point by the parent's absolute origin so routing checks see
+        # page coordinates (honest-gates R1.6). An edge on the root layer has a
+        # parent origin of (0, 0), so its points are unchanged.
+        pox, poy = absolute_origin(page, cell.parent)
+        points = (
+            [(px + pox, py + poy) for px, py in cell.geom.points]
+            if cell.geom
+            else []
+        )
         geo.edges.append(
             EdgeGeom(
                 id=cid,
-                source=d["source"] or "",
-                target=d["target"] or "",
+                source=cell.source or "",
+                target=cell.target or "",
                 orthogonal="orthogonaledgestyle" in st.lower(),
                 exit=(_style_num(st, "exitX"), _style_num(st, "exitY")),
                 entry=(_style_num(st, "entryX"), _style_num(st, "entryY")),
-                points=list((d["geom"] or {}).get("points") or []),
+                points=points,
                 end_arrow=_style_token(st, "endArrow"),
                 end_fill=(int(_style_num(st, "endFill")) if _style_num(st, "endFill") is not None else None),
                 stroke_width=_style_num(st, "strokeWidth"),
@@ -304,16 +266,26 @@ def build_geometry(text: str) -> DiagramGeometry:
 # --------------------------------------------------------------------------- #
 
 
-def check_grid_alignment(geo: DiagramGeometry, grid: int = GRID) -> List[str]:
+def check_grid_alignment(
+    geo: DiagramGeometry, grid: Optional[int] = None
+) -> List[str]:
     """Return ids of nodes whose absolute x or y is not a multiple of ``grid``.
+
+    ``grid`` defaults to the geometry's own grid step (``geo.grid``, which
+    ``build_geometry`` sets from ``page.grid_size``), so a page that declares a
+    non-default ``gridSize`` is judged against its own grid rather than a
+    hard-coded 10. Pass ``grid`` explicitly to override.
 
     Coordinates are compared after rounding to the nearest integer so that a
     value carrying float noise from accumulated coordinate math (e.g.
     ``219.9999999``) is judged against its intended integer origin rather than
     the raw float — the origins this engine emits are whole ``grid`` multiples,
     and a sub-pixel drift is not a real misalignment. (Node coordinates are
-    always numeric here: :func:`build_geometry`'s ``origin`` coalesces a missing
-    ``x``/``y`` to ``0.0`` before the box is built, so this never sees ``None``.)"""
+    always numeric here: :func:`~rule_engine.drawio_model.absolute_origin`
+    coalesces a missing ``x``/``y`` to ``0.0`` before the box is built, so this
+    never sees ``None``.)"""
+    if grid is None:
+        grid = geo.grid
     out = []
     for cid, b in geo.nodes.items():
         if (round(b.x) % grid) or (round(b.y) % grid):

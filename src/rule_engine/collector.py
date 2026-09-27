@@ -44,6 +44,7 @@ endpoint, supplied via ``cost_endpoint`` (Requirement 3.10).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import dataclass, field
@@ -51,7 +52,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
+from rule_engine import secret_safety
 from rule_engine.constants import PROVIDERS as _PROVIDERS
+from rule_engine.identity import content_identity, native_identity
 
 
 # ---------------------------------------------------------------------------
@@ -214,202 +217,17 @@ _SECRET_VERB_PATTERNS: Tuple[Tuple[re.Pattern[str], Optional[frozenset]], ...] =
 # Secret-safety redaction (inventory-standards.md §7; secret-safety)
 # ---------------------------------------------------------------------------
 
-# Key-name substrings that mark a value as secret material. Matching is
-# case-insensitive against the *key name*, so the corresponding *value* is
-# dropped before any snapshot file is written.
-_SECRET_KEY_MARKERS = (
-    "password",
-    "passwd",
-    "secret",
-    "securestring",
-    "privatekey",
-    "private_key",
-    "credential",
-    "token",
-    "apikey",
-    "api_key",
-    "accesskey",
-    "access_key",
-    "sessiontoken",
-    "session_token",
-    "certificate",
-    "keymaterial",
-    "key_material",
-    # v1.6.1: the Azure spellings. Storage, Service Bus, Event Hubs, Cosmos DB,
-    # Redis and IoT Hub all return their keys under camelCase names none of the
-    # markers above matched (``primaryKey``, ``primaryMasterKey``,
-    # ``primaryConnectionString`` …).
-    "primarykey",
-    "secondarykey",
-    "accountkey",
-    "sharedaccesskey",
-    # Cosmos DB primaryMasterKey / secondaryMasterKey / *ReadonlyMasterKey. Not a
-    # bare "masterkey": that would erase KMS ``CustomerMasterKeySpec`` metadata.
-    "primarymasterkey",
-    "secondarymasterkey",
-    "readonlymasterkey",
-    "adminkey",
-    "connectionstring",
-)
+# Secret detection lives in one place now (design §5, R3.6): the shared
+# :mod:`rule_engine.secret_safety` vocabulary. ``redact_secrets`` is a thin alias
+# of :func:`secret_safety.redact`, so the Collector, Normalizer and Linter cannot
+# disagree about what a secret is. The marker lists, content regexes and pair
+# helpers that used to live here were moved to ``secret_safety`` in task 3.1.
+REDACTED = secret_safety.REDACTED
 
-# Redaction placeholder written in place of a stripped secret value. Contains no
-# secret material, so a snapshot file carrying this string is still secret-free.
-REDACTED = "[REDACTED]"
-
-
-# Content patterns that mark a *value* as secret material even when it sits
-# under a benign key name (e.g. ``{"note": "-----BEGIN PRIVATE KEY-----..."}``,
-# a SecureString payload, or an inline ``password=...`` assignment). This closes
-# the gap where key-name redaction alone leaks a secret carried in the value
-# (inventory-standards §7 secret-safety). Matching is case-insensitive and
-# deliberately conservative — anchored markers, not broad words — so ordinary
-# metadata (a region, an ARN, a description) is not over-redacted.
-_SECRET_CONTENT_RE = re.compile(
-    r"""
-    -----BEGIN[ ][A-Z ]*PRIVATE[ ]KEY-----   # PEM private-key block
-    | -----BEGIN[ ]OPENSSH[ ]PRIVATE[ ]KEY-----
-    | -----BEGIN[ ]PGP[ ]PRIVATE[ ]KEY[ ]BLOCK-----   # v1.6.1
-    | \bsecurestring\b                        # SSM SecureString payload marker
-    | \b(?:password|passwd|secret|token|api[_-]?key|access[_-]?key|
-        session[_-]?token|client[_-]?secret)\s*[:=]\s*\S   # inline assignment
-    # v1.6.1: ``export AWS_SECRET_ACCESS_KEY=…`` — ``\b`` never fires after the
-    # ``_`` that precedes SECRET, so the inline rule above missed the most common
-    # spelling of the most common cloud secret.
-    | (?<![A-Za-z0-9])(?:aws_)?secret_access_key\s*[:=]\s*\S
-    # v1.6.1: Azure connection strings and SAS signatures.
-    | \b(?:AccountKey|SharedAccessKey|SharedAccessSignature)\s*=\s*\S
-    # v1.6.1: a URL whose userinfo carries a password (``postgres://app:pw@db``).
-    | \b[a-z][a-z0-9+.-]*://[^/\s:@]+:[^/\s@]+@
-    """,
-    re.IGNORECASE | re.VERBOSE,
-)
-
-# Name/value pair shapes (v1.6.1). Several provider APIs carry configuration as a
-# list of ``{name, value}`` records rather than as a mapping: AWS tags
-# (``{Key, Value}``), ECS / Batch container environment (``{name, value}``),
-# CloudFormation parameters (``{ParameterKey, ParameterValue}``), Elastic
-# Beanstalk option settings (``{OptionName, Value}``). Key-name redaction cannot
-# see a secret in that shape — the secret's NAME is a *value* (``"DB_PASSWORD"``)
-# and its VALUE sits under a benign key (``"Value"``) — and before 1.6.1 it
-# redacted exactly the wrong half: the bare-``key`` rule erased every tag's name
-# and kept ``hunter2``. A pair is now judged by its name.
-_PAIR_NAME_KEYS = frozenset(
-    {"key", "name", "parameterkey", "parametername", "optionname", "variablename"}
-)
-_PAIR_VALUE_KEYS = frozenset({"value", "parametervalue"})
-
-
-def _key_is_secret(key: str) -> bool:
-    lowered = key.lower()
-    # ``key``/``keys`` alone, or any ``*_key`` name, is key material. A bare
-    # trailing "key" in a compound word (e.g. "monkey", "sortkey") is NOT a
-    # secret on its own — only the exact/boundary forms count, plus the explicit
-    # marker substrings below (``privatekey``/``apikey``/…).
-    if lowered in {"key", "keys"} or lowered.endswith("_key"):
-        return True
-    return any(marker in lowered for marker in _SECRET_KEY_MARKERS)
-
-
-def _value_is_secret(value: str) -> bool:
-    """Return True when a string *value* carries embedded secret material.
-
-    Catches a secret hiding under a benign key — the case key-name redaction
-    misses — using the conservative anchored :data:`_SECRET_CONTENT_RE`."""
-    return bool(_SECRET_CONTENT_RE.search(value))
-
-
-def _decode_bytes(value: bytes) -> str | None:
-    """Best-effort UTF-8 decode of a byte value for the content scan (else None)."""
-    try:
-        return value.decode("utf-8")
-    except UnicodeDecodeError:
-        return None
-
-
-def _pair_redactions(mapping: Mapping[Any, Any]) -> Tuple[frozenset, frozenset]:
-    """Decide how a name/value-pair record is redacted (v1.6.1).
-
-    Returns ``(redact, passthrough)`` as sets of **lowercased** key names:
-
-    * ``redact`` — entries replaced with :data:`REDACTED` outright;
-    * ``passthrough`` — entries exempt from the key-name rule (still walked for
-      secret *content*). This is only ever the ``Key`` field of a pure
-      ``{Key, Value}`` tag, which names the tag rather than holding key material.
-
-    A record's value entries are redacted when any of these holds:
-
-    * its name entry names a secret (``DB_PASSWORD``, ``ApiToken``) — then the
-      name is redacted too, so a secret-looking name never reaches a snapshot
-      file either (it is what the linter's secret-safety scan keys on);
-    * it is an SSM parameter whose ``Type`` is ``SecureString``;
-    * it carries a ``keyName`` (the Azure ``keys list`` record shape).
-
-    A mapping with no value entry is not a pair; both sets are empty.
-    """
-    lowered = {k.lower(): v for k, v in mapping.items() if isinstance(k, str)}
-    value_keys = _PAIR_VALUE_KEYS & lowered.keys()
-    if not value_keys:
-        return frozenset(), frozenset()
-    redact: set = set()
-    type_label = lowered.get("type")
-    if isinstance(type_label, str) and type_label.strip().lower() == "securestring":
-        redact |= value_keys
-    if "keyname" in lowered:
-        redact |= value_keys
-    for name_key in sorted(_PAIR_NAME_KEYS & lowered.keys()):
-        name = lowered[name_key]
-        if isinstance(name, str) and (_key_is_secret(name) or _value_is_secret(name)):
-            redact |= value_keys | {name_key}
-    passthrough: frozenset = frozenset()
-    if set(lowered) <= {"key", "value"} and "key" in lowered and "key" not in redact:
-        passthrough = frozenset({"key"})
-    return frozenset(redact), passthrough
-
-
-def redact_secrets(value: Any) -> Any:
-    """Recursively strip secret values from resource metadata.
-
-    Two complementary redactions are applied, so a snapshot file never carries
-    secret material (inventory-standards §7):
-
-    * **by key name** — any mapping entry whose *key* matches a secret marker
-      (``password``/``secret``/``key``/``token``/``securestring`` and friends)
-      has its value replaced with :data:`REDACTED`;
-    * **by value content** — any *string value* that embeds a secret pattern (a
-      PEM/OpenSSH private-key block, a ``SecureString`` payload, or an inline
-      ``password=``/``token=`` assignment) is replaced with :data:`REDACTED`
-      even when its key name is benign;
-    * **by pair name** (v1.6.1) — a ``{name, value}`` record (a tag, a container
-      environment variable, a CloudFormation parameter, an SSM ``SecureString``
-      parameter) has its value redacted when its *name* names a secret; see
-      :func:`_pair_redactions`.
-
-    Nested mappings and sequences are walked recursively; non-secret metadata is
-    retained unchanged. Never mutates the input, returning a redacted copy.
-    """
-    if isinstance(value, Mapping):
-        redact, passthrough = _pair_redactions(value)
-        result: Dict[str, Any] = {}
-        for k, v in value.items():
-            low = k.lower() if isinstance(k, str) else None
-            if low is not None and low in redact:
-                result[k] = REDACTED
-            elif low is not None and low in passthrough:
-                result[k] = redact_secrets(v)
-            elif isinstance(k, str) and _key_is_secret(k):
-                result[k] = REDACTED
-            else:
-                result[k] = redact_secrets(v)
-        return result
-    if isinstance(value, (list, tuple)):
-        return [redact_secrets(item) for item in value]
-    if isinstance(value, str) and _value_is_secret(value):
-        return REDACTED
-    if isinstance(value, bytes):
-        decoded = _decode_bytes(value)
-        if decoded is not None and _value_is_secret(decoded):
-            return REDACTED
-    return value
+#: Recursively strip secret values from resource metadata. Alias of
+#: :func:`secret_safety.redact` — applies the shared key-name, value-content and
+#: pair-name rules and returns a redacted copy, never mutating the input.
+redact_secrets = secret_safety.redact
 
 
 # ---------------------------------------------------------------------------
@@ -619,6 +437,23 @@ def _render_manifest_md(manifest: Mapping[str, Any]) -> str:
                 f"| {rej.get('service', '')} | {rej.get('verb', '')} | {rej.get('reason', '')} |"
             )
 
+    # A same-identity duplicate is written under a hashed subfolder rather than
+    # overwriting the first resource; surface each one so the snapshot is honest
+    # about the collision (design §"Collector safety").
+    duplicates = manifest.get("duplicates") or []
+    if duplicates:
+        lines += [
+            "",
+            "## Duplicate identities (hashed subfolders)",
+            "",
+            "| Service | Identity | Subfolder |",
+            "| --- | --- | --- |",
+        ]
+        for dup in duplicates:
+            lines.append(
+                f"| {dup.get('service', '')} | {dup.get('identity', '')} | {dup.get('dirname', '')} |"
+            )
+
     lines.append("")
     return "\n".join(lines)
 
@@ -629,13 +464,157 @@ def _slug(text: str) -> str:
     return slug or "resource"
 
 
-def _resource_identity(resource: Mapping[str, Any]) -> str:
-    """Pick an identity for a resource: ``id`` when present else ``name``."""
-    for key in ("id", "name", "resource_id", "arn"):
-        val = resource.get(key)
-        if val:
-            return str(val)
-    return "resource"
+def _resource_identity(resource: Mapping[str, Any], provider: str) -> str:
+    """Return a stable identity for a resource (design §7, R5.5).
+
+    Prefers the provider's native identity key (``native_identity``), falls back
+    to the resource's ``name``, and finally to a content digest
+    (``content_identity``) for a resource with no native identity key. The
+    pre-1.7 ``"resource"`` catch-all — which collided every identity-less
+    resource into one folder — is gone: an identity-less resource now gets a
+    unique, reproducible digest instead.
+    """
+    native = native_identity(resource, provider)
+    if native:
+        return native
+    name = resource.get("name")
+    if isinstance(name, str) and name:
+        return name
+    return content_identity(resource)
+
+
+# ---------------------------------------------------------------------------
+# Input validation and collision-free snapshot layout (design §"Collector
+# safety"; R5.4–R5.7)
+# ---------------------------------------------------------------------------
+
+#: Characters permitted in a ``boundary_id`` or ``region``. Note ``.`` is
+#: allowed, so the regex alone does not stop ``..``; ``_validate_target`` also
+#: resolves the target path and confirms it stays inside ``output_root``.
+BOUNDARY_RE = re.compile(r"^[A-Za-z0-9._:-]+$")
+
+
+class CollectorInputError(ValueError):
+    """Raised when a Collector input is unsafe (bad boundary/region or escaping
+    path). Raised *before* any filesystem write, so ``output_root`` is left
+    byte-for-byte unchanged (R5.6)."""
+
+
+def _validate_target(root: Path, boundary_id: str, region: str, folder: str) -> Path:
+    """Validate inputs and the target path before any filesystem call (R5.6).
+
+    Raises :class:`CollectorInputError` when ``boundary_id`` or ``region`` carry
+    a character outside :data:`BOUNDARY_RE`, or when ``(root / folder)`` resolves
+    outside ``root`` (catching a ``..`` traversal the regex lets through via
+    ``.``). Returns the resolved snapshot directory when the inputs are safe.
+    """
+    if not BOUNDARY_RE.match(boundary_id):
+        raise CollectorInputError(
+            f"unsafe boundary_id {boundary_id!r}: must match {BOUNDARY_RE.pattern}"
+        )
+    if not BOUNDARY_RE.match(region):
+        raise CollectorInputError(
+            f"unsafe region {region!r}: must match {BOUNDARY_RE.pattern}"
+        )
+    resolved_root = root.resolve()
+    target = (root / folder).resolve()
+    if target != resolved_root and resolved_root not in target.parents:
+        raise CollectorInputError(
+            f"snapshot path {target} escapes output_root {resolved_root}"
+        )
+    return target
+
+
+def _allocate_snapshot_dir(root: Path, folder: str) -> Path:
+    """Create and return a fresh snapshot directory, never merging an old one.
+
+    Tries ``folder``, then ``folder-2``, ``folder-3``, … creating each with
+    ``mkdir(exist_ok=False)`` so two runs (or two concurrent collectors) can
+    never share a folder and an existing snapshot is never written into (R5.7).
+    """
+    root.mkdir(parents=True, exist_ok=True)
+    candidate = root / folder
+    suffix = 2
+    while True:
+        try:
+            candidate.mkdir(exist_ok=False)
+            return candidate
+        except FileExistsError:
+            candidate = root / f"{folder}-{suffix}"
+            suffix += 1
+
+
+#: Maximum length of a resource subfolder name (design §"Collector safety").
+_RESOURCE_DIRNAME_MAX = 100
+
+
+def _resource_dirname(
+    service: str,
+    identity: str,
+    taken: Dict[str, str],
+    resource: Optional[Mapping[str, Any]] = None,
+) -> str:
+    """Return a collision-free ``<slug(service)>-<slug(identity)>`` folder name.
+
+    Truncated to :data:`_RESOURCE_DIRNAME_MAX` characters. A ``-<sha8>`` suffix
+    (8 hex of ``sha256(identity)``) is appended when the plain name is already
+    taken *by a different identity*, or when slugging was lossy (the slug does
+    not round-trip the identity, so two distinct identities could otherwise
+    collide). A **same-identity** duplicate (the same ``identity`` appearing
+    again in the same service) is placed under
+    ``-<sha256(identity + canonical json)[:8]>`` so it never overwrites the
+    first resource's ``resource.json``; the caller lists it under the manifest's
+    ``duplicates``.
+
+    ``taken`` maps an already-allocated dirname to the identity that owns it and
+    is updated in place, so ``write_text`` never targets an existing
+    ``resource.json``.
+    """
+    base = f"{_slug(service)}-{_slug(identity)}"
+    id_hash = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:8]
+    lossy = _slug(identity) != identity
+
+    def _fit(name: str) -> str:
+        return name[:_RESOURCE_DIRNAME_MAX]
+
+    plain = _fit(base)
+    owner = taken.get(plain)
+    if owner == identity:
+        # Same identity, same service → a duplicate. Give it a subfolder keyed
+        # on the resource content so two identical-identity resources differ.
+        canonical = json.dumps(
+            resource if resource is not None else {},
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            default=str,
+        )
+        dup_hash = hashlib.sha256(
+            (identity + canonical).encode("utf-8")
+        ).hexdigest()[:8]
+        suffixed = _fit(f"{base[: _RESOURCE_DIRNAME_MAX - 9]}-{dup_hash}")
+        # In the (astronomically unlikely) event the duplicate hash also
+        # collides, walk further hashes until a free name is found.
+        n = 2
+        candidate = suffixed
+        while candidate in taken:
+            candidate = _fit(f"{base[: _RESOURCE_DIRNAME_MAX - 9]}-{dup_hash}{n}")
+            n += 1
+        taken[candidate] = identity
+        return candidate
+    if owner is None and not lossy:
+        taken[plain] = identity
+        return plain
+    # Different identity already owns the plain name, or slugging was lossy:
+    # disambiguate with the identity hash.
+    suffixed = _fit(f"{base[: _RESOURCE_DIRNAME_MAX - 9]}-{id_hash}")
+    n = 2
+    candidate = suffixed
+    while candidate in taken and taken[candidate] != identity:
+        candidate = _fit(f"{base[: _RESOURCE_DIRNAME_MAX - 9]}-{id_hash}{n}")
+        n += 1
+    taken[candidate] = identity
+    return candidate
 
 
 # ---------------------------------------------------------------------------
@@ -705,7 +684,12 @@ def collect(
     root = Path(output_root) if output_root is not None else Path.cwd()
 
     folder_name = snapshot_folder_name(provider, boundary_id, region, start)
-    snapshot_dir = root / folder_name
+    # Validate boundary_id/region and the target path BEFORE any filesystem call,
+    # so an unsafe input leaves output_root byte-for-byte unchanged (R5.6).
+    _validate_target(root, boundary_id, region, folder_name)
+    # Allocate a fresh snapshot folder (folder, folder-2, …); an existing
+    # snapshot is never merged into (R5.7).
+    snapshot_dir = _allocate_snapshot_dir(root, folder_name)
     resources_dir = snapshot_dir / "resources"
     resources_dir.mkdir(parents=True, exist_ok=True)
 
@@ -766,11 +750,25 @@ def collect(
             encoding="utf-8",
         )
 
-    # Write one subfolder per enumerated resource under resources/.
+    # Write one subfolder per enumerated resource under resources/. Names are
+    # allocated collision-free by _resource_dirname (≤100 chars, hashed on a
+    # collision or a lossy slug), so a write never targets an existing
+    # resource.json. A same-identity duplicate is written under a hashed
+    # subfolder and recorded in the manifest's ``duplicates`` list (R5.5).
+    taken: Dict[str, str] = {}
+    duplicates: List[Dict[str, str]] = []
     for service, resources in service_resources.items():
+        seen_identities: set = set()
         for resource in resources:
-            identity = _resource_identity(resource)
-            sub = resources_dir / f"{_slug(service)}-{_slug(identity)}"
+            identity = _resource_identity(resource, provider)
+            is_duplicate = identity in seen_identities
+            seen_identities.add(identity)
+            dirname = _resource_dirname(service, identity, taken, resource=resource)
+            if is_duplicate:
+                duplicates.append(
+                    {"service": service, "identity": identity, "dirname": dirname}
+                )
+            sub = resources_dir / dirname
             sub.mkdir(parents=True, exist_ok=True)
             (sub / "resource.json").write_text(
                 json.dumps(resource, indent=2, sort_keys=True), encoding="utf-8"
@@ -830,6 +828,8 @@ def collect(
         "failures": failures,
         "rejected_verbs": rejected,
     }
+    if duplicates:
+        manifest["duplicates"] = duplicates
     if cost_note is not None:
         manifest["cost"] = cost_note
 
@@ -859,6 +859,8 @@ __all__ = [
     "Enumerator",
     "CollectionResult",
     "ProviderError",
+    "CollectorInputError",
+    "BOUNDARY_RE",
     "redact_secrets",
     "is_mutating_verb",
     "is_read_only_verb",

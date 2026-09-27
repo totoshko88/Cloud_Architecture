@@ -6,11 +6,22 @@ inclusion: always
 
 These rules govern every architecture diagram the Diagram Generator produces, across all five provider profiles (`aws`, `azure`, `gcp`, `oci`, `generic`). They are always on: every agent turn inherits them. Given the same inputs, any conforming agent must produce a diagram that passes the lint ruleset in `diagram-lint.md`.
 
-## Source Format: PlantUML vs Mermaid Decision Matrix
+## Source Format: draw.io is canonical (decision D1)
 
-Choose the diagram source deterministically from the diagram type and render target.
+**draw.io (`.drawio`) is the only publishable diagram source.** Every architecture
+diagram in the corpus, and every artifact of the mandatory triple, is a `.drawio`
+file. A diagram authored in a non-canonical source (`.puml` / `.mmd`) is discovered
+by `rule-engine-lint --all` as a diagram Artifact with its `source_format` set and
+**blocked with a `source-format` ERROR** — a PlantUML or Mermaid file is not
+published as-is, it is converted to a `.drawio` triple before publication.
 
-| Diagram type | Render target | Source |
+The matrix below is retained as **source-modelling guidance** for the intermediate
+form you may sketch a diagram in *before* rendering it to `.drawio` — it chooses
+PlantUML vs Mermaid deterministically from the diagram type and render target. It
+does **not** authorise publishing a `.puml`/`.mmd`: whatever the sketch source, the
+published artifact is the `.drawio` triple.
+
+| Diagram type | Render target | Modelling source |
 | --- | --- | --- |
 | C4 / architecture / component / deployment | any | **PlantUML** |
 | sequence / flow / state | GitLab Markdown or Backstage TechDocs | Mermaid permitted |
@@ -18,9 +29,12 @@ Choose the diagram source deterministically from the diagram type and render tar
 
 Rules:
 
-- A C4, architecture, component, or deployment diagram is always authored in PlantUML, regardless of render target.
-- A sequence, flow, or state diagram may be authored in Mermaid **only** when the render target is GitLab Markdown or Backstage TechDocs.
-- A sequence, flow, or state diagram whose render target is neither GitLab Markdown nor Backstage TechDocs must be authored in PlantUML.
+- The **publishable** diagram source is always `.drawio`. A `.puml` or `.mmd` file
+  is a `source-format` ERROR at lint time (`diagram-lint.md`), so convert it to a
+  `.drawio` triple rather than shipping it.
+- When you do sketch in an intermediate source: a C4, architecture, component, or deployment diagram is modelled in PlantUML, regardless of render target.
+- A sequence, flow, or state diagram may be modelled in Mermaid **only** when the render target is GitLab Markdown or Backstage TechDocs.
+- A sequence, flow, or state diagram whose render target is neither GitLab Markdown nor Backstage TechDocs is modelled in PlantUML.
 - Using Mermaid for any diagram type other than sequence, flow, or state is a lint WARNING (`mermaid-type`).
 
 ## Diagram Orientation (axis by diagram type)
@@ -508,7 +522,8 @@ endlegend
 
 ## Quick Checklist
 
-- [ ] Source format matches the PlantUML/Mermaid decision matrix
+- [ ] Published diagram source is `.drawio` (a `.puml`/`.mmd` is a `source-format` ERROR — convert it to a `.drawio` triple)
+- [ ] Intermediate modelling source (if sketched) matches the PlantUML/Mermaid decision matrix
 - [ ] Single `@startuml`/`@enduml` pair, no preprocessor directives (PlantUML)
 - [ ] Orientation matches diagram type: North–South (top→bottom) for infra/deployment, left→right for flow/application
 - [ ] Lanes ordered actors → edge → router → async messaging → workers → platform core → data → on-premises

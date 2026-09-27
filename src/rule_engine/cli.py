@@ -27,6 +27,11 @@ Options
 --workspace-root PATH
     Override the workspace root used to locate the ruleset and to scan for
     artifacts (defaults to the current working directory).
+--json
+    Emit the full lint result list as JSON on stdout instead of the
+    human-readable ``[BLOCKED]``/``[OK]`` lines. Findings carry their
+    ``offenders`` and ``reason``; a ``secret-safety`` offender is a JSON pointer
+    or ``line:<n>`` location, never a secret value.
 
 Exit codes
 ----------
@@ -48,10 +53,15 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from datetime import date
+
+from . import kb_validator as _kb_validator
 from . import linter as _linter
 from .constants import ROOT_LAYER_ID as _ROOT_LAYER_ID
 from .constants import is_boundary_container_style as _is_boundary_container_style
 from .constants import is_text_cell_style as _is_text_cell_style
+from . import icon_refs as _icon_refs
+from .drawio_model import DrawioParseError, Page, parse_drawio
 from .linter import (
     Artifact,
     Edge,
@@ -60,6 +70,7 @@ from .linter import (
     find_ruleset,
     lint,
 )
+from .ruleset import RulesetUnavailableError, require_ruleset
 
 # Exit codes.
 EXIT_OK = 0
@@ -73,17 +84,15 @@ _DEFAULT_FAIL_ON = (Severity.ERROR, Severity.CRITICAL)
 # Best-effort file parsing
 # ---------------------------------------------------------------------------
 
-_FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*(?:\n|$)", re.DOTALL)
-
-# draw.io mxCell node cells carry vertex="1"; edges carry edge="1".
-_MXCELL_RE = re.compile(r"<mxCell\b[^>]*>", re.IGNORECASE | re.DOTALL)
-_VALUE_ATTR_RE = re.compile(r'value="([^"]*)"', re.IGNORECASE)
-_VERTEX_RE = re.compile(r'vertex="1"', re.IGNORECASE)
-_EDGE_RE = re.compile(r'edge="1"', re.IGNORECASE)
-_STYLE_ATTR_RE = re.compile(r'style="([^"]*)"', re.IGNORECASE)
-_ID_ATTR_RE = re.compile(r'\bid="([^"]*)"', re.IGNORECASE)
-_PARENT_ATTR_RE = re.compile(r'\bparent="([^"]*)"', re.IGNORECASE)
-_FONT_SIZE_RE = re.compile(r"fontSize=([0-9]+)", re.IGNORECASE)
+# The full diagram title format (diagram-standards "Title Cell Format",
+# honest-gates R1.11):
+#   <provider> <workload> — <boundary id> / <region> | <date> | vN
+# The title cell is the text cell whose label matches this in full; a stray
+# ``vN`` token in an unrelated cell no longer satisfies ``title-versioned``.
+TITLE_RE = re.compile(
+    r"^(?P<provider>\S+) (?P<workload>.+?) — (?P<boundary>.+?) / "
+    r"(?P<region>\S+) \| (?P<date>\d{4}-\d{2}-\d{2}) \| v(?P<n>[1-9]\d*)$"
+)
 
 # The draw.io root-layer id and the boundary/text cell classifiers come from
 # rule_engine.constants (shared with geometry.build_geometry), so the C4
@@ -122,106 +131,53 @@ def _icon_descriptor_for_style(style: str) -> Dict[str, Any]:
     return {"style": style, "resolved": True}
 
 
-# A draw.io cell ``value`` separates lines with the XML entity ``&#10;`` (what the
-# shared builder emits) or an HTML ``<br>``.
-_VALUE_BREAK_RE = re.compile(r"&#10;|&#xa;|<br\s*/?>", re.IGNORECASE)
-_MARKUP_TAG_RE = re.compile(r"<[^>]+>")
 _FLOW_HEADING = "flow"
+_LEGEND_HEADING = "legend"
 
 
-def _value_lines(value: str) -> List[str]:
-    """Split a draw.io cell ``value`` into its rendered lines, markup stripped."""
-    parts = _VALUE_BREAK_RE.split(value or "")
-    return [_MARKUP_TAG_RE.sub("", p).strip() for p in parts]
-
-
-def _parse_flow_legend_lines(text: str) -> List[str]:
-    """Return the rendered lines of the diagram's ``Flow`` legend cell.
-
-    diagram-standards pins the Flow cell exactly: a text cell "whose first line
-    is exactly ``Flow``". This finds that cell and returns its lines so
-    ``flow-legend`` can check that every numeric edge marker has a matching
-    ``N. <description>`` line. An empty list means the diagram carries no Flow
-    cell (which, combined with numeric markers, is the finding).
-    """
-    for cell in _MXCELL_RE.findall(text or ""):
-        style_match = _STYLE_ATTR_RE.search(cell)
-        style = style_match.group(1) if style_match else ""
-        if "text;" not in style.lower():
-            continue
-        value_match = _VALUE_ATTR_RE.search(cell)
-        if not value_match:
-            continue
-        lines = _value_lines(value_match.group(1))
-        if lines and lines[0].lower() == _FLOW_HEADING:
-            return lines
-    return []
-
-
-def _parse_frontmatter(text: str) -> Optional[Dict[str, Any]]:
-    """Best-effort parse of a Markdown YAML frontmatter block.
-
-    Uses PyYAML when available; otherwise falls back to a minimal key/value and
-    list scan. Returns ``None`` when the document has no frontmatter block.
-    """
-    match = _FRONTMATTER_RE.match(text)
-    if not match:
-        return None
-    block = match.group(1)
-    try:
-        import yaml  # type: ignore
-
-        loaded = yaml.safe_load(block)
-        if isinstance(loaded, dict):
-            return loaded
-        return {}
-    except Exception:
-        return _parse_frontmatter_fallback(block)
-
-
-def _parse_frontmatter_fallback(block: str) -> Dict[str, Any]:
-    """Minimal YAML-subset parser for ``key: value`` and simple lists."""
-    result: Dict[str, Any] = {}
-    current_list_key: Optional[str] = None
-    for raw in block.splitlines():
-        line = raw.rstrip()
-        if not line.strip() or line.strip().startswith("#"):
-            continue
+def _first_nonempty_line(cell: "Any") -> str:
+    """Return the first non-empty rendered line of a parsed cell, casefolded."""
+    for line in cell.lines:
         stripped = line.strip()
-        if stripped.startswith("- ") and current_list_key is not None:
-            item = stripped[2:].strip().strip("'\"")
-            result.setdefault(current_list_key, [])
-            if isinstance(result[current_list_key], list):
-                result[current_list_key].append(item)
-            continue
-        if ":" in line and not line.startswith(" "):
-            key, _, value = line.partition(":")
-            key = key.strip()
-            value = value.strip()
-            # Strip inline comments.
-            value = re.split(r"\s+#", value, maxsplit=1)[0].strip()
-            if value == "" :
-                # Could be the header of a block list; mark as pending list.
-                current_list_key = key
-                result[key] = []
-            elif value in ("[]", "{}"):
-                result[key] = []
-                current_list_key = None
-            elif value.startswith("[") and value.endswith("]"):
-                inner = value[1:-1].strip()
-                result[key] = (
-                    [v.strip().strip("'\"") for v in inner.split(",") if v.strip()]
-                    if inner
-                    else []
-                )
-                current_list_key = None
-            else:
-                result[key] = value.strip("'\"")
-                current_list_key = None
-    return result
+        if stripped:
+            return stripped.casefold()
+    return ""
 
 
-def _parse_drawio(path: str, text: str) -> Artifact:
+def _companion_path(path: str) -> str:
+    """Return the ``NN-topic.diagram.md`` companion path for a ``.drawio`` file."""
+    if path.endswith(".drawio"):
+        return path[: -len(".drawio")] + ".diagram.md"
+    return os.path.splitext(path)[0] + ".diagram.md"
+
+
+def _load_companion_frontmatter(
+    companion: str,
+) -> Tuple[Optional[Dict[str, Any]], bool]:
+    """Read a companion ``.diagram.md`` frontmatter mapping.
+
+    Returns ``(mapping_or_None, parse_failed)``. ``parse_failed`` is True when the
+    companion exists but its frontmatter does not parse as YAML — the diagram
+    artifact then carries a ``parse-error`` (design §2 / R2.5), rather than
+    silently defaulting to ``flow``. A companion with no frontmatter block, or no
+    companion at all, is ``(None, False)``.
+    """
+    if not os.path.isfile(companion):
+        return None, False
+    try:
+        with open(companion, "r", encoding="utf-8") as fh:
+            block, _body = _kb_validator.split_frontmatter(fh.read())
+    except OSError:
+        return None, True
+    if block is None:
+        return None, False
+    fm, violations = _kb_validator.load_frontmatter(block)
+    if fm is None:
+        return None, True
+    return fm, False
+
+
+def _parse_drawio_page(path: str, page: Page, text: str) -> Artifact:
     """Best-effort parse of a ``.drawio`` XML source into a diagram Artifact.
 
     Only **top-level** diagram nodes are counted. A vertex is a node when it is
@@ -231,164 +187,182 @@ def _parse_drawio(path: str, text: str) -> Artifact:
     geometry, not a separate node, so it is excluded from ``node_names``,
     ``icons`` and the node count.
     """
-    edges: List[Edge] = []
-
-    cells = _MXCELL_RE.findall(text)
-
-    # Locate a title cell heuristically: a value containing a ` vN ` token
-    # (the title-cell version identifier). Recorded so it is excluded from the
-    # node set below.
-    title_cell: Optional[str] = None
-    for cell in cells:
-        value_match = _VALUE_ATTR_RE.search(cell)
-        if value_match and re.search(r"\bv[1-9][0-9]*\b", value_match.group(1)):
-            title_cell = value_match.group(1)
-            break
-
-    # First pass: gather every cell's id/parent and classify text vs. structural
-    # cells, so we can distinguish top-level nodes from nested glyph geometry.
-    def _cell_id(cell: str) -> str:
-        m = _ID_ATTR_RE.search(cell)
-        return m.group(1) if m else ""
-
-    def _cell_parent(cell: str) -> str:
-        m = _PARENT_ATTR_RE.search(cell)
-        return m.group(1) if m else ""
-
-    def _is_text_cell(value: str, style: str) -> bool:
-        # Style-based text detection is shared with geometry via constants; the
-        # value-based checks (title cell, a "Legend" block) are cli-specific.
-        return (
-            _is_text_cell_style(style)
-            or value == title_cell
-            or value.lower().startswith("legend")
-        )
+    cells = page.cells
 
     # Boundary/Network-Boundary containers hold nodes but are themselves the
     # stack/network frame. A vertex whose parent is the root layer or one of
     # these containers is a top-level node. Container detection (REVIEW.md C4)
     # is the shared rule in constants.is_boundary_container_style, so node
     # counting here and the geometry-aware layout checks cannot drift.
-    boundary_ids: set[str] = set()
-    for cell in cells:
-        if not _VERTEX_RE.search(cell):
-            continue
-        cid = _cell_id(cell)
-        m = _STYLE_ATTR_RE.search(cell)
-        style = m.group(1) if m else ""
-        if _is_boundary_container_style(cid, style):
-            boundary_ids.add(cid)
+    boundary_ids = {
+        cid
+        for cid, cell in cells.items()
+        if cell.vertex and _is_boundary_container_style(cid, cell.style)
+    }
     node_container_parents = {_ROOT_LAYER_ID} | boundary_ids
 
+    # Structural Legend and title detection (honest-gates R1.11, R1.12). The
+    # Legend is the text cell whose first non-empty line, casefolded, is
+    # ``legend``; the Flow cell the one whose first line is ``flow``. The title
+    # cell is the text cell whose whole label matches TITLE_RE with a real
+    # calendar date. Identifying them by structure means a stray ``legend`` id or
+    # a ``vN`` token in an unrelated cell no longer satisfies the rules.
+    legend_lines: Optional[List[str]] = None
+    flow_legend_lines: List[str] = []
+    title_cell: Optional[str] = None
+    title_cell_id: Optional[str] = None
+    for cid, cell in cells.items():
+        if not _is_text_cell_style(cell.style):
+            continue
+        heading = _first_nonempty_line(cell)
+        if heading == _LEGEND_HEADING and legend_lines is None:
+            legend_lines = [line.strip() for line in cell.lines]
+        elif heading == _FLOW_HEADING and not flow_legend_lines:
+            flow_legend_lines = [line.strip() for line in cell.lines]
+        if title_cell is None:
+            match = TITLE_RE.match(cell.label)
+            if match:
+                try:
+                    date.fromisoformat(match.group("date"))
+                except ValueError:
+                    pass
+                else:
+                    title_cell = cell.label
+                    title_cell_id = cid
+
+    has_legend = legend_lines is not None
+
+    # Nodes, edges and icons over the parsed cells. A text cell (title, legend,
+    # flow, free label) is never a node; a boundary container is not itself a
+    # counted node; a vertex nested inside another node (an embedded glyph /
+    # stencil group) is that node's internal geometry, not a separate node.
     node_names: List[str] = []
     icons: List[Any] = []
-    for cell in cells:
-        value_match = _VALUE_ATTR_RE.search(cell)
-        value = value_match.group(1) if value_match else ""
-        style_match = _STYLE_ATTR_RE.search(cell)
-        style = style_match.group(1) if style_match else ""
-        style_low = style.lower()
-        if _EDGE_RE.search(cell):
-            edges.append(Edge(label=value or None))
-        elif _VERTEX_RE.search(cell):
-            cid = _cell_id(cell)
-            parent = _cell_parent(cell)
-            # Skip text-only cells (titles, legends, free labels).
-            if _is_text_cell(value, style_low):
-                continue
-            # A boundary container is not itself a counted node.
-            if cid in boundary_ids:
-                continue
-            # Only top-level nodes count: a vertex nested inside another node
-            # (an embedded glyph/stencil group) is that node's internal
-            # geometry, not a separate node.
-            if parent not in node_container_parents:
-                continue
-            if value or style:
-                node_names.append(value)
-            # Classify the icon so an unresolved placeholder trips icon-resolved
-            # (REVIEW.md C2). A node with no style at all is itself unresolved.
-            icons.append(_icon_descriptor_for_style(style))
-
-    has_legend = "legend" in text.lower()
-
-    companion = os.path.splitext(path)[0] + ".diagram.md"
-    # `NN-topic.drawio` -> `NN-topic.diagram.md`
-    if path.endswith(".drawio"):
-        companion = path[: -len(".drawio")] + ".diagram.md"
+    edges: List[Edge] = []
+    edge_endpoints: List[str] = []
+    for cid, cell in cells.items():
+        if cell.edge:
+            edges.append(Edge(
+                source=cell.source or "",
+                target=cell.target or "",
+                label=cell.label or None,
+            ))
+            # Record broken endpoints (R1.10): a missing source/target, or one
+            # that names a cell id absent from the page.
+            if cell.source is None:
+                edge_endpoints.append("missing-source")
+            elif cell.source not in cells:
+                edge_endpoints.append(f"dangling-source:{cell.source}")
+            if cell.target is None:
+                edge_endpoints.append("missing-target")
+            elif cell.target not in cells:
+                edge_endpoints.append(f"dangling-target:{cell.target}")
+            continue
+        if not cell.vertex:
+            continue
+        if cid in boundary_ids:
+            continue
+        if _is_text_cell_style(cell.style) or cid == title_cell_id:
+            continue
+        if cell.parent not in node_container_parents:
+            continue
+        if cell.label or cell.style:
+            node_names.append(cell.label)
+        # Classify the icon so an unresolved placeholder trips icon-resolved
+        # (REVIEW.md C2). A node with no style at all is itself unresolved.
+        icons.append(_icon_descriptor_for_style(cell.style))
 
     # Harvest every fontSize token so the ``min-font-size`` rule can flag text
-    # below the accessibility floor (REVIEW.md D1). Includes labels, titles,
-    # boundary captions, and legend cells.
-    font_sizes = [int(m) for m in _FONT_SIZE_RE.findall(text)]
+    # below the accessibility floor. The parsed model preserves each cell's raw
+    # ``style``, so read the tokens from there rather than from a text regex.
+    font_sizes: List[int] = []
+    for cell in cells.values():
+        fs = cell.style_map.get("fontSize")
+        if fs is not None:
+            try:
+                font_sizes.append(int(float(fs)))
+            except (TypeError, ValueError):
+                pass
 
-    # Parse a light geometry model so the geometry-aware rules
-    # (grid-alignment, container-padding, edge-routing, node-overlap)
-    # can evaluate layout quality on the real file (REVIEW.md D2/D3/D6).
-    text_padding_offenders = None
-    try:
-        from rule_engine import geometry as _geometry
-        geo = _geometry.build_geometry(text)
-        text_padding_offenders = _geometry.check_text_padding(text)
-    except Exception:
-        geo = None
+    # Geometry from the same parsed Page (task 9.1). A geometry exception is not
+    # swallowed here — it is raised so ``parse_artifacts`` records a
+    # ``geometry:<Type>:<msg>`` parse-error (R1.8) instead of the old blanket
+    # ``except Exception: geo = None`` that silently dropped the layout rules.
+    from rule_engine import geometry as _geometry
 
-    # Diagram class + cross-link contract (v1.3.0). The class and the
-    # summary_of / detailed_view links are declared in the companion
-    # .diagram.md frontmatter (reliable YAML), not in the .drawio itself.
+    geo = _geometry.build_geometry(page)
+    text_padding_offenders = _geometry.check_text_padding(text)
+
+    # Diagram class + cross-link contract. The class and the summary_of /
+    # detailed_view links are declared in the companion .diagram.md frontmatter
+    # (reliable YAML), read through the shared kb_validator loader. A companion
+    # that exists but fails to parse makes this artifact carry a ``parse-error``
+    # rather than silently defaulting to ``flow`` (design §2 / R2.5).
+    companion = _companion_path(path)
+    fm, companion_parse_failed = _load_companion_frontmatter(companion)
     diagram_class = "flow"
     summary_of = None
     detailed_view = None
-    if os.path.isfile(companion):
-        try:
-            with open(companion, "r", encoding="utf-8") as _fh:
-                _fm = _parse_frontmatter(_fh.read()) or {}
-            _cls = str(_fm.get("diagram_class", "") or "").strip().lower()
-            if _cls in ("flow", "landscape"):
-                diagram_class = _cls
-            _so = _fm.get("summary_of")
-            summary_of = str(_so).strip() if _so else None
-            _dv = _fm.get("detailed_view")
-            detailed_view = str(_dv).strip() if _dv else None
-        except OSError:
-            pass
+    if fm:
+        _cls = str(fm.get("diagram_class", "") or "").strip().lower()
+        if _cls in ("flow", "landscape"):
+            diagram_class = _cls
+        _so = fm.get("summary_of")
+        summary_of = str(_so).strip() if _so else None
+        _dv = fm.get("detailed_view")
+        detailed_view = str(_dv).strip() if _dv else None
 
-    # Overlay vocabulary coverage (v1.3.0). Harvest overlay marker tokens the
-    # diagram declares (from an `overlay:` cell/legend line) and the terms the
-    # Legend documents, so ``overlay-legend-coverage`` can check coverage. Both
-    # are read from the diagram text: a line ``overlay=<term>`` marks a used
-    # overlay term; a Legend line ``<term> =`` documents one. Absent markers
-    # leave both lists empty and the rule no-ops.
-    # Numbered Flow legend (v1.6.0). Harvest the rendered lines of the ``Flow``
-    # text cell (a ``text;`` cell whose FIRST line is exactly ``Flow``, exactly as
-    # diagram-standards pins it) so ``flow-legend`` can verify every numeric edge
-    # marker has a matching ``N. <description>`` line. An empty list means the
-    # diagram has no Flow cell; None is reserved for "not parsed".
-    flow_legend_lines = _parse_flow_legend_lines(text)
-
-    overlay_markers = re.findall(r"overlay=([A-Za-z0-9_\-]+)", text)
-    legend_overlay_terms = []
-    if has_legend:
-        # Any token appearing as ``overlay=<term>`` that also appears verbatim
-        # in the diagram's legend/text region is considered documented.
-        low = text.lower()
+    # Overlay vocabulary coverage (R1.12). Overlay markers come from the
+    # ``overlay`` style key of each cell; a term is documented only when it
+    # appears as a whole token in the structurally-detected Legend lines.
+    overlay_markers: List[str] = []
+    for cell in cells.values():
+        term = cell.style_map.get("overlay")
+        if term:
+            overlay_markers.append(term)
+    legend_overlay_terms: List[str] = []
+    if legend_lines is not None:
+        legend_tokens = {
+            tok.casefold()
+            for line in legend_lines
+            for tok in re.split(r"[^A-Za-z0-9_\-]+", line)
+            if tok
+        }
         for term in set(overlay_markers):
-            # Count occurrences: a marker used on a node/edge (overlay=term)
-            # AND separately named in a legend cell is covered.
-            if low.count(term.lower()) > 1:
+            if term.casefold() in legend_tokens:
                 legend_overlay_terms.append(term)
+
+    parse_errors: List[str] = []
+    if companion_parse_failed:
+        parse_errors.append("companion-frontmatter")
+
+    # honest-gates 1.7.0 (task 10.4 / R4.5): extract the manifest-resolvable icon
+    # references (resIcon / grIcon / azure2 / oci-*) from the same parsed page and
+    # hand them to the ``icon-resolved`` rule, which resolves them against the
+    # committed manifests. Flatten the per-cell mapping into one list; file-path
+    # (``image``) and ``generic-shape`` refs are carried too but the rule only
+    # resolves the manifest-backed kinds (the rest are the verifier's business).
+    icon_ref_list: List[Any] = []
+    for cell_refs in _icon_refs.extract_refs(page).values():
+        icon_ref_list.extend(cell_refs)
 
     return Artifact(
         kind="diagram",
         path=path,
+        page=page.name,
         node_names=node_names,
         edges=edges,
         icons=icons,
+        icon_refs=icon_ref_list,
         font_sizes=font_sizes,
         geometry=geo,
+        grid_size=page.grid_size,
         text_padding_offenders=text_padding_offenders,
         has_legend=has_legend,
+        legend_lines=legend_lines,
         title_cell=title_cell,
+        edge_endpoints=edge_endpoints,
+        parse_errors=parse_errors,
         source_format="drawio",
         is_drawio=True,
         has_companion_doc=os.path.isfile(companion),
@@ -402,13 +376,30 @@ def _parse_drawio(path: str, text: str) -> Artifact:
 
 
 def _parse_markdown(path: str, text: str) -> Artifact:
-    """Best-effort parse of a Markdown document into a document Artifact."""
-    frontmatter = _parse_frontmatter(text)
+    """Best-effort parse of a Markdown document into a document Artifact.
+
+    A Markdown file that lives inside an ``inventory-*`` Snapshot folder is also
+    a snapshot artifact: ``in_snapshot`` is set so ``secret-safety`` scans its
+    text regardless of kind (R3.5).
+    """
+    block, _body = _kb_validator.split_frontmatter(text)
+    frontmatter: Optional[Dict[str, Any]] = None
+    if block is not None:
+        fm, _violations = _kb_validator.load_frontmatter(block)
+        frontmatter = fm
     return Artifact(
         kind="document",
         path=path,
         is_markdown=True,
         frontmatter=frontmatter,
+        text=text,
+        in_snapshot=_in_inventory_folder(path),
+        # Structural KB checks run only for a generated KB document (design §4 /
+        # R2.8): a companion / versioned KB doc is ``is_kb=True``, while a
+        # snapshot ``00-MANIFEST.md`` is ``is_kb=False`` (D5) — validated for
+        # secrets as in-snapshot text, but exempt from the frontmatter/structure
+        # contract.
+        is_kb=_is_kb_document(path),
     )
 
 
@@ -416,22 +407,140 @@ def _parse_snapshot(path: str, text: str) -> Artifact:
     """Parse an inventory Snapshot JSON file into a snapshot Artifact.
 
     The whole file content is handed to the Linter's ``secret-safety`` scan
-    (REVIEW.md C3): a Snapshot must record metadata only, so any secret value,
-    key material, or SecureString content in the file is a CRITICAL finding.
+    (REVIEW.md C3 / R3.1): a Snapshot must record metadata only, so any secret
+    value, key material, or SecureString content in the file is a CRITICAL
+    finding. ``text`` carries the same content on the honest-gates field and
+    ``in_snapshot`` marks a file that lives inside an ``inventory-*`` folder.
+
+    honest-gates 1.7.0 (task 10.3 / R3.5): a ``.json`` snapshot that does **not**
+    parse as JSON carries a ``json-parse`` ``parse-error`` cause. The Linter then
+    reports that parse-error *and* still scans the raw text for secrets (an
+    unparsable file that leaks a key must not slip through), so both findings
+    coexist rather than the parse-error short-circuiting the secret scan.
+    """
+    parse_errors: List[str] = []
+    try:
+        json.loads(text)
+    except json.JSONDecodeError as exc:
+        parse_errors.append(f"json-parse:{exc.msg} (line {exc.lineno}, col {exc.colno})")
+    return Artifact(
+        kind="snapshot",
+        path=path,
+        is_snapshot_file=True,
+        content=text,
+        text=text,
+        in_snapshot=_in_inventory_folder(path),
+        parse_errors=parse_errors,
+    )
+
+
+def _parse_inventory_text(path: str, text: str) -> Artifact:
+    """Parse a non-JSON UTF-8 text file under ``inventory-*`` into a snapshot.
+
+    Every UTF-8 text file inside a Snapshot folder is a snapshot artifact
+    (``in_snapshot=True`` with its raw ``text``) so ``secret-safety`` scans it
+    regardless of extension (R3.5). A Markdown snapshot file is routed through
+    :func:`_parse_markdown` instead (so it is *also* a KB document when it is not
+    an exempt ``00-MANIFEST.md``); this handles ``.yaml``, ``.txt``, ``.csv`` and
+    the like.
     """
     return Artifact(
         kind="snapshot",
         path=path,
         is_snapshot_file=True,
         content=text,
+        text=text,
+        in_snapshot=True,
     )
 
 
-def parse_artifact(path: str) -> Artifact:
-    """Parse a file at ``path`` into an :class:`Artifact` (best-effort).
+# draw.io is the only publishable diagram source in 1.7.0 (D1). A ``.puml`` /
+# ``.mmd`` file is still discovered so the ``source-format`` ERROR (task 10.2)
+# fires on it; here we only route the file and set ``source_format``.
+_SOURCE_FORMAT_BY_SUFFIX = {
+    ".puml": "plantuml",
+    ".mmd": "mermaid",
+}
 
-    ``.drawio`` files parse as diagrams, ``.md``/``.markdown`` as documents, and
-    Snapshot ``.json`` files as snapshots (routed through ``secret-safety``).
+
+def _parse_source_diagram(path: str, text: str, source_format: str) -> Artifact:
+    """Parse a ``.puml`` / ``.mmd`` file into a diagram Artifact (D1).
+
+    The Artifact carries only ``source_format`` and the raw ``text`` — it is not
+    a ``.drawio`` model — so the ``source-format`` rule can report it as a
+    non-publishable diagram source without any geometry parsing.
+    """
+    return Artifact(
+        kind="diagram",
+        path=path,
+        source_format=source_format,
+        is_drawio=False,
+        text=text,
+        in_snapshot=_in_inventory_folder(path),
+    )
+
+
+def _diagram_artifact_from_error(path: str, cause: str) -> Artifact:
+    """A diagram Artifact that carries a single ``parse-error`` cause (R1.8).
+
+    Emitted when a ``.drawio`` file cannot be parsed at all (a
+    ``DrawioParseError``) or when geometry construction raises for one of its
+    pages. It carries no model, so the ``parse-error`` rule (task 10.2) fires and
+    every other rule is skipped for it.
+    """
+    return Artifact(
+        kind="diagram",
+        path=path,
+        source_format="drawio",
+        is_drawio=True,
+        parse_errors=[cause],
+    )
+
+
+def _parse_drawio_artifacts(path: str, text: str) -> List[Artifact]:
+    """Turn a ``.drawio`` file into one Artifact per page (honest-gates R1.3).
+
+    A :class:`DrawioParseError` from the parser yields a single diagram Artifact
+    carrying that cause. Each parsed page becomes one Artifact; a geometry
+    exception raised while building that page's model is caught here and turned
+    into a ``geometry:<Type>:<msg>`` parse-error on that page's Artifact — never
+    the pre-1.7 blanket ``except Exception: geo = None`` that silently dropped
+    the layout rules.
+    """
+    try:
+        pages = parse_drawio(text, path=path)
+    except DrawioParseError as exc:
+        artifact = _diagram_artifact_from_error(path, exc.cause)
+        artifact.label = path
+        return [artifact]
+
+    multi = len(pages) > 1
+    artifacts: List[Artifact] = []
+    for page in pages:
+        try:
+            artifact = _parse_drawio_page(path, page, text)
+        except DrawioParseError as exc:
+            artifact = _diagram_artifact_from_error(path, exc.cause)
+            artifact.page = page.name
+        except Exception as exc:  # geometry construction (R1.8)
+            artifact = _diagram_artifact_from_error(
+                path, f"geometry:{type(exc).__name__}:{exc}"
+            )
+            artifact.page = page.name
+        # Label findings ``<file>#<page>`` for a multi-page file, plain ``<file>``
+        # for a single page (so existing output and tests keep their shape).
+        artifact.label = f"{path}#{page.name}" if multi else path
+        artifacts.append(artifact)
+    return artifacts
+
+
+def parse_artifacts(path: str) -> List[Artifact]:
+    """Parse a file at ``path`` into a list of :class:`Artifact` (R1.3).
+
+    A ``.drawio`` file yields one Artifact per page (labelled ``<file>#<page>``
+    for a multi-page file, plain ``<file>`` for a single page). A ``.md`` /
+    ``.markdown`` file yields a document Artifact and a ``.json`` a snapshot
+    Artifact — each a single-element list.
 
     Raises
     ------
@@ -442,16 +551,90 @@ def parse_artifact(path: str) -> Artifact:
     """
     if not os.path.isfile(path):
         raise FileNotFoundError(path)
-    with open(path, "r", encoding="utf-8", errors="replace") as fh:
-        text = fh.read()
     lower = path.lower()
     if lower.endswith(".drawio"):
-        return _parse_drawio(path, text)
+        with open(path, "rb") as fh:
+            data = fh.read()
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            return [_diagram_artifact_from_error(path, f"unicode:{exc}")]
+        return _parse_drawio_artifacts(path, text)
+
+    # ``.puml`` / ``.mmd`` diagram sources (D1): read strictly as UTF-8 text so a
+    # non-text file is reported rather than silently mangled.
+    source_format = None
+    for suffix, fmt in _SOURCE_FORMAT_BY_SUFFIX.items():
+        if lower.endswith(suffix):
+            source_format = fmt
+            break
+
+    # Every UTF-8 text file under an ``inventory-*`` folder is a Snapshot
+    # artifact (R3.5); a binary file there is a ``parse-error: not-text``. Read
+    # such files strictly (no ``errors="replace"``) so a binary file is caught.
+    in_inventory = _in_inventory_folder(path)
+    strict_text = (
+        source_format is not None
+        or in_inventory
+        or lower.endswith(".json")
+    )
+    if strict_text:
+        with open(path, "rb") as fh:
+            raw = fh.read()
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            if in_inventory:
+                return [
+                    Artifact(
+                        kind="snapshot",
+                        path=path,
+                        is_snapshot_file=True,
+                        in_snapshot=True,
+                        parse_errors=["not-text"],
+                    )
+                ]
+            # A non-inventory ``.puml``/``.mmd``/``.json`` that is not UTF-8:
+            # fall back to lenient decoding so the routing below still applies.
+            text = raw.decode("utf-8", errors="replace")
+    else:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            text = fh.read()
+
+    if source_format is not None:
+        return [_parse_source_diagram(path, text, source_format)]
     if lower.endswith((".md", ".markdown")):
-        return _parse_markdown(path, text)
+        # A Markdown file (KB document, and additionally a snapshot text file
+        # when it lives under ``inventory-*``).
+        return [_parse_markdown(path, text)]
     if lower.endswith(".json"):
-        return _parse_snapshot(path, text)
+        return [_parse_snapshot(path, text)]
+    if in_inventory:
+        # Any other UTF-8 text file inside a Snapshot folder (``.yaml``, ``.txt``,
+        # ``.csv``, …) is a snapshot artifact scanned for secrets.
+        return [_parse_inventory_text(path, text)]
     raise ValueError(f"unsupported artifact type for linting: {path}")
+
+
+def parse_artifact(path: str) -> Artifact:
+    """Parse a single-page file at ``path`` into one :class:`Artifact`.
+
+    Compatibility wrapper for callers that expect exactly one artifact. It
+    returns the sole artifact of a single-page file and raises
+    ``ValueError("multi-page: use parse_artifacts")`` for a multi-page
+    ``.drawio`` file, so no caller silently lints only page one.
+
+    Raises
+    ------
+    FileNotFoundError
+        When ``path`` does not exist.
+    ValueError
+        When the file extension is not supported, or the file has several pages.
+    """
+    artifacts = parse_artifacts(path)
+    if len(artifacts) != 1:
+        raise ValueError("multi-page: use parse_artifacts")
+    return artifacts[0]
 
 
 # Directories excluded from the `--all` scan.
@@ -469,6 +652,7 @@ _EXCLUDED_DIRS = {
     "dist",  # built wheels/sdists
     "_bootstrap",  # bundled workspace-bootstrap payload (build-time copy of the rules)
     ".kiro",  # steering/specs are rule sources, not linted artifacts
+    "tests",  # test inputs (deliberately-invalid parser fixtures) are not workspace artifacts
 }
 
 # Hand-authored repository documents that are not engine-generated KB documents;
@@ -534,6 +718,64 @@ def _is_steering_markdown(path: str) -> bool:
     return False
 
 
+def _in_inventory_folder(path: str) -> bool:
+    """True when ``path`` has an ancestor directory matching ``inventory-*``.
+
+    This is the ``inventory-standards`` Snapshot-folder naming
+    (``inventory-<provider>-<boundary>-<region>-<timestamp>``). Any UTF-8 text
+    file under such a folder is a Snapshot artifact and is secret-scanned
+    regardless of its extension (R3.5), so its directory segments — not its own
+    basename — are what matter.
+    """
+    parts = os.path.normpath(path).split(os.sep)
+    # The final segment is the file itself; only ancestor directories count.
+    return any(seg.startswith("inventory-") for seg in parts[:-1])
+
+
+def _is_snapshot_manifest(path: str) -> bool:
+    """True for a ``00-MANIFEST.md`` inside an ``inventory-*`` Snapshot folder.
+
+    Such a manifest is the Collector's table manifest, owned by
+    ``snapshot_gate``; it is exempt from the generated-KB frontmatter rule (D5).
+    A ``00-MANIFEST.md`` that lives *outside* a Snapshot folder (for example
+    ``examples/azure/00-MANIFEST.md``) is a normal KB document and is not
+    matched here.
+    """
+    return os.path.basename(path).lower() == "00-manifest.md" and _in_inventory_folder(
+        path
+    )
+
+
+def _is_kb_document(path: str) -> bool:
+    """True when a Markdown file is a generated KB document the KB rule applies to.
+
+    ``_is_kb_document = _is_generated_markdown and not _is_snapshot_manifest``
+    (design §2, D5): a companion / versioned KB document is validated for its
+    frontmatter and structure, but a snapshot ``00-MANIFEST.md`` is exempt (it
+    is scanned only for secrets, as an in-snapshot text file).
+    """
+    return _is_generated_markdown(path) and not _is_snapshot_manifest(path)
+
+
+def _json_is_normalized_resource(path: str) -> bool:
+    """True when a ``.json`` file's content is a Normalized Resource.
+
+    A Normalized Resource is an object with ``resource_type`` or ``provider``
+    (or a list of such objects). JSON Schema files and other config JSON are not
+    snapshots and are skipped.
+    """
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            data = json.loads(fh.read())
+    except (OSError, json.JSONDecodeError):
+        return False
+    candidates = data if isinstance(data, list) else [data]
+    for item in candidates:
+        if isinstance(item, dict) and ("resource_type" in item or "provider" in item):
+            return True
+    return False
+
+
 def _is_snapshot_json(path: str) -> bool:
     """Return True when a ``.json`` file is an inventory Snapshot to secret-scan.
 
@@ -546,19 +788,9 @@ def _is_snapshot_json(path: str) -> bool:
 
     JSON Schema files and other config JSON are not snapshots and are skipped.
     """
-    parts = os.path.normpath(path).split(os.sep)
-    if any(seg.startswith("inventory-") for seg in parts):
+    if _in_inventory_folder(path):
         return True
-    try:
-        with open(path, "r", encoding="utf-8", errors="replace") as fh:
-            data = json.loads(fh.read())
-    except (OSError, json.JSONDecodeError):
-        return False
-    candidates = data if isinstance(data, list) else [data]
-    for item in candidates:
-        if isinstance(item, dict) and ("resource_type" in item or "provider" in item):
-            return True
-    return False
+    return _json_is_normalized_resource(path)
 
 
 # Scratch / duplicate file markers. A copy made by an editor or file manager
@@ -630,11 +862,24 @@ def discover_artifacts(workspace_root: str) -> List[str]:
                 continue
             low = name.lower()
             full = os.path.join(dirpath, name)
+            in_inventory = _in_inventory_folder(full)
             if low.endswith(".drawio"):
                 found.append(full)
-            elif low.endswith((".md", ".markdown")) and _is_generated_markdown(full):
+            elif low.endswith((".puml", ".mmd")):
+                # Non-publishable diagram sources, discovered so ``source-format``
+                # (task 10.2) reports them (D1, R10.3).
                 found.append(full)
+            elif low.endswith((".md", ".markdown")):
+                # A generated KB document, or any Markdown inside an
+                # ``inventory-*`` snapshot folder (secret-scanned there even when
+                # it is an exempt ``00-MANIFEST.md``).
+                if _is_kb_document(full) or in_inventory:
+                    found.append(full)
             elif low.endswith(".json") and _is_snapshot_json(full):
+                found.append(full)
+            elif in_inventory:
+                # Any other UTF-8 text (or binary) file inside a Snapshot folder
+                # is a snapshot artifact scanned for secrets (R3.5).
                 found.append(full)
     return sorted(found)
 
@@ -671,6 +916,37 @@ def _result_fails(result: Dict[str, Any], fail_on: Sequence[Severity]) -> bool:
     return any(f.get("severity") in fail_values for f in result.get("findings", []))
 
 
+def _format_offenders(offenders: Sequence[Any]) -> str:
+    """Render a finding's offender ids as ``[a, b, c]`` (empty list → ``[]``).
+
+    Offenders are always identifiers — node/edge/container ids, JSON pointers or
+    ``line:<n>`` locations — never values, so a ``secret-safety`` finding printed
+    here can never leak a secret (design §2, R1.13).
+    """
+    return "[" + ", ".join(str(o) for o in offenders) + "]"
+
+
+def _print_result(result: Dict[str, Any], label: str, failed: bool) -> None:
+    """Print one lint result in the ``[BLOCKED]``/``[OK]`` human format (R1.13).
+
+    A blocked artifact prints its summary line followed by one line per finding::
+
+        [BLOCKED] <label>: rule(SEV), …
+            - SEV rule [offenders]: reason
+    """
+    status = "BLOCKED" if failed else "OK"
+    findings = result.get("findings", [])
+    summary = (
+        ", ".join(f"{f['rule']}({f['severity']})" for f in findings) or "no findings"
+    )
+    print(f"[{status}] {label}: {summary}")
+    for f in findings:
+        offenders = _format_offenders(f.get("offenders", ()))
+        reason = f.get("reason", "") or ""
+        suffix = f": {reason}" if reason else ""
+        print(f"    - {f['severity']} {f['rule']} {offenders}{suffix}")
+
+
 # ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
@@ -705,6 +981,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="workspace root used to locate the ruleset and scan artifacts "
         "(default: current directory)",
     )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="emit the full lint result list as JSON on stdout instead of the "
+        "human-readable [BLOCKED]/[OK] lines",
+    )
     return parser
 
 
@@ -724,17 +1006,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     workspace_root = args.workspace_root or os.getcwd()
 
-    # Requirement 7 AC14: ruleset must be available before any artifact is
-    # eligible; otherwise block everything, fail-closed.
-    resolved_ruleset = find_ruleset(workspace_root=workspace_root)
-    if not _linter.ruleset_available(workspace_root=workspace_root):
-        where = resolved_ruleset or os.path.join(
-            workspace_root, _linter.RULESET_RELATIVE_PATH
-        )
+    # R10.2 / Requirement 7 AC14: the Lint_CLI and the Contract locate the
+    # ruleset the same way and fail closed when it is absent. ``require_ruleset``
+    # resolves it (env var, workspace root, repo checkout, bundled payload) or
+    # raises ``RulesetUnavailableError``, which maps to exit 2 — every artifact
+    # is blocked from publication, and no output is emitted.
+    try:
+        require_ruleset(workspace_root=workspace_root)
+    except RulesetUnavailableError as exc:
         print(
-            f"rule-engine-lint: {RULESET_UNAVAILABLE_ERROR}: authoritative lint "
-            f"ruleset diagram-lint.md is missing or unreadable ({where}). "
-            "Every artifact is blocked from publication.",
+            f"rule-engine-lint: {exc}. Every artifact is blocked from "
+            "publication.",
             file=sys.stderr,
         )
         return EXIT_RULESET_UNAVAILABLE
@@ -761,9 +1043,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return EXIT_OK
 
     any_failed = False
+    json_results: List[Dict[str, Any]] = []
     for target in targets:
         try:
-            artifact = parse_artifact(target)
+            artifacts = parse_artifacts(target)
         except FileNotFoundError:
             print(f"rule-engine-lint: error: file not found: {target}", file=sys.stderr)
             return EXIT_USAGE
@@ -773,22 +1056,21 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             print(f"rule-engine-lint: error: {exc}", file=sys.stderr)
             return EXIT_USAGE
 
-        result = lint(artifact)
-        failed = _result_fails(result, fail_on)
-        any_failed = any_failed or failed
+        for artifact in artifacts:
+            result = lint(artifact)
+            failed = _result_fails(result, fail_on)
+            any_failed = any_failed or failed
 
-        status = "BLOCKED" if failed else "OK"
-        findings = result.get("findings", [])
-        summary = ", ".join(
-            f"{f['rule']}({f['severity']})" for f in findings
-        ) or "no findings"
-        print(f"[{status}] {target}: {summary}")
-        for finding in findings:
-            if finding["severity"] in {s.value for s in fail_on}:
-                print(
-                    f"    - {finding['severity']}: {finding['rule']}",
-                    file=sys.stderr,
-                )
+            # The label names what was evaluated: ``<file>#<page>`` for a page of
+            # a multi-page file, else the file path (R1.13).
+            label = result.get("label") or getattr(artifact, "label", None) or target
+            if args.json:
+                json_results.append(result)
+            else:
+                _print_result(result, label, failed)
+
+    if args.json:
+        print(json.dumps(json_results, indent=2, sort_keys=True))
 
     return EXIT_BLOCKED if any_failed else EXIT_OK
 

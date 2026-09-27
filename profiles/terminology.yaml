@@ -222,3 +222,131 @@ resources:
     generic:
       label: LLM Platform
       aliases: [llm_platform]
+
+  # --- diagram presentation roles (1.7.0, design D4) -----------------------
+  # The seven roles below are not first-class inventory types like the nine
+  # above; they are how a distinct service is *drawn* (its icon), declared as
+  # roles in mappings/roles.yaml. They gain a terminology row here so a
+  # collector can normalize a native type back to the role. They carry native
+  # labels + aliases per provider (aws/azure/gcp/oci) and a generic label;
+  # icons resolve through mappings/roles.yaml -> mappings/icon-index.json, so
+  # no per-row `icon` block is needed.
+
+  compute_instance:
+    aws:
+      label: EC2
+      aliases: ["aws::ec2::instance", aws_instance, ec2, instance]
+    azure:
+      label: Virtual Machines
+      aliases: ["microsoft.compute/virtualmachines", virtual_machine, azurerm_virtual_machine, vm]
+    gcp:
+      label: Compute Engine
+      aliases: ["compute.googleapis.com/instance", google_compute_instance, compute_instance]
+    oci:
+      label: Compute
+      aliases: [oci_core_instance, instance]
+    generic:
+      label: Compute Instance
+      aliases: [compute_instance, vm]
+
+  file_system:
+    aws:
+      label: EFS
+      aliases: ["aws::efs::filesystem", "aws::fsx::filesystem", aws_efs_file_system, efs, fsx]
+    azure:
+      label: Azure Files
+      aliases: ["microsoft.storage/storageaccounts/fileservices", azure_files, file_share]
+    gcp:
+      label: Filestore
+      aliases: ["file.googleapis.com/instance", google_filestore_instance, filestore]
+    oci:
+      label: File Storage
+      aliases: [oci_file_storage_file_system, file_storage, file_system]
+    generic:
+      label: File System
+      aliases: [file_system, nfs]
+
+  cdn:
+    aws:
+      label: CloudFront
+      aliases: ["aws::cloudfront::distribution", aws_cloudfront_distribution, cloudfront, distribution]
+    azure:
+      label: CDN Profiles
+      aliases: ["microsoft.cdn/profiles", azurerm_cdn_profile, cdn_profile]
+    gcp:
+      label: Cloud CDN
+      aliases: [google_compute_backend_service_cdn, cloud_cdn, cdn]
+    oci:
+      label: CDN
+      aliases: [oci_cdn, cdn]
+    generic:
+      label: CDN
+      aliases: [cdn]
+
+  dns:
+    aws:
+      label: Route 53
+      aliases: ["aws::route53::hostedzone", aws_route53_zone, route53, hosted_zone]
+    azure:
+      label: DNS Zones
+      aliases: ["microsoft.network/dnszones", azurerm_dns_zone, dns_zone]
+    gcp:
+      label: Cloud DNS
+      aliases: ["dns.googleapis.com/managedzone", google_dns_managed_zone, managed_zone]
+    oci:
+      label: DNS
+      aliases: [oci_dns_zone, dns_zone, dns]
+    generic:
+      label: DNS
+      aliases: [dns]
+
+  waf:
+    aws:
+      label: WAF
+      aliases: ["aws::wafv2::webacl", aws_wafv2_web_acl, wafv2, web_acl, waf]
+    azure:
+      label: Web Application Firewall
+      aliases: ["microsoft.network/applicationgatewaywebapplicationfirewallpolicies", azurerm_web_application_firewall_policy, waf_policy]
+    gcp:
+      label: Cloud Armor
+      aliases: [google_compute_security_policy, cloud_armor, security_policy]
+    oci:
+      label: WAF
+      aliases: [oci_waf_web_app_firewall, web_app_firewall, waf]
+    generic:
+      label: WAF
+      aliases: [waf, web_application_firewall]
+
+  lb:
+    aws:
+      label: Elastic Load Balancing
+      aliases: ["aws::elasticloadbalancingv2::loadbalancer", aws_lb, elbv2, load_balancer, lb]
+    azure:
+      label: Load Balancers
+      aliases: ["microsoft.network/loadbalancers", azurerm_lb, load_balancer]
+    gcp:
+      label: Cloud Load Balancing
+      aliases: ["compute.googleapis.com/forwardingrule", google_compute_forwarding_rule, forwarding_rule, load_balancing]
+    oci:
+      label: Load Balancer
+      aliases: [oci_load_balancer, load_balancer, lb]
+    generic:
+      label: Load Balancer
+      aliases: [lb, load_balancer]
+
+  cache:
+    aws:
+      label: ElastiCache
+      aliases: ["aws::elasticache::cachecluster", aws_elasticache_cluster, elasticache, cache_cluster]
+    azure:
+      label: Cache for Redis
+      aliases: ["microsoft.cache/redis", azurerm_redis_cache, redis_cache]
+    gcp:
+      label: Memorystore
+      aliases: ["redis.googleapis.com/instance", google_redis_instance, memorystore]
+    oci:
+      label: Cache
+      aliases: [oci_redis_redis_cluster, redis_cluster, cache]
+    generic:
+      label: Cache
+      aliases: [cache, in_memory_cache]

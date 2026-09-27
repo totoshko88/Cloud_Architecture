@@ -119,6 +119,65 @@ def test_ci_icon_index_check_is_blocking():
     assert "--allow-missing" in check[0]
 
 
+def test_ci_test_matrix_covers_311_through_314():
+    """R11.2: the tests run on every minor Python from the 3.11 floor to 3.14."""
+    ci = _load_yaml(".github/workflows/ci.yml")
+    matrix = ci["jobs"]["test"]["strategy"]["matrix"]["python-version"]
+    assert [str(v) for v in matrix] == ["3.11", "3.12", "3.13", "3.14"]
+
+
+def test_ci_runs_the_icon_verifier_strict():
+    """R4.3: CI runs the Icon_Verifier with --strict over all examples."""
+    ci = _load_yaml(".github/workflows/ci.yml")
+    runs = _steps_text(ci["jobs"]["validate"])
+    assert "rule-engine-verify-icon --all --strict" in runs
+
+
+def test_ci_runs_the_generator_check_for_all_eleven_examples():
+    """R8.1: CI runs the generator --check for all eleven Generated_Examples.
+
+    The freshness test enumerates all seven generators / eleven examples, so the
+    single ``pytest tests/test_generators_fresh.py`` step exercises the whole
+    set (OCI xfailed pending task 22)."""
+    ci = _load_yaml(".github/workflows/ci.yml")
+    runs = _steps_text(ci["jobs"]["validate"])
+    assert "tests/test_generators_fresh.py" in runs
+
+
+def test_ci_asset_fetch_is_not_swallowed():
+    """R6.1-R6.3: a pinned-fetch failure fails the job (no `|| echo WARNING`)."""
+    ci = _load_yaml(".github/workflows/ci.yml")
+    fetch = [
+        str(s.get("run", ""))
+        for s in ci["jobs"]["validate"]["steps"]
+        if "fetch_assets.py" in str(s.get("run", ""))
+    ]
+    assert len(fetch) == 1
+    assert "|| echo" not in fetch[0] and "WARNING" not in fetch[0]
+
+
+def test_ci_raster_gate_runs_strict():
+    """R8.3: the raster gate runs fail-closed (no --allow-missing)."""
+    ci = _load_yaml(".github/workflows/ci.yml")
+    raster = [
+        str(s.get("run", ""))
+        for s in ci["jobs"]["validate"]["steps"]
+        if "rule-engine-check-rasters" in str(s.get("run", ""))
+    ]
+    assert len(raster) == 1
+    assert "--allow-missing" not in raster[0]
+
+
+def test_ci_init_check_tolerates_an_edited_file():
+    """R7: --check on a workspace with one edited file reports edited, exits 0."""
+    ci = _load_yaml(".github/workflows/ci.yml")
+    runs = _steps_text(ci["jobs"]["validate"])
+    assert "rule-engine-init --check" in runs
+    # An edit is appended and the re-run --check output is asserted to mention it.
+    assert ">> \"$ws/.kiro/steering/" in runs
+    assert "grep -qi 'edited'" in runs
+
+
 def test_release_requires_the_full_ci_workflow():
     release = _load_yaml(".github/workflows/release.yml")
     jobs = release["jobs"]
@@ -229,7 +288,7 @@ def test_allow_missing_does_not_hide_a_stale_index(tmp_path, monkeypatch):
     monkeypatch.setattr(
         build_icon_sets_cli,
         "build_icon_index",
-        lambda roots, full_packs=False: {"roles": {}, "pack_summary": {}},
+        lambda roots, full_packs=False, pack_pins=None: {"roles": {}, "pack_summary": {}},
     )
     rc = build_icon_sets_cli.main(
         ["--check", "--no-fetch", "--allow-missing", "--asset-root", str(asset_root), "--out", str(stale)]

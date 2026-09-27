@@ -64,6 +64,31 @@ Packs are downloaded on demand into a local, **uncommitted** directory (the `.bu
 
 Vendor icon assets remain under their owners' trademark/usage terms; they are a build-time input, not redistributed by this repository.
 
+### Pinned packs (digest-verified, HTTPS-only) — 1.7.0
+
+Each provider entry in `mappings/asset-sources.yaml` carries a **Pack_Pin**: a
+`sha256` and a `size` for the vendor archive. The Fetcher (`scripts/fetch_assets.py`)
+enforces the pin so the bytes that are indexed are exactly the bytes that were
+pinned — a tampered or silently-updated archive does not reach the index:
+
+- **Pin required.** A provider with no `sha256`/`size` pin is refused; the error
+  points at `--update-pins`. The Fetcher verifies the pin (streaming sha256 + size)
+  before unpacking, and re-hashes a cached archive before reusing it.
+- **HTTPS only.** The initial URL **and every redirect hop** must be HTTPS; a
+  non-HTTPS hop is refused.
+- **Atomic download, fresh unpack.** The archive is downloaded to a temp file and
+  `os.replace`d into `<sha256>.zip` (the cache is keyed by digest); unpacking uses a
+  staging directory with a zip-slip guard and swaps into place, so stale files from a
+  previous pack never reach the index.
+- **Index records the digest.** `mappings/icon-index.json` → `pack_summary` records
+  the `sha256` of every pack, so the committed index states which bytes produced it.
+
+**Updating pins.** `rule-engine-build-icon-sets --update-pins` is the documented,
+one-step command that re-downloads each pack, writes its fresh `sha256`/`size` back
+into `mappings/asset-sources.yaml`, and rebuilds `mappings/icon-index.json`. Run it
+whenever a vendor refreshes a pack; committing the new pins + index is the record of
+the change.
+
 ## Pack Layouts
 
 The indexer understands these layouts (files ending `.svg` preferred, `.png` as raster fallback):

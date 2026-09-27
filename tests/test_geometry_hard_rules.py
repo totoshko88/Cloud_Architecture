@@ -38,6 +38,18 @@ def _sev(result, rule):
     return next((f["severity"] for f in result["findings"] if f["rule"] == rule), None)
 
 
+def _geom(text: str):
+    """Build geometry from ``.drawio`` text.
+
+    ``geometry.build_geometry`` now consumes a parsed
+    :class:`~rule_engine.drawio_model.Page` (honest-gates R1); the single parser
+    turns the XML into pages, and this helper feeds the first page.
+    """
+    from rule_engine.drawio_model import parse_drawio
+
+    return geo.build_geometry(parse_drawio(text, path="<test>.drawio")[0])
+
+
 # --------------------------------------------------------------------------- #
 # label-aware footprint
 # --------------------------------------------------------------------------- #
@@ -940,7 +952,7 @@ def test_all_golden_landscapes_clear_container_labels():
     """Every shipped HA landscape keeps its edges clear of container captions."""
     import glob
     for path in sorted(glob.glob(os.path.join(HERE, "examples", "*", "02-*-landscape.drawio"))):
-        g = geo.build_geometry(open(path, encoding="utf-8").read())
+        g = _geom(open(path, encoding="utf-8").read())
         assert geo.check_edge_crosses_container_label(g) == [], path
 
 
@@ -959,7 +971,7 @@ def test_free_left_corridor_used_for_same_column_tier_skip():
     from ha_multiregion_common import build_landscape
     import importlib
     skin = importlib.import_module("build_aws_ha_example").SKIN
-    g = geo.build_geometry(build_landscape(skin))
+    g = _geom(build_landscape(skin))
     l4 = next(e for e in g.edges if e.id == "l4")
     # Enters app_a2 from the LEFT (entryX == 0), exits the source bottom.
     assert l4.entry[0] is not None and l4.entry[0] <= 0.0, f"l4 entry {l4.entry}"
@@ -987,7 +999,7 @@ def test_cross_region_uses_inter_row_corridor_and_left_entry():
     from ha_multiregion_common import build_landscape
     import importlib
     skin = importlib.import_module("build_aws_ha_example").SKIN
-    g = geo.build_geometry(build_landscape(skin))
+    g = _geom(build_landscape(skin))
     l11 = next(e for e in g.edges if e.id == "l11")
     assert l11.entry[0] is not None and l11.entry[0] <= 0.0, f"l11 entry {l11.entry}"
     # No part of l11 crosses the az-b1 container caption band.
@@ -1009,7 +1021,7 @@ def _aws_landscape_geo():
     from ha_multiregion_common import build_landscape
     import importlib
     skin = importlib.import_module("build_aws_ha_example").SKIN
-    return geo.build_geometry(build_landscape(skin))
+    return _geom(build_landscape(skin))
 
 
 def _seg_list(g, e):

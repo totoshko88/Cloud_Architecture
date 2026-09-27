@@ -1,4 +1,4 @@
-"""Icon-reference verifier for the Diagram & Inventory Rule Engine (v1.3.0).
+"""Icon-reference verifier for the Diagram & Inventory Rule Engine.
 
 A guessed ``resIcon`` / ``grIcon`` id renders as an empty box in draw.io, and the
 linter's ``icon-resolved`` rule only catches an *empty* or literal-placeholder
@@ -8,36 +8,43 @@ resolves every icon reference in a ``.drawio`` source against the provider's
 authoritative icon source, so authors never hand-extract the stencil library to
 confirm a name.
 
-Resolution sources per provider (see ``.kiro/steering/asset-packs.md`` and the
-verified naming conventions):
+Since 1.7.0 (honest-gates) this module carries **no** ``.drawio`` regexes of its
+own. It parses with :func:`rule_engine.drawio_model.parse_drawio` and extracts /
+resolves references with :mod:`rule_engine.icon_refs`, so the verifier and the
+linter's ``icon-resolved`` rule share one vocabulary and cannot drift (R4.1,
+R4.5). Two behaviours follow directly from that shared module:
 
-- **AWS** — built-in ``mxgraph.aws4.*`` stencils. Service nodes use
-  ``shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.<service>``; group
-  containers use ``shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_<kind>``.
-  The set of valid ids is read from ``mappings/aws-icons.yaml`` (the repository's
-  curated, verified allow-list) — never guessed.
-- **Azure** — ``img/lib/azure2/<category>/<Name>.svg`` file-path image shapes.
-- **GCP** — official 2025 category/core icons referenced by file path under the
-  fetched asset root (``assets/vendor/gcp-*``).
-- **OCI** — embedded stencils keyed by slug in
-  ``assets/vendor/oci-stencils/stencils.json``.
-
-The verifier is **fail-honest**: when the authoritative source for a provider is
-not present in the workspace (e.g. assets not fetched), it reports the reference
-as ``skipped`` rather than ``unresolved``, so it never blocks on a missing
-optional asset — mirroring the asset-paths guard's exit policy.
+- **No blind spot on OCI.** OCI nodes embed their glyph as
+  ``shape=stencil(...)`` and carry an ``ociSlug=`` marker; both are verifiable
+  refs, so an OCI node is checked rather than reported ``skipped`` for every
+  provider that is not AWS/Azure (the pre-1.7 gap).
+- **Unverified is honest (R4.2).** A service vertex (a node that is neither a
+  Boundary container nor a text cell) that carries *no* verifiable reference is
+  reported ``unverified`` with its cell id — the gate never silently reports
+  "0 unresolved" as success when in fact nothing was checked.
 
 Public interface::
 
-    verify_drawio(path) -> {
+    verify_drawio(path, workspace_root=None) -> {
         "path": str,
         "references": [ {"cell_id", "kind", "reference", "status", "detail"} ],
-        "unresolved": int,   # references that are well-formed but not found
         "resolved": int,
+        "unresolved": int,   # well-formed but not found -> exit 1 always
         "skipped": int,      # source unavailable, not checkable
+        "unverified": int,   # a service vertex with no verifiable ref (R4.2)
+        "service_vertices": int,
     }
 
     main(argv) -> int   # CLI: rule-engine-verify-icon
+
+Exit codes (design §6, R4.3)::
+
+    0 — nothing to flag (or only skips / unverified without --strict).
+    1 — any ``unresolved`` ref;
+        under --strict: any ``unverified`` ref, or a file that has service
+        vertices and zero ``resolved`` refs (a ``skipped`` ref counts as
+        not-verified).
+    3 — an I/O error or a DrawioParseError.
 """
 
 from __future__ import annotations
@@ -45,175 +52,31 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import re
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional
 
-# Reuse the shared classifier so container vs. service detection cannot drift
-# from the linter's own node counting.
-from rule_engine.constants import is_boundary_container_style as _is_boundary_style
-from rule_engine.azure2_shapes import load_manifest as _load_azure2_manifest
+from rule_engine.drawio_model import DrawioParseError, Page, parse_drawio
+from rule_engine.icon_refs import (
+    RESOLVED,
+    SKIPPED,
+    UNRESOLVED,
+    UNVERIFIED,
+    IconSources,
+    extract_refs,
+    load_sources,
+    resolve,
+    service_vertices,
+)
 
-# --- reference extraction ---------------------------------------------------
-
-_CELL_RE = re.compile(r"<mxCell\b[^>]*?(?:/>|>.*?</mxCell>)", re.S)
-
-
-def _attr(cell: str, name: str) -> Optional[str]:
-    m = re.search(rf'\b{name}="([^"]*)"', cell)
-    return m.group(1) if m else None
-
-
-def _style_token(style: str, name: str) -> Optional[str]:
-    m = re.search(rf"\b{name}=([^;\"]+)", style)
-    return m.group(1).strip() if m else None
-
-
-# Status constants.
-RESOLVED = "resolved"
-UNRESOLVED = "unresolved"
-SKIPPED = "skipped"
-
-
-def _aws_allowed_ids(workspace_root: Path) -> Optional[set]:
-    """Return the set of allowed ``mxgraph.aws4.*`` ids.
-
-    Prefers the committed ``mappings/aws4-icons.json`` manifest — the full aws4
-    stencil-id allow-list (asar-extracted ∪ curated), which covers every service
-    ``resIcon`` and group ``grIcon``, not just the nine neutral types in
-    ``aws-icons.yaml``. Falls back to harvesting ``aws-icons.yaml`` when the
-    manifest is absent, and to ``None`` (skip) when neither is present so AWS
-    references are never wrongly flagged.
-    """
-    from rule_engine.azure2_shapes import load_aws4_manifest
-    manifest = load_aws4_manifest(workspace_root / "mappings" / "aws4-icons.json")
-    if manifest:
-        return manifest
-    mapping = workspace_root / "mappings" / "aws-icons.yaml"
-    if not mapping.is_file():
-        return None
-    text = mapping.read_text(encoding="utf-8")
-    ids = set(re.findall(r"mxgraph\.aws4\.([A-Za-z0-9_]+)", text))
-    return ids or None
-
-
-def _resolve_aws(ref: str, allowed: Optional[set]) -> tuple[str, str]:
-    """Resolve an ``mxgraph.aws4.<id>`` reference against the allow-list."""
-    if allowed is None:
-        return SKIPPED, "mappings/aws-icons.yaml not present"
-    m = re.match(r"mxgraph\.aws4\.([A-Za-z0-9_]+)", ref)
-    if not m:
-        return UNRESOLVED, f"not an mxgraph.aws4.* id: {ref!r}"
-    ident = m.group(1)
-    if ident in allowed:
-        return RESOLVED, f"mxgraph.aws4.{ident}"
-    return UNRESOLVED, (
-        f"mxgraph.aws4.{ident} not in aws-icons.yaml allow-list "
-        f"(guessed/typo id renders as an empty box)"
-    )
-
-
-def _resolve_azure2(ref: str, azure2_paths: Optional[set]) -> tuple[str, str]:
-    """Resolve a draw.io-internal ``img/lib/azure2/*.svg`` path against the manifest.
-
-    The azure2 shapes ship inside the draw.io app (not on disk), so a well-formed
-    but non-existent path (e.g. ``…/Azure_Cache_Redis.svg`` vs the real
-    ``Cache_Redis.svg``) renders as a broken image. ``mappings/azure2-shapes.json``
-    is the committed allow-list; when it is absent the reference is skipped."""
-    if azure2_paths is None:
-        return SKIPPED, "mappings/azure2-shapes.json not present"
-    if ref in azure2_paths:
-        return RESOLVED, ref
-    return UNRESOLVED, (
-        f"azure2 path not in azure2-shapes.json allow-list: {ref} "
-        f"(renders as a broken-image placeholder)"
-    )
-
-
-def _resolve_filepath(ref: str, workspace_root: Path) -> tuple[str, str]:
-    """Resolve a file-path image reference (GCP) under the asset root.
-
-    ``img/lib/azure2/*`` paths are handled by :func:`_resolve_azure2` before this
-    is called; other ``img/lib/*`` shapes (non-azure2 draw.io internals) are not
-    manifested and are skipped."""
-    if ref.startswith("img/lib/"):
-        return SKIPPED, "draw.io-internal img/lib shape (not manifested)"
-    candidate = (workspace_root / ref).resolve()
-    root = (workspace_root / "assets").resolve()
-    if not root.exists():
-        return SKIPPED, "assets/ root not fetched"
-    if candidate.is_file():
-        return RESOLVED, ref
-    return UNRESOLVED, f"image path not found under asset root: {ref}"
-
-
-def _oci_slugs(workspace_root: Path) -> Optional[set]:
-    stencils = workspace_root / "assets" / "vendor" / "oci-stencils" / "stencils.json"
-    if not stencils.is_file():
-        return None
-    try:
-        data = json.loads(stencils.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    if isinstance(data, dict):
-        return set(data.keys()) or None
-    return None
-
-
-def verify_drawio(path: str, workspace_root: Optional[str] = None) -> Dict[str, object]:
-    """Verify every icon reference in a ``.drawio`` file resolves.
-
-    Returns a report dict (see module docstring). A reference is ``resolved``
-    when its id/path exists in the authoritative source, ``unresolved`` when the
-    source is available and the id/path is absent (a guessed name), and
-    ``skipped`` when the source is not present to check against.
-    """
-    p = Path(path)
-    root = Path(workspace_root) if workspace_root else _find_workspace_root(p)
-    text = p.read_text(encoding="utf-8")
-
-    aws_allowed = _aws_allowed_ids(root)
-    oci_slugs = _oci_slugs(root)
-    azure2_paths = _load_azure2_manifest(root / "mappings" / "azure2-shapes.json")
-
-    references: List[Dict[str, str]] = []
-    for cell in _CELL_RE.findall(text):
-        if 'vertex="1"' not in cell:
-            continue
-        cid = _attr(cell, "id") or ""
-        style = _attr(cell, "style") or ""
-
-        res_icon = _style_token(style, "resIcon")
-        gr_icon = _style_token(style, "grIcon")
-        image = _style_token(style, "image")
-
-        if res_icon:
-            status, detail = _resolve_aws(res_icon, aws_allowed)
-            references.append({"cell_id": cid, "kind": "resIcon", "reference": res_icon, "status": status, "detail": detail})
-        if gr_icon:
-            status, detail = _resolve_aws(gr_icon, aws_allowed)
-            references.append({"cell_id": cid, "kind": "grIcon", "reference": gr_icon, "status": status, "detail": detail})
-        if image and not image.startswith("data:"):
-            if image.startswith("img/lib/azure2/"):
-                status, detail = _resolve_azure2(image, azure2_paths)
-                references.append({"cell_id": cid, "kind": "azure2", "reference": image, "status": status, "detail": detail})
-            elif oci_slugs is not None and image in oci_slugs:
-                references.append({"cell_id": cid, "kind": "oci-slug", "reference": image, "status": RESOLVED, "detail": f"OCI stencil slug {image}"})
-            else:
-                status, detail = _resolve_filepath(image, root)
-                references.append({"cell_id": cid, "kind": "image", "reference": image, "status": status, "detail": detail})
-
-    resolved = sum(1 for r in references if r["status"] == RESOLVED)
-    unresolved = sum(1 for r in references if r["status"] == UNRESOLVED)
-    skipped = sum(1 for r in references if r["status"] == SKIPPED)
-    return {
-        "path": str(p),
-        "references": references,
-        "resolved": resolved,
-        "unresolved": unresolved,
-        "skipped": skipped,
-    }
+__all__ = [
+    "RESOLVED",
+    "UNRESOLVED",
+    "SKIPPED",
+    "UNVERIFIED",
+    "verify_drawio",
+    "main",
+]
 
 
 def _find_workspace_root(p: Path) -> Path:
@@ -225,6 +88,163 @@ def _find_workspace_root(p: Path) -> Path:
     return here.parent
 
 
+def _verify_page(page: Page, sources: IconSources) -> tuple[List[Dict[str, str]], int]:
+    """Verify one parsed :class:`Page`.
+
+    Returns ``(references, service_vertex_count)``. Every service vertex is
+    accounted for: a vertex whose refs all resolve/skip contributes those
+    reference rows; a vertex with no *verifiable* reference contributes one
+    ``unverified`` row carrying its cell id (R4.2).
+    """
+    references: List[Dict[str, str]] = []
+    refs_by_cell = extract_refs(page)
+    vertices = service_vertices(page)
+
+    for cell in vertices:
+        cell_refs = refs_by_cell.get(cell.id, [])
+        verifiable_rows: List[Dict[str, str]] = []
+        for ref in cell_refs:
+            status, detail = resolve(ref, sources)
+            row = {
+                "cell_id": cell.id,
+                "kind": ref.kind,
+                "reference": ref.reference,
+                "status": status,
+                "detail": detail,
+            }
+            if status == UNVERIFIED:
+                # A ref kind with no verification source at all does not make
+                # the vertex "verifiable"; fold it into the vertex-level
+                # unverified report below rather than emitting a ref row.
+                continue
+            verifiable_rows.append(row)
+
+        if verifiable_rows:
+            references.extend(verifiable_rows)
+        else:
+            # No verifiable reference on this service vertex -> unverified (R4.2).
+            references.append(
+                {
+                    "cell_id": cell.id,
+                    "kind": "vertex",
+                    "reference": cell.label or cell.id,
+                    "status": UNVERIFIED,
+                    "detail": "service vertex has no verifiable icon reference",
+                }
+            )
+    return references, len(vertices)
+
+
+def verify_drawio(
+    path: str, workspace_root: Optional[str] = None
+) -> Dict[str, object]:
+    """Verify every icon reference in a ``.drawio`` file resolves.
+
+    Parses the file with :func:`rule_engine.drawio_model.parse_drawio` (every
+    page) and resolves each extracted reference with :mod:`rule_engine.icon_refs`.
+    A reference is ``resolved`` when its id/path exists in the authoritative
+    source, ``unresolved`` when the source is available and the id/path is absent
+    (a guessed name), ``skipped`` when the source is not present to check
+    against, and a service vertex with no verifiable reference is reported
+    ``unverified`` (R4.2).
+
+    Raises :class:`~rule_engine.drawio_model.DrawioParseError` when the file
+    cannot be parsed, so the caller maps it to exit 3 (fail-honest — a file the
+    verifier cannot read is never "OK").
+    """
+    p = Path(path)
+    root = Path(workspace_root) if workspace_root else _find_workspace_root(p)
+    data = p.read_bytes()
+
+    pages = parse_drawio(data, path=str(p))
+    sources = load_sources(root)
+
+    references: List[Dict[str, str]] = []
+    service_vertex_count = 0
+    for page in pages:
+        page_refs, page_vertices = _verify_page(page, sources)
+        references.extend(page_refs)
+        service_vertex_count += page_vertices
+
+    resolved = sum(1 for r in references if r["status"] == RESOLVED)
+    unresolved = sum(1 for r in references if r["status"] == UNRESOLVED)
+    skipped = sum(1 for r in references if r["status"] == SKIPPED)
+    unverified = sum(1 for r in references if r["status"] == UNVERIFIED)
+    return {
+        "path": str(p),
+        "references": references,
+        "resolved": resolved,
+        "unresolved": unresolved,
+        "skipped": skipped,
+        "unverified": unverified,
+        "service_vertices": service_vertex_count,
+    }
+
+
+def _exit_code_for(report: Dict[str, object], *, strict: bool) -> int:
+    """Compute the exit code for one report (R4.3 exit-code contract).
+
+    | Condition                                   | default | --strict |
+    | ------------------------------------------- | ------- | -------- |
+    | any ``unresolved`` ref                      | 1       | 1        |
+    | any ``unverified`` ref                      | 0       | 1        |
+    | service vertices present, 0 ``resolved``    | 0       | 1        |
+
+    A ``skipped`` ref counts as not-verified for the third row, so a diagram
+    checked without its assets fails under ``--strict`` instead of passing on
+    zero checks.
+    """
+    if report["unresolved"]:
+        return 1
+    if strict:
+        if report["unverified"]:
+            return 1
+        if report["service_vertices"] and not report["resolved"]:
+            return 1
+    return 0
+
+
+def _mark(status: str) -> str:
+    return {
+        RESOLVED: "OK ",
+        UNRESOLVED: "BAD",
+        SKIPPED: "-- ",
+        UNVERIFIED: "??",
+    }.get(status, "?? ")
+
+
+def _discover_examples(workspace_root: Path) -> List[str]:
+    """Return the ``.drawio`` sources under ``examples/`` using the Lint_CLI filters.
+
+    Reuses ``cli.discover_artifacts`` (which prunes scratch copies, ``-reference``
+    baselines and excluded directories) and keeps only the ``.drawio`` files that
+    live under an ``examples/`` directory, so the verifier's ``--all`` walk sees
+    exactly the diagrams CI lints.
+    """
+    from rule_engine.cli import discover_artifacts
+
+    examples_root = workspace_root / "examples"
+    if not examples_root.is_dir():
+        return []
+    found: List[str] = []
+    for full in discover_artifacts(str(examples_root)):
+        if full.lower().endswith(".drawio"):
+            found.append(full)
+    return sorted(found)
+
+
+def _print_report(report: Dict[str, object]) -> None:
+    for r in report["references"]:
+        mark = _mark(r["status"])
+        cell = r.get("cell_id", "")
+        print(f"[{mark}] {r['kind']:>12} {r['reference']}  ({cell}: {r['detail']})")
+    print(
+        f"\n{report['resolved']} resolved, {report['unresolved']} unresolved, "
+        f"{report['skipped']} skipped, {report['unverified']} unverified "
+        f"({report['service_vertices']} service vertices) in {report['path']}"
+    )
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     """CLI entry point: ``rule-engine-verify-icon``.
 
@@ -232,39 +252,74 @@ def main(argv: Optional[List[str]] = None) -> int:
 
         rule-engine-verify-icon --file path/to/NN-topic.drawio
         rule-engine-verify-icon --file NN.drawio --json
+        rule-engine-verify-icon --all --strict     # CI: walk examples/
 
     Exit codes:
-      0 — every icon reference resolved (or was skipped for a missing source).
-      1 — at least one well-formed reference is unresolved (a guessed id/path).
-      3 — usage / I/O error.
+      0 — nothing to flag (see the exit-code contract in the module docstring).
+      1 — an unresolved ref, or (under --strict) an unverified vertex / a file
+          with service vertices and zero verified refs.
+      3 — usage / I/O error / DrawioParseError.
     """
     ap = argparse.ArgumentParser(prog="rule-engine-verify-icon")
-    ap.add_argument("--file", required=True, help="path to a .drawio source")
+    target = ap.add_mutually_exclusive_group(required=True)
+    target.add_argument("--file", help="path to a .drawio source")
+    target.add_argument(
+        "--all",
+        action="store_true",
+        help="verify every .drawio under examples/ (Lint_CLI discovery filters)",
+    )
     ap.add_argument("--workspace-root", default=None)
+    ap.add_argument(
+        "--strict",
+        action="store_true",
+        help="exit non-zero on an unverified vertex or a file with service "
+        "vertices and zero verified refs",
+    )
     ap.add_argument("--json", action="store_true", help="emit the full JSON report")
     args = ap.parse_args(list(sys.argv[1:] if argv is None else argv))
 
-    path = Path(args.file)
-    if not path.is_file():
-        print(f"error: file not found: {args.file}", file=sys.stderr)
-        return 3
-    try:
-        report = verify_drawio(str(path), args.workspace_root)
-    except OSError as exc:
-        print(f"error: could not read {args.file}: {exc}", file=sys.stderr)
-        return 3
+    # Resolve the list of files to verify.
+    if args.all:
+        root = (
+            Path(args.workspace_root)
+            if args.workspace_root
+            else Path(os.getcwd())
+        )
+        files = _discover_examples(root)
+        if not files:
+            print(
+                f"rule-engine-verify-icon: no .drawio examples found under {root}",
+                file=sys.stderr,
+            )
+            return 3
+    else:
+        path = Path(args.file)
+        if not path.is_file():
+            print(f"error: file not found: {args.file}", file=sys.stderr)
+            return 3
+        files = [str(path)]
+
+    reports: List[Dict[str, object]] = []
+    exit_code = 0
+    for f in files:
+        try:
+            report = verify_drawio(f, args.workspace_root)
+        except DrawioParseError as exc:
+            print(f"error: could not parse {f}: {exc.cause}", file=sys.stderr)
+            return 3
+        except OSError as exc:
+            print(f"error: could not read {f}: {exc}", file=sys.stderr)
+            return 3
+        reports.append(report)
+        exit_code = max(exit_code, _exit_code_for(report, strict=args.strict))
 
     if args.json:
-        print(json.dumps(report, indent=2))
+        print(json.dumps(reports if args.all else reports[0], indent=2))
     else:
-        for r in report["references"]:
-            mark = {"resolved": "OK ", "unresolved": "BAD", "skipped": "-- "}[r["status"]]
-            print(f"[{mark}] {r['kind']:>9} {r['reference']}  ({r['detail']})")
-        print(
-            f"\n{report['resolved']} resolved, {report['unresolved']} unresolved, "
-            f"{report['skipped']} skipped  in {report['path']}"
-        )
-    return 1 if report["unresolved"] else 0
+        for report in reports:
+            _print_report(report)
+
+    return exit_code
 
 
 if __name__ == "__main__":

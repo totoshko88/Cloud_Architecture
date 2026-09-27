@@ -91,6 +91,44 @@ def _severity_of(result, rule_name):
     raise AssertionError(f"rule {rule_name!r} not found in {result['findings']!r}")
 
 
+def _valid_kb_document(*, related_docs: str = "[]") -> str:
+    """Return a complete, valid KB document satisfying the whole contract.
+
+    Twelve-key frontmatter, exactly one H1, and the four required sections each
+    within the 100-200-word bound (and 300-2000 words overall), with no fenced
+    code block (so no ``Anti-patterns`` section is required). Used by tests that
+    exercise a *single* frontmatter aspect end-to-end through the CLI parser, so
+    the structural checks (also part of the ``frontmatter`` rule since 1.7.0) do
+    not fire spuriously.
+    """
+    # A 130-word filler paragraph keeps each section within 100-200 words.
+    para = " ".join(f"word{i}" for i in range(130))
+    frontmatter = (
+        "---\n"
+        "id: doc-1\n"
+        "title: A Document\n"
+        "kb_namespace: arch\n"
+        "section: diagrams\n"
+        "category: reference\n"
+        "status: draft\n"
+        "updated: 2025-01-15\n"
+        "owner: platform-team\n"
+        "author: kiro\n"
+        "next_review_date: 2025-07-15\n"
+        "tags:\n  - cloud\n"
+        f"related_docs: {related_docs}\n"
+        "---\n"
+    )
+    body = (
+        "\n# A Document\n\n"
+        f"## Overview\n\n{para}\n\n"
+        f"## Main Content\n\n{para}\n\n"
+        f"## Troubleshooting\n\n{para}\n\n"
+        f"## See Also\n\n{para}\n"
+    )
+    return frontmatter + body
+
+
 def _clean_diagram(**overrides) -> Artifact:
     """A diagram artifact that triggers no lint rules."""
     base = dict(
@@ -236,20 +274,20 @@ def test_related_docs_may_be_an_empty_list():
 
 
 def test_related_docs_parsed_from_real_markdown_may_be_empty(tmp_path):
-    """The same through the CLI parser: ``related_docs: []`` in a real file."""
+    """The same through the CLI parser: ``related_docs: []`` in a real file.
+
+    As of 1.7.0 (task 10.3) the ``frontmatter`` rule validates the *whole*
+    ``kb-frontmatter.md`` contract, structure included, for a KB document. So the
+    document is authored as a complete, valid KB doc; ``related_docs: []`` must
+    not, on its own, produce any ``frontmatter`` finding.
+    """
     from rule_engine.cli import parse_artifact
 
     doc = tmp_path / "kb-doc.md"
-    doc.write_text(
-        "---\n"
-        "id: doc-1\ntitle: A Document\nkb_namespace: arch\nsection: diagrams\n"
-        "category: reference\nstatus: draft\nupdated: 2025-01-15\n"
-        "owner: platform-team\nauthor: kiro\nnext_review_date: 2025-07-15\n"
-        "tags:\n  - cloud\nrelated_docs: []\n"
-        "---\n\n# A Document\n",
-        encoding="utf-8",
-    )
-    assert RULE_FRONTMATTER not in _rules(lint(parse_artifact(str(doc))))
+    doc.write_text(_valid_kb_document(related_docs="[]"), encoding="utf-8")
+    result = lint(parse_artifact(str(doc)))
+    assert RULE_FRONTMATTER not in _rules(result), result["findings"]
+    assert result["eligible_for_publication"] is True
 
 
 @pytest.mark.parametrize(
@@ -303,12 +341,24 @@ def test_eligibility_false_on_critical():
 # ---------------------------------------------------------------------------
 
 
-def test_missing_ruleset_blocks_every_artifact(tmp_path):
-    """A bogus workspace_root with no ruleset blocks every artifact (AC14)."""
-    bogus_root = tmp_path / "no-such-workspace"
-    # Sanity: the ruleset genuinely cannot be located under the bogus root.
-    assert find_ruleset(workspace_root=str(bogus_root)) is None
-    assert ruleset_available(workspace_root=str(bogus_root)) is False
+def test_missing_ruleset_blocks_every_artifact(tmp_path, monkeypatch):
+    """A set-but-missing ``RULE_ENGINE_RULESET`` blocks every artifact (AC14).
+
+    honest-gates task 7.1 changed the ruleset resolution order so an unknown
+    workspace root falls through to the repository checkout (and then the
+    bundled payload), meaning a bogus ``workspace_root`` no longer yields
+    unavailability. Genuine unavailability is forced the way an operator forces
+    it: pin ``RULE_ENGINE_RULESET`` to a path that does not exist. That env var
+    is authoritative and terminal — there is no fallthrough — so the ruleset is
+    unavailable and the fail-closed AC14 behaviour applies.
+    """
+    from rule_engine.ruleset import RULESET_ENV_VAR
+
+    missing_ruleset = tmp_path / "nonexistent" / "diagram-lint.md"
+    monkeypatch.setenv(RULESET_ENV_VAR, str(missing_ruleset))
+    # Sanity: the ruleset genuinely cannot be located.
+    assert find_ruleset() is None
+    assert ruleset_available() is False
 
     artifacts = [
         _clean_diagram(),  # otherwise-clean, still blocked
@@ -316,7 +366,7 @@ def test_missing_ruleset_blocks_every_artifact(tmp_path):
         Artifact(kind="document", is_markdown=True, frontmatter=VALID_FRONTMATTER),
     ]
     for art in artifacts:
-        result = lint_with_ruleset(art, workspace_root=str(bogus_root))
+        result = lint_with_ruleset(art)
         assert result["eligible_for_publication"] is False
         assert result["error"] == RULESET_UNAVAILABLE_ERROR
         assert result["findings"] == []
@@ -341,3 +391,218 @@ def test_empty_ruleset_file_is_unavailable(tmp_path):
     result = lint_with_ruleset(_clean_diagram(), ruleset_path=str(ruleset))
     assert result["eligible_for_publication"] is False
     assert result["error"] == RULESET_UNAVAILABLE_ERROR
+
+
+# ---------------------------------------------------------------------------
+# New rules and structural rewrites (honest-gates 1.7.0, task 10.2)
+#   parse-error (R1.8/R1.9), edge-endpoint (R1.10), source-format (R10.3/D1);
+#   legend-present / title-versioned / overlay-legend-coverage made structural
+#   (R1.11, R1.12).
+# ---------------------------------------------------------------------------
+
+from rule_engine.linter import (  # noqa: E402
+    RULE_EDGE_ENDPOINT,
+    RULE_OVERLAY_LEGEND_COVERAGE,
+    RULE_PARSE_ERROR,
+    RULE_SOURCE_FORMAT,
+    RULE_SEVERITIES,
+)
+
+
+def _finding(result, rule_name):
+    """Return the finding dict for ``rule_name`` (or raise)."""
+    for f in result["findings"]:
+        if f["rule"] == rule_name:
+            return f
+    raise AssertionError(f"rule {rule_name!r} not found in {result['findings']!r}")
+
+
+# --- parse-error ------------------------------------------------------------
+
+
+def test_parse_error_severity_is_error():
+    assert RULE_SEVERITIES[RULE_PARSE_ERROR] is Severity.ERROR
+
+
+def test_parse_error_fires_on_parse_errors_and_blocks():
+    """A non-empty ``parse_errors`` yields one ERROR naming the cause (R1.8)."""
+    art = Artifact(kind="diagram", parse_errors=["dtd-or-entity-declaration"])
+    result = lint(art)
+    assert RULE_PARSE_ERROR in _rules(result)
+    f = _finding(result, RULE_PARSE_ERROR)
+    assert f["severity"] == Severity.ERROR.value
+    assert f["offenders"] == ["dtd-or-entity-declaration"]
+    assert result["eligible_for_publication"] is False
+
+
+def test_parse_error_short_circuits_every_other_rule():
+    """An unparsable artifact carries no model, so no other rule runs (R1.8).
+
+    The Artifact below would otherwise trip node-count, node-quote, edge-label,
+    legend-present and icon-resolved — but parse-error is the only finding.
+    """
+    art = Artifact(
+        kind="diagram",
+        parse_errors=["geometry:ValueError:bad", "not-text"],
+        node_names=[f"n {i}" for i in range(20)],  # would trip node-count/quote
+        edges=[Edge(source="a", target="b", label="")],  # would trip edge-label
+        has_legend=False,  # would trip legend-present
+        icons=[{"placeholder": True}],  # would trip icon-resolved
+    )
+    result = lint(art)
+    assert _rules(result) == {RULE_PARSE_ERROR}
+    # Both causes are reported as offenders on the single finding.
+    assert _finding(result, RULE_PARSE_ERROR)["offenders"] == [
+        "geometry:ValueError:bad",
+        "not-text",
+    ]
+
+
+def test_no_parse_error_when_parse_errors_empty():
+    """An empty ``parse_errors`` does not fire the rule."""
+    assert RULE_PARSE_ERROR not in _rules(lint(_clean_diagram()))
+
+
+# --- edge-endpoint ----------------------------------------------------------
+
+
+def test_edge_endpoint_severity_is_warning_default():
+    assert RULE_SEVERITIES[RULE_EDGE_ENDPOINT] is Severity.WARNING
+
+
+def test_edge_endpoint_warning_on_flow():
+    """A broken endpoint is a WARNING on a flow diagram (R1.10)."""
+    art = _clean_diagram(edge_endpoints=["dangling-target:ghost"])
+    result = lint(art)
+    assert RULE_EDGE_ENDPOINT in _rules(result)
+    f = _finding(result, RULE_EDGE_ENDPOINT)
+    assert f["severity"] == Severity.WARNING.value
+    assert f["offenders"] == ["dangling-target:ghost"]
+    assert result["eligible_for_publication"] is True
+
+
+def test_edge_endpoint_error_on_landscape():
+    """The same broken endpoint is an ERROR on a landscape (R1.10)."""
+    art = _clean_diagram(
+        edge_endpoints=["missing-source"],
+        diagram_class="landscape",
+        summary_of="01-summary",
+    )
+    result = lint(art)
+    f = _finding(result, RULE_EDGE_ENDPOINT)
+    assert f["severity"] == Severity.ERROR.value
+    assert result["eligible_for_publication"] is False
+
+
+def test_edge_endpoint_reports_every_broken_endpoint():
+    art = _clean_diagram(
+        edge_endpoints=["missing-target", "dangling-source:x"],
+    )
+    f = _finding(lint(art), RULE_EDGE_ENDPOINT)
+    assert f["offenders"] == ["missing-target", "dangling-source:x"]
+
+
+def test_no_edge_endpoint_when_all_resolved():
+    assert RULE_EDGE_ENDPOINT not in _rules(lint(_clean_diagram()))
+
+
+# --- source-format ----------------------------------------------------------
+
+
+def test_source_format_severity_is_error():
+    assert RULE_SEVERITIES[RULE_SOURCE_FORMAT] is Severity.ERROR
+
+
+def test_source_format_fires_on_a_puml_source_file():
+    """A discovered ``.puml`` diagram (is_drawio False, raw text) blocks (D1)."""
+    art = Artifact(
+        kind="diagram",
+        path="examples/x/diagram.puml",
+        source_format="plantuml",
+        is_drawio=False,
+        text="@startuml\n@enduml\n",
+    )
+    result = lint(art)
+    assert RULE_SOURCE_FORMAT in _rules(result)
+    f = _finding(result, RULE_SOURCE_FORMAT)
+    assert f["severity"] == Severity.ERROR.value
+    assert f["offenders"] == ["plantuml"]
+    assert result["eligible_for_publication"] is False
+
+
+def test_source_format_fires_on_a_mmd_source_file():
+    art = Artifact(
+        kind="diagram",
+        path="examples/x/diagram.mmd",
+        source_format="mermaid",
+        is_drawio=False,
+        text="flowchart LR\n",
+    )
+    assert RULE_SOURCE_FORMAT in _rules(lint(art))
+
+
+def test_source_format_does_not_fire_on_a_drawio_artifact():
+    """A parsed .drawio artifact (source_format drawio) is fine."""
+    art = _clean_diagram(source_format="drawio", is_drawio=True)
+    assert RULE_SOURCE_FORMAT not in _rules(lint(art))
+
+
+def test_source_format_does_not_fire_on_a_programmatic_artifact():
+    """A hand-built diagram Artifact keeps the legacy plantuml default with no
+    ``text``; source-format must not block it (else every test artifact fails)."""
+    assert RULE_SOURCE_FORMAT not in _rules(lint(_clean_diagram()))
+
+
+# --- structural legend-present ----------------------------------------------
+
+
+def test_legend_present_reads_the_structural_flag():
+    """``has_legend`` is set structurally by the CLI (a text cell whose first
+    line is ``Legend``); the predicate simply reads it (R1.11)."""
+    assert RULE_LEGEND_PRESENT in _rules(lint(_clean_diagram(has_legend=False)))
+    assert RULE_LEGEND_PRESENT not in _rules(lint(_clean_diagram(has_legend=True)))
+
+
+# --- structural title-versioned ---------------------------------------------
+
+
+def test_title_versioned_fires_when_title_cell_is_none():
+    """The CLI leaves ``title_cell`` None when no cell matches the full versioned
+    title format; the rule then fires (R1.11)."""
+    art = _clean_diagram(title_cell=None)
+    result = lint(art)
+    assert RULE_TITLE_VERSIONED in _rules(result)
+    assert _severity_of(result, RULE_TITLE_VERSIONED) == Severity.WARNING.value
+
+
+def test_title_versioned_clean_on_a_full_title():
+    assert RULE_TITLE_VERSIONED not in _rules(lint(_clean_diagram()))
+
+
+# --- structural overlay-legend-coverage -------------------------------------
+
+
+def test_overlay_legend_coverage_fires_on_an_undocumented_marker():
+    """An overlay marker not present as a whole token in the Legend lines is a
+    WARNING, and the uncovered term is the offender (R1.12)."""
+    art = _clean_diagram(
+        overlay_markers=["standby", "observability-overlay"],
+        legend_overlay_terms=["standby"],  # only standby is documented
+    )
+    result = lint(art)
+    assert RULE_OVERLAY_LEGEND_COVERAGE in _rules(result)
+    f = _finding(result, RULE_OVERLAY_LEGEND_COVERAGE)
+    assert f["severity"] == Severity.WARNING.value
+    assert f["offenders"] == ["observability-overlay"]
+
+
+def test_overlay_legend_coverage_clean_when_every_marker_documented():
+    art = _clean_diagram(
+        overlay_markers=["standby"],
+        legend_overlay_terms=["standby"],
+    )
+    assert RULE_OVERLAY_LEGEND_COVERAGE not in _rules(lint(art))
+
+
+def test_overlay_legend_coverage_skips_a_diagram_with_no_markers():
+    assert RULE_OVERLAY_LEGEND_COVERAGE not in _rules(lint(_clean_diagram()))

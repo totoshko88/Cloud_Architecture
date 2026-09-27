@@ -12,6 +12,7 @@ Usage::
     python scripts/build_oci_ha_example.py                 # write both .drawio files
     python scripts/build_oci_ha_example.py --stdout-summary
     python scripts/build_oci_ha_example.py --stdout-landscape
+    python scripts/build_oci_ha_example.py --check          # compare with committed, write nothing
 """
 
 from __future__ import annotations
@@ -36,6 +37,18 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 import json as _json  # noqa: E402
 
 _STENCILS_PATH = REPO_ROOT / "assets" / "vendor" / "oci-stencils" / "stencils.json"
+if not _STENCILS_PATH.is_file():
+    # A missing input asset is a build-environment condition, distinct from a
+    # stale committed file — exit 2 with a clear fetch instruction (the same
+    # controlled signal build_oci_example.py emits), NOT an uncontrolled
+    # FileNotFoundError traceback. The freshness test treats this exit-2 as a
+    # SKIP in a pack-less environment (e.g. the CI ``test`` job).
+    print(
+        f"build_oci_ha_example: error: extracted stencils not found at "
+        f"{_STENCILS_PATH}. Run: python scripts/fetch_assets.py --only oci",
+        file=sys.stderr,
+    )
+    sys.exit(2)
 _STENCILS = _json.loads(_STENCILS_PATH.read_text(encoding="utf-8"))
 
 # role -> OCI library slug (verified present in stencils.json). `cache` has no

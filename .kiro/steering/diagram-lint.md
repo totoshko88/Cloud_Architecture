@@ -33,12 +33,12 @@ every applicable rule against every artifact.
 | `node-count` | Too many nodes for the diagram class: `flow` &gt; 12 (ERROR); `landscape` &gt; 30 (WARNING), &gt; 50 (ERROR). | ERROR/WARNING | R7 AC4 / R1 AC4 / diagram-standards Diagram Class |
 | `edge-label` | A diagram edge has no non-empty label. | WARNING | R7 AC5 / R1 AC7 |
 | `node-quote` | A node name contains a space or any character outside `[A-Za-z0-9_-]` and is not enclosed in double quotes. | ERROR | R7 AC6 / R1 AC6 |
-| `legend-present` | A diagram has no Legend. | ERROR | R7 AC7 / R5 AC11 |
+| `legend-present` | A diagram has no Legend, identified structurally (a text cell whose first non-empty line is `Legend`) rather than by any occurrence of the word `legend`. | ERROR | R7 AC7 / R5 AC11 / R1 AC11 |
 | `companion-doc` | A `.drawio` file has no matching `.diagram.md` Companion Document. | ERROR | R7 AC8 / R1 AC10 |
-| `frontmatter` | A Markdown document is missing a required Frontmatter key or has a required Frontmatter key with an empty value. | CRITICAL | R7 AC9 / R8 |
-| `icon-resolved` | A diagram icon is an unresolved placeholder rather than a resolved provider icon. | ERROR | R7 AC10 / R2 AC8 |
-| `secret-safety` | A Snapshot file contains a secret value, key material, or a SecureString value. | CRITICAL | R7 AC11 / R3 AC8 |
-| `title-versioned` | A diagram title cell has no version identifier or no date. | WARNING | R7 AC12 / R5 AC9 |
+| `frontmatter` | A generated KB document breaks the `kb-frontmatter.md` contract: a missing/empty required key, a bad `status` enum, a non-calendar date, an out-of-bound `tags`/`related_docs` list, unparsable YAML, or (KB documents only) a document-structure violation. Each finding names the offending key or constraint. | CRITICAL | R7 AC9 / R8 / R2 |
+| `icon-resolved` | A diagram icon is an unresolved placeholder, or a `resIcon`/`grIcon`/`azure2`/OCI-slug reference is an unknown id per the committed manifests (`aws4-icons.json`, `azure2-shapes.json`, `oci-stencil-digests.json`). | ERROR | R7 AC10 / R2 AC8 / R4 AC5 |
+| `secret-safety` | A snapshot file (any text file under `inventory-*`, not only `.json`) carries a secret detected from parsed content — a credential-suffixed key or a secret-shaped value; `[REDACTED]` and `SecureString`/public-cert metadata are not flagged. | CRITICAL | R7 AC11 / R3 |
+| `title-versioned` | A diagram title cell has no version identifier or no date, matched structurally against the full title format (not a `vN` token appearing anywhere). | WARNING | R7 AC12 / R5 AC9 / R1 AC11 |
 | `mermaid-type` | Mermaid is used for a diagram type other than sequence, flow, or state. | WARNING | R7 AC13 / R1 AC2 |
 | `flow-legend` | A diagram uses numeric flow markers on edges but has no `Flow` legend cell covering every marker. | WARNING | diagram-standards Numbered Flow Legend |
 | `edge-routing` | A diagram edge is not orthogonally routed, crosses a node icon, shares a corridor with a parallel edge, overlaps a label/legend, or two edges leave/enter one node side on the same contact point. **Raised to ERROR** when an edge's run cuts through a node icon — an unrelated node (`*-through-*`) or its own target reached from the wrong side (`pierces-target-*`). | WARNING/ERROR | diagram-standards Edge Routing |
@@ -48,7 +48,7 @@ every applicable rule against every artifact.
 | `node-overlap` | Two diagram node icon boxes overlap (intersecting rectangles). | WARNING | diagram-standards Layout Geometry |
 | `arrow-style` | A diagram edge uses a filled/heavy arrowhead (or an unspecified head that defaults to filled), or a stroke width below 1pt. | WARNING | diagram-standards Accessibility & Contrast |
 | `orphan-landscape` | A `landscape`-class diagram declares no valid `summary_of` cross-link to a `flow` summary. | ERROR | diagram-standards Diagram Class |
-| `overlay-legend-coverage` | A diagram carries an overlay marker (findings/state vocabulary) that the Legend does not document. | WARNING | diagram-standards Overlay Vocabulary |
+| `overlay-legend-coverage` | A diagram carries an overlay marker (findings/state vocabulary) whose term does not appear as a whole token in a Legend line. | WARNING | diagram-standards Overlay Vocabulary / R1 AC12 |
 | `exit-thirds` | A node fans out **more than three** edges on one side, or two same-side exits sit closer than ~⅕ of the side (they merge into one doubled line). | WARNING | diagram-standards Label-safe exits |
 | `entry-thirds` | **More than three** edges arrive on one target face, or two arrivals on one face sit closer than ~⅕ of the face (they stack on one contact point — the entry-side mirror of `exit-thirds`). Raised to ERROR for `landscape`. | WARNING/ERROR | diagram-standards Label-safe exits |
 | `container-overlap` | Two sibling (non-nested) Boundary/Network-Boundary containers overlap. Raised to ERROR for `landscape`. | WARNING/ERROR | diagram-standards Container Nesting |
@@ -61,6 +61,9 @@ every applicable rule against every artifact.
 | `node-connectivity` | A role-bearing node is drawn with **zero incident edges** and carries no overlay marker explaining why. Boundary containers and text cells are not nodes and are exempt. | WARNING | diagram-standards Inventory completeness → diagram |
 | `legend-placement` | A `Flow` / `Legend` box does not sit in the **right margin**, at least one grid step past the outermost container's right edge, or overlaps a Boundary container. | WARNING | diagram-standards Reserve the right margin for Flow/Legend |
 | `edge-approach` | Two consecutive points of a route are not axis-aligned (`diagonal-leg`), or the leg touching a contact does not meet its face head-on (`exit-leg-…` / `entry-leg-…`). | WARNING | diagram-standards Every leg is explicitly axis-aligned |
+| `parse-error` | A `.drawio` file does not parse as XML, a Diagram_Page cannot be decompressed, geometry construction raises, or the document declares a DTD / entity. All other rules are skipped for that artifact. | ERROR | R1 AC8 / R1 AC9 |
+| `edge-endpoint` | An edge references a non-existent `source`/`target`, or has neither (`missing-source`, `missing-target`, `dangling-source:<id>`, `dangling-target:<id>`). Raised to ERROR for `landscape`. | WARNING/ERROR | R1 AC10 / diagram-standards Never leave an edge endpoint detached |
+| `source-format` | A diagram is authored in a non-canonical source (`.puml` / `.mmd`); draw.io is the only publishable diagram source (D1). | ERROR | R10 AC3 / diagram-standards Source Format |
 
 ### Rule Detail
 
@@ -348,6 +351,30 @@ every applicable rule against every artifact.
   (`endArrow=open;endFill=0`) over a heavy filled head, and keep stroke width at ≥ 1pt.
   An edge with a filled head (`block`/`classic`/`diamond`/`oval`, fill on), an unspecified
   head (which defaults to filled `classic`), or a sub-1pt `strokeWidth` produces a WARNING.
+- **`parse-error` (ERROR)** — *New in 1.7.0.* The Linter parses every `.drawio`
+  with an XML parser (`rule_engine.drawio_model`), not with regexes, so a "clean"
+  result means a clean diagram rather than an unparsed file. When a file does not
+  parse as XML, a Compressed_Page cannot be decompressed, geometry construction
+  raises, or the document declares a DTD or an entity (the billion-laughs class),
+  the artifact carries a `parse-error` **Blocking** finding that names the file
+  and the machine-readable cause (`dtd-or-entity-declaration`, `geometry:<Type>:<msg>`,
+  `parent-cycle:<id>`, …). Because there is no model to evaluate, **every other
+  rule is skipped for that artifact** — the Linter checks `parse-error` first and
+  short-circuits, so an unparsed file is blocked rather than silently passing the
+  geometry rules (R1.8, R1.9).
+- **`edge-endpoint` (WARNING/ERROR)** — *New in 1.7.0.* An edge whose `source`
+  or `target` references a non-existent cell, or that has neither, is reported
+  with the offending endpoint (`missing-source`, `missing-target`,
+  `dangling-source:<id>`, `dangling-target:<id>`). A detached endpoint renders as
+  a line to nowhere; the CLI records one status per edge from the parsed model.
+  WARNING for `flow`; **raised to ERROR for `landscape`**, where a dense as-built
+  must resolve every endpoint (R1.10).
+- **`source-format` (ERROR)** — *New in 1.7.0.* draw.io is the only publishable
+  diagram source (decision D1): every architecture diagram in the corpus and the
+  mandatory triple are draw.io. A diagram authored in a non-canonical source
+  (`.puml` / `.mmd`) is discovered by `--all` as a diagram Artifact with its
+  `source_format` set and blocked with a `source-format` ERROR, so a PlantUML or
+  Mermaid file is not published as-is but converted to a `.drawio` triple (R10.3).
 
 ## Diagram Class (flow vs landscape)
 
@@ -364,6 +391,7 @@ keeps its exact behavior.
 | `edge-direction` | WARNING | **ERROR** (directional contract is strict) |
 | `edge-float` | WARNING | **ERROR** (every edge must pin its contact points) |
 | `entry-thirds` | WARNING | **ERROR** (arrivals on one face must stay distinct) |
+| `edge-endpoint` | WARNING | **ERROR** (a dense as-built must resolve every endpoint) |
 | `edge-routing` (icon crossing) | **ERROR** | **ERROR** (a run through an icon it does not connect / into its target from the wrong side) |
 | `orphan-landscape` | n/a | ERROR unless `summary_of` names a `flow` summary |
 | `node-connectivity` | WARNING | WARNING (an overlay marker is the sanctioned exemption) |

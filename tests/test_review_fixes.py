@@ -19,12 +19,27 @@ from rule_engine import cli
 from rule_engine.linter import lint
 
 
+def _geom(text: str):
+    """Build geometry from ``.drawio`` text.
+
+    ``geometry.build_geometry`` now consumes a parsed
+    :class:`~rule_engine.drawio_model.Page` (honest-gates R1), so a raw-XML test
+    parses the text into its first page here before building geometry.
+    """
+    from rule_engine import geometry as _g
+    from rule_engine.drawio_model import parse_drawio
+
+    return _g.build_geometry(parse_drawio(text, path="<test>.drawio")[0])
+
+
 # --- C1: single terminology source of truth --------------------------------
 
 
 def test_terminology_covers_all_types_and_providers():
     labels = C.provider_labels()
-    assert set(labels) == set(C.NEUTRAL_RESOURCE_TYPES)
+    # As of 1.7.0 (design D4) the terminology source covers the full 16-value
+    # RESOURCE_TYPES: the nine neutral types plus the seven diagram role types.
+    assert set(labels) == set(C.RESOURCE_TYPES)
     for rtype, per_provider in labels.items():
         assert set(per_provider) == set(C.PROVIDERS), rtype
 
@@ -60,17 +75,20 @@ def test_modules_share_providers_constant():
 
 
 def test_linter_and_normalizer_secret_vocabularies():
-    from rule_engine import linter, normalizer
-    # Two matching semantics, two vocabularies from one place:
-    # - the normalizer matches broad key-name tokens against object keys;
-    assert normalizer._SECRET_KEY_SUBSTRINGS is C.SECRET_MARKERS
-    assert "password" in normalizer._SECRET_KEY_SUBSTRINGS
-    # - the linter scans raw content with the narrow value-oriented list.
-    assert linter._SECRET_MARKERS is C.SECRET_CONTENT_MARKERS
-    # The narrow content list must exclude broad single-word tokens that occur
-    # in ordinary metadata (else secret-free snapshots would be blocked).
-    for broad in ("secret", "token", "credential", "access_key", "apikey"):
-        assert broad not in C.SECRET_CONTENT_MARKERS
+    # As of 1.7.0 (design §5) the Collector, Normalizer and Linter all key off
+    # the single shared vocabulary in ``secret_safety`` — there is no longer a
+    # broad key-name list next to a narrow content list. The Normalizer's digest
+    # drop list uses ``secret_safety.is_credential_key``.
+    from rule_engine import normalizer, secret_safety
+
+    assert normalizer._is_secret_key("db_password") is True
+    assert normalizer._is_secret_key("private_key") is True
+    # A bare metadata key (an object-store key/path) is not a secret to drop.
+    assert normalizer._is_secret_key("object_key") is False
+    # The predicate is the shared one, so the redactor and the digest agree.
+    assert normalizer._is_secret_key("ApiToken") is secret_safety.is_credential_key(
+        "ApiToken"
+    )
 
 
 # --- C3: snapshot JSON discovery + secret-safety ----------------------------
@@ -178,7 +196,7 @@ def test_golden_examples_pass_all_geometry_rules():
 
 def test_geometry_grid_alignment_fires_off_grid():
     from rule_engine import geometry as g
-    geo = g.build_geometry(
+    geo = _geom(
         '<mxGraphModel><root><mxCell id="1"/>'
         '<mxCell id="n1" vertex="1" parent="1" style="shape=x" value="A">'
         '<mxGeometry x="43" y="55" width="78" height="78"/></mxCell>'
@@ -189,7 +207,7 @@ def test_geometry_grid_alignment_fires_off_grid():
 
 def test_geometry_node_overlap_fires():
     from rule_engine import geometry as g
-    geo = g.build_geometry(
+    geo = _geom(
         '<mxGraphModel><root><mxCell id="1"/>'
         '<mxCell id="a" vertex="1" parent="1" style="shape=x" value="A">'
         '<mxGeometry x="100" y="100" width="78" height="78"/></mxCell>'
@@ -202,7 +220,7 @@ def test_geometry_node_overlap_fires():
 
 def test_geometry_edge_routing_flags_nonorthogonal_and_straight_through():
     from rule_engine import geometry as g
-    non_ortho = g.build_geometry(
+    non_ortho = _geom(
         '<mxGraphModel><root><mxCell id="1"/>'
         '<mxCell id="e" edge="1" parent="1" source="a" target="b" style="html=1">'
         '<mxGeometry/></mxCell>'
@@ -212,7 +230,7 @@ def test_geometry_edge_routing_flags_nonorthogonal_and_straight_through():
     )
     assert any(r == "not-orthogonal" for _, r in g.check_edge_routing(non_ortho))
 
-    through = g.build_geometry(
+    through = _geom(
         '<mxGraphModel><root><mxCell id="1"/>'
         '<mxCell id="e" edge="1" parent="1" source="a" target="c" '
         'style="edgeStyle=orthogonalEdgeStyle;exitX=1;exitY=0.5;entryX=0;entryY=0.5"><mxGeometry/></mxCell>'
@@ -238,7 +256,7 @@ def test_geometry_edge_with_waypoints_not_flagged():
     that is actually clear rather than one that only *looked* clear to the old
     diagonal sampler."""
     from rule_engine import geometry as g
-    geo = g.build_geometry(
+    geo = _geom(
         '<mxGraphModel><root><mxCell id="1"/>'
         '<mxCell id="e" edge="1" parent="1" source="a" target="c" '
         'style="edgeStyle=orthogonalEdgeStyle;exitX=0.5;exitY=1;entryX=0.5;entryY=0">'
@@ -254,7 +272,7 @@ def test_geometry_edge_with_waypoints_not_flagged():
 
 def test_geometry_container_padding_fires_when_flush():
     from rule_engine import geometry as g
-    geo = g.build_geometry(
+    geo = _geom(
         '<mxGraphModel><root><mxCell id="1"/>'
         '<mxCell id="boundary-x" vertex="1" parent="1" '
         'style="shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_vpc">'
@@ -283,7 +301,7 @@ def test_golden_examples_pass_arrow_style():
 
 def test_arrow_style_flags_filled_head_thin_stroke_and_unspecified():
     from rule_engine import geometry as g
-    filled = g.build_geometry(
+    filled = _geom(
         '<mxGraphModel><root><mxCell id="1"/>'
         '<mxCell id="e" edge="1" parent="1" source="a" target="b" '
         'style="edgeStyle=orthogonalEdgeStyle;endArrow=block;strokeWidth=1.5"><mxGeometry/></mxCell>'
@@ -293,14 +311,14 @@ def test_arrow_style_flags_filled_head_thin_stroke_and_unspecified():
     )
     assert any(r.startswith("filled-arrowhead") for _, r in g.check_arrow_style(filled))
 
-    thin = g.build_geometry(
+    thin = _geom(
         '<mxGraphModel><root><mxCell id="1"/>'
         '<mxCell id="e" edge="1" parent="1" source="a" target="b" '
         'style="endArrow=open;endFill=0;strokeWidth=0.5"><mxGeometry/></mxCell></root></mxGraphModel>'
     )
     assert any(r.startswith("stroke-width") for _, r in g.check_arrow_style(thin))
 
-    unspec = g.build_geometry(
+    unspec = _geom(
         '<mxGraphModel><root><mxCell id="1"/>'
         '<mxCell id="e" edge="1" parent="1" source="a" target="b" '
         'style="edgeStyle=orthogonalEdgeStyle"><mxGeometry/></mxCell></root></mxGraphModel>'
@@ -310,7 +328,7 @@ def test_arrow_style_flags_filled_head_thin_stroke_and_unspecified():
 
 def test_open_arrowhead_is_clean():
     from rule_engine import geometry as g
-    ok = g.build_geometry(
+    ok = _geom(
         '<mxGraphModel><root><mxCell id="1"/>'
         '<mxCell id="e" edge="1" parent="1" source="a" target="b" '
         'style="edgeStyle=orthogonalEdgeStyle;endArrow=open;endFill=0;strokeWidth=1.5"><mxGeometry/></mxCell>'
@@ -349,9 +367,16 @@ def test_metadata_only_secrets_store_snapshot_is_clean():
 
 
 def test_real_secret_values_still_trip_secret_safety():
-    """SecureString / PEM / aws_secret_access_key values remain CRITICAL."""
+    """SecureString / PEM / aws_secret_access_key values remain CRITICAL.
+
+    As of 1.7.0 (design §5) the shared ``secret_safety`` vocabulary detects a
+    SecureString through the ``{Type: SecureString, Value: …}`` **pair** shape
+    (R3.3) — not a bare ``securestring`` key, which is not a credential suffix.
+    The PEM value and the ``aws_secret_access_key`` credential key remain
+    CRITICAL exactly as before.
+    """
     for payload in (
-        {"securestring": "p@ssw0rd"},
+        {"Type": "SecureString", "Value": "p@ssw0rd"},
         {"key": "-----BEGIN RSA PRIVATE KEY-----abc"},
         {"aws_secret_access_key": "wJalrXUtnFEMIexampleKEY"},
     ):

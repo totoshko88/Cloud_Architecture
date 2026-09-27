@@ -16,10 +16,18 @@ version: 1
 # Where unpacked packs land, relative to the repo root. Git-ignored.
 asset_root: assets/vendor
 
+# Each provider carries a Pack_Pin — a `sha256` (64 hex chars) and `size` (bytes)
+# of the exact archive at `url`. The Fetcher verifies these before unpacking, so
+# the index is built only from known-good bytes. The pins below are empty
+# placeholders; populate them with `rule-engine-build-icon-sets --update-pins`,
+# which downloads each pack over HTTPS, computes the digest and size, and rewrites
+# only the `sha256:`/`size:` lines in each provider block (comments survive).
 providers:
   aws:
     pack: AWS Architecture Icons
     url: "https://d1.awsstatic.com/onedam/marketing-channels/website/public/shared/architecture-icon-release/Icon-package_07312026.5846e92413caa21490223536cc97f1269e44fa92.zip"
+    sha256: "d2d166c453526471749d520e0db022c459abef759d2946cf2dd1d1c992dc6526"                  # populated by --update-pins
+    size: 13988918                    # populated by --update-pins
     unpack_to: aws-icons
     kind: svg-png-tree          # per-service SVG/PNG files in category folders
     icon_source: builtin        # mxgraph.aws4 exists in draw.io; pack is the fallback for new services
@@ -27,6 +35,8 @@ providers:
   azure:
     pack: Azure Public Service Icons
     url: "https://arch-center.azureedge.net/icons/Azure_Public_Service_Icons_V24.zip"
+    sha256: "921594ccd1bf3d9c0a1bd7b6d924e050551a59342f2b353bb74bdcf761c35141"                  # populated by --update-pins
+    size: 1033184                    # populated by --update-pins
     unpack_to: azure-icons
     kind: svg-tree
     icon_source: custom         # azure2 file-path image shapes (img/lib/azure2/*); pack is the asset source
@@ -34,12 +44,16 @@ providers:
   gcp_category:
     pack: GCP Category Icons
     url: "https://services.google.com/fh/files/misc/category-icons.zip"
+    sha256: "e5bc3abd3527dc2500e9bff7f15870783e2c764129c49b7cd4c1b4e105345002"                  # populated by --update-pins
+    size: 795968                    # populated by --update-pins
     unpack_to: gcp-category
     kind: svg-png-tree
     icon_source: custom         # official 2025 category icons, referenced by file path
   gcp_core:
     pack: GCP Core Product Icons
     url: "https://services.google.com/fh/files/misc/core-products-icons.zip"
+    sha256: "6531a10f58bc599c24d9a455d81dd757c1a03c3c43da9cddf639b859c1c1eece"                  # populated by --update-pins
+    size: 318678                    # populated by --update-pins
     unpack_to: gcp-core
     kind: svg-png-tree
     icon_source: custom         # official 2025 core product icons, referenced by file path
@@ -47,6 +61,8 @@ providers:
   oci:
     pack: OCI Style Guide for draw.io
     url: "https://docs.oracle.com/iaas/Content/Resources/Assets/OCI-Style-Guide-for-Drawio.zip"
+    sha256: "8e20646de88b6197f7b2ce941219fdb61e88b2b6276e3e7b5e0ce046445174e8"                  # populated by --update-pins
+    size: 6997183                    # populated by --update-pins
     unpack_to: oci-style
     kind: drawio-library        # a draw.io <mxlibrary> of shape=stencil(...) glyphs keyed by title (no mxgraph.oci.* namespace)
     icon_source: custom         # NO built-in OCI library; stencils come only from this pack

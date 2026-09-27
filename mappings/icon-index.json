@@ -1,16 +1,20 @@
 {
   "pack_summary": {
     "aws": {
-      "count": 1125
+      "count": 1131,
+      "sha256": "d2d166c453526471749d520e0db022c459abef759d2946cf2dd1d1c992dc6526"
     },
     "azure": {
-      "count": 630
+      "count": 634,
+      "sha256": "921594ccd1bf3d9c0a1bd7b6d924e050551a59342f2b353bb74bdcf761c35141"
     },
     "gcp": {
-      "count": 44
+      "count": 45,
+      "sha256": "6531a10f58bc599c24d9a455d81dd757c1a03c3c43da9cddf639b859c1c1eece"
     },
     "oci": {
-      "count": 218
+      "count": 218,
+      "sha256": "8e20646de88b6197f7b2ce941219fdb61e88b2b6276e3e7b5e0ce046445174e8"
     }
   },
   "roles": {

@@ -38,8 +38,12 @@ from rule_engine.normalizer import compute_config_digest
 # A config_digest must be a lowercase SHA-256 hex digest: 64 hex chars.
 _DIGEST_RE = re.compile(r"^[a-f0-9]{64}$")
 
-# Secret-bearing key names that the Normalizer drops during canonicalization
-# (a subset of rule_engine.normalizer._SECRET_KEY_SUBSTRINGS).
+# Secret-bearing key NAMES that the Normalizer drops during canonicalization.
+# As of 1.7.0 (design §5) the digest drop list is the single shared
+# credential-key predicate ``secret_safety.is_credential_key``: a name whose
+# flattened spelling ends in a credential suffix, or a raw ``_key``/``-key``
+# suffix. Each name below satisfies that predicate (``SecureString`` is a value
+# LABEL caught by the pair rule, not a credential key name, so it is not here).
 _SECRET_KEYS: tuple[str, ...] = (
     "password",
     "secret",
@@ -50,7 +54,7 @@ _SECRET_KEYS: tuple[str, ...] = (
     "access_key",
     "secret_key",
     "session_token",
-    "securestring",
+    "client_secret",
 )
 
 

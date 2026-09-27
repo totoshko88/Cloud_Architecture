@@ -54,7 +54,12 @@ def _parse_steering_table() -> dict[str, dict[str, str]]:
 def test_steering_table_matches_terminology_source():
     steering = _parse_steering_table()
     labels = C.provider_labels()
-    assert set(steering) == set(labels) == set(C.NEUTRAL_RESOURCE_TYPES)
+    # The nine-row terminology normalization table in provider-profiles.md covers
+    # the nine neutral resource types. terminology.yaml additionally carries the
+    # seven diagram role rows added in 1.7.0 (design D4); those are documented in a
+    # separate steering table and are not part of this nine-row guardrail.
+    assert set(steering) == set(C.NEUTRAL_RESOURCE_TYPES)
+    assert set(C.NEUTRAL_RESOURCE_TYPES).issubset(set(labels))
     for rtype in C.NEUTRAL_RESOURCE_TYPES:
         for provider in C.PROVIDERS:
             assert steering[rtype][provider] == labels[rtype][provider], (

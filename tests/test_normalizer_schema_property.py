@@ -24,9 +24,9 @@ from __future__ import annotations
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from rule_engine.constants import RESOURCE_TYPES
 from rule_engine.normalizer import (
     PROVIDERS,
-    NEUTRAL_RESOURCE_TYPES,
     _NATIVE_ALIASES,
     normalize,
     normalize_all,
@@ -37,10 +37,11 @@ from rule_engine.schema import resource_errors
 def _provider_native_aliases() -> dict[str, list[str]]:
     """Build ``{provider -> [native aliases...]}`` from the mapping table.
 
-    For each provider, collect every native alias declared across all nine
-    neutral resource types, plus each neutral type string itself (which is
-    always a valid alias for itself in ``TYPE_MAPPING``). Every entry is
-    guaranteed to resolve to a neutral ``resource_type`` for that provider.
+    For each provider, collect every native alias declared across all sixteen
+    resource types (the nine neutral types plus the seven role types), plus each
+    type string itself (which is always a valid alias for itself in
+    ``TYPE_MAPPING``). Every entry is guaranteed to resolve to a schema
+    ``resource_type`` for that provider.
     """
     per_provider: dict[str, set[str]] = {p: set() for p in PROVIDERS}
     for neutral, provider_map in _NATIVE_ALIASES.items():
@@ -118,9 +119,11 @@ def test_normalize_emits_schema_conforming_resource(sample: tuple[dict, str]) ->
     assert errors == [], (
         f"emitted resource failed schema validation for provider {provider!r}: {errors}"
     )
-    # AC2/AC3: provider and resource_type are drawn from the neutral enums.
+    # AC2/AC3: provider and resource_type are drawn from the schema enums.
+    # The resource_type vocabulary is the full 16-value RESOURCE_TYPES (the nine
+    # neutral types plus the seven diagram role types added in 1.7.0, design D4).
     assert normalized["provider"] in PROVIDERS
-    assert normalized["resource_type"] in NEUTRAL_RESOURCE_TYPES
+    assert normalized["resource_type"] in RESOURCE_TYPES
 
 
 @settings(max_examples=100)
@@ -157,7 +160,7 @@ def test_normalize_all_emits_only_schema_conforming_resources(
                 f"provider {provider!r}: {resource_errors(normalized)}"
             )
             assert normalized["provider"] in PROVIDERS
-            assert normalized["resource_type"] in NEUTRAL_RESOURCE_TYPES
+            assert normalized["resource_type"] in RESOURCE_TYPES
 
 
 def test_alias_domain_covers_all_providers() -> None:

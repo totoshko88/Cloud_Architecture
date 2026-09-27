@@ -15,27 +15,44 @@ inherits the always-on rules and can resolve icons through the committed mapping
 
 Usage::
 
-    rule-engine-init                 # bootstrap the current directory
+    rule-engine-init                 # bootstrap / update the current directory
     rule-engine-init /path/to/ws     # bootstrap an explicit workspace
-    rule-engine-init --force         # overwrite existing copies
-    rule-engine-init --check         # report what is missing, write nothing
+    rule-engine-init --force         # back up edited files, then overwrite
+    rule-engine-init --check         # report state per file, write nothing
 
-Source resolution order (first that contains ``.kiro/steering`` + ``mappings``):
-  1. ``--source`` if given;
-  2. the bundled payload shipped inside the installed package
-     (``rule_engine/_bootstrap``) — present in every pip/Power install, so this
-     works with no repo checkout at all;
-  3. the installed engine repo root (this file's ``parents[2]``) — the dev/repo
-     case;
-  4. the cloned power repo at ``~/.kiro/powers/repos/rule-engine-artifacts``.
+Lock file (R7). A normal run records ``.kiro/rule-engine-init.lock.json`` — the
+engine version, which source tree was used, and the sha256 of every copied file.
+On a later run the command classifies each bootstrap file against that lock:
 
-The copy is idempotent: existing files are skipped unless ``--force`` is given.
-Nothing outside the target workspace is ever written.
+  * **missing** — absent from the target: copied.
+  * **current** — target hash equals the source hash: kept.
+  * **stale**   — target hash equals the *lock* hash but the source moved on:
+    updated (the file is an unedited engine file that an upgrade changed).
+  * **edited**  — target hash differs from the lock (a user edit): kept on a
+    bare run; backed up then overwritten under ``--force``.
+  * **extra**   — present in the target's bootstrap dirs but not in the source:
+    kept and reported.
+
+``--check`` reports all five groups and exits non-zero if anything is missing or
+stale; it never creates the target directory (R7.5). Nothing outside the target
+workspace is ever written (R7.6).
+
+Source resolution order (R7.7). When run from a repository checkout the repo tree
+is preferred over the bundled ``_bootstrap`` payload (which may be stale):
+  1. ``--source`` if given (recorded as ``explicit``);
+  2. the repository checkout when this file's ``parents[2]`` holds a
+     ``pyproject.toml`` naming ``rule-engine`` plus ``.kiro/steering`` (``repo``);
+  3. the bundled payload shipped inside the installed package (``bundle``);
+  4. the cloned power repo at ``~/.kiro/powers/repos/rule-engine-artifacts``
+     (``power``).
 """
 
 from __future__ import annotations
 
 import argparse
+import datetime as _dt
+import hashlib
+import json
 import shutil
 import sys
 from pathlib import Path
@@ -75,6 +92,17 @@ _POWER_REPO = Path.home() / ".kiro" / "powers" / "repos" / "rule-engine-artifact
 # workspace with no repo checkout. This is the primary source for a new user.
 _BUNDLED = Path(__file__).resolve().parent / "_bootstrap"
 
+# The repository checkout root (src/rule_engine/init_workspace.py -> parents[2]).
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+
+# Workspace-relative lock file (Glossary → Workspace_Lock_File).
+LOCK_REL = ".kiro/rule-engine-init.lock.json"
+LOCK_VERSION = 1
+
+# --force backs edited files up here (outside .kiro/steering, so a backup is
+# never loaded as steering). One timestamped subdir per --force run.
+BACKUP_DIR_REL = ".kiro/rule-engine-init-backup"
+
 # setuptools' package-data collection drops dot-directories, so the bundled
 # payload stores the .kiro trees under DOT-FREE names ("kiro/..."). This maps a
 # workspace-relative destination to where it lives inside the bundle. Keep in
@@ -85,6 +113,52 @@ _BUNDLE_MAP = {
     ".kiro/hooks": "kiro/hooks",
     ".kiro/agents": "kiro/agents",
 }
+
+
+def _engine_version() -> str:
+    """Return the installed engine version from the package.
+
+    Prefer the package metadata (authoritative for an installed wheel); fall
+    back to ``rule_engine.__version__`` and finally to a repo ``pyproject.toml``
+    so a dev checkout still records a real version in the lock file.
+    """
+    try:
+        from importlib import metadata as _md
+
+        return _md.version("rule-engine")
+    except Exception:  # noqa: BLE001 — not installed as a dist; fall through
+        pass
+    try:
+        from rule_engine import __version__ as _v
+
+        if _v and _v != "0.0.0":
+            return _v
+    except Exception:  # noqa: BLE001
+        pass
+    pyproject = _REPO_ROOT / "pyproject.toml"
+    if pyproject.is_file():
+        for line in pyproject.read_text(encoding="utf-8").splitlines():
+            stripped = line.strip()
+            if stripped.startswith("version") and "=" in stripped:
+                return stripped.split("=", 1)[1].strip().strip('"').strip("'")
+    return "0.0.0"
+
+
+def _sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _within(root: Path, path: Path) -> bool:
+    """True when ``path`` resolves inside ``root`` (write-safety guard, R7.6)."""
+    try:
+        Path(path).resolve().relative_to(root.resolve())
+        return True
+    except ValueError:
+        return False
 
 
 def _source_subdir(source: Path, dest_rel: str) -> Path:
@@ -111,27 +185,62 @@ def _looks_like_source(root: Path) -> bool:
     return has_steering and (root / "mappings").is_dir()
 
 
+def _is_repo_checkout(root: Path) -> bool:
+    """True when ``root`` is the engine's own repository checkout (R7.7).
+
+    A repo checkout has a ``pyproject.toml`` naming ``rule-engine`` and the
+    dot-prefixed ``.kiro/steering`` tree. The built ``_bootstrap`` bundle has
+    neither, so this cleanly distinguishes the two.
+    """
+    if not (root / ".kiro" / "steering").is_dir():
+        return False
+    pyproject = root / "pyproject.toml"
+    if not pyproject.is_file():
+        return False
+    try:
+        text = pyproject.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return 'name = "rule-engine"' in text or "name = 'rule-engine'" in text
+
+
 def resolve_source(explicit: Optional[str]) -> Optional[Path]:
     """Find the engine source tree that holds steering + mappings.
 
-    Preference order: an explicit ``--source``; the payload bundled inside the
-    installed package (works with no repo); the installed repo root (dev case);
-    the cloned power repo. The bundled payload comes before the repo root so a
-    normal install self-configures even when the caller sits inside an unrelated
-    checkout.
+    Preference order (R7.7): an explicit ``--source``; the **repository
+    checkout** when this file lives inside one (its tree is authoritative and
+    the built ``_bootstrap`` may be stale); the bundled package payload (a
+    pip/Power install with no repo); the cloned power repo.
     """
     candidates: list[Path] = []
     if explicit:
         candidates.append(Path(explicit).expanduser().resolve())
-    # Bundled package payload first: this is what a pip/Power install ships.
+    # Repository checkout first when this file is inside one — its tree is the
+    # live source of truth, so an in-repo run never reads a stale bundle (R7.7).
+    if _is_repo_checkout(_REPO_ROOT):
+        candidates.append(_REPO_ROOT)
+    # Bundled package payload: what a pip/Power install ships.
     candidates.append(_BUNDLED)
-    # Installed engine repo root: src/rule_engine/init_workspace.py -> parents[2].
-    candidates.append(Path(__file__).resolve().parents[2])
+    # Installed engine repo root (dev case) even if the pyproject probe missed.
+    candidates.append(_REPO_ROOT)
     candidates.append(_POWER_REPO)
     for root in candidates:
         if root.is_dir() and _looks_like_source(root):
             return root
     return None
+
+
+def source_kind(source: Path, explicit: Optional[str]) -> str:
+    """Classify a resolved source for the lock file's ``source`` field."""
+    if explicit and Path(explicit).expanduser().resolve() == source:
+        return "explicit"
+    if source == _BUNDLED:
+        return "bundle"
+    if source == _POWER_REPO:
+        return "power"
+    if source == _REPO_ROOT:
+        return "repo"
+    return "explicit"
 
 
 def _iter_files(src_dir: Path) -> Iterable[Path]:
@@ -140,40 +249,213 @@ def _iter_files(src_dir: Path) -> Iterable[Path]:
             yield p
 
 
-def bootstrap(
-    source: Path,
-    target: Path,
-    *,
-    force: bool = False,
-    check: bool = False,
-) -> tuple[list[str], list[str]]:
-    """Copy the bootstrap dirs from ``source`` into ``target``.
-
-    Returns ``(written, skipped)`` as lists of workspace-relative paths. In
-    ``check`` mode nothing is written; ``written`` lists what *would* be copied.
-    """
-    written: list[str] = []
-    skipped: list[str] = []
+def _source_files(source: Path) -> dict[str, Path]:
+    """Map every bootstrap file's workspace-relative path to its source path."""
+    out: dict[str, Path] = {}
     for dest_rel in _BOOTSTRAP_DIRS:
         src_dir = _source_subdir(source, dest_rel)
         if not src_dir.is_dir():
             continue
         dest_base = Path(dest_rel)  # always the dot-prefixed workspace path
         for src_file in _iter_files(src_dir):
-            # Reconstruct the workspace-relative path from the destination base
-            # plus the file's position within the source subdir — so a dot-free
-            # bundle path ("kiro/steering/x.md") lands at ".kiro/steering/x.md".
             rel_path = dest_base / src_file.relative_to(src_dir)
-            dst_file = target / rel_path
-            if dst_file.exists() and not force:
-                skipped.append(str(rel_path))
-                continue
-            written.append(str(rel_path))
-            if check:
-                continue
-            dst_file.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src_file, dst_file)
-    return written, skipped
+            out[rel_path.as_posix()] = src_file
+    return out
+
+
+def _target_bootstrap_files(target: Path) -> set[str]:
+    """Every existing file under the target's bootstrap dirs (for extra detection)."""
+    out: set[str] = set()
+    for dest_rel in _BOOTSTRAP_DIRS:
+        base = target / dest_rel
+        if not base.is_dir():
+            continue
+        for p in _iter_files(base):
+            out.add(p.relative_to(target).as_posix())
+    return out
+
+
+def load_lock(target: Path) -> dict:
+    """Read the workspace lock file, or an empty structure when absent/unreadable."""
+    lock_path = target / LOCK_REL
+    if not lock_path.is_file():
+        return {}
+    try:
+        data = json.loads(lock_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return data
+
+
+def _lock_hashes(lock: dict) -> dict[str, str]:
+    files = lock.get("files")
+    return dict(files) if isinstance(files, dict) else {}
+
+
+def classify(
+    source: Path,
+    target: Path,
+    lock: dict,
+) -> dict[str, list[str]]:
+    """Classify every bootstrap file into missing/current/stale/edited/extra.
+
+    The state machine follows design §9:
+
+    ======= ============================================ 
+    missing  dst absent
+    current  dst == src
+    stale    dst == lock != src
+    edited   dst != lock (or no lock and dst != src)
+    extra    in target bootstrap dirs, not in source
+    ======= ============================================ 
+    """
+    src_files = _source_files(source)
+    lock_hashes = _lock_hashes(lock)
+    groups: dict[str, list[str]] = {
+        "missing": [],
+        "current": [],
+        "stale": [],
+        "edited": [],
+        "extra": [],
+    }
+
+    for rel, src_path in src_files.items():
+        dst_path = target / rel
+        if not dst_path.is_file():
+            groups["missing"].append(rel)
+            continue
+        src_hash = _sha256_file(src_path)
+        dst_hash = _sha256_file(dst_path)
+        lock_hash = lock_hashes.get(rel)
+        if dst_hash == src_hash:
+            groups["current"].append(rel)
+        elif lock_hash is not None and dst_hash == lock_hash:
+            # Unedited engine file that the source has since moved past.
+            groups["stale"].append(rel)
+        else:
+            # dst != lock (edited), or no lock recorded and dst != src.
+            groups["edited"].append(rel)
+
+    # Extra: present in the target's bootstrap dirs but not in the source. The
+    # lock file itself is engine bookkeeping, not an extra bootstrap file.
+    for rel in _target_bootstrap_files(target):
+        if rel not in src_files and rel != LOCK_REL:
+            groups["extra"].append(rel)
+
+    for key in groups:
+        groups[key].sort()
+    return groups
+
+
+def write_lock(
+    target: Path,
+    source: Path,
+    src_files: dict[str, Path],
+    copied_now: set[str],
+    prior_lock: dict,
+    *,
+    explicit: Optional[str] = None,
+) -> None:
+    """Write the workspace lock recording the hash of every copied file (R7.1).
+
+    A file written on this run is locked at its source hash. An **edited** file
+    that was left in place keeps its *prior* lock hash, so it still reads as
+    edited on the next run (design §9). A file present and matching the source
+    but not copied this run is locked at its (identical) source hash.
+    """
+    prior = _lock_hashes(prior_lock)
+    files: dict[str, str] = {}
+    for rel, src_path in src_files.items():
+        dst_path = target / rel
+        if rel in copied_now:
+            files[rel] = _sha256_file(src_path)
+        elif dst_path.is_file():
+            dst_hash = _sha256_file(dst_path)
+            src_hash = _sha256_file(src_path)
+            if dst_hash == src_hash:
+                # Current / freshly-in-sync: lock at the shared hash.
+                files[rel] = src_hash
+            elif rel in prior:
+                # Left-in-place edited file: keep its old lock hash.
+                files[rel] = prior[rel]
+            else:
+                # No prior lock and dst != src: still user content, lock to dst
+                # so a later engine change surfaces as stale, not edited-again.
+                files[rel] = dst_hash
+        elif rel in prior:
+            files[rel] = prior[rel]
+
+    lock = {
+        "lock_version": LOCK_VERSION,
+        "engine_version": _engine_version(),
+        "source": source_kind(source, explicit),
+        "files": dict(sorted(files.items())),
+    }
+    lock_path = target / LOCK_REL
+    if not _within(target, lock_path):  # defensive (R7.6)
+        raise ValueError(f"lock path escapes target: {lock_path}")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path.write_text(json.dumps(lock, indent=2) + "\n", encoding="utf-8")
+
+
+def bootstrap(
+    source: Path,
+    target: Path,
+    *,
+    force: bool = False,
+    check: bool = False,
+    explicit: Optional[str] = None,
+) -> dict[str, list[str]]:
+    """Apply the lock-file state machine from ``source`` into ``target``.
+
+    Returns the classification groups (missing/current/stale/edited/extra). In
+    ``check`` mode nothing is written. On a bare run missing files are copied and
+    stale files are updated; edited files are kept. Under ``--force`` edited files
+    are backed up then overwritten, and stale files are updated. The lock file is
+    (re)written after any write run.
+    """
+    lock = load_lock(target)
+    groups = classify(source, target, lock)
+    if check:
+        return groups
+
+    src_files = _source_files(source)
+    copied_now: set[str] = set()
+    backup_root: Optional[Path] = None
+
+    def _copy(rel: str) -> None:
+        src_file = src_files[rel]
+        dst_file = target / rel
+        if not _within(target, dst_file):  # defensive (R7.6)
+            raise ValueError(f"destination escapes target: {dst_file}")
+        dst_file.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src_file, dst_file)
+        copied_now.add(rel)
+
+    # missing -> copy (always); stale -> update (always).
+    for rel in groups["missing"]:
+        _copy(rel)
+    for rel in groups["stale"]:
+        _copy(rel)
+
+    # edited -> keep on a bare run; under --force back up then overwrite (R7.4).
+    if force:
+        stamp = _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        for rel in groups["edited"]:
+            if backup_root is None:
+                backup_root = target / BACKUP_DIR_REL / stamp
+            backup_path = backup_root / rel
+            if not _within(target, backup_path):  # defensive (R7.6)
+                raise ValueError(f"backup path escapes target: {backup_path}")
+            backup_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(target / rel, backup_path)
+            _copy(rel)
+
+    write_lock(target, source, src_files, copied_now, lock, explicit=explicit)
+    # Re-classify so the return value reflects the post-write state.
+    return {**classify(source, target, load_lock(target)), "_copied": sorted(copied_now)}
 
 
 def main(argv: Optional[list[str]] = None) -> int:
@@ -188,16 +470,18 @@ def main(argv: Optional[list[str]] = None) -> int:
     )
     parser.add_argument(
         "--source", default=None,
-        help="Explicit engine source tree (default: installed repo, then the "
-        "cloned power repo).",
+        help="Explicit engine source tree (default: repo checkout, then the "
+        "bundled payload, then the cloned power repo).",
     )
     parser.add_argument(
         "--force", action="store_true",
-        help="Overwrite files that already exist in the target.",
+        help="Back up every edited file, then overwrite it from the source.",
     )
     parser.add_argument(
         "--check", action="store_true",
-        help="Report what is missing without writing anything.",
+        help="Report the state of each file (missing/edited/stale/extra) "
+        "without writing anything; exits non-zero if any file is missing or "
+        "stale. Does not create the target directory.",
     )
     parser.add_argument(
         "--with-assets", action="store_true",
@@ -225,29 +509,33 @@ def main(argv: Optional[list[str]] = None) -> int:
         )
         return EXIT_OK
 
-    target.mkdir(parents=True, exist_ok=True)
-    written, skipped = bootstrap(source, target, force=args.force, check=args.check)
-
+    # --check must NOT create the target directory (R7.5). A non-existent target
+    # reports every source file as missing.
     if args.check:
-        if written:
-            print(f"rule-engine-init --check: {len(written)} file(s) MISSING from "
-                  f"{target} (run `rule-engine-init` to bootstrap):")
-            for rel in written:
-                print(f"  + {rel}")
-            return EXIT_FAIL
-        print(f"OK: workspace {target} already has the Rule Engine rules "
-              f"({len(skipped)} file(s) present).")
-        return EXIT_OK
+        lock = load_lock(target) if target.is_dir() else {}
+        groups = classify(source, target, lock)
+        return _report_check(source, target, groups)
 
-    print(f"rule-engine-init: source {source}")
+    target.mkdir(parents=True, exist_ok=True)
+    result = bootstrap(source, target, force=args.force, explicit=args.source)
+    copied = result.get("_copied", [])
+
+    print(f"rule-engine-init: source {source} ({source_kind(source, args.source)})")
     print(f"rule-engine-init: target {target}")
-    print(f"  copied {len(written)} file(s), skipped {len(skipped)} existing "
-          f"(use --force to overwrite).")
-    if written:
-        for rel in written[:12]:
+    print(
+        f"  copied {len(copied)} file(s); "
+        f"kept {len(result['edited'])} edited, {len(result['extra'])} extra "
+        f"(use --force to back up and overwrite edited files)."
+    )
+    if copied:
+        for rel in copied[:12]:
             print(f"  + {rel}")
-        if len(written) > 12:
-            print(f"  … and {len(written) - 12} more")
+        if len(copied) > 12:
+            print(f"  … and {len(copied) - 12} more")
+    if result["edited"]:
+        for rel in result["edited"][:12]:
+            print(f"  ~ edited (kept): {rel}")
+    print(f"  lock: {target / LOCK_REL}")
     print("Done. The .kiro/steering rules are now always-on in this workspace.")
 
     if args.with_assets:
@@ -255,6 +543,40 @@ def main(argv: Optional[list[str]] = None) -> int:
         if rc != EXIT_OK:
             return rc
 
+    return EXIT_OK
+
+
+def _report_check(source: Path, target: Path, groups: dict[str, list[str]]) -> int:
+    """Print the five --check groups and return the exit code (R7.2)."""
+    if not target.is_dir():
+        print(f"rule-engine-init --check: target {target} does not exist; "
+              f"all {len(groups['missing'])} file(s) are MISSING.")
+    else:
+        print(f"rule-engine-init --check: target {target}")
+
+    def _emit(label: str, sign: str, rels: list[str]) -> None:
+        if not rels:
+            return
+        print(f"  {label}: {len(rels)}")
+        for rel in rels:
+            print(f"    {sign} {rel}")
+
+    _emit("MISSING", "+", groups["missing"])
+    _emit("EDITED", "~", groups["edited"])
+    _emit("STALE", "*", groups["stale"])
+    _emit("EXTRA", "?", groups["extra"])
+
+    blocking = len(groups["missing"]) + len(groups["stale"])
+    if blocking:
+        print(
+            f"rule-engine-init --check: {len(groups['missing'])} missing, "
+            f"{len(groups['stale'])} stale — run `rule-engine-init` to update."
+        )
+        return EXIT_FAIL
+    print(
+        f"OK: {len(groups['current'])} current, {len(groups['edited'])} edited, "
+        f"{len(groups['extra'])} extra; nothing missing or stale."
+    )
     return EXIT_OK
 
 
@@ -266,6 +588,7 @@ def _fetch_assets_into(target: Path) -> int:
     committed (git-ignored). Without them a GCP/OCI diagram renders empty boxes in
     a fresh workspace. This fetches the packs into the target and rebuilds the
     target's ``mappings/icon-index.json`` so those references resolve on disk.
+    Every write stays inside ``target`` (R7.6).
     """
     try:
         from rule_engine import fetch_assets
@@ -290,7 +613,10 @@ def _fetch_assets_into(target: Path) -> int:
               f"{', '.join(failures)} (check network access).", file=sys.stderr)
         return EXIT_FAIL
 
-    # Rebuild the target's icon-index against the freshly-fetched packs.
+    # Rebuild the target's icon-index against the freshly-fetched packs. The
+    # manifests dir is pinned to the TARGET's mappings so the builder never
+    # refreshes the engine's own committed manifests (R7.6 — writes stay inside
+    # the target).
     try:
         from rule_engine import build_icon_sets_cli
     except Exception as exc:  # noqa: BLE001
@@ -298,8 +624,19 @@ def _fetch_assets_into(target: Path) -> int:
         return EXIT_FAIL
     asset_root = target / "assets" / "vendor"
     out = target / "mappings" / "icon-index.json"
+    manifests_dir = target / "mappings"
+    if not (_within(target, asset_root) and _within(target, out)
+            and _within(target, manifests_dir)):  # defensive (R7.6)
+        print("rule-engine-init: asset paths escape target; refusing.", file=sys.stderr)
+        return EXIT_FAIL
+    # --manifests-dir pins the committed manifests (icon-index, oci digests,
+    # azure2/aws4) into the TARGET's mappings/, so the builder never writes into
+    # the engine's own mappings/ tree (R7.6 — writes stay inside the target).
     rc = build_icon_sets_cli.main([
-        "--no-fetch", "--asset-root", str(asset_root), "--out", str(out),
+        "--no-fetch",
+        "--asset-root", str(asset_root),
+        "--out", str(out),
+        "--manifests-dir", str(manifests_dir),
     ])
     if rc != 0:
         print("rule-engine-init: icon-index rebuild failed.", file=sys.stderr)

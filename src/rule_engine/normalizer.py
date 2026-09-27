@@ -33,12 +33,13 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from rule_engine import identity, secret_safety
 from rule_engine.constants import (
     NEUTRAL_RESOURCE_TYPES,
     PROVIDERS,
-    SECRET_MARKERS,
     native_aliases,
 )
+from rule_engine.identity import flat
 from rule_engine.schema import ResourceValidationError, validate_resource
 
 __all__ = [
@@ -136,25 +137,24 @@ TYPE_MAPPING: dict[str, dict[str, str]] = _build_type_mapping()
 # Secret-safety: keys dropped from the config before hashing
 # --------------------------------------------------------------------------- #
 #
-# Any object key whose (lower-cased) name contains one of these substrings is a
-# secret-bearing field and is dropped during canonicalization (design section 4c
-# step 1; secret-safety). This keeps secret values, key material, and
-# SecureString contents out of the hashed bytes.
-# Config-key drop list: the shared broad secret vocabulary
-# (constants.SECRET_MARKERS), matched against object KEY NAMES.
-_SECRET_KEY_SUBSTRINGS: tuple[str, ...] = SECRET_MARKERS
+# Any object key that names credential material is dropped during
+# canonicalization (design section 4c step 1; secret-safety), so secret values,
+# key material, and SecureString contents stay out of the hashed bytes. The
+# credential-key predicate is the single shared one from
+# :mod:`rule_engine.secret_safety` (design §5), so the digest drop list, the
+# redactor and the Linter cannot disagree about what a secret key is.
 
 
 def _is_secret_key(key: str) -> bool:
-    """Return True when ``key`` names a secret-bearing field to drop."""
-    low = str(key).lower()
-    if low in ("key", "keys"):
-        # Bare "key" is ambiguous (e.g. an object-store key/path); the design's
-        # secret heuristic targets credential material, so treat only compound
-        # names such as ``private_key``/``secret_key`` as secrets. A bare "key"
-        # is retained.
-        return False
-    return any(sub in low for sub in _SECRET_KEY_SUBSTRINGS)
+    """Return True when ``key`` names a secret-bearing field to drop.
+
+    Delegates to :func:`secret_safety.is_credential_key`, the single shared
+    key-name rule (design §5). It already keeps a bare object-store ``key``
+    metadata via :data:`secret_safety.METADATA_KEYS` where appropriate and
+    treats compound credential names (``private_key``, ``secret_key``,
+    ``password``) as secrets.
+    """
+    return secret_safety.is_credential_key(key)
 
 
 # --------------------------------------------------------------------------- #
@@ -288,32 +288,68 @@ def resolve_resource_type(native_type: Any, provider: str) -> str | None:
 # Native-field extraction helpers
 # --------------------------------------------------------------------------- #
 
-# Common native field aliases for each sourced Normalized field. The native
-# resource is expected to be a mapping; the first present, non-empty alias wins.
+# Common native field aliases for each sourced Normalized field, expressed as
+# **flat** names (lower-cased, non-alphanumerics dropped — :func:`identity.flat`).
+# ``_extract`` matches them against a resource's own keys by their flat spelling,
+# so a PascalCase SDK response (``InstanceId``, ``DisplayName``, ``Tags``)
+# resolves exactly like ``instance_id`` / ``display_name`` / ``tags`` (R5.3).
+# The first present, non-empty alias wins.
 _FIELD_ALIASES: dict[str, tuple[str, ...]] = {
-    "native_type": ("native_type", "type", "resource_type", "kind"),
-    "id": ("id", "arn", "resource_id", "self_link", "ocid", "uid"),
-    "name": ("name", "display_name", "resource_name"),
-    "boundary": ("boundary", "boundary_id", "account", "account_id", "subscription",
-                 "subscription_id", "project", "project_id", "tenancy", "compartment",
-                 "compartment_id"),
-    "region": ("region", "location", "availability_domain", "zone"),
+    "native_type": ("nativetype", "type", "resourcetype", "kind"),
+    "id": ("id", "arn", "resourceid", "selflink", "ocid", "uid"),
+    "name": ("name", "displayname", "resourcename"),
+    "boundary": ("boundary", "boundaryid", "account", "accountid", "subscription",
+                 "subscriptionid", "project", "projectid", "tenancy", "compartment",
+                 "compartmentid"),
+    "region": ("region", "location", "availabilitydomain", "zone"),
     "tags": ("tags", "labels"),
 }
 
 
-def _extract(native: dict[str, Any], field: str) -> Any:
-    """Return the first present value among ``field``'s aliases, else ``None``."""
+def _flat_lookup(native: dict[str, Any]) -> dict[str, str]:
+    """Build ``{flat(key): original_key}`` once per resource.
+
+    Keys are flattened with :func:`identity.flat` (lower-cased, non-alphanumerics
+    dropped) so field aliases match case- and separator-insensitively. The first
+    original spelling of a flattened key wins, mirroring
+    :func:`identity.native_identity`.
+    """
+    lookup: dict[str, str] = {}
+    for key in native:
+        if isinstance(key, str):
+            lookup.setdefault(flat(key), key)
+    return lookup
+
+
+def _extract(native: dict[str, Any], field: str, flat_map: dict[str, str]) -> Any:
+    """Return the first present value among ``field``'s flat aliases, else ``None``.
+
+    ``flat_map`` is the ``{flat(key): original_key}`` lookup built once per
+    resource by :func:`_flat_lookup`; each alias is already a flat name, so the
+    match is case- and separator-insensitive (R5.3).
+    """
     for alias in _FIELD_ALIASES[field]:
-        if alias in native:
-            return native[alias]
+        original = flat_map.get(alias)
+        if original is not None:
+            return native[original]
     return None
 
 
-def _resource_ident(native: dict[str, Any]) -> str:
+def _redact_str(value: str) -> str:
+    """Redact a scalar string field through the shared redactor (R3.7).
+
+    :func:`secret_safety.redact` replaces a string that embeds secret material
+    (a URL userinfo password, a PEM/OpenSSH private-key block, an inline
+    assignment) with :data:`secret_safety.REDACTED`, and returns a benign value
+    unchanged.
+    """
+    return secret_safety.redact(value)
+
+
+def _resource_ident(native: dict[str, Any], flat_map: dict[str, str]) -> str:
     """Best-effort identifier string for error messages."""
-    nt = _extract(native, "native_type")
-    ident = _extract(native, "id") or _extract(native, "name")
+    nt = _extract(native, "native_type", flat_map)
+    ident = _extract(native, "id", flat_map) or _extract(native, "name", flat_map)
     parts = [str(p) for p in (nt, ident) if p not in (None, "")]
     return "/".join(parts) if parts else "<unknown resource>"
 
@@ -373,10 +409,13 @@ def _normalize_one(
             field="<native resource>",
         )
 
-    ident = _resource_ident(native_resource)
+    # Flat-key lookup built once per resource: field aliases match case- and
+    # separator-insensitively against the resource's own keys (R5.3).
+    flat_map = _flat_lookup(native_resource)
+    ident = _resource_ident(native_resource, flat_map)
 
     # --- resource_type mapping (AC3 / AC5) --------------------------------- #
-    native_type = _extract(native_resource, "native_type")
+    native_type = _extract(native_resource, "native_type", flat_map)
     if native_type is None or str(native_type) == "":
         return None, NormalizationErrorRecord(
             kind="missing-field",
@@ -402,13 +441,18 @@ def _normalize_one(
         "native_type": str(native_type),
     }
 
-    # id: schema permits an empty string, but must be present. Default to "".
-    raw_id = _extract(native_resource, "id")
-    normalized["id"] = "" if raw_id is None else str(raw_id)
+    # id: consult the shared identity vocabulary first (the provider's
+    # priority-ordered identity keys, matched case- and separator-insensitively),
+    # then fall back to the generic id aliases. The schema permits an empty
+    # string but the field must be present; default to "".
+    raw_id = identity.native_identity(native_resource, provider)
+    if raw_id is None:
+        raw_id = _extract(native_resource, "id", flat_map)
+    normalized["id"] = "" if raw_id is None else _redact_str(str(raw_id))
 
     # name / boundary / region: must be present and non-empty (schema minLength 1).
     for field in ("name", "boundary", "region"):
-        raw = _extract(native_resource, field)
+        raw = _extract(native_resource, field, flat_map)
         if raw is None or str(raw) == "":
             return None, NormalizationErrorRecord(
                 kind="missing-field",
@@ -416,10 +460,15 @@ def _normalize_one(
                 detail=f"missing mandatory field {field!r}",
                 field=field,
             )
-        normalized[field] = str(raw)
+        # Extracted string fields pass through the shared redactor so a secret
+        # embedded in a value (a URL password, a PEM block) is never written
+        # to the record (R3.7).
+        normalized[field] = _redact_str(str(raw))
 
-    # tags: default to {} when absent; coerce lists/maps to {str: str}.
-    tags = _coerce_tags(_extract(native_resource, "tags"))
+    # tags: default to {} when absent; coerce lists/maps to {str: str}, then
+    # redact so a tag named DB_PASSWORD (or one carrying secret content) is
+    # written as [REDACTED] (R3.7).
+    tags = _coerce_tags(_extract(native_resource, "tags", flat_map))
     if tags is None:
         return None, NormalizationErrorRecord(
             kind="missing-field",
@@ -427,7 +476,7 @@ def _normalize_one(
             detail="field 'tags' has an unsupported shape (expected map or key/value list)",
             field="tags",
         )
-    normalized["tags"] = tags
+    normalized["tags"] = secret_safety.redact(tags)
 
     # --- config_digest (AC4) ---------------------------------------------- #
     # Hash the native resource configuration. Prefer an explicit 'config' block

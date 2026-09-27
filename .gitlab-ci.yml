@@ -129,7 +129,11 @@ validate:
           sys.exit(1)
       "
     - echo "Fetching official icon packs so file-path icon references can be verified"
-    - python scripts/fetch_assets.py --only gcp_category gcp_core azure aws oci || echo "WARNING: asset fetch failed; asset-paths guard will skip"
+    # v1.7.0 (R6.1-R6.3): the packs are pinned (sha256 + size) and fetched over
+    # HTTPS only, so a fetch failure is a pin/integrity/transport failure — not a
+    # transient to paper over. The old `|| echo WARNING` let a failed fetch
+    # silently skip the asset-paths guard; the fetch now fails the pipeline.
+    - python scripts/fetch_assets.py --only gcp_category gcp_core azure aws oci
     - echo "Verifying every mapping icon file path exists under the asset root"
     # Call the declared console script (not python -m) so a broken
     # [project.scripts] entry-point mapping is caught by CI too.
@@ -145,21 +149,28 @@ validate:
     # Icon-reference verifier: a well-formed-but-nonexistent id/path renders as an
     # empty/broken icon that the linter's icon-resolved rule cannot see. This
     # checks aws4 ids, azure2 img/lib paths (against mappings/azure2-shapes.json),
-    # GCP asset paths, and OCI slugs. Fail-honest: skips a source not present.
-    # ``find`` recurses reliably; a bare ``examples/**/*.drawio`` glob is NOT
-    # recursive under a POSIX shell (no globstar) and would silently only match
-    # one directory level, skipping any nested example.
-    - |
-      rc=0
-      for f in $(find examples -name '*.drawio' -type f); do
-        rule-engine-verify-icon --file "$f" || rc=1
-      done
-      [ "$rc" -eq 0 ] || { echo "BLOCKING: unresolved icon reference(s) — see above"; exit 1; }
+    # GCP asset paths, and OCI slugs. v1.7.0 (R4.3): --all walks examples/ with
+    # the Lint_CLI discovery filters (no fragile shell glob), and --strict also
+    # fails on an *unverified* service vertex or a file with service vertices and
+    # zero verified refs (a `skipped` ref counts as not-verified).
+    - rule-engine-verify-icon --all --strict
+    - echo "Verifying every Generated_Example is fresh (generator --check, all eleven)"
+    # R8.1: every Example_Generator has a --check mode; CI runs it for all ELEVEN
+    # Generated_Examples (seven generators: four HA pairs = 8, plus three single
+    # examples). tests/test_generators_fresh.py enumerates every generator and
+    # subprocess-runs its --check. KNOWN-STALE (expected): the two OCI generators
+    # report STALE until the OCI examples are regenerated in task 22.7 (they
+    # predate the ociSlug= marker from task 5.2); the test xfails those two so
+    # the step still RUNS the --check for all eleven per R8.1 without blocking.
+    - pip install -e ".[dev]"
+    - pytest -q tests/test_generators_fresh.py
     - echo "Enforcing the class-aware exported .drawio.png budget (flow <=1600px/<500KB, landscape <=3600px/<2MB)"
-    # Raster gate (REVIEW.md D7): the linter checks the .drawio source + companion
-    # document, not the rendered PNG, so this guard fails-closed on an oversized or
-    # oversize raster. Call the declared console script so a broken
-    # [project.scripts] mapping is caught. Rasters must stay within budget.
+    # Raster gate (REVIEW.md D7, R8.3): the linter checks the .drawio source +
+    # companion document, not the rendered PNG, so this guard fails-closed on an
+    # oversized raster. Call the declared console script so a broken
+    # [project.scripts] mapping is caught. Run WITHOUT --allow-missing (strict):
+    # a .drawio with no exported .png is a failure, and R8.3 makes an empty run
+    # (no sources found) exit non-zero rather than silently pass.
     - rule-engine-check-rasters
     - echo "Verifying every edge leg is explicitly axis-aligned"
     # draw.io picks its own corner between two unaligned points; generated

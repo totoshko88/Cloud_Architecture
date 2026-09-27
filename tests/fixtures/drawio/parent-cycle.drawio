@@ -1,0 +1,16 @@
+<mxfile host="Electron" agent="draw.io/24.0.0" version="24.0.0">
+  <diagram name="Cycle" id="page-cycle-0001">
+    <mxGraphModel gridSize="10">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="alpha" value="Alpha" style="rounded=0;" vertex="1" parent="beta">
+          <mxGeometry x="40" y="40" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="beta" value="Beta" style="rounded=0;" vertex="1" parent="alpha">
+          <mxGeometry x="80" y="80" width="78" height="78" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

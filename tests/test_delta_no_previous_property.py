@@ -59,6 +59,9 @@ def normalized_resource(draw: st.DrawFn) -> dict:
     resource = {
         "provider": provider,
         "resource_type": resource_type,
+        # boundary and region are part of the identity since 1.7 (R5.8).
+        "boundary": draw(st.sampled_from(["acct-1", "acct-2"])),
+        "region": draw(st.sampled_from(["us-east-1", "eu-west-1"])),
         "id": draw(_nonempty_text) if use_id else "",
         "name": draw(_nonempty_text),
         "config_digest": draw(_digest_text),
@@ -75,7 +78,7 @@ def current_snapshot(draw: st.DrawFn) -> list[dict]:
     otherwise collapse to a single record).
     """
     resources = draw(st.lists(normalized_resource(), min_size=0, max_size=12))
-    seen: set[tuple[str, str, str]] = set()
+    seen: set[tuple[str, str, str, str, str]] = set()
     unique: list[dict] = []
     for resource in resources:
         key = identity_of(resource, snapshot="current").as_tuple()

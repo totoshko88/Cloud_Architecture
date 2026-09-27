@@ -102,13 +102,16 @@ NODE_SPECS = [
     # regional services — in the Account, OUTSIDE the VPC, own column.
     ("efs", "efs-shared-state", "efs_standard", "#7AA116", 1020, ROW_APP),
     ("logs", "s3-access-logs", "s3", "#7AA116", 1020, ROW_EDGE),
-    # on-premises — in its OWN boundary, outside the Account.
-    ("onprem-db", "onprem-oracle", "traditional_server", "#232F3E", 1300, ROW_DATA),
+    # on-premises — in its OWN boundary, outside the Account. D8: pulled left
+    # from x=1300 to x=1180 (still a disjoint sibling of the Account, gap ≥ grid)
+    # so the whole canvas — and the Flow/Legend block one grid step past the
+    # tightened on-prem boundary — fits the 1600px flow budget.
+    ("onprem-db", "onprem-oracle", "traditional_server", "#232F3E", 1180, ROW_DATA),
 ]
 
 # Node centres (icon 78 → +39): corp-user(99,429) dns(419,189) cdn(699,189)
 # alb(559,429) app-a(419,589) app-b(699,589) db-a(419,749) db-b(699,749)
-# efs(1059,589) logs(1059,189) onprem-db(1339,749)
+# efs(1059,589) logs(1059,189) onprem-db(1219,749)
 EDGES: List[Edge] = [
     # 1: the external actor resolves the public zone. Actor → cloud: exits right,
     # enters left, crossing the Account boundary (the whole point of drawing the
@@ -199,9 +202,13 @@ def build() -> str:
         Boundary("boundary-az-b", "az-eu-central-1b",
                  x=640, y=530, w=258, h=360, style=STYLE_AZ),
         # Disjoint sibling of the Account — the on-premises estate is not in the
-        # cloud, so it never nests inside the Account boundary.
+        # cloud, so it never nests inside the Account boundary. D8: shifted left
+        # to x=1150 (Account ends at 1140, so a ≥ grid-step gap keeps it a
+        # disjoint sibling) and narrowed to w=150 around the onprem-db node so
+        # the outermost container ends at 1300 and the Flow/Legend block fits the
+        # flow budget.
         Boundary("boundary-onprem", "on-premises datacenter",
-                 x=1220, y=650, w=238, h=300, style=STYLE_ONPREM),
+                 x=1150, y=650, w=150, h=300, style=STYLE_ONPREM),
     ]
     nodes: List[Node] = [
         Node(id=nid, label=label, x=x, y=y, render=builtin_icon(_icon(res, fill)))
@@ -215,15 +222,63 @@ def build() -> str:
         nodes=nodes,
         edges=EDGES,
         flow_lines=FLOW_LINES,
-        legend_x=1490,
+        # D8: legend at 1310 (one grid step past the tightened on-prem boundary
+        # right edge 1300) and pinned narrow (legend_w=270) so the Flow/Legend
+        # block wraps taller instead of running wide — the sanctioned lever from
+        # diagram-standards → Numbered Flow Legend. Block right edge = 1580, so
+        # canvas width 1580 + 2*8 = 1596 <= 1600 flow budget.
+        legend_x=1310,
+        legend_w=270,
         page_w=2000,
         page_h=1000,
     )
 
 
+def _first_diff_line(expected: str, actual: str) -> str:
+    """Return a human-readable description of the first differing line.
+
+    ``expected`` is the committed (on-disk) content; ``actual`` is the freshly
+    regenerated content. Mirrors ``ha_multiregion_common._first_diff_line`` so
+    every generator's ``--check`` reports a stale file identically."""
+    exp_lines = expected.splitlines()
+    act_lines = actual.splitlines()
+    for i, (e, a) in enumerate(zip(exp_lines, act_lines), start=1):
+        if e != a:
+            return f"line {i}: committed {e!r} != regenerated {a!r}"
+    if len(exp_lines) != len(act_lines):
+        n = min(len(exp_lines), len(act_lines)) + 1
+        longer = "regenerated" if len(act_lines) > len(exp_lines) else "committed"
+        return f"line {n}: {longer} has extra content ({len(exp_lines)} vs {len(act_lines)} lines)"
+    return "trailing bytes differ (no newline / whitespace at EOF)"
+
+
+def _check_one(path: Path, regenerated: str, prog: str) -> bool:
+    """Compare one committed .drawio against its regenerated content.
+
+    Returns ``True`` when the file exists and matches byte for byte; otherwise
+    prints a clear ``STALE: regenerate`` message naming the file and returns
+    ``False``. Writes nothing."""
+    if not path.exists():
+        print(f"{prog}: STALE: regenerate {path} — committed file is missing",
+              file=sys.stderr)
+        return False
+    committed = path.read_text(encoding="utf-8")
+    if committed == regenerated:
+        return True
+    print(f"{prog}: STALE: regenerate {path} — {_first_diff_line(committed, regenerated)}",
+          file=sys.stderr)
+    return False
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="build_aws_infra_example")
     parser.add_argument("--stdout", action="store_true")
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="compare regenerated output byte-for-byte with the committed file "
+             "without writing; exit non-zero if it is stale or missing",
+    )
     parser.add_argument("--out", default=str(OUT))
     args = parser.parse_args(argv)
 
@@ -231,6 +286,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.stdout:
         sys.stdout.write(xml)
         return 0
+    if args.check:
+        # Regenerate in memory and compare against the committed file; write
+        # nothing. Exit 0 only when it matches (R8.1).
+        if _check_one(Path(args.out), xml, "build_aws_infra_example"):
+            print(f"build_aws_infra_example: OK — {args.out} is up to date")
+            return 0
+        return 1
     Path(args.out).write_text(xml, encoding="utf-8")
     print(f"build_aws_infra_example: wrote {args.out} ({len(NODE_SPECS)} nodes)")
     return 0

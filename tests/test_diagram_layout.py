@@ -9,7 +9,19 @@ embedding stripping the baked-in caption while scaling the icon square.
 from __future__ import annotations
 
 from rule_engine import diagram_layout as dl
-from rule_engine.cli import _parse_drawio
+from rule_engine.cli import _parse_drawio_page
+from rule_engine.drawio_model import parse_drawio
+
+
+def _parse_drawio(path: str, text: str):
+    """Parse in-memory ``.drawio`` text into the single-page diagram Artifact.
+
+    The 1.7.0 CLI parses on the shared ``drawio_model`` and builds one Artifact
+    per page; these tests hand XML text and want the single-page diagram
+    Artifact, so parse the text into its one Page and feed that.
+    """
+    pages = parse_drawio(text, path=path)
+    return _parse_drawio_page(path, pages[0], text)
 
 
 def test_canonical_constants():

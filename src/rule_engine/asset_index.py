@@ -61,10 +61,15 @@ _PREFERRED_EXTS = (".svg", ".png")
 # "Amazon Simple Storage Service", "AWS S3" and "S3" collapse toward a common
 # core where possible. We keep this conservative: we strip only unambiguous
 # vendor words and size/format suffixes.
+#
+# ``service``, ``cloud`` and ``public`` are deliberately NOT stripped (R6.6):
+# they carry meaning in real service names, so stripping them collapsed distinct
+# services onto one slug and made one of them unreachable. "Private Link" and
+# "Private Link Service", or "Cloud SQL" and "SQL", must keep distinct slugs.
 _STRIP_TOKENS = (
-    "amazon", "aws", "arch", "res", "icon", "service",
-    "azure", "microsoft", "public",
-    "google", "cloud", "gcp",
+    "amazon", "aws", "arch", "res", "icon",
+    "azure", "microsoft",
+    "google", "gcp",
     "oracle", "oci",
     "color", "rgb", "dark", "light",
 )
@@ -101,6 +106,23 @@ def normalize_slug(name: str, *, strip_vendor: bool = False) -> str:
 # ---------------------------------------------------------------------------
 
 
+class AssetIndex(dict):
+    """A ``{slug: AssetEntry}`` mapping that also carries slug ambiguity.
+
+    Behaves exactly like the plain ``dict`` every caller used before, so it is a
+    drop-in replacement. The extra :attr:`ambiguous` map records, per slug, the
+    distinct services that normalise to that one slug (the collision case the
+    indexer previously only logged). :func:`resolve_asset` reads it to return
+    ``unresolved`` with candidates for an ambiguous exact slug (R6.7)."""
+
+    #: slug -> tuple of distinct display names competing for that slug.
+    ambiguous: Dict[str, tuple]
+
+    def __init__(self, *args, ambiguous: Optional[Dict[str, tuple]] = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.ambiguous = dict(ambiguous or {})
+
+
 @dataclass
 class AssetEntry:
     """One indexed official asset for a provider."""
@@ -124,6 +146,10 @@ class ResolvedAsset:
     asset_path: Optional[str] = None  # official file path, when source == official-asset
     ext: Optional[str] = None
     note: str = ""
+    # The distinct services that share an ambiguous exact slug (R6.7). Populated
+    # (with source == "unresolved") when the exact slug is claimed by more than
+    # one distinct service, so the caller chooses rather than the index guessing.
+    candidates: tuple = ()
 
 
 # ---------------------------------------------------------------------------
@@ -279,10 +305,10 @@ def _index_oci_stencils(root: Path) -> Dict[str, AssetEntry]:
     service part."""
     manifest = _find_oci_stencils_json(root)
     if manifest is None:
-        return {}
+        return AssetIndex()
     data = json.loads(manifest.read_text(encoding="utf-8"))
     rel = "assets/vendor/oci-stencils/stencils.json"
-    index: Dict[str, AssetEntry] = {}
+    index: AssetIndex = AssetIndex()
     for slug, meta in data.items():
         title = str(meta.get("title") or slug)
         category = title.split(" - ", 1)[0] if " - " in title else ""
@@ -327,7 +353,8 @@ def index_provider(provider: str, pack_root: str) -> Dict[str, AssetEntry]:
 
     display_fn = _DISPLAY_FN.get(provider, lambda p: p.stem.replace("-", " ").replace("_", " "))
     best: Dict[str, tuple] = {}  # slug -> (rank, rel_path, entry)
-    # Distinct services that normalise to one slug, reported once per slug.
+    # Distinct services that normalise to one slug, reported once per slug and
+    # returned on the index as ``ambiguous`` so the resolver never guesses (R6.7).
     collisions: Dict[str, set] = {}
 
     for path in _iter_files(root):
@@ -360,15 +387,22 @@ def index_provider(provider: str, pack_root: str) -> Dict[str, AssetEntry]:
         if current is None or _is_better_candidate(rank, rel_path, current[0], current[1]):
             best[slug] = (rank, rel_path, entry)
 
+    ambiguous: Dict[str, tuple] = {}
     for slug in sorted(collisions):
         kept = best[slug][2].display_name
-        dropped = sorted(n for n in collisions[slug] if _base_display(n) != _base_display(kept))
+        # Every distinct service competing for this slug (the kept one plus the
+        # shadowed ones), so the resolver can list all candidates.
+        names = sorted(set(collisions[slug]) | {kept})
+        ambiguous[slug] = tuple(names)
+        dropped = [n for n in names if _base_display(n) != _base_display(kept)]
         logger.warning(
             "slug collision for %s %r: kept %r, shadowed %s (distinct services "
             "normalise to one slug; the shadowed ones are unreachable from the index)",
             provider, slug, kept, dropped,
         )
-    return {slug: best[slug][2] for slug in sorted(best)}
+    return AssetIndex(
+        {slug: best[slug][2] for slug in sorted(best)}, ambiguous=ambiguous
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -498,6 +532,20 @@ def resolve_asset(
         )
 
     if index:
+        # An exact slug claimed by more than one distinct service is ambiguous:
+        # return unresolved with the candidate list rather than the arbitrary
+        # winner the index happened to keep, so the caller decides (R6.7).
+        ambiguous = getattr(index, "ambiguous", {})
+        candidates = ambiguous.get(slug)
+        if candidates:
+            return ResolvedAsset(
+                provider=provider, query=service_name, source="unresolved",
+                candidates=tuple(candidates),
+                note=(
+                    f"ambiguous slug {slug!r}: {len(candidates)} distinct services "
+                    f"({', '.join(candidates)}); choose one explicitly"
+                ),
+            )
         exact = index.get(slug)
         if exact is not None:
             return ResolvedAsset(
@@ -681,20 +729,36 @@ def build_icon_index(
     pack_roots: Dict[str, str],
     roles_path: Path = ROLES_PATH,
     full_packs: bool = False,
+    pack_pins: Optional[Dict[str, str]] = None,
 ) -> Dict[str, object]:
     """Build the committed icon-index payload: ``packs`` + ``roles`` layers.
 
     ``pack_roots`` maps a pack key (``aws``/``azure``/``gcp-core``/``gcp-category``
     /``oci``) to its unpacked directory (or, for OCI, the stencils.json / its
-    folder). Returns ``{"version", "packs": {provider: {slug: entry}}, "roles":
-    {role: {provider: resolved}}}``, ready to serialize deterministically."""
+    folder). ``pack_pins`` maps the same pack key to the pack's verified
+    ``sha256`` (from ``asset-sources.yaml``); each provider's ``pack_summary``
+    records that digest (R6.4), taken from the verified pin rather than
+    recomputed from the unpacked tree. A missing/empty pin is recorded as ``""``.
+    Returns ``{"version", "pack_summary": {provider: {count, sha256}}, "roles":
+    {role: {provider: resolved}}}`` (plus ``packs`` when ``full_packs``), ready to
+    serialize deterministically."""
     import yaml  # local import; PyYAML is already a runtime dep
+
+    pins = dict(pack_pins or {})
 
     # Index each pack. GCP is two packs; the others map key==provider.
     pack_indexes: Dict[str, Dict[str, AssetEntry]] = {}
+    # Per-provider pack digest, taken from the verified pin (never recomputed).
+    # GCP's two packs map to one provider; the first pack key with a non-empty
+    # pin wins, so the summary carries a stable digest for the merged view.
+    provider_sha: Dict[str, str] = {}
     for key, root in pack_roots.items():
         provider = "gcp" if key.startswith("gcp") else key
         pack_indexes[key] = index_provider(provider, root)
+        digest = str(pins.get(key, "") or "")
+        if digest and not provider_sha.get(provider):
+            provider_sha[provider] = digest
+        provider_sha.setdefault(provider, "")
 
     # A per-provider "packs" view (gcp merges core+category for reference).
     packs_view: Dict[str, Dict[str, AssetEntry]] = {}
@@ -724,7 +788,7 @@ def build_icon_index(
         # pack tables are re-derivable on demand. Pass ``full_packs=True`` (or the
         # CLI ``--full``) to embed the complete per-slug tables when needed.
         "pack_summary": {
-            provider: {"count": len(entries)}
+            provider: {"count": len(entries), "sha256": provider_sha.get(provider, "")}
             for provider, entries in sorted(packs_view.items())
         },
         "roles": {r: resolved_roles[r] for r in sorted(resolved_roles)},
@@ -745,6 +809,7 @@ def icon_index_to_json(payload: Dict[str, object]) -> str:
 __all__ = [
     "PROVIDERS",
     "AssetEntry",
+    "AssetIndex",
     "ResolvedAsset",
     "ResolvedRoleIcon",
     "normalize_slug",
