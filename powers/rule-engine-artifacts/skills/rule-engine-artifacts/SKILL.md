@@ -120,11 +120,14 @@ Do not restate rule values from memory. The binding sources are always-on:
    service like S3 sits in the Account boundary but outside the VPC.
 4. Produce the mandatory triple: `NN-topic.drawio`, `NN-topic.drawio.png`,
    `NN-topic.diagram.md`.
-5. Export the raster with `scripts/export_raster.py <file>.drawio` — it inlines
-   local `assets/vendor` icons as base64 in a temp copy (the headless draw.io
-   CLI cannot load local files), keeping the committed source lint-clean, and
-   stays within the class-aware D7 budget enforced by `rule-engine-check-rasters`
-   (`flow` ≤ 1600px wide / < 500KB; `landscape` ≤ 3600px / < 2MB).
+5. Export the raster with `rule-engine-export-raster <file>.drawio` (the
+   packaged console script; `scripts/export_raster.py` is a thin shim onto it
+   for a repo checkout) — it inlines local `assets/vendor` icons as base64 in a
+   temp copy (the headless draw.io CLI cannot load local files), keeping the
+   committed source lint-clean, and stays within the class-aware D7 budget
+   enforced by `rule-engine-check-rasters` (`flow` ≤ 1600px wide / < 500KB;
+   `landscape` ≤ 3600px / < 2MB). To re-align a hand-authored/hand-dragged
+   `.drawio`, run `rule-engine-orthogonalise <file>.drawio`.
 
 ## Companion / KB document workflow
 

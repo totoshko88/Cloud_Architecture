@@ -2,6 +2,24 @@
 
 All notable changes to the Rule Engine are recorded here, per released version, in reverse chronological order.
 
+## [1.9.1] - 2026-09-30
+
+**Theme: power self-containment — the raster exporter and edge orthogonaliser ship with the install.** A clean-room Kiro Power / pip install got the workflow skill, the steering rules, the icon mappings, and every `rule-engine-*` gate CLI, but **not** `scripts/export_raster.py` or `scripts/orthogonalise_drawio.py` — those lived only in the repo `scripts/` tree, were not console scripts, were not package modules, and were not in the bootstrap payload. So a power-bootstrapped workspace could lint and verify but had **no way to produce the mandatory `.drawio.png`** the artifact triple requires (and `rule-engine-check-rasters` then failed), and no way to re-align a hand-authored diagram. This release closes that gap by packaging both tools, with no behaviour change to either.
+
+### Added
+
+- **`rule-engine-export-raster` console script.** The raster exporter's implementation moves into the installed package (`rule_engine.export_raster`) and is exposed as a console script, so it ships with pip / the Kiro Power and works from an installed package with no repo checkout. Its asset root defaults to the current working directory (the workspace) rather than a repo path; `--repo-root` overrides it. The inlined-temp directory is now resolved under the asset root (`<root>/.build-tools/export-tmp`) instead of a fixed repo path.
+- **`rule-engine-orthogonalise` console script.** The hand-authored-`.drawio` edge orthogonaliser moves into `rule_engine.orthogonalise` and is exposed as a console script for the same reason.
+
+### Changed
+
+- **`scripts/export_raster.py` and `scripts/orthogonalise_drawio.py` are now thin shims** that delegate to the packaged `main()`, so the historical `python scripts/…` invocations (CI, agent allow-lists, companion docs) keep working unchanged while the implementation lives in one place. `scripts/export_raster.py` passes `--repo-root <repo>` by default so a repo-run export still resolves `assets/vendor` paths against the repo root exactly as before.
+- **Skill, steering, and agents updated to the console scripts.** The `rule-engine-artifacts` SKILL.md (both copies, kept byte-identical), `diagram-standards.md`, the `diagram-author` / `rule-engine-reviewer` agent allow-lists and prose, the `03-aws-hybrid-infrastructure` companion doc, and the `raster_gate` remediation hint now name `rule-engine-export-raster` / `rule-engine-orthogonalise`. The agent shell allow-lists keep the `python scripts/…` shim patterns too, so both entry points are permitted.
+
+### Notes
+
+- **No functional change to export or orthogonalisation.** The D7 class-aware budget, scale-≥-1 rule, missing-asset failure, provenance stamping, and the axis-alignment rewrite are unchanged; only the delivery mechanism (packaged console script vs repo script) changed. The `tests/test_version_pins.py` / plugin-version / bootstrap-payload-sync guards keep the Power pin, `plugin.json`, and the SessionStart hint at 1.9.1.
+
 ## [1.9.0] - 2026-09-29
 
 **Theme: placement scoring & the remaining gates.** 1.8.0 inverted routing into a scored per-edge solver but scored *routes only*, holding the three recorded placement defects (`gcp/01` = `(4,0)`, the landscapes = `(3,2)`) and leaving a documented seam for placement scoring (Decision D2). This release closes the four remaining Open gaps from `docs/REVIEW.md` as four independently reviewable parts: (A) a scored *placement* loop layered over the same order-score-commit machinery — the design-noted next step from 1.8.0, and the only thing that can retire the held placement defects, because each is a placement problem surfacing as a routing defect; (B) an inventory → diagram reconciliation gate that fails when a role-bearing enumerated resource is silently absent from the diagram generated from it; (C) the advisory `container-dead-space` lint rule, the mirror of `container-padding`; and (D) deterministic icon-index slug-collision disambiguation. Every part respects the honest-gates contract — determinism (same inputs → byte-identical `.drawio`), no weakened lint rule, draw.io as the only publishable source (D1), and a ratchet tightened where a move improves a diagram and never regressed. Only Part A depends on 1.8.0 machinery; B, C and D are independent.

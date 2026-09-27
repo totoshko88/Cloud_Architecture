@@ -9,7 +9,7 @@ backend-path = ["."]
 
 [project]
 name = "rule-engine"
-version = "1.9.0"
+version = "1.9.1"
 description = "Diagram & Inventory Rule Engine — a cloud-agnostic Kiro project for deterministic diagram and inventory generation."
 readme = "README.md"
 # The engine supports Python 3.11 through 3.14 (the CI test matrix, task 21.5).
@@ -73,6 +73,16 @@ rule-engine-reconcile = "rule_engine.reconcile:main"
 # build the committed mappings/icon-index.json (per-role resolved icon per
 # provider + pack summary). Run at installation; --check verifies it is current.
 rule-engine-build-icon-sets = "rule_engine.build_icon_sets_cli:main"
+# Raster exporter (v1.9.1): export a .drawio to its .drawio.png within the
+# class-aware D7 budget, inlining local assets/vendor icons as base64 in a
+# temp copy first. Packaged as a console script so it ships with pip / the
+# Kiro Power (it used to live only in scripts/, unreachable from an installed
+# package); scripts/export_raster.py is now a thin shim onto this.
+rule-engine-export-raster = "rule_engine.export_raster:main"
+# Edge orthogonaliser (v1.9.1): rewrite a hand-authored/hand-dragged .drawio
+# so every edge leg is axis-aligned. Packaged for the same reason as the
+# exporter; scripts/orthogonalise_drawio.py is now a thin shim onto this.
+rule-engine-orthogonalise = "rule_engine.orthogonalise:main"
 # Asset fetcher (v1.5.0): download & unpack the official provider icon packs into
 # a target workspace's assets/vendor (and decode the OCI stencils). Importable
 # from the installed package so a pip/Power install can materialize the GCP/OCI

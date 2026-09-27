@@ -30,6 +30,8 @@ permissions:
         - "rule-engine-check-asset-paths*"
         - "rule-engine-check-snapshot*"
         - "rule-engine-verify-icon *"
+        - "rule-engine-export-raster *"
+        - "rule-engine-orthogonalise *"
         - "rule-engine-validate-schema*"
         - "python scripts/orthogonalise_drawio.py --check *"
         - "pytest*"
