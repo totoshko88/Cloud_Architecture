@@ -83,10 +83,10 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="flow-legend" parent="1" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF;spacingLeft=10;spacingRight=10;spacingTop=10;spacingBottom=10" value="Flow&#xa;1. User sends HTTPS request to Application Gateway&#xa;2. App Gateway routes /chat to the API Function&#xa;3. API Function publishes ingest job to Service Bus (async)&#xa;4. Service Bus delivers message to Ingest Function (async)&#xa;5. API Function embeds and completes via Azure OpenAI&#xa;6. API Function reads API key from Key Vault&#xa;7. Ingest Function loads documents from Blob Storage&#xa;8. Ingest Function upserts vectors into Azure SQL DB&#xa;9. Azure OpenAI queries vectors from Azure SQL DB" vertex="1">
-          <mxGeometry height="200" width="360" x="1420" y="120" as="geometry" />
+          <mxGeometry height="400" width="200" x="1370" y="120" as="geometry" />
         </mxCell>
         <mxCell id="legend" parent="1" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF;spacingLeft=10;spacingRight=10;spacingTop=10;spacingBottom=10" value="Legend&#xa;Solid line = primary flow&#xa;Dashed line = asynchronous / event-driven flow&#xa;Red = blocked / missing / disabled&#xa;🆕 = new in version N&#xa;🔄 = changed in version N&#xa;Dashed outer boundary = stack Boundary (profile brand color)&#xa;Dashed inner boundary = Network Boundary (profile brand color)&#xa;Numbered markers (1..N) = ordered data flow steps; see Flow list" vertex="1">
-          <mxGeometry height="200" width="360" x="1420" y="360" as="geometry" />
+          <mxGeometry height="380" width="200" x="1370" y="540" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>

@@ -180,7 +180,11 @@ def test_layout_output_passes_every_geometry_check(spec: DiagramSpec) -> None:
 
     # Also exercise grid-alignment on the same serialized geometry the oracle
     # parsed: every emitted node origin is a whole GRID multiple (Req 11.4).
-    geo = _build_geometry(_serialize_candidate(placed))
+    from rule_engine.drawio_model import parse_drawio as _parse_drawio
+
+    geo = _build_geometry(
+        _parse_drawio(_serialize_candidate(placed), path="<layout>.drawio")[0]
+    )
     assert check_grid_alignment(geo) == [], "layout output has off-grid nodes"
     for box in list(placed.nodes.values()) + list(placed.containers.values()):
         assert box.x % GRID == 0 and box.y % GRID == 0

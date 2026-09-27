@@ -30,11 +30,31 @@ Usage::
     python scripts/export_raster.py examples/gcp/01-gcp-vertex-pipeline.drawio
     python scripts/export_raster.py --all          # every examples/**/*.drawio
 
-Requires the ``drawio`` CLI on PATH (draw.io desktop). Exports at
-``--border 8 --theme light`` with a **class-aware** width — ``flow`` diagrams at
-1600px, ``landscape`` as-builts at 3400px — to meet the Raster Export Dimensions
-budget (flow ≤ 1600px / < 500KB, landscape ≤ 3600px / < 2MB, white background,
-8px padding).
+Requires the ``drawio`` CLI on PATH (draw.io desktop).
+
+Export at scale ≥ 1 (R8.4, D8)
+------------------------------
+The exporter never downscales. It parses the page, measures the natural canvas
+width ``W`` (the union of every vertex box), and exports at ``--scale`` clamped
+to at least 1 (never below), computed as ``clamp(target / W, 1, max_width / W)``
+with ``target`` 1600px (flow) / 3400px (landscape) and ``max_width`` the class
+budget (1600 flow / 3600 landscape). When the canvas cannot fit its class budget
+even at scale 1 (``W + 2*border > max_width``), the export **fails** with a clear
+"split the diagram" error and writes no PNG — the exporter refuses to silently
+downscale a too-wide diagram (D8 tightens those layouts rather than raising the
+budget).
+
+Hygiene (R8.5)
+--------------
+* ``subprocess.run`` is called with ``timeout=180`` so a hung draw.io CLI is
+  killed rather than hanging the whole run forever; a ``TimeoutExpired`` is a
+  failure, never a silent OK.
+* The inlined temp copy is written to ``.build-tools/export-tmp`` (repo-local,
+  so a snap/AppArmor-confined draw.io CLI can still read it — it cannot read
+  ``/tmp`` — but **outside** ``examples/``) and removed in a ``finally`` block.
+* A referenced ``assets/vendor`` asset that does not exist is a failure: the
+  exporter raises listing the missing paths instead of exporting a broken image
+  and reporting "OK".
 """
 
 from __future__ import annotations
@@ -42,6 +62,7 @@ from __future__ import annotations
 import argparse
 import base64
 import glob
+import math
 import os
 import re
 import shutil
@@ -49,21 +70,63 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import List, Optional, Sequence, Tuple
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # image=<path> where <path> is a repo-relative asset file we must inline.
 _ASSET_IMAGE_RE = re.compile(r"image=(assets/vendor/[^;\"]+)")
 
-# Class-aware export width (matches the raster gate's class-aware budget). A
-# ``flow`` diagram fits a doc column at 1600px; a ``landscape`` as-built needs a
-# wider raster so 30-plus nodes stay legible (the reference detailed as-built
-# exports at ~3400px). The class is read from the companion .diagram.md.
-EXPORT_WIDTH = "1600"
-LANDSCAPE_EXPORT_WIDTH = "3400"
+# Class-aware export targets and budgets (match the raster gate's class-aware
+# budget in rule_engine.raster_gate). A ``flow`` diagram fits a doc column at
+# 1600px; a ``landscape`` as-built needs a wider raster so 30-plus nodes stay
+# legible (the reference detailed as-built exports at ~3400px). The class is
+# read from the companion .diagram.md.
+FLOW_TARGET_WIDTH = 1600
+LANDSCAPE_TARGET_WIDTH = 3400
+FLOW_MAX_WIDTH = 1600
+LANDSCAPE_MAX_WIDTH = 3600
+
 EXPORT_BORDER = "8"
 EXPORT_THEME = "light"
+
+#: Seconds before a hung draw.io CLI export is killed (R8.5).
+EXPORT_TIMEOUT = 180
+
+#: Repo-local temp dir for inlined copies — readable by a snap-confined CLI
+#: (which cannot read /tmp) yet OUTSIDE examples/ (R8.5).
+EXPORT_TMP_DIR = REPO_ROOT / ".build-tools" / "export-tmp"
+
+
+class MissingAssetError(RuntimeError):
+    """Raised when a source references ``assets/vendor`` files that do not exist.
+
+    Rather than silently leaving the broken ``image=<path>`` in place and
+    exporting a placeholder glyph (then reporting "OK"), the exporter fails and
+    names every missing asset (R8.5)."""
+
+    def __init__(self, source: Path, missing: Sequence[str]) -> None:
+        self.source = source
+        self.missing = list(missing)
+        listed = ", ".join(self.missing)
+        super().__init__(f"{source}: missing referenced asset(s): {listed}")
+
+
+class CanvasTooWideError(RuntimeError):
+    """Raised when a diagram cannot fit its class budget at scale >= 1 (R8.4/D8).
+
+    This is the "split the diagram" signal: the exporter refuses to downscale a
+    canvas that is wider than its class budget, and writes no PNG."""
+
+    def __init__(self, source: Path, width: float, diagram_class: str, max_width: int) -> None:
+        self.source = source
+        self.width = width
+        self.diagram_class = diagram_class
+        self.max_width = max_width
+        super().__init__(
+            f"{source}: canvas {int(round(width))}px exceeds the "
+            f"{diagram_class} budget at scale 1 — split the diagram"
+        )
 
 
 def _diagram_class_of(source: Path) -> str:
@@ -90,13 +153,30 @@ def _mime_for(path: Path) -> str:
     return "application/octet-stream"
 
 
+def missing_assets(text: str, repo_root: Path = REPO_ROOT) -> List[str]:
+    """Return the ``assets/vendor`` paths referenced by ``text`` that do not exist.
+
+    Every ``image=assets/vendor/...`` token whose target file is absent under
+    ``repo_root`` is collected (de-duplicated, in first-seen order). An empty
+    list means every referenced asset resolves."""
+    seen: List[str] = []
+    for match in _ASSET_IMAGE_RE.finditer(text):
+        rel = match.group(1)
+        if rel in seen:
+            continue
+        if not (repo_root / rel).is_file():
+            seen.append(rel)
+    return seen
+
+
 def inline_local_images(text: str, repo_root: Path = REPO_ROOT) -> str:
     """Rewrite every ``image=assets/vendor/...`` token to an inlined data URI.
 
     Non-asset image styles (draw.io ``img/lib`` internals, ``data:`` URIs, and
     URLs) do not match ``_ASSET_IMAGE_RE`` and are left unchanged. A referenced
-    file that does not exist is left as-is so the export surfaces the problem
-    rather than silently dropping the icon.
+    file that does not exist is left as-is here; callers detect that with
+    :func:`missing_assets` and fail before export (R8.5), rather than silently
+    dropping the icon.
     """
 
     def repl(match: re.Match) -> str:
@@ -110,6 +190,66 @@ def inline_local_images(text: str, repo_root: Path = REPO_ROOT) -> str:
     return _ASSET_IMAGE_RE.sub(repl, text)
 
 
+def _canvas_width(source: Path) -> float:
+    """Return the natural canvas width ``W`` of ``source`` — the union of every
+    vertex box's absolute right edge on the widest page.
+
+    Parsed with :mod:`rule_engine.drawio_model` so this matches the geometry the
+    linter and layout engine use. A page with no vertices yields 0.0.
+    """
+    sys.path.insert(0, str(REPO_ROOT / "src"))
+    from rule_engine.drawio_model import DrawioParseError, absolute_origin, parse_drawio
+
+    try:
+        pages = parse_drawio(source.read_bytes(), path=str(source))
+    except DrawioParseError:
+        # A source we cannot parse cannot be measured. Return 0.0 so the caller
+        # exports at scale 1 (never downscaling) rather than crashing — a real
+        # golden always parses; this only spares degenerate/placeholder inputs.
+        return 0.0
+    max_right = 0.0
+    for page in pages:
+        for cell in page.cells.values():
+            if not cell.vertex or cell.geom is None:
+                continue
+            x, _y = absolute_origin(page, cell.id)
+            right = x + (cell.geom.w or 0.0)
+            if right > max_right:
+                max_right = right
+    return max_right
+
+
+def compute_scale(source: Path, diagram_class: Optional[str] = None) -> Tuple[float, float]:
+    """Return ``(scale, width)`` for exporting ``source`` at scale >= 1 (R8.4).
+
+    ``width`` is the natural canvas width ``W``. ``scale`` is
+    ``clamp(target / W, 1, max_width / W)`` — never below 1, so the exporter
+    never downscales. Raises :class:`CanvasTooWideError` when the canvas plus its
+    two borders cannot fit the class budget at scale 1 (the "split the diagram"
+    signal): in that case downscaling would be the only way to fit, which the
+    exporter refuses.
+    """
+    dclass = diagram_class or _diagram_class_of(source)
+    is_landscape = dclass == "landscape"
+    target = LANDSCAPE_TARGET_WIDTH if is_landscape else FLOW_TARGET_WIDTH
+    max_width = LANDSCAPE_MAX_WIDTH if is_landscape else FLOW_MAX_WIDTH
+
+    width = _canvas_width(source)
+    border = int(EXPORT_BORDER) * 2
+    if width + border > max_width:
+        raise CanvasTooWideError(source, width, dclass, max_width)
+
+    if width <= 0:
+        # Degenerate/empty canvas: nothing to scale up or down.
+        return (1.0, width)
+
+    # Never below 1 (no downscaling); never so large the scaled width + borders
+    # exceeds the class budget.
+    upper = (max_width - border) / width
+    scale = max(1.0, min(target / width, upper))
+    return (scale, width)
+
+
 def export_one(
     source: str | Path,
     repo_root: Path = REPO_ROOT,
@@ -117,46 +257,91 @@ def export_one(
 ) -> Path:
     """Export ``source`` (a .drawio) to ``source + '.png'`` with icons inlined.
 
-    Returns the output PNG path. Raises ``subprocess.CalledProcessError`` if the
-    draw.io CLI exits non-zero, and ``FileNotFoundError`` if the CLI is absent.
+    Returns the output PNG path. Raises:
+
+    * :class:`MissingAssetError` when the source references an ``assets/vendor``
+      file that does not exist (R8.5) — fail rather than export a broken image;
+    * :class:`CanvasTooWideError` when the canvas cannot fit its class budget at
+      scale 1 (R8.4) — the "split the diagram" signal;
+    * ``subprocess.CalledProcessError`` if the draw.io CLI exits non-zero;
+    * ``subprocess.TimeoutExpired`` if the CLI hangs past ``EXPORT_TIMEOUT``;
+    * ``FileNotFoundError`` if the CLI is absent.
     """
     source = Path(source)
     out_png = Path(str(source) + ".png")
     original = source.read_text(encoding="utf-8")
-    inlined = inline_local_images(original, repo_root)
-    width = LANDSCAPE_EXPORT_WIDTH if _diagram_class_of(source) == "landscape" else EXPORT_WIDTH
 
+    # Fail-honest on a missing referenced asset instead of exporting a broken
+    # image and reporting OK (R8.5).
+    missing = missing_assets(original, repo_root)
+    if missing:
+        raise MissingAssetError(source, missing)
+
+    # Scale >= 1 or refuse (R8.4/D8). Computed before touching the CLI so a
+    # too-wide canvas fails without spawning draw.io or writing a temp copy.
+    dclass = _diagram_class_of(source)
+    scale, _width = compute_scale(source, dclass)
+
+    inlined = inline_local_images(original, repo_root)
+
+    tmp_dir: Optional[str] = None
     if inlined == original:
         # No local assets to inline (AWS/OCI/Azure): export the source directly.
         export_input = str(source)
-        tmp: Optional[str] = None
     else:
-        # Write the inlined copy NEXT TO the source (inside the repo), not in
-        # /tmp: a snap/AppArmor-confined draw.io CLI cannot read /tmp, so a
-        # temp file there fails with "input file/directory not found". The repo
-        # dir is already readable by the CLI (it reads the source from here).
-        # ponytail: repo-local temp file (ceiling: assumes the source dir is
-        # writable; upgrade path: honor $TMPDIR if a sandbox ever allows it).
-        tmp = str(source.with_name(f".{source.stem}.inlined.drawio"))
-        Path(tmp).write_text(inlined, encoding="utf-8")
-        export_input = tmp
+        # Write the inlined copy under .build-tools/export-tmp (R8.5): repo-local
+        # so a snap/AppArmor-confined draw.io CLI can read it (it cannot read
+        # /tmp), yet OUTSIDE examples/ so no transient copy ever appears among
+        # the published artifacts. Cleaned up in the finally block below.
+        EXPORT_TMP_DIR.mkdir(parents=True, exist_ok=True)
+        tmp_dir = tempfile.mkdtemp(dir=str(EXPORT_TMP_DIR))
+        tmp_copy = Path(tmp_dir) / f"{source.stem}.inlined.drawio"
+        tmp_copy.write_text(inlined, encoding="utf-8")
+        export_input = str(tmp_copy)
 
     try:
         subprocess.run(
             [
                 drawio, "--export", "--format", "png",
-                "--width", width,
+                "--scale", _format_scale(scale),
                 "--border", EXPORT_BORDER,
                 "--theme", EXPORT_THEME,
                 "--output", str(out_png),
                 export_input,
             ],
             check=True,
+            timeout=EXPORT_TIMEOUT,
         )
     finally:
-        if tmp:
-            os.unlink(tmp)
+        if tmp_dir is not None:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    # Stamp the raster with the sha256 of the *source* .drawio bytes so the
+    # raster gate can detect a PNG exported from a since-edited source
+    # (stale-raster, R8.2). Provenance is written with the shared helper in
+    # rule_engine.raster_gate, so the exporter and checker never disagree on the
+    # chunk layout.
+    _stamp_provenance(out_png, source)
     return out_png
+
+
+def _format_scale(scale: float) -> str:
+    """Format a scale for the draw.io CLI: an integer when whole, else 3 dp."""
+    if math.isclose(scale, round(scale)):
+        return str(int(round(scale)))
+    return f"{scale:.3f}"
+
+
+def _stamp_provenance(png: Path, source: Path) -> None:
+    """Insert the source .drawio sha256 into the exported PNG's tEXt chunk."""
+    # Import lazily so the script still runs from a bare checkout that has not
+    # installed the package on the path yet (the CLI-not-found path exits first).
+    sys.path.insert(0, str(REPO_ROOT / "src"))
+    from rule_engine.raster_gate import insert_provenance, source_sha256
+
+    digest = source_sha256(source)
+    stamped = insert_provenance(png.read_bytes(), digest)
+    png.write_bytes(stamped)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -200,6 +385,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         except subprocess.CalledProcessError as exc:
             failures += 1
             print(f"FAILED: {src} (drawio exit {exc.returncode})", file=sys.stderr)
+        except subprocess.TimeoutExpired:
+            failures += 1
+            print(f"FAILED: {src} (drawio timed out after {EXPORT_TIMEOUT}s)", file=sys.stderr)
+        except CanvasTooWideError as exc:
+            failures += 1
+            print(f"FAILED: {exc}", file=sys.stderr)
+        except MissingAssetError as exc:
+            failures += 1
+            print(f"FAILED: {exc}", file=sys.stderr)
     return 1 if failures else 0
 
 

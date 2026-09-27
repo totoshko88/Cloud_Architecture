@@ -27,6 +27,14 @@ sys.path.insert(0, os.path.join(HERE, "scripts"))
 from rule_engine import geometry as geo  # noqa: E402
 from ha_multiregion_common import build_summary, build_landscape  # noqa: E402
 
+
+def _build_geometry(text: str):
+    """Build geometry from ``.drawio`` text via the single parser (R1)."""
+    from rule_engine.drawio_model import parse_drawio
+
+    return geo.build_geometry(parse_drawio(text, path="<test>.drawio")[0])
+
+
 PROVIDERS = ("aws", "azure", "gcp", "oci")
 
 # OCI renders via embedded stencils decoded into assets/vendor/oci-stencils/
@@ -72,7 +80,7 @@ def _edge_geoms(g: geo.DiagramGeometry):
 
 
 def _geometry_triple(text: str):
-    g = geo.build_geometry(text)
+    g = _build_geometry(text)
     return _node_boxes(g), _container_boxes(g), _edge_geoms(g)
 
 
@@ -101,8 +109,8 @@ def test_ha_geometry_identical_across_providers(builder):
 def test_ha_parity_has_expected_shape():
     """Sanity: the parsed geometry actually carries the pair's node/edge counts,
     so the parity assertion above is comparing real geometry, not empty maps."""
-    sg = geo.build_geometry(build_summary(_skin("aws")))
-    lg = geo.build_geometry(build_landscape(_skin("aws")))
+    sg = _build_geometry(build_summary(_skin("aws")))
+    lg = _build_geometry(build_landscape(_skin("aws")))
     assert len(sg.nodes) == 9
     assert len(sg.edges) == 9
     assert len(lg.nodes) == 34
@@ -337,5 +345,5 @@ def test_landscape_reproduces_reference_shape(provider):
     every buildable provider: stacked equal-width AZs, a distinct VPC service-row
     tier above the zones, and non-negative on-grid origins (Requirement 12.6).
     OCI is exercised only when its stencils are fetched (skipped otherwise)."""
-    g = geo.build_geometry(build_landscape(_skin(provider)))
+    g = _build_geometry(build_landscape(_skin(provider)))
     _assert_landscape_shape(g)

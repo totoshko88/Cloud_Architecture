@@ -110,7 +110,9 @@ def test_size_and_theme_variants_are_not_reported_as_collisions(tmp_path, caplog
     assert not [r for r in caplog.records if "slug collision" in r.getMessage()]
 
 
-def test_distinct_services_on_one_slug_are_reported_once(tmp_path, caplog):
+def test_private_link_and_service_stay_distinct(tmp_path, caplog):
+    """R6.6: ``service`` is no longer stripped, so "Private Link" and "Private
+    Link Service" keep distinct slugs and both stay reachable — no collision."""
     root = _make_pack(
         tmp_path / "azure",
         [
@@ -119,10 +121,32 @@ def test_distinct_services_on_one_slug_are_reported_once(tmp_path, caplog):
         ],
     )
     with caplog.at_level("WARNING", logger=ai.__name__):
-        ai.index_provider("azure", str(root))
+        index = ai.index_provider("azure", str(root))
+    assert "private-link" in index
+    assert "private-link-service" in index
+    assert not [r for r in caplog.records if "slug collision" in r.getMessage()]
+    assert not index.ambiguous
+
+
+def test_distinct_services_on_one_slug_are_reported_once(tmp_path, caplog):
+    """A genuine collision (two distinct services that still normalise to one
+    slug) is reported once and recorded on the index as ``ambiguous`` (R6.7)."""
+    root = _make_pack(
+        tmp_path / "azure",
+        [
+            # "Azure Firewall" and "Firewall" both vendor-strip to "firewall"
+            # (``azure`` is still stripped) but carry distinct display names.
+            "Azure_Public_Service_Icons/Icons/networking/00427-icon-service-Azure-Firewall.svg",
+            "Azure_Public_Service_Icons/Icons/security/01105-icon-service-Firewall.svg",
+        ],
+    )
+    with caplog.at_level("WARNING", logger=ai.__name__):
+        index = ai.index_provider("azure", str(root))
     messages = [r.getMessage() for r in caplog.records if "slug collision" in r.getMessage()]
     assert len(messages) == 1
-    assert "'private-link'" in messages[0]
+    assert "'firewall'" in messages[0]
+    assert "firewall" in index.ambiguous
+    assert set(index.ambiguous["firewall"]) == {"Azure Firewall", "Firewall"}
 
 
 def test_token_match_tie_is_broken_by_slug_not_insertion_order():

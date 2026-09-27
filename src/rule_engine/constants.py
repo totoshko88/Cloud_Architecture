@@ -8,8 +8,11 @@ This module removes the duplication called out in the architecture review
   lockstep with ``schemas/inventory.schema.json``).
 - :data:`CONTAINER_KINDS`, :data:`ICON_SOURCES` — small structural enums.
 - :data:`BRAND_HEX` — the per-provider brand anchor color.
-- :data:`SECRET_MARKERS` — the shared secret-material vocabulary consumed by
-  both the Linter's content scan and the Normalizer's config-key drop list.
+
+The shared secret-material vocabulary moved to :mod:`rule_engine.secret_safety`
+in 1.7.0. ``SECRET_MARKERS`` / ``SECRET_CONTENT_MARKERS`` remain for one release
+as deprecated aliases of ``secret_safety.CREDENTIAL_SUFFIXES``, served through
+the module ``__getattr__`` (a :class:`DeprecationWarning` on access).
 
 It also loads ``profiles/terminology.yaml`` — the authoritative machine-readable
 neutral-concept → per-provider mapping (native label, native-type aliases, seed
@@ -21,6 +24,7 @@ Adding a provider is then a data edit in the YAML, not a core-code change.
 from __future__ import annotations
 
 import functools
+import warnings
 from pathlib import Path
 from typing import Any, Dict, Tuple
 
@@ -29,6 +33,8 @@ import yaml
 __all__ = [
     "PROVIDERS",
     "NEUTRAL_RESOURCE_TYPES",
+    "DIAGRAM_ROLE_TYPES",
+    "RESOURCE_TYPES",
     "CONTAINER_KINDS",
     "ICON_SOURCES",
     "BRAND_HEX",
@@ -64,6 +70,26 @@ NEUTRAL_RESOURCE_TYPES: Tuple[str, ...] = (
     "llm_platform",
 )
 
+#: The seven diagram presentation roles beyond the nine neutral types. These are
+#: how a node is *drawn* (its icon) for distinct services that are not first-class
+#: inventory types; they are declared as roles in ``mappings/roles.yaml`` and, as
+#: of 1.7.0 (design D4), also carry a native-type row in ``profiles/terminology.yaml``
+#: so a collector can normalize them.
+DIAGRAM_ROLE_TYPES: Tuple[str, ...] = (
+    "compute_instance",
+    "file_system",
+    "cdn",
+    "dns",
+    "waf",
+    "lb",
+    "cache",
+)
+
+#: The full 16-value resource-type vocabulary — the single source of truth for the
+#: ``schemas/inventory.schema.json`` ``resource_type.enum`` and the
+#: ``mappings/roles.yaml`` role set (a test asserts all three are the same set).
+RESOURCE_TYPES: Tuple[str, ...] = NEUTRAL_RESOURCE_TYPES + DIAGRAM_ROLE_TYPES
+
 #: The two structural container kinds.
 CONTAINER_KINDS: Tuple[str, ...] = ("boundary", "network_boundary")
 
@@ -71,62 +97,37 @@ CONTAINER_KINDS: Tuple[str, ...] = ("boundary", "network_boundary")
 ICON_SOURCES: Tuple[str, ...] = ("builtin", "custom")
 
 # --------------------------------------------------------------------------- #
-# Shared secret-material vocabulary (U2)
+# Shared secret-material vocabulary — moved to ``secret_safety`` (1.7.0, R3)
 # --------------------------------------------------------------------------- #
 #
-# There are two matching semantics, so there are two vocabularies drawn from one
-# place:
-#
-#   SECRET_MARKERS          — broad, matched against object KEY NAMES by the
-#                             Normalizer (normalizer._is_secret_key). A field
-#                             literally named ``secret``/``token``/``access_key``
-#                             is credential-bearing and dropped before hashing.
-#
-#   SECRET_CONTENT_MARKERS  — narrow, matched as substrings against RAW SNAPSHOT
-#                             CONTENT by the Linter (linter._content_has_secret).
-#                             It must contain only tokens that reliably indicate a
-#                             secret VALUE or a compound credential key, because a
-#                             broad token like ``secret`` would false-positive on
-#                             legitimate metadata (e.g. the neutral type value
-#                             ``secrets_store`` or a field name ``access_key_id``)
-#                             and wrongly block a secret-free snapshot.
-SECRET_MARKERS: Tuple[str, ...] = (
-    "password",
-    "passwd",
-    "secret",
-    "token",
-    "credential",
-    "private_key",
-    "privatekey",
-    "securestring",
-    "apikey",
-    "api_key",
-    "access_key",
-    "accesskey",
-    "secret_key",
-    "secretkey",
-    "session_token",
-    "client_secret",
-    "secret_access_key",
-    "secretaccesskey",
-    "aws_secret_access_key",
-)
+# The secret vocabulary now lives in :mod:`rule_engine.secret_safety`, the single
+# home for the Collector, Normalizer and Linter (design §5). The two names this
+# module used to export — ``SECRET_MARKERS`` (broad key-name list) and
+# ``SECRET_CONTENT_MARKERS`` (narrow content list) — are kept for one release as
+# deprecated aliases of :data:`secret_safety.CREDENTIAL_SUFFIXES`, served through
+# the module ``__getattr__`` below so that touching either name emits a
+# :class:`DeprecationWarning`. New code imports from ``secret_safety`` directly.
 
-#: Narrow markers for scanning raw snapshot CONTENT for a leaked secret value or
-#: compound credential key. Deliberately excludes broad single words
-#: (``secret``, ``token``, ``credential``, ``access_key``, ``apikey``) that occur
-#: in ordinary resource metadata.
-SECRET_CONTENT_MARKERS: Tuple[str, ...] = (
-    "-----begin ",         # PEM key material block
-    "securestring",        # SSM SecureString value
-    "private_key",
-    "privatekey",
-    "secret_access_key",
-    "secretaccesskey",
-    "aws_secret_access_key",
-    "client_secret",
-    "session_token",
-)
+
+def __getattr__(name: str) -> Any:  # noqa: D401 (module-level deprecation shim)
+    """Re-export the removed secret vocabularies from ``secret_safety``.
+
+    ``SECRET_MARKERS`` and ``SECRET_CONTENT_MARKERS`` were removed in 1.7.0; both
+    now resolve to :data:`secret_safety.CREDENTIAL_SUFFIXES` and raise a
+    :class:`DeprecationWarning` on access. Any other unknown attribute raises the
+    usual :class:`AttributeError`.
+    """
+    if name in ("SECRET_MARKERS", "SECRET_CONTENT_MARKERS"):
+        warnings.warn(
+            f"constants.{name} is deprecated; import "
+            "rule_engine.secret_safety.CREDENTIAL_SUFFIXES instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        from rule_engine import secret_safety
+
+        return secret_safety.CREDENTIAL_SUFFIXES
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 # --------------------------------------------------------------------------- #
 # Terminology source of truth (C1)

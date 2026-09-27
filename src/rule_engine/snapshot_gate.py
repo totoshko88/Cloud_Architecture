@@ -89,13 +89,22 @@ REQUIRED_MANIFEST_FIELDS = (
     "delta_instructions",
 )
 
-#: ``inventory-<provider>-<boundary-id>-<region>-<YYYY-MM-DD_HHMM>`` (§3). The
-#: boundary id and region may themselves contain hyphens (``eu-central-1``), so
-#: the pattern anchors on the provider prefix and the trailing UTC timestamp and
-#: treats everything between as the boundary + region.
+#: ``inventory-<provider>-<boundary-id>-<region>-<YYYY-MM-DD_HHMM>`` (§3), with
+#: an optional trailing ``-<n>`` de-collision suffix (n ≥ 2). The boundary id and
+#: region may themselves contain hyphens (``eu-central-1``), so the pattern
+#: anchors on the provider prefix and the trailing UTC timestamp and treats
+#: everything between as the boundary + region.
+#:
+#: The Collector allocates a fresh folder per run: when the base name is already
+#: taken it appends ``-2``, ``-3``, … (``collector._allocate_snapshot_dir``,
+#: R5.7), so the gate must accept exactly that shape. The suffix starts at 2 —
+#: ``-0``/``-1`` are never produced and are rejected — so the gate does not
+#: mistake a hyphenated region ending in a digit for a suffix on a well-formed
+#: base name (the base timestamp is still required first).
 _FOLDER_RE = re.compile(
     r"^inventory-(?P<provider>[a-z]+)-(?P<middle>.+)-"
-    r"(?P<date>\d{4}-\d{2}-\d{2})_(?P<time>\d{4})$"
+    r"(?P<date>\d{4}-\d{2}-\d{2})_(?P<time>\d{4})"
+    r"(?:-(?P<dedup>[2-9]|[1-9]\d+))?$"
 )
 
 SEVERITY_ERROR = "error"

@@ -311,6 +311,43 @@ def write_pair(skin: ProviderSkin, out_dir: Path, stem: str) -> List[Path]:
     return [sp, lp]
 
 
+def _first_diff_line(expected: str, actual: str) -> str:
+    """Return a human-readable description of the first differing line.
+
+    ``expected`` is the committed (on-disk) content; ``actual`` is the freshly
+    regenerated content. The 1-based line number matches how an editor numbers
+    the file, so a reviewer can jump straight to it."""
+    exp_lines = expected.splitlines()
+    act_lines = actual.splitlines()
+    for i, (e, a) in enumerate(zip(exp_lines, act_lines), start=1):
+        if e != a:
+            return f"line {i}: committed {e!r} != regenerated {a!r}"
+    # No differing line within the shared prefix — one file is longer.
+    if len(exp_lines) != len(act_lines):
+        n = min(len(exp_lines), len(act_lines)) + 1
+        longer = "regenerated" if len(act_lines) > len(exp_lines) else "committed"
+        return f"line {n}: {longer} has extra content ({len(exp_lines)} vs {len(act_lines)} lines)"
+    return "trailing bytes differ (no newline / whitespace at EOF)"
+
+
+def _check_one(path: Path, regenerated: str, prog: str) -> bool:
+    """Compare one committed .drawio against its regenerated content.
+
+    Returns ``True`` when the file exists and matches byte for byte; otherwise
+    prints a clear ``STALE: regenerate`` message naming the file and returns
+    ``False``. Writes nothing."""
+    if not path.exists():
+        print(f"{prog}: STALE: regenerate {path} — committed file is missing",
+              file=sys.stderr)
+        return False
+    committed = path.read_text(encoding="utf-8")
+    if committed == regenerated:
+        return True
+    print(f"{prog}: STALE: regenerate {path} — {_first_diff_line(committed, regenerated)}",
+          file=sys.stderr)
+    return False
+
+
 def run_cli(
     skin: ProviderSkin,
     out_dir: Path,
@@ -322,11 +359,18 @@ def run_cli(
 
     The four per-provider wrappers differ only in their ``ProviderSkin``, output
     directory, stem, and program name — the argument parsing, the two
-    ``--stdout-*`` shortcuts, and the write-both-files path are identical, so
-    they live here once instead of being copy-pasted four times."""
+    ``--stdout-*`` shortcuts, the ``--check`` freshness mode, and the
+    write-both-files path are identical, so they live here once instead of being
+    copy-pasted four times."""
     ap = argparse.ArgumentParser(prog=prog)
     ap.add_argument("--stdout-summary", action="store_true")
     ap.add_argument("--stdout-landscape", action="store_true")
+    ap.add_argument(
+        "--check",
+        action="store_true",
+        help="compare regenerated output byte-for-byte with the committed "
+             "files without writing; exit non-zero if either is stale or missing",
+    )
     args = ap.parse_args(argv)
     if args.stdout_summary:
         sys.stdout.write(build_summary(skin))
@@ -334,6 +378,17 @@ def run_cli(
     if args.stdout_landscape:
         sys.stdout.write(build_landscape(skin))
         return 0
+    if args.check:
+        # Regenerate both diagrams in memory and compare against the committed
+        # files; write nothing. Exit 0 only when BOTH match (R8.1).
+        sp = out_dir / f"{stem}-summary.drawio"
+        lp = out_dir / f"{stem}-landscape.drawio"
+        summary_ok = _check_one(sp, build_summary(skin), prog)
+        landscape_ok = _check_one(lp, build_landscape(skin), prog)
+        if summary_ok and landscape_ok:
+            print(f"{prog}: OK — committed summary and landscape are up to date")
+            return 0
+        return 1
     for p in write_pair(skin, out_dir, stem):
         print(f"{prog}: wrote {p}")
     return 0

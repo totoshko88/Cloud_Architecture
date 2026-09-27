@@ -4,17 +4,46 @@ The Azure `azure2` shapes ship inside the draw.io app, so a well-formed but
 non-existent path (`…/Azure_Cache_Redis.svg` vs the real `Cache_Redis.svg`)
 rendered as a broken image and passed every guard. These tests pin that the
 committed `mappings/azure2-shapes.json` allow-list now catches it.
+
+Since 1.7.0 (honest-gates) the azure2 resolution logic lives in the shared
+`rule_engine.icon_refs` module, so these tests drive `icon_refs.resolve` for an
+``azure2`` :class:`~rule_engine.icon_refs.IconRef` rather than the old
+``verify_icon._resolve_azure2`` helper (removed with the local regexes).
 """
 
 from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 
 from rule_engine.azure2_shapes import DEFAULT_MANIFEST, load_manifest
-from rule_engine.verify_icon import _resolve_azure2, RESOLVED, SKIPPED, UNRESOLVED, verify_drawio
+from rule_engine.icon_refs import (
+    RESOLVED,
+    SKIPPED,
+    UNRESOLVED,
+    IconRef,
+    IconSources,
+    resolve,
+)
+from rule_engine.verify_icon import verify_drawio
 
 HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _azure2_sources(paths) -> IconSources:
+    """An :class:`IconSources` carrying only the azure2 allow-list."""
+    return IconSources(
+        aws4=None,
+        azure2=frozenset(paths) if paths is not None else None,
+        oci_digests=None,
+        oci_stencils=None,
+        workspace_root=Path(HERE),
+    )
+
+
+def _resolve_azure2(ref: str, paths):
+    return resolve(IconRef("n1", "azure2", ref), _azure2_sources(paths))
 
 
 def test_manifest_present_and_nonempty():

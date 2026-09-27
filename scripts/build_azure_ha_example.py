@@ -12,6 +12,7 @@ Usage::
     python scripts/build_azure_ha_example.py                 # write both .drawio files
     python scripts/build_azure_ha_example.py --stdout-summary
     python scripts/build_azure_ha_example.py --stdout-landscape
+    python scripts/build_azure_ha_example.py --check          # compare with committed, write nothing
 """
 
 from __future__ import annotations

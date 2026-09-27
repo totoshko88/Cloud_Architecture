@@ -457,7 +457,8 @@ class OciStencilIcon:
         gh = float(self.entry.get("h") or ICON_SIZE)
         style = (
             "group;html=1;fillColor=none;strokeColor=none;"
-            f"{_LABEL_STYLE};fontColor={self.brand_hex}{overlay_suffix(node)}"
+            f"{_LABEL_STYLE};fontColor={self.brand_hex};"
+            f"ociSlug={self.slug}{overlay_suffix(node)}"
         )
         container = (
             f'        <mxCell id="{node.id}" value="{node.label}" style="{style}" '

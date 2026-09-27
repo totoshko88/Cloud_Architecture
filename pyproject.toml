@@ -9,13 +9,14 @@ backend-path = ["."]
 
 [project]
 name = "rule-engine"
-version = "1.6.1"
+version = "1.7.0"
 description = "Diagram & Inventory Rule Engine — a cloud-agnostic Kiro project for deterministic diagram and inventory generation."
 readme = "README.md"
-# Python 3.14 is intentional: Python 3.10 reaches end-of-life in October 2026,
-# so the engine targets a supported runtime (matched by the CI image
-# python:3.14-slim). See INSTALL.md.
-requires-python = ">=3.14"
+# The engine supports Python 3.11 through 3.14 (the CI test matrix, task 21.5).
+# 3.11 is the floor: it is the oldest interpreter still in upstream security
+# support, and the engine uses no syntax newer than it. The previous 3.14-only
+# floor needlessly excluded three supported runtimes. See INSTALL.md.
+requires-python = ">=3.11"
 license = { file = "LICENSE" }
 # Runtime dependencies only, with version floors for reproducible builds. Test/
 # dev tools live in the `dev` extra below so downstream consumers of the engine

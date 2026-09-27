@@ -48,6 +48,7 @@ from typing import List, Optional, Sequence
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from rule_engine.drawio_model import parse_drawio  # noqa: E402
 from rule_engine.geometry import (  # noqa: E402
     build_geometry,
     contact_faces,
@@ -82,7 +83,7 @@ def _render_points(pts: Sequence[tuple]) -> str:
 
 def orthogonalise_text(text: str) -> tuple[str, List[str]]:
     """Return ``(rewritten_xml, changed_edge_ids)``."""
-    geo = build_geometry(text)
+    geo = build_geometry(parse_drawio(text, path="<orthogonalise>.drawio")[0])
     changed: List[str] = []
     edges = {e.id: e for e in geo.edges}
 
@@ -144,7 +145,7 @@ def orthogonalise_text(text: str) -> tuple[str, List[str]]:
 
 def report(path: Path) -> List[str]:
     """Return a human-readable list of alignment defects in ``path``."""
-    geo = build_geometry(path.read_text(encoding="utf-8"))
+    geo = build_geometry(parse_drawio(path.read_text(encoding="utf-8"), path=str(path))[0])
     out: List[str] = []
     for e in geo.edges:
         src, tgt = geo.nodes.get(e.source), geo.nodes.get(e.target)

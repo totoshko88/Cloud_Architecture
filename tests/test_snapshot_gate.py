@@ -156,6 +156,32 @@ def test_multi_hyphen_boundary_and_region_are_accepted(tmp_path):
     assert "folder-name" not in {f.rule for f in report.errors}
 
 
+@pytest.mark.parametrize("name", [
+    "inventory-aws-123456789012-us-east-1-2026-09-22_1430-2",   # first collision
+    "inventory-aws-123456789012-us-east-1-2026-09-22_1430-3",   # second
+    "inventory-aws-123456789012-us-east-1-2026-09-22_1430-10",  # multi-digit
+    "inventory-generic-env-prod-region-1-2026-09-22_1430-2",    # hyphenated middle
+])
+def test_dedup_suffix_folder_name_is_accepted(tmp_path, name):
+    """The Collector allocates ``folder``, ``folder-2``, ``folder-3``, … on a
+    name collision (R5.7); the gate must accept that trailing ``-<n>`` (n ≥ 2)."""
+    report = sg.check_snapshot(_make_snapshot(tmp_path, name=name))
+    assert "folder-name" not in {f.rule for f in report.errors}
+    assert report.findings == []
+
+
+@pytest.mark.parametrize("name", [
+    "inventory-aws-123456789012-us-east-1-2026-09-22_1430-0",  # -0 never produced
+    "inventory-aws-123456789012-us-east-1-2026-09-22_1430-1",  # -1 never produced
+    "inventory-aws-123456789012-us-east-1-2026-09-22_1430-02",  # leading zero
+])
+def test_invalid_dedup_suffix_is_rejected(tmp_path, name):
+    """The suffix starts at 2 with no leading zero; ``-0``/``-1``/``-02`` are not
+    folders the Collector ever writes, so the base name no longer parses."""
+    report = sg.check_snapshot(_make_snapshot(tmp_path, name=name))
+    assert "folder-name" in {f.rule for f in report.errors}
+
+
 # =========================================================================== #
 # §4 manifest
 # =========================================================================== #
@@ -204,6 +230,41 @@ def test_parse_manifest_fields_reads_all_three_shapes():
 def test_parse_manifest_fields_keeps_the_first_non_empty_value():
     text = "| provider | aws |\n- **provider**: azure\n"
     assert sg.parse_manifest_fields(text)["provider"] == "aws"
+
+
+# The exact ``## Duplicate identities`` section the Collector renders when a
+# same-identity resource recurs (collector._render_manifest_md). It carries a
+# 3-column table whose header/data rows must not corrupt the required fields
+# parsed from the top table.
+_MANIFEST_WITH_DUPLICATES = _MANIFEST_TABLE + """
+## Duplicate identities (hashed subfolders)
+
+| Service | Identity | Subfolder |
+| --- | --- | --- |
+| storage | arn:aws:s3:::bucket-a | storage-bucket-a-1a2b3c4d |
+| compute | i-0abc123 | compute-i-0abc123-9f8e7d6c |
+"""
+
+
+def test_manifest_with_duplicates_section_still_reads_every_required_field(tmp_path):
+    """The Collector's new ``duplicates`` section must not derail the required
+    manifest fields the gate reads from the top table (R5.4, R5.7)."""
+    report = sg.check_snapshot(
+        _make_snapshot(tmp_path, manifest=_MANIFEST_WITH_DUPLICATES)
+    )
+    assert [f.rule for f in report.errors] == []
+
+
+def test_parse_manifest_fields_tolerates_duplicates_section():
+    """Required fields resolve to their top-table values regardless of the
+    duplicates rows that follow (the identity ``arn:...`` colons, the 3-column
+    rows, and the section heading must not shadow a required field)."""
+    fields = sg.parse_manifest_fields(_MANIFEST_WITH_DUPLICATES.format(file_count=13))
+    assert fields["provider"] == "aws"
+    assert fields["boundary_id"] == "123456789012"
+    assert fields["region_set"] == "us-east-1"
+    assert fields["file_count"] == "13"
+    assert fields["delta_instructions"] == "Diff each domain JSON against this folder"
 
 
 # =========================================================================== #

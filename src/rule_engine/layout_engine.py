@@ -3218,7 +3218,9 @@ def _run_oracle(candidate: "PlacedDiagram") -> "OracleFindings":
     are split into ``blocking`` (the landscape ERROR/CRITICAL rules) and the
     ``fixable`` subset the repair loop knows how to resolve."""
     text = _serialize_candidate(candidate)
-    geo = _geo.build_geometry(text)
+    from rule_engine.drawio_model import parse_drawio as _parse_drawio_model
+
+    geo = _geo.build_geometry(_parse_drawio_model(text, path="<oracle>.drawio")[0])
     all_findings = _collect_findings(geo)
     blocking = [f for f in all_findings if f[0] in _BLOCKING_RULES]
     fixable = [f for f in blocking if f[0] in _FIXABLE_RULES]

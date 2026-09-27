@@ -1,0 +1,20 @@
+<mxfile host="Electron" modified="2025-01-15T14:30:00.000Z" agent="draw.io/24.0.0" version="24.0.0" type="device">
+  <diagram name="Wrapped" id="page-wrapped-0001">
+    <mxGraphModel dx="800" dy="600" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <UserObject id="payments-fn" label="Payments&lt;br&gt;Function" tooltip="Handles payment capture" placeholders="1">
+          <mxCell style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;html=1;" vertex="1" parent="1">
+            <mxGeometry x="200" y="160" width="78" height="78" as="geometry" />
+          </mxCell>
+        </UserObject>
+        <object id="queue-node" label="Payments Queue" queueUrl="https://example/q">
+          <mxCell style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.sqs;html=1;" vertex="1" parent="1">
+            <mxGeometry x="420" y="160" width="78" height="78" as="geometry" />
+          </mxCell>
+        </object>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

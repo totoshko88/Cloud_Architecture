@@ -43,22 +43,46 @@ Normalized Resources, or a Collector snapshot folder) and generates deterministi
 artifact content; the ``.drawio.png`` raster is written as an exported-raster
 stub file (its path is recorded).
 
-Every generated artifact is run through the :mod:`rule_engine.linter`; the
-contract raises :class:`ContractGenerationError` if a generated artifact is
-blocked from publication (a CRITICAL or ERROR finding), so a partial/invalid
-artifact set is never returned.
+**Lints what it writes (Requirement 9).** The contract writes its four outputs
+into a private *staging* directory, then lints the real files there through the
+**same** path as ``rule-engine-lint --file`` — :func:`rule_engine.cli.parse_artifacts`
+followed by :func:`rule_engine.linter.lint_with_ruleset` — rather than through a
+synthetic :class:`~rule_engine.linter.Artifact` (R9.1). The frontmatter and body
+that are linted are exactly the bytes on disk (R9.4). Only when *every* staged
+artifact is eligible for publication are the files moved into ``output_root``;
+otherwise the staging directory is removed and :class:`ContractGenerationError`
+lists each blocked file with its findings, so a partial/invalid artifact set is
+never returned and ``output_root`` is left untouched.
+
+The contract draws **no edges** it did not derive from the input data (R9.2): it
+has no relationship information, so the diagram is a set of resolved nodes with
+no invented "connects to" edges (the resulting ``node-connectivity`` findings are
+non-blocking WARNINGs). IF the current snapshot has more resources than the
+diagram-class node limit, the contract raises :class:`ContractGenerationError`
+naming the count and the limit instead of silently dropping resources (R9.3).
+
+The authoritative ``diagram-lint.md`` ruleset is located via
+:func:`rule_engine.ruleset.require_ruleset` (the shared location used by the
+Lint_CLI); a :class:`~rule_engine.ruleset.RulesetUnavailableError` maps to
+:class:`ContractGenerationError` before any file is written (Requirement 10.2 /
+7 AC14).
 """
 
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import uuid
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
+from rule_engine import cli as cli_mod
 from rule_engine import delta as delta_engine
 from rule_engine import icon_resolver
 from rule_engine import linter as linter_mod
+from rule_engine import ruleset as ruleset_mod
 from rule_engine.constants import BRAND_HEX as _BRAND_HEX
 from rule_engine.constants import PROVIDERS
 from rule_engine.constants import provider_labels as _provider_labels
@@ -118,15 +142,30 @@ class ContractInputError(ValueError):
 
 
 class ContractGenerationError(RuntimeError):
-    """Raised when a generated artifact is blocked from publication.
+    """Raised when the contract cannot return a publishable artifact set.
 
-    Carries the ``artifact`` path and the blocking lint ``findings`` so a caller
-    can see why the artifact set was not returned.
+    Three situations raise it:
+
+    * a staged artifact is blocked from publication — ``artifact`` names the file
+      and ``findings`` carries its blocking lint findings;
+    * the node count exceeds the diagram-class limit (R9.3) — ``findings`` holds a
+      single ``node-count`` record and the message names the count and the limit;
+    * the authoritative ruleset is unavailable (R10.2 / 7 AC14) — raised before
+      any file is written.
     """
 
-    def __init__(self, artifact: str, findings: Sequence[Mapping[str, str]]) -> None:
+    def __init__(
+        self,
+        artifact: str,
+        findings: Sequence[Mapping[str, str]],
+        *,
+        message: Optional[str] = None,
+    ) -> None:
         self.artifact = artifact
         self.findings = list(findings)
+        if message is not None:
+            super().__init__(message)
+            return
         rendered = ", ".join(
             f"{f.get('rule')}({f.get('severity')})" for f in self.findings
         )
@@ -275,6 +314,24 @@ def _extract_embedded_snapshot(path: Path) -> Optional[List[Dict[str, Any]]]:
     return _resources_from_json(data)
 
 
+def _stamp_boundary_region(
+    resources: Sequence[Dict[str, Any]], boundary_id: str, region: str
+) -> None:
+    """Fill in ``boundary`` / ``region`` on any resource missing them, in place.
+
+    ``boundary`` and ``region`` are part of the Delta Engine identity
+    (Requirement 5 AC8). A Collector snapshot is scoped to a single
+    boundary/region (encoded in its folder name), so a resource that omits them
+    inherits the authoritative values from this invocation. A resource that
+    already declares a non-empty value keeps its own.
+    """
+    for resource in resources:
+        if not resource.get("boundary"):
+            resource["boundary"] = boundary_id
+        if not resource.get("region"):
+            resource["region"] = region
+
+
 # --------------------------------------------------------------------------- #
 # Sequence numbering (NN in 01–99)
 # --------------------------------------------------------------------------- #
@@ -369,9 +426,11 @@ def _resolve_nodes(
                 "icon_source": source,
             }
         )
-    # Node limit (diagram-standards: ≤ 12 nodes). Keep the first 12; a real
-    # generator would split, but the contract keeps a single lint-clean diagram.
-    return nodes[: linter_mod.MAX_NODES]
+    # The node-count limit (diagram-standards: ≤ 12 nodes for a flow diagram) is
+    # NOT enforced by silently slicing here (that would drop resources — R9.3).
+    # The caller checks the count against the class limit and raises a
+    # ContractGenerationError naming the count and the limit instead.
+    return nodes
 
 
 # --------------------------------------------------------------------------- #
@@ -390,18 +449,24 @@ def _title_cell(
     return f"{provider} {workload} — {boundary_id} / {region} | {today} | v{version}"
 
 
-def _legend_block() -> str:
-    """The mandatory Legend block (diagram-standards — Mandatory Legend Block)."""
-    return (
-        "Legend: "
-        "solid line = primary flow; "
-        "dashed line = asynchronous / event-driven flow; "
-        "red = blocked / missing / disabled; "
-        "🆕 = new in version N; "
-        "🔄 = changed in version N; "
-        "dashed green boundary = stack boundary; "
-        "dashed blue boundary = Network Boundary."
-    )
+def _legend_lines() -> List[str]:
+    """The mandatory Legend block, one entry per line (diagram-standards).
+
+    The **first** line is exactly ``Legend`` so the Linter's structural Legend
+    detection (a text cell whose first non-empty line casefolds to ``legend``)
+    finds it; the remaining lines document every line style, color, and change
+    marker required by the *Mandatory Legend Block* standard.
+    """
+    return [
+        "Legend",
+        "solid line = primary flow",
+        "dashed line = asynchronous / event-driven flow",
+        "red = blocked / missing / disabled",
+        "new in version N",
+        "changed in version N",
+        "dashed green boundary = stack boundary",
+        "dashed blue boundary = Network Boundary",
+    ]
 
 
 def _node_slug(text: str) -> str:
@@ -420,8 +485,11 @@ def _render_drawio(title: str, nodes: Sequence[Mapping[str, Any]]) -> str:
     """Render a minimal, lint-clean draw.io (mxGraph) source.
 
     The source encodes the title cell, the Legend block, and one vertex per node
-    with its resolved style, plus a labeled edge between consecutive nodes so the
-    ``edge-label`` rule stays clean.
+    with its resolved style. It draws **no edges**: the contract has no
+    relationship data for this boundary, and inventing "connects to" edges would
+    publish relationships that are not in the input (R9.2). Drawing none is the
+    honest output; the resulting ``node-connectivity`` findings are non-blocking
+    WARNINGs.
     """
     cells: List[str] = []
     # Title + legend as text cells.
@@ -431,10 +499,19 @@ def _render_drawio(title: str, nodes: Sequence[Mapping[str, Any]]) -> str:
         f'          <mxGeometry x="20" y="10" width="720" height="30" as="geometry"/>\n'
         f"        </mxCell>"
     )
+    # The Legend renders each entry on its own line (first line exactly
+    # ``Legend``). With ``html=1`` draw.io treats ``<br>`` as a line break, so the
+    # parser's structural Legend detection reads ``Legend`` as the first line.
+    # Join with an escaped ``<br>`` so the attribute value is well-formed XML;
+    # the parser decodes it back to a literal ``<br>`` and, because the cell is
+    # ``html=1``, treats it as a line break (first line becomes ``Legend``).
+    legend_value = "&lt;br&gt;".join(_xml_escape(line) for line in _legend_lines())
     cells.append(
-        f'        <mxCell id="legend" value="{_xml_escape(_legend_block())}" '
-        f'style="text;html=1;whiteSpace=wrap;" vertex="1" parent="1">\n'
-        f'          <mxGeometry x="20" y="380" width="720" height="60" as="geometry"/>\n'
+        f'        <mxCell id="legend" value="{legend_value}" '
+        f'style="text;html=1;whiteSpace=wrap;spacingLeft=10;spacingRight=10;'
+        f'spacingTop=10;spacingBottom=10;fillColor=#FFFFFF;strokeColor=#000000;" '
+        f'vertex="1" parent="1">\n'
+        f'          <mxGeometry x="20" y="380" width="720" height="140" as="geometry"/>\n'
         f"        </mxCell>"
     )
 
@@ -455,14 +532,7 @@ def _render_drawio(title: str, nodes: Sequence[Mapping[str, Any]]) -> str:
             f"        </mxCell>"
         )
 
-    for i in range(len(node_ids) - 1):
-        cells.append(
-            f'        <mxCell id="e{i}" value="connects to" '
-            f'style="edgeStyle=orthogonalEdgeStyle;" edge="1" parent="1" '
-            f'source="{node_ids[i]}" target="{node_ids[i + 1]}">\n'
-            f'          <mxGeometry relative="1" as="geometry"/>\n'
-            f"        </mxCell>"
-        )
+    # No edges: the contract has no relationship data, so it invents none (R9.2).
 
     body = "\n".join(cells)
     return (
@@ -498,12 +568,15 @@ def _frontmatter(
     boundary_id: str,
     tags: Sequence[str],
     related_docs: Sequence[str],
+    extra: Optional[Mapping[str, str]] = None,
 ) -> str:
     """Render a kb-frontmatter compliant YAML frontmatter block.
 
     Emits all twelve required keys with non-empty values (kb-frontmatter.md /
     Requirement 8 AC1): id, title, kb_namespace, section, category, status,
     updated, owner, author, next_review_date, tags (1–20), related_docs (0–20).
+    ``extra`` adds further scalar keys (for example ``diagram_class`` on a
+    companion document) after the required keys.
     """
     today = date.today()
     review = (today + timedelta(days=180)).isoformat()
@@ -530,6 +603,9 @@ def _frontmatter(
             lines.append(f"  - {doc}")
     else:
         lines[-1] = "related_docs: []"
+    if extra:
+        for key, value in extra.items():
+            lines.append(f"{key}: {value}")
     lines.append("---")
     return "\n".join(lines)
 
@@ -576,6 +652,10 @@ def _render_companion_doc(
         boundary_id=boundary_id,
         tags=[provider, "diagram", boundary_id],
         related_docs=[diagram_filename],
+        # The companion declares the diagram class so the Linter evaluates the
+        # sibling .drawio as a ``flow`` diagram (the Contract never emits a
+        # landscape). Read by cli._load_companion_frontmatter.
+        extra={"diagram_class": "flow"},
     )
     node_lines = "\n".join(
         f"- {n['label']} — {n['name']}" for n in nodes
@@ -648,6 +728,16 @@ def _render_infrastructure_doc(
         for rec in deltas
     ) or "- (no resources enumerated in this snapshot)"
 
+    # Duplicate identities are reported explicitly (never silently overwritten),
+    # and are listed in the Troubleshooting section below (Requirement 5 AC8).
+    duplicate_lines = "\n".join(
+        f"- {rec.identity.resource_type} {rec.identity.identity_key} "
+        f"in boundary {rec.identity.boundary} region {rec.identity.region}"
+        + (f" ({rec.detail})" if rec.detail else "")
+        for rec in deltas
+        if rec.classification == delta_engine.DUPLICATE
+    )
+
     overview = _pad_section(
         f"This document records the existing infrastructure for the {provider} "
         f"boundary {boundary_id} in region {region}, as enumerated by the "
@@ -662,12 +752,22 @@ def _render_infrastructure_doc(
         f"removed {counts.get('removed', 0)}, unchanged {counts.get('unchanged', 0)}.\n"
         f"{delta_lines}"
     )
+    duplicate_block = (
+        "The following identities occurred more than once in a snapshot and are "
+        "reported as duplicate rather than silently overwritten; resolve each by "
+        "giving the resources distinct identities before the next collection:\n"
+        f"{duplicate_lines}\n"
+        if duplicate_lines
+        else "No duplicate identities were detected in this snapshot. "
+    )
     trouble = _pad_section(
+        f"{duplicate_block}"
         "If a resource appears removed unexpectedly, verify the current snapshot "
         "enumerated it and that its identity tuple of provider, resource type, "
-        "and identity key matches the previous version. If every resource shows "
-        "as added, the previous version could not be resolved and the delta "
-        "treated this as a first version, which is expected for a new boundary."
+        "boundary, region, and identity key matches the previous version. If "
+        "every resource shows as added, the previous version could not be "
+        "resolved and the delta treated this as a first version, which is "
+        "expected for a new boundary."
     )
     see_also = _pad_section(
         f"See the companion diagram document {diagram_filename}.diagram.md for the "
@@ -687,97 +787,30 @@ def _render_infrastructure_doc(
 
 
 # --------------------------------------------------------------------------- #
-# Linting generated artifacts
+# Linting the written files (R9.1, R9.4)
 # --------------------------------------------------------------------------- #
 
 
-def _lint_diagram(
-    drawio_path: Path, title: str, nodes: Sequence[Mapping[str, Any]], version: int
-) -> None:
-    """Lint the generated diagram; raise on any blocking finding."""
-    artifact = linter_mod.Artifact(
-        kind="diagram",
-        path=str(drawio_path),
-        node_names=[
-            f'{_node_slug(n["label"])}-{_node_slug(n["name"])}' for n in nodes
-        ],
-        edges=[
-            linter_mod.Edge(label="connects to")
-            for _ in range(max(0, len(nodes) - 1))
-        ],
-        has_legend=True,
-        icons=[
-            {"resolved": True, "style": n["style_string"]} for n in nodes
-        ],
-        title_cell=title,
-        source_format="drawio",
-        diagram_type="component",
-        is_drawio=True,
-        has_companion_doc=True,
-    )
-    _raise_if_blocked(str(drawio_path), _lint_guarded(artifact, drawio_path))
+def _lint_written_file(path: Path) -> None:
+    """Lint one written file exactly as ``rule-engine-lint --file`` does.
 
+    Parses the real bytes on disk with :func:`rule_engine.cli.parse_artifacts`
+    (so the diagram is read by the same XML parser and the documents by the same
+    frontmatter/structure validator the CLI uses — R9.1/R9.4), then evaluates
+    each parsed Artifact through the ruleset-guarded
+    :func:`rule_engine.linter.lint_with_ruleset`. A ``.drawio`` may yield several
+    page artifacts; every one must be eligible. Raises
+    :class:`ContractGenerationError` naming the file and the blocking findings on
+    the first artifact that is blocked from publication.
 
-def _lint_document(path: Path, frontmatter: Mapping[str, Any]) -> None:
-    """Lint a generated Markdown document; raise on any blocking finding."""
-    artifact = linter_mod.Artifact(
-        kind="document",
-        path=str(path),
-        is_markdown=True,
-        frontmatter=dict(frontmatter),
-    )
-    _raise_if_blocked(str(path), _lint_guarded(artifact, path))
-
-
-def _lint_guarded(artifact: Any, artifact_path: Path) -> Mapping[str, Any]:
-    """Lint through the ruleset-guarded path so the generation gate fail-closes.
-
-    Requirement 7 AC14: when the authoritative ``diagram-lint.md`` ruleset is
-    missing or unreadable, every artifact must be reported as blocked from
-    publication. The contract must honor this exactly as the CLI does, so it
-    routes through :func:`linter.lint_with_ruleset` (not the unguarded
-    :func:`linter.lint`).
-
-    The ruleset is located by ``find_ruleset``'s **implicit** discovery (the same
-    the CLI uses): the ``RULE_ENGINE_RULESET`` env var, then ``<cwd>/.kiro/…``,
-    then a walk up from the installed package tree. Implicit mode is used
-    deliberately — passing an explicit ``workspace_root`` would restrict the
-    search to a single directory (the artifact's output folder, which need not
-    hold the steering tree). When no ruleset can be found, ``lint_with_ruleset``
-    returns a blocked result and ``_raise_if_blocked`` raises
-    ``ContractGenerationError``. ``artifact_path`` is accepted for signature
-    symmetry with the callers and to keep the intent explicit at the call site."""
-    return linter_mod.lint_with_ruleset(artifact)
-
-
-def _raise_if_blocked(path: str, result: Mapping[str, Any]) -> None:
-    if not result.get("eligible_for_publication", False):
-        raise ContractGenerationError(path, result.get("findings", []))
-
-
-def _frontmatter_dict(
-    provider: str, boundary_id: str, doc_id: str, title: str
-) -> Dict[str, Any]:
-    """Build the frontmatter mapping the Linter inspects (all twelve keys)."""
-    today = date.today()
-    return {
-        "id": doc_id,
-        "title": title,
-        "kb_namespace": f"cloud-architecture/{provider}",
-        "section": "infrastructure",
-        "category": "architecture-inventory",
-        "status": "draft",
-        "updated": today.isoformat(),
-        "owner": f"{provider}-platform-team",
-        "author": "rule-engine",
-        "next_review_date": (today + timedelta(days=180)).isoformat(),
-        "tags": [provider, "inventory", boundary_id],
-        # kb-frontmatter permits 0 entries here, and since 1.6.1 the Linter
-        # accepts ``[]``. The rendered documents always cross-reference a
-        # related doc, so a non-empty placeholder is kept for now; linting the
-        # rendered text instead of this synthetic mapping is tracked for 1.7.0.
-        "related_docs": [f"{provider}-{boundary_id}-related"],
-    }
+    ``lint_with_ruleset`` is used (not the unguarded ``lint``) so that a missing
+    or unreadable ruleset fails closed: it returns a blocked result and this
+    raises, honoring Requirement 7 AC14 / R10.2.
+    """
+    for artifact in cli_mod.parse_artifacts(str(path)):
+        result = linter_mod.lint_with_ruleset(artifact)
+        if not result.get("eligible_for_publication", False):
+            raise ContractGenerationError(str(path), result.get("findings", []))
 
 
 # --------------------------------------------------------------------------- #
@@ -791,6 +824,7 @@ def invoke(
     output_root: Optional[str | Path] = None,
     topic: str = "architecture",
     workload: str = "workload",
+    workspace_root: Optional[str] = None,
 ) -> Dict[str, str]:
     """Invoke the Rule Engine contract for one provider Boundary.
 
@@ -807,6 +841,12 @@ def invoke(
         The ``topic`` slug used in the ``NN-topic.*`` triple filenames.
     workload:
         The workload name embedded in the diagram title cell.
+    workspace_root:
+        Passed through to :func:`rule_engine.ruleset.require_ruleset` so the
+        Contract locates the authoritative ruleset the **same way** the Lint_CLI
+        does (Requirement 10.2). ``None`` uses the shared implicit discovery
+        (``RULE_ENGINE_RULESET`` env var, then ``<cwd>/.kiro/…``, then the
+        repository/bundled fallbacks).
 
     Returns
     -------
@@ -820,13 +860,27 @@ def invoke(
         When a required input is missing/empty or ``provider`` is out of the
         enumeration. No output documents are produced (Requirement 9 AC7).
     ContractGenerationError
-        When a generated artifact is blocked from publication by the Linter.
+        When the ruleset is unavailable (before any file is written), when the
+        node count exceeds the diagram-class limit (R9.3), or when a written
+        artifact is blocked from publication by the Linter (R9.1). On any of
+        these the output root is left without any new artifact.
     """
     # Validate FIRST — no output is produced on rejection (Requirement 9 AC7).
     valid = validate_inputs(inputs)
     provider = valid["provider"]
     boundary_id = valid["boundary_id"]
     region = valid["region"]
+
+    # Fail closed on a missing ruleset BEFORE any file I/O (R10.2 / 7 AC14). The
+    # Contract locates the ruleset exactly as the Lint_CLI does.
+    try:
+        ruleset_mod.require_ruleset(workspace_root)
+    except ruleset_mod.RulesetUnavailableError as exc:
+        raise ContractGenerationError(
+            "diagram-lint.md",
+            [{"rule": "ruleset-unavailable", "severity": "CRITICAL"}],
+            message=f"generation error: ruleset unavailable: {exc}",
+        ) from exc
 
     root = Path(output_root) if output_root is not None else Path.cwd()
     root.mkdir(parents=True, exist_ok=True)
@@ -838,6 +892,13 @@ def invoke(
     # --- Orchestrate: snapshot -> delta -> nodes -------------------------- #
     current = _load_snapshot(valid["inventory_snapshot_path"])
     previous = _load_previous_snapshot(valid["previous_doc_path"])
+    # boundary and region are part of the resource identity (Requirement 5 AC8).
+    # A Collector snapshot is scoped to exactly one boundary/region (its folder
+    # name), so when an entry does not carry them we stamp the authoritative
+    # values from this invocation before computing the delta.
+    _stamp_boundary_region(current, boundary_id, region)
+    if previous is not None:
+        _stamp_boundary_region(previous, boundary_id, region)
     try:
         deltas = delta_engine.compute_delta(current, previous)
     except delta_engine.SnapshotInputError:
@@ -847,40 +908,43 @@ def invoke(
 
     nodes = _resolve_nodes(provider, current)
 
+    # Node-count limit (R9.3). The Contract emits a single ``flow`` diagram, so
+    # the limit is MAX_NODES (12). If the current snapshot resolves to more nodes
+    # than the class allows, raise an error naming the count and the limit rather
+    # than silently dropping resources by slicing the node list.
+    if len(nodes) > linter_mod.MAX_NODES:
+        raise ContractGenerationError(
+            str(root / f"{nn}-{topic}.drawio"),
+            [{"rule": linter_mod.RULE_NODE_COUNT, "severity": "ERROR"}],
+            message=(
+                f"generation error: node count {len(nodes)} exceeds the flow "
+                f"diagram limit of {linter_mod.MAX_NODES}; split the inventory "
+                "into multiple boundaries or reduce its scope"
+            ),
+        )
+
     # --- Filenames -------------------------------------------------------- #
     diagram_stem = f"{nn}-{topic}"
-    drawio_path = root / f"{diagram_stem}.drawio"
-    png_path = root / f"{diagram_stem}.drawio.png"
-    diagram_md_path = root / f"{diagram_stem}.diagram.md"
-    infra_md_path = root / f"{nn}-existing-infrastructure.md"
+    drawio_name = f"{diagram_stem}.drawio"
+    png_name = f"{diagram_stem}.drawio.png"
+    diagram_md_name = f"{diagram_stem}.diagram.md"
+    infra_md_name = f"{nn}-existing-infrastructure.md"
 
     title = _title_cell(provider, workload, boundary_id, region, version)
     diagram_title = f"{provider} {workload} {boundary_id} {region} v{version}"
 
-    # --- Render + lint the diagram ---------------------------------------- #
-    drawio_content = _render_drawio(title, nodes)
-    _lint_diagram(drawio_path, title, nodes, version)
-
-    # --- Render + lint the two documents ---------------------------------- #
     companion_id = f"{provider}-{boundary_id}-{topic}-diagram-v{version}"
     infra_id = f"{provider}-{boundary_id}-existing-infrastructure-v{version}"
 
-    _lint_document(
-        diagram_md_path,
-        _frontmatter_dict(provider, boundary_id, companion_id, diagram_title),
-    )
-    _lint_document(
-        infra_md_path,
-        _frontmatter_dict(provider, boundary_id, infra_id, diagram_title),
-    )
-
+    # --- Render the artifact set ------------------------------------------ #
+    drawio_content = _render_drawio(title, nodes)
     companion_content = _render_companion_doc(
         doc_id=companion_id,
         title=diagram_title,
         provider=provider,
         boundary_id=boundary_id,
         region=region,
-        diagram_filename=f"{diagram_stem}.drawio",
+        diagram_filename=drawio_name,
         nodes=nodes,
     )
     infra_content = _render_infrastructure_doc(
@@ -893,16 +957,48 @@ def invoke(
         deltas=deltas,
     )
 
-    # --- Write the full triple + versioned document ----------------------- #
-    # All lint checks passed above, so writing here never emits a blocked
-    # artifact.
-    drawio_path.write_text(drawio_content, encoding="utf-8")
-    # Exported raster stub: a real pipeline would render the PNG from the
-    # .drawio source. We write a minimal 1x1 PNG so the file exists and the
-    # triple is complete.
-    png_path.write_bytes(_PNG_STUB)
-    diagram_md_path.write_text(companion_content, encoding="utf-8")
-    infra_md_path.write_text(infra_content, encoding="utf-8")
+    # --- Stage, lint the WRITTEN files, then move into place -------------- #
+    # The four outputs are written into a private staging directory under the
+    # output root, linted there through the SAME parser as ``rule-engine-lint
+    # --file`` (R9.1/R9.4), and moved into ``root`` only when every staged
+    # artifact is eligible for publication. On any blocking finding the staging
+    # directory is removed and ``root`` is left without any new artifact.
+    staging = root / f".staging-{nn}-{uuid.uuid4().hex}"
+    staging.mkdir(parents=True, exist_ok=False)
+    try:
+        staged_drawio = staging / drawio_name
+        staged_png = staging / png_name
+        staged_diagram_md = staging / diagram_md_name
+        staged_infra_md = staging / infra_md_name
+
+        staged_drawio.write_text(drawio_content, encoding="utf-8")
+        # Exported raster stub: a real pipeline would render the PNG from the
+        # .drawio source. A minimal 1x1 PNG completes the mandatory triple.
+        staged_png.write_bytes(_PNG_STUB)
+        staged_diagram_md.write_text(companion_content, encoding="utf-8")
+        staged_infra_md.write_text(infra_content, encoding="utf-8")
+
+        # Lint the real files. The companion .diagram.md must sit next to the
+        # .drawio for the diagram's ``diagram_class`` (and cross-links) to be
+        # read, which the staging layout preserves.
+        _lint_written_file(staged_drawio)
+        _lint_written_file(staged_diagram_md)
+        _lint_written_file(staged_infra_md)
+
+        # Every artifact is eligible — move the set into place.
+        drawio_path = root / drawio_name
+        png_path = root / png_name
+        diagram_md_path = root / diagram_md_name
+        infra_md_path = root / infra_md_name
+
+        os.replace(staged_drawio, drawio_path)
+        os.replace(staged_png, png_path)
+        os.replace(staged_diagram_md, diagram_md_path)
+        os.replace(staged_infra_md, infra_md_path)
+    finally:
+        # Remove the staging directory whether we succeeded (now empty) or
+        # raised (still holding the blocked files), so no partial set survives.
+        shutil.rmtree(staging, ignore_errors=True)
 
     return {
         "drawio": str(drawio_path),
@@ -918,6 +1014,7 @@ def invoke_result(
     output_root: Optional[str | Path] = None,
     topic: str = "architecture",
     workload: str = "workload",
+    workspace_root: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Non-raising variant of :func:`invoke`.
 
@@ -927,7 +1024,11 @@ def invoke_result(
     """
     try:
         return invoke(
-            inputs, output_root=output_root, topic=topic, workload=workload
+            inputs,
+            output_root=output_root,
+            topic=topic,
+            workload=workload,
+            workspace_root=workspace_root,
         )
     except ContractInputError as exc:
         return {"error": str(exc), "invalid_input": exc.invalid_input}

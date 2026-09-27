@@ -60,6 +60,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
+from rule_engine.drawio_model import parse_drawio  # noqa: E402
 from rule_engine.geometry import (  # noqa: E402
     RAIL_CLEARANCE,
     RAIL_MIN_SPAN,
@@ -77,7 +78,8 @@ def measure(path: str | Path):
     engine and this script cannot drift, and so a future scored router can reuse
     the exact objective this script reports.
     """
-    return route_cost(build_geometry(Path(path).read_text(encoding="utf-8")))
+    text = Path(path).read_text(encoding="utf-8")
+    return route_cost(build_geometry(parse_drawio(text, path=str(path))[0]))
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:

@@ -11,7 +11,8 @@ not spuriously trip ``node-count`` / ``node-quote``.
 
 from __future__ import annotations
 
-from rule_engine.cli import parse_artifact, _parse_drawio
+from rule_engine.cli import _parse_drawio_page
+from rule_engine.drawio_model import parse_drawio
 from rule_engine.linter import lint
 
 
@@ -22,6 +23,17 @@ def _wrap(body: str) -> str:
         f"{body}"
         "</root></mxGraphModel></diagram></mxfile>"
     )
+
+
+def _parse_drawio(path: str, text: str):
+    """Parse in-memory ``.drawio`` text into the single-page diagram Artifact.
+
+    The 1.7.0 CLI parses on the shared ``drawio_model`` and builds one Artifact
+    per page. These tests hand XML text (not a file) and expect the single-page
+    diagram Artifact, so parse the text into its one Page and feed that.
+    """
+    pages = parse_drawio(text, path=path)
+    return _parse_drawio_page(path, pages[0], text)
 
 
 def test_top_level_nodes_counted_glyph_subcells_ignored():

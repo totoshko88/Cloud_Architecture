@@ -366,15 +366,22 @@ def test_redact_secrets_strips_pem_private_key_under_benign_key() -> None:
 
 
 def test_redact_secrets_strips_inline_assignment_and_securestring() -> None:
+    # As of 1.7.0 redact_secrets is the shared secret_safety.redact vocabulary
+    # (design §5). An inline ``password=…`` assignment is still redacted by
+    # value content, and a ``SecureString`` value is caught through the pair
+    # rule (a ``{Type: SecureString, Value: …}`` record) — the bare label
+    # ``SecureString`` on its own is metadata (R3.4), not a secret.
     out = redact_secrets(
         {
             "description": "connect with password=hunter2 then retry",
-            "payload": "SecureString:AQICAHhwm...",
+            "parameter": {"Name": "/app/db", "Type": "SecureString", "Value": "AQICAHhwm..."},
             "arn": "arn:aws:iam::123456789012:role/app",
         }
     )
     assert out["description"] == REDACTED
-    assert out["payload"] == REDACTED
+    # The SecureString parameter's Value is redacted through the pair rule.
+    assert out["parameter"]["Value"] == REDACTED
+    assert out["parameter"]["Type"] == "SecureString"  # the label itself is metadata
     # An ARN is not a secret and must survive.
     assert out["arn"].startswith("arn:aws:iam::")
 

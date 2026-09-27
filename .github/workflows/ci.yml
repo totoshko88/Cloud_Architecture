@@ -39,9 +39,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 3.14 is the supported floor (see pyproject requires-python). Add newer
-        # versions here as they are released to catch forward-incompat early.
-        python-version: ["3.14"]
+        # R11.2: run the tests on every minor Python version from the lower
+        # bound (3.11, the pyproject requires-python floor per decision D6) up
+        # to 3.14. Add newer versions here as they are released to catch
+        # forward-incompat early.
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python-version }}
@@ -78,10 +80,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.14"
-      - name: Install
+      - name: Install (with dev extras)
+        # Dev extras are needed for the generator-freshness step, which runs
+        # `pytest tests/test_generators_fresh.py` to exercise every generator's
+        # --check (R8.1).
         run: |
           python -m pip install --upgrade pip
-          pip install -e .
+          pip install -e ".[dev]"
       - name: Validate golden examples against the Inventory Schema
         run: rule-engine-validate-schema --schema schemas/inventory.schema.json --targets 'examples/**/*.json'
       - name: Confirm the Inventory Schema is a valid JSON Schema
@@ -118,9 +123,12 @@ jobs:
           "
       - name: Fetch official icon packs so file-path icon references can be verified
         # GCP maps to both gcp-category and gcp-core (product-first priority);
-        # Azure/AWS/OCI to their packs. Fetch-aware: the guard skips if a fetch fails.
-        run: |
-          python scripts/fetch_assets.py --only gcp_category gcp_core azure aws oci || echo "WARNING: asset fetch failed; asset-paths guard will skip"
+        # Azure/AWS/OCI to their packs. v1.7.0 (R6.1-R6.3): the packs are pinned
+        # (sha256 + size) and fetched over HTTPS only, so a fetch failure is a
+        # pin/integrity/transport failure — NOT a transient we should paper over.
+        # The old ``|| echo WARNING`` let a failed fetch silently skip the
+        # asset-paths guard; the fetch now fails the job.
+        run: python scripts/fetch_assets.py --only gcp_category gcp_core azure aws oci
       - name: Verify every mapping icon file path exists under the asset root
         # Call the declared console script (not python -m) so a broken
         # [project.scripts] entry-point mapping is caught by CI too.
@@ -138,20 +146,35 @@ jobs:
         # A well-formed-but-nonexistent id/path renders as an empty/broken icon
         # the linter cannot see. Checks aws4 ids, azure2 img/lib paths (against
         # mappings/azure2-shapes.json), GCP asset paths, and OCI slugs.
-        # ``find`` recurses reliably; a bare ``examples/**/*.drawio`` glob is
-        # NOT recursive in default bash (no globstar) and would silently only
-        # match one directory level, skipping any nested example.
-        run: |
-          rc=0
-          while IFS= read -r f; do
-            rule-engine-verify-icon --file "$f" || rc=1
-          done < <(find examples -name '*.drawio' -type f)
-          [ "$rc" -eq 0 ] || { echo "BLOCKING: unresolved icon reference(s)"; exit 1; }
-      - name: Enforce the exported .drawio.png export budget (D7)
+        # v1.7.0 (R4.3): ``--all`` walks examples/ with the Lint_CLI discovery
+        # filters (no fragile shell glob), and ``--strict`` also fails on an
+        # *unverified* service vertex or a file with service vertices and zero
+        # verified refs — a ``skipped`` ref counts as not-verified, so a diagram
+        # checked without its assets fails rather than passing on zero checks.
+        run: rule-engine-verify-icon --all --strict
+      - name: Verify every Generated_Example is fresh (generator --check, all eleven)
+        # R8.1: every Example_Generator has a --check mode that compares its
+        # output with the committed file without writing, and CI runs it for all
+        # ELEVEN Generated_Examples (seven generators: four HA pairs = 8, plus
+        # three single examples). tests/test_generators_fresh.py enumerates every
+        # generator and subprocess-runs its --check, so this one step exercises
+        # the whole set with the correct venv on PATH.
+        #
+        # KNOWN-STALE (expected): the two OCI generators
+        # (build_oci_ha_example.py, build_oci_example.py) report STALE until the
+        # OCI examples are regenerated in task 22.7 — the committed OCI diagrams
+        # predate the ociSlug= marker added in task 5.2. The test xfails those
+        # two so the step still RUNS the --check for all eleven per R8.1 without
+        # blocking the pipeline; it flips to strict (XPASS) once task 22
+        # regenerates them.
+        run: pytest -q tests/test_generators_fresh.py
+      - name: Enforce the exported .drawio.png export budget (D7, R8.3)
         # Class-aware budget: flow rasters <=1600px/<500KB, landscape <=3600px/<2MB.
         # The linter checks the .drawio source + companion, not the rendered PNG,
         # so this guard closes that gap. Call the declared console script so a
-        # broken [project.scripts] mapping is caught.
+        # broken [project.scripts] mapping is caught. Run WITHOUT --allow-missing
+        # (strict): a .drawio with no exported .png is a failure, and R8.3 makes
+        # an empty run (no sources found) exit non-zero rather than silently pass.
         run: rule-engine-check-rasters
       - name: Verify every edge leg is explicitly axis-aligned
         # An orthogonalEdgeStyle edge never draws a diagonal: draw.io inserts its
@@ -181,7 +204,17 @@ jobs:
         # --check must report it complete. Running against an empty dir (not the
         # repo) genuinely exercises the package -> workspace copy path, so a
         # payload that ships incompletely in the wheel is caught here.
+        #
+        # R7 lock file: after bootstrapping, EDIT one steering file, then re-run
+        # --check. A user edit must be classified "edited" and KEPT (never
+        # overwritten on a bare run), so --check reports EDITED and still exits 0
+        # — only a missing or stale file is blocking. This pins the lock-file
+        # state machine: a user edit is not a gate failure.
         run: |
           ws="$(mktemp -d)"
           rule-engine-init "$ws"
           rule-engine-init --check "$ws"
+          echo "" >> "$ws/.kiro/steering/diagram-lint.md"
+          out="$(rule-engine-init --check "$ws")"
+          echo "$out"
+          echo "$out" | grep -qi 'edited' || { echo "BLOCKING: --check did not report the edited file"; exit 1; }

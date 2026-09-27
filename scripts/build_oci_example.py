@@ -160,8 +160,14 @@ FLOW_LINES = [
 
 def build(stencils: Dict[str, Any]) -> str:
     boundaries = [
+        # D8: tighten the compartment boundary to wrap the node block (rightmost
+        # node right edge 1218) with one grid step of padding, so the outermost
+        # container ends at 1260 instead of 1400. This lets the Flow/Legend block
+        # sit at legend_x=1270 (one grid step past the container) and still fit the
+        # 1600px flow budget — before D8 the boundary ran to 1400 and the block to
+        # 1840, over budget.
         Boundary("boundary-compartment", "compartment-acme-prod",
-                 x=40, y=70, w=1360, h=790, stroke="#00A000"),
+                 x=40, y=70, w=1220, h=790, stroke="#00A000"),
         # Network boundary encloses streaming/ingest/generative/training/vault
         # (x 620..958, y 200..758) with >=1 grid-step padding on every side.
         Boundary("boundary-vcn", "vcn-prod",
@@ -180,19 +186,70 @@ def build(stencils: Dict[str, Any]) -> str:
         nodes=nodes,
         edges=EDGES,
         flow_lines=FLOW_LINES,
-        legend_x=1460,
+        # D8: legend at 1270 (one grid step past the tightened container right
+        # edge 1260) and pinned narrow (legend_w=310) so the Flow/Legend block
+        # wraps taller instead of running wide — the sanctioned lever from
+        # diagram-standards → Numbered Flow Legend. Block right edge = 1580, so
+        # canvas width 1580 + 2*8 = 1596 <= 1600 flow budget.
+        legend_x=1270,
+        legend_w=310,
     )
+
+
+def _first_diff_line(expected: str, actual: str) -> str:
+    """Return a human-readable description of the first differing line.
+
+    ``expected`` is the committed (on-disk) content; ``actual`` is the freshly
+    regenerated content. Mirrors ``ha_multiregion_common._first_diff_line`` so
+    every generator's ``--check`` reports a stale file identically."""
+    exp_lines = expected.splitlines()
+    act_lines = actual.splitlines()
+    for i, (e, a) in enumerate(zip(exp_lines, act_lines), start=1):
+        if e != a:
+            return f"line {i}: committed {e!r} != regenerated {a!r}"
+    if len(exp_lines) != len(act_lines):
+        n = min(len(exp_lines), len(act_lines)) + 1
+        longer = "regenerated" if len(act_lines) > len(exp_lines) else "committed"
+        return f"line {n}: {longer} has extra content ({len(exp_lines)} vs {len(act_lines)} lines)"
+    return "trailing bytes differ (no newline / whitespace at EOF)"
+
+
+def _check_one(path: Path, regenerated: str, prog: str) -> bool:
+    """Compare one committed .drawio against its regenerated content.
+
+    Returns ``True`` when the file exists and matches byte for byte; otherwise
+    prints a clear ``STALE: regenerate`` message naming the file and returns
+    ``False``. Writes nothing."""
+    if not path.exists():
+        print(f"{prog}: STALE: regenerate {path} — committed file is missing",
+              file=sys.stderr)
+        return False
+    committed = path.read_text(encoding="utf-8")
+    if committed == regenerated:
+        return True
+    print(f"{prog}: STALE: regenerate {path} — {_first_diff_line(committed, regenerated)}",
+          file=sys.stderr)
+    return False
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     parser = argparse.ArgumentParser(prog="build_oci_example")
     parser.add_argument("--stdout", action="store_true")
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="compare regenerated output byte-for-byte with the committed file "
+             "without writing; exit non-zero if it is stale or missing (exit 2 "
+             "if the stencil pack is missing)",
+    )
     parser.add_argument("--stencils", default=str(STENCILS))
     parser.add_argument("--out", default=str(OUT))
     args = parser.parse_args(argv)
 
     stencils_path = Path(args.stencils)
     if not stencils_path.is_file():
+        # A missing input asset is a build-environment failure, distinct from a
+        # stale committed file — exit 2 (mirrors the HA generators' --check).
         print(
             f"build_oci_example: error: extracted stencils not found at "
             f"{stencils_path}. Run: python scripts/fetch_assets.py --only oci",
@@ -210,6 +267,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.stdout:
         sys.stdout.write(xml)
         return 0
+    if args.check:
+        # Regenerate in memory and compare against the committed file; write
+        # nothing. Exit 0 only when it matches (R8.1).
+        if _check_one(Path(args.out), xml, "build_oci_example"):
+            print(f"build_oci_example: OK — {args.out} is up to date")
+            return 0
+        return 1
     Path(args.out).write_text(xml, encoding="utf-8")
     print(f"build_oci_example: wrote {args.out} ({len(NODE_SPECS)} nodes with OCI glyphs)")
     return 0
