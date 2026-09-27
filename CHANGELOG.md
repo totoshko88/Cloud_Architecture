@@ -2,199 +2,73 @@
 
 All notable changes to the Rule Engine are recorded here, per released version, in reverse chronological order.
 
-## [1.7.0] - 2026-09-27
+## [1.8.0] - 2026-09-28
 
-**Theme: honest gates.** This release removes a class of defect where a gate
-reported "OK" without having actually checked anything. Every change makes a
-check stricter — a real `.drawio` XML parser, a full frontmatter and
-document-structure validator, a parsed-JSON `secret-safety` scan, icon
-verification that covers OCI and refuses to treat "0 checked" as success, an
-inventory vocabulary that accommodates every diagram role, digest-pinned
-provider packs, a change-detecting `rule-engine-init`, freshness gates for
-generated examples and rasters, and a Contract that lints what it writes.
-draw.io is now the single canonical diagram source. The engine supports Python
-3.11–3.14 (`requires-python >= 3.11`).
-
-Because every change tightens a gate, an artifact that passed under 1.6.x may
-now be blocked — see **Breaking changes for hand-authored artifacts** below.
-The shipped `examples/` are all fixed in this same release, so every example
-passes every new and tightened check.
+**Theme: a scored router.** This release replaces the fixed ten-pass routing heuristic with a per-edge decision that *scores* candidate routes and keeps the cheapest one. It lands in three behavior-preserving steps: the monolithic `layout_engine.py` is split into a `layout/` package that exposes a per-edge seam, the route-quality metric learns to grade a rail by how close it runs rather than only whether it exists, and a most-constrained-first solver picks each edge's route by that metric. Every shipped `.drawio` remains byte-identical where the scored route matches the old heuristic, output stays deterministic, no lint rule in `diagram-lint.md` is weakened, and the `--legacy` path is retained. Placement scoring is explicitly out of scope (Decision D2): the two recorded placement defects (`gcp/01` = `(4,0)`, the landscapes = `(3,2)`) are held, not fixed — no node or tier moves.
 
 ### Added
 
-- **`parse-error` lint rule (ERROR).** The Linter now parses every `.drawio`
-  with a real XML parser (`rule_engine.drawio_model`) instead of regexes, so a
-  file that does not parse as XML, a compressed page that cannot be decompressed,
-  a geometry that raises during construction, or a document declaring a DTD or
-  entity (the billion-laughs class) is **blocked** with a `parse-error` finding
-  that names the file and the machine-readable cause — rather than silently
-  skipping the geometry rules. When a file carries `parse-error`, every other
-  rule is skipped for that artifact (R1.1, R1.2, R1.8, R1.9).
-- **`edge-endpoint` lint rule (WARNING; ERROR for `landscape`).** An edge whose
-  `source`/`target` references a non-existent cell, or that has neither, is
-  reported with the offending endpoint (`missing-source`, `missing-target`,
-  `dangling-source:<id>`, `dangling-target:<id>`) (R1.10).
-- **`source-format` lint rule (ERROR).** draw.io is the only publishable diagram
-  source (decision D1). `rule-engine-lint --all` now discovers `.puml`/`.mmd`
-  files as diagram artifacts and blocks them, so a PlantUML/Mermaid file is
-  converted to a `.drawio` triple rather than published as-is (R10.3).
-- **Widened inventory vocabulary.** `schemas/inventory.schema.json`'s
-  `resource_type` enum grows from 9 to 16, adding the seven presentation roles a
-  diagram can draw: `compute_instance`, `file_system`, `cdn`, `dns`, `waf`,
-  `lb`, `cache`. `profiles/terminology.yaml` gains native-type aliases for these
-  roles across all four vendors, so an EC2 instance, an EFS filesystem or a CDN
-  is recordable validly and never dropped on the way from inventory to diagram
-  (R5.1, R5.2).
-- **Digest-pinned provider packs.** Every provider entry in
-  `mappings/asset-sources.yaml` carries a `Pack_Pin` (`sha256` + `size`). The
-  Fetcher verifies the pin (streaming hash + size) before unpacking, accepts
-  HTTPS only at every redirect hop, downloads atomically keyed by digest, and
-  unpacks into a fresh directory so stale files never reach the index.
-  `mappings/icon-index.json` → `pack_summary` records each pack's sha256, and
-  `rule-engine-build-icon-sets --update-pins` re-downloads, re-pins and rebuilds
-  the index in one documented step (R6.1–R6.5).
-- **Workspace lock file for `rule-engine-init`.** `rule-engine-init` writes
-  `.kiro/rule-engine-init.lock.json` recording the engine version and the sha256
-  of every copied file, so an upgrade can tell **missing**, **edited**, **stale**
-  and **extra** files apart (R7.1).
-- **Raster provenance.** `scripts/export_raster.py` writes the source `.drawio`
-  sha256 into a PNG `tEXt` chunk, and `rule-engine-check-rasters` fails on a
-  mismatch, on a wrong height, on a non-opaque/non-white background, or when no
-  source is found in CI (R8.2, R8.3).
-- **Rule-table/code sync test.** A test parses the rule table and the
-  class-escalation table in `diagram-lint.md` and fails on any mismatch with
-  `RULE_SEVERITIES` and the escalations in code, so the ruleset and the code can
-  no longer diverge unnoticed (R10.1).
+- **`layout/` package (behavior-preserving split).** `layout_engine.py` is relocated into a `layout/` package — `model`, `place`, `contacts`, `corridors`, `routers`, `variants`, `solver`, and `pipeline` — that exposes a per-edge decision point instead of one opaque routing pass. `layout_engine.py` becomes a re-export shim, so `from rule_engine.layout_engine import layout` and `from rule_engine.layout import layout` resolve to the same function with no caller edit. With the solver off, every shipped `.drawio` is byte-identical to its committed bytes and `generator --check` reports no difference; the `--legacy` ten-pass path is retained and stays byte-identical to the pre-split output (R6.2, R1).
+- **`CorridorAllocator.snapshot()` / `restore()`.** The allocator can capture its occupancy and reset to it wholesale, so a variant that widened a gap, allocated lanes, then failed leaves no lane consumed — the mechanism that lets the solver trial a route and roll it back (R6.2, R3).
+- **`variants.generate()` — rank-ordered, contract-legal route variants.** Each edge yields a ranked list of candidate routes (lane side above/below, back-edge loop-above/descend-near, spine straight-drop/side-corridor, corridor left-gap/right-gap). Every variant is constructed contract-legal (exit right/bottom, entry left/top) so no candidate can introduce an `edge-direction` finding, and the rule-based route is always included so the list is never empty (R6.2, R3).
 
 ### Changed
 
-- **`frontmatter` now validates the whole `kb-frontmatter.md` contract.** In
-  addition to key presence, the Linter checks the `status` enum
-  (`draft`/`review`/`published`), that `updated` and `next_review_date` are real
-  `YYYY-MM-DD` calendar dates, `tags` (1–20) and `related_docs` (0–20) list
-  bounds, total length (300–2000 words), the four required sections and their
-  100–200-word lengths, exactly one H1, list nesting ≤ 2 levels, tables ≤ 5
-  columns, and an `Anti-patterns` section wherever a fenced code block appears.
-  A UTF-8 BOM before the opening `---` is tolerated; frontmatter that does not
-  parse as YAML is a finding rather than a fall-through to a lenient parser.
-  Structural checks apply only to generated KB documents, not to steering,
-  `SKILL.md` or repository docs (R2.1–R2.8).
-- **`secret-safety` analyses parsed content, not substrings.** A JSON snapshot
-  file is parsed and its keys and values checked recursively: a secret is
-  detected by a credential-denoting key name (case- and separator-insensitive)
-  or by value shape (PEM `PRIVATE KEY`, an AWS key-id/secret pair, `AccountKey=`,
-  `SharedAccessKey=`, a SAS `sig=`, a password in URL userinfo, a JWT).
-  `[REDACTED]`, `Type: SecureString` metadata, `privateKeyType` and public
-  certificates are **not** flagged. The scan covers every UTF-8 text file under
-  an `inventory-*` folder, not only `.json`, and the Collector, Normalizer and
-  Linter draw the secret vocabulary from one shared module (R3.1–R3.7).
-- **Icon verification has no blind spots.** `rule-engine-verify-icon` verifies
-  embedded OCI stencils by slug from `stencils.json`, reports a service vertex
-  with no verifiable reference as `unverified`, marks an `image=` path that
-  escapes `assets/` or lacks a `.svg`/`.png` suffix as `unresolved`, and under
-  `--strict` (which CI now passes) exits non-zero when any vertex is unverified.
-  The `icon-resolved` rule checks `resIcon`/`grIcon`/azure2 paths against the
-  same committed manifests (R4.1–R4.5).
-- **`.drawio` findings identify offenders.** The parser reads compressed,
-  multi-page and `UserObject`/`object`-wrapped diagrams; decodes XML entities
-  and strips HTML from labels; reads waypoints from `<Array as="points">` with
-  the parent origin added; and identifies the Legend and title cell **by
-  structure** rather than by any occurrence of the word `legend` or a stray `vN`.
-  Every finding now carries the offender ids and a reason, and the CLI prints
-  them (R1.3–R1.7, R1.11–R1.13).
-- **Collector correctness.** The Normalizer matches field aliases
-  case-insensitively (so PascalCase SDK responses normalize), resource identity
-  is keyed by provider-specific ids case-insensitively without overwriting a
-  sibling's subfolder, the run is refused before any write when `boundary_id`/
-  `region` carry unsafe characters or the path escapes `output_root`, an
-  existing snapshot folder is never merged into (a suffixed folder is created
-  instead), and the Delta Engine includes `boundary`/`region` in identity and
-  emits an explicit `duplicate` entry instead of silent last-writer-wins
-  (R5.3–R5.8). The Collector manifest passes `rule-engine-lint` and
-  `rule-engine-check-snapshot`.
-- **Slug normalizer keeps meaningful words.** It no longer strips `service`,
-  `cloud` or `public`, so distinct services (*Private Link* vs *Private Link
-  Service*) stay reachable, and an ambiguous exact-slug match returns
-  `unresolved` with the candidate list rather than an arbitrary pick (R6.6,
-  R6.7).
-- **`rule-engine-init` detects change.** `--check` reports missing/edited/stale/
-  extra files separately and exits non-zero on any missing or stale file (and
-  does not create the target directory); a plain run updates only files whose
-  hash matches the lock file and leaves edited files untouched; `--force` backs
-  up every edited file before overwriting; and a run from a repository checkout
-  uses the repository tree rather than a possibly-stale `_bootstrap`
-  (R7.2–R7.7).
-- **Example and raster freshness.** Every generator has a `--check` mode that
-  compares against the committed file without writing, and CI runs it for all
-  eleven generated examples. The raster exporter runs at scale ≥ 1 and **fails**
-  (the "split the diagram" signal) when a diagram does not fit its class budget
-  at that scale, runs under a timeout, keeps its temp copy outside `examples/`,
-  and fails on a missing asset instead of reporting OK (R8.1, R8.4, R8.5).
-- **The Contract lints what it writes.** Generated files go through the same
-  parser as `rule-engine-lint --file` (a staging directory + real parse, not a
-  synthetic `Artifact`); the Contract creates no edge absent from the input
-  data; an over-limit node count returns an error naming the count and the limit
-  instead of silently dropping resources; and the same frontmatter the Contract
-  writes is the frontmatter it lints (R9.1–R9.4).
-- **The two PlantUML examples are converted.** `examples/cross-cloud/
-  cross-cloud-composition.puml` and `examples/generic/
-  generic-reference-architecture.puml` are re-authored as `.drawio` triples, so
-  the whole corpus is draw.io (D1).
-- **Python support: `requires-python >= 3.11`** (was `>= 3.14`). CI runs the
-  test suite on every minor version from 3.11 to 3.14 (R11.1, R11.2, D6).
+- **Graded rails metric + ratchet re-baseline.** `RouteCost` gains a `rail_penalty` that grades a rail run inversely to its clearance — `0` at or above `RAIL_CLEARANCE` (40px), rising as the run crowds a border — while the binary `rails` count is kept for ratchet readability. `as_tuple()` is re-ordered to `(crossings, rail_penalty, turns, ink)`, so ordering is crossings ≫ rail_penalty ≫ turns ≫ ink, and each run records its clearance for a `--detail` view. The `tests/test_route_quality.py` ratchet is re-baselined in the same change: two 1.7.0 improvements that were invisible under the binary count now register as a strictly lower recorded penalty on their diagrams — tightened, never regressed (R6.2, R2).
+- **Scored per-edge router is now the default.** Routing is inverted from a fixed ten-pass sequence into a most-constrained-first order-score-commit loop: edges are ordered by fewest variants, then longest span, then declared order; each variant is trialled against the already-accepted edges (allocator snapshot → tentative route → score with the shared graded `route_cost` → restore), and the winner is a deterministic argmin over `(cost, rank, id)`, then committed for real. A variant that exhausts corridors is scored infeasible and excluded; an all-infeasible edge falls back to the retained rule-based route and the widen/re-centre repair loop. No randomness, wall-clock, or dict-order dependence, so the same spec produces a byte-identical `.drawio` and `generator --check` holds; `--legacy` is still available. Because the rule-based route is always a candidate, a scored route can never cost more than the old heuristic (R6.2, R3, R4).
+
+### Notes
+
+- **Placement scoring is a non-goal (Decision D2).** The `generate()` boundary is left structured so a future release can add placement variants as an outer loop, but 1.8.0 moves no node or tier. The recorded placement defects are held unchanged: `gcp/01` = `(4,0)` and the landscapes = `(3,2)` (R5).
+- **Python support unchanged: `requires-python >= 3.11`.** CI runs the suite, including the eight new `test_*_properties.py` files, on 3.11 through 3.14.
+
+## [1.7.0] - 2026-09-27
+
+**Theme: honest gates.** This release removes a class of defect where a gate reported "OK" without having actually checked anything. Every change makes a check stricter — a real `.drawio` XML parser, a full frontmatter and document-structure validator, a parsed-JSON `secret-safety` scan, icon verification that covers OCI and refuses to treat "0 checked" as success, an inventory vocabulary that accommodates every diagram role, digest-pinned provider packs, a change-detecting `rule-engine-init`, freshness gates for generated examples and rasters, and a Contract that lints what it writes. draw.io is now the single canonical diagram source. The engine supports Python 3.11–3.14 (`requires-python >= 3.11`).
+
+Because every change tightens a gate, an artifact that passed under 1.6.x may now be blocked — see **Breaking changes for hand-authored artifacts** below. The shipped `examples/` are all fixed in this same release, so every example passes every new and tightened check.
+
+### Added
+
+- **`parse-error` lint rule (ERROR).** The Linter now parses every `.drawio` with a real XML parser (`rule_engine.drawio_model`) instead of regexes, so a file that does not parse as XML, a compressed page that cannot be decompressed, a geometry that raises during construction, or a document declaring a DTD or entity (the billion-laughs class) is **blocked** with a `parse-error` finding that names the file and the machine-readable cause — rather than silently skipping the geometry rules. When a file carries `parse-error`, every other rule is skipped for that artifact (R1.1, R1.2, R1.8, R1.9).
+- **`edge-endpoint` lint rule (WARNING; ERROR for `landscape`).** An edge whose `source`/`target` references a non-existent cell, or that has neither, is reported with the offending endpoint (`missing-source`, `missing-target`, `dangling-source:<id>`, `dangling-target:<id>`) (R1.10).
+- **`source-format` lint rule (ERROR).** draw.io is the only publishable diagram source (decision D1). `rule-engine-lint --all` now discovers `.puml`/`.mmd` files as diagram artifacts and blocks them, so a PlantUML/Mermaid file is converted to a `.drawio` triple rather than published as-is (R10.3).
+- **Widened inventory vocabulary.** `schemas/inventory.schema.json`'s `resource_type` enum grows from 9 to 16, adding the seven presentation roles a diagram can draw: `compute_instance`, `file_system`, `cdn`, `dns`, `waf`, `lb`, `cache`. `profiles/terminology.yaml` gains native-type aliases for these roles across all four vendors, so an EC2 instance, an EFS filesystem or a CDN is recordable validly and never dropped on the way from inventory to diagram (R5.1, R5.2).
+- **Digest-pinned provider packs.** Every provider entry in `mappings/asset-sources.yaml` carries a `Pack_Pin` (`sha256` + `size`). The Fetcher verifies the pin (streaming hash + size) before unpacking, accepts HTTPS only at every redirect hop, downloads atomically keyed by digest, and unpacks into a fresh directory so stale files never reach the index. `mappings/icon-index.json` → `pack_summary` records each pack's sha256, and `rule-engine-build-icon-sets --update-pins` re-downloads, re-pins and rebuilds the index in one documented step (R6.1–R6.5).
+- **Workspace lock file for `rule-engine-init`.** `rule-engine-init` writes `.kiro/rule-engine-init.lock.json` recording the engine version and the sha256 of every copied file, so an upgrade can tell **missing**, **edited**, **stale** and **extra** files apart (R7.1).
+- **Raster provenance.** `scripts/export_raster.py` writes the source `.drawio` sha256 into a PNG `tEXt` chunk, and `rule-engine-check-rasters` fails on a mismatch, on a wrong height, on a non-opaque/non-white background, or when no source is found in CI (R8.2, R8.3).
+- **Rule-table/code sync test.** A test parses the rule table and the class-escalation table in `diagram-lint.md` and fails on any mismatch with `RULE_SEVERITIES` and the escalations in code, so the ruleset and the code can no longer diverge unnoticed (R10.1).
+
+### Changed
+
+- **`frontmatter` now validates the whole `kb-frontmatter.md` contract.** In addition to key presence, the Linter checks the `status` enum (`draft`/`review`/`published`), that `updated` and `next_review_date` are real `YYYY-MM-DD` calendar dates, `tags` (1–20) and `related_docs` (0–20) list bounds, total length (300–2000 words), the four required sections and their 100–200-word lengths, exactly one H1, list nesting ≤ 2 levels, tables ≤ 5 columns, and an `Anti-patterns` section wherever a fenced code block appears. A UTF-8 BOM before the opening `---` is tolerated; frontmatter that does not parse as YAML is a finding rather than a fall-through to a lenient parser. Structural checks apply only to generated KB documents, not to steering, `SKILL.md` or repository docs (R2.1–R2.8).
+- **`secret-safety` analyses parsed content, not substrings.** A JSON snapshot file is parsed and its keys and values checked recursively: a secret is detected by a credential-denoting key name (case- and separator-insensitive) or by value shape (PEM `PRIVATE KEY`, an AWS key-id/secret pair, `AccountKey=`, `SharedAccessKey=`, a SAS `sig=`, a password in URL userinfo, a JWT). `[REDACTED]`, `Type: SecureString` metadata, `privateKeyType` and public certificates are **not** flagged. The scan covers every UTF-8 text file under an `inventory-*` folder, not only `.json`, and the Collector, Normalizer and Linter draw the secret vocabulary from one shared module (R3.1–R3.7).
+- **Icon verification has no blind spots.** `rule-engine-verify-icon` verifies embedded OCI stencils by slug from `stencils.json`, reports a service vertex with no verifiable reference as `unverified`, marks an `image=` path that escapes `assets/` or lacks a `.svg`/`.png` suffix as `unresolved`, and under `--strict` (which CI now passes) exits non-zero when any vertex is unverified. The `icon-resolved` rule checks `resIcon`/`grIcon`/azure2 paths against the same committed manifests (R4.1–R4.5).
+- **`.drawio` findings identify offenders.** The parser reads compressed, multi-page and `UserObject`/`object`-wrapped diagrams; decodes XML entities and strips HTML from labels; reads waypoints from `<Array as="points">` with the parent origin added; and identifies the Legend and title cell **by structure** rather than by any occurrence of the word `legend` or a stray `vN`. Every finding now carries the offender ids and a reason, and the CLI prints them (R1.3–R1.7, R1.11–R1.13).
+- **Collector correctness.** The Normalizer matches field aliases case-insensitively (so PascalCase SDK responses normalize), resource identity is keyed by provider-specific ids case-insensitively without overwriting a sibling's subfolder, the run is refused before any write when `boundary_id`/`region` carry unsafe characters or the path escapes `output_root`, an existing snapshot folder is never merged into (a suffixed folder is created instead), and the Delta Engine includes `boundary`/`region` in identity and emits an explicit `duplicate` entry instead of silent last-writer-wins (R5.3–R5.8). The Collector manifest passes `rule-engine-lint` and `rule-engine-check-snapshot`.
+- **Slug normalizer keeps meaningful words.** It no longer strips `service`, `cloud` or `public`, so distinct services (*Private Link* vs *Private Link Service*) stay reachable, and an ambiguous exact-slug match returns `unresolved` with the candidate list rather than an arbitrary pick (R6.6, R6.7).
+- **`rule-engine-init` detects change.** `--check` reports missing/edited/stale/extra files separately and exits non-zero on any missing or stale file (and does not create the target directory); a plain run updates only files whose hash matches the lock file and leaves edited files untouched; `--force` backs up every edited file before overwriting; and a run from a repository checkout uses the repository tree rather than a possibly-stale `_bootstrap` (R7.2–R7.7).
+- **Example and raster freshness.** Every generator has a `--check` mode that compares against the committed file without writing, and CI runs it for all eleven generated examples. The raster exporter runs at scale ≥ 1 and **fails** (the "split the diagram" signal) when a diagram does not fit its class budget at that scale, runs under a timeout, keeps its temp copy outside `examples/`, and fails on a missing asset instead of reporting OK (R8.1, R8.4, R8.5).
+- **The Contract lints what it writes.** Generated files go through the same parser as `rule-engine-lint --file` (a staging directory + real parse, not a synthetic `Artifact`); the Contract creates no edge absent from the input data; an over-limit node count returns an error naming the count and the limit instead of silently dropping resources; and the same frontmatter the Contract writes is the frontmatter it lints (R9.1–R9.4).
+- **The two PlantUML examples are converted.** `examples/cross-cloud/cross-cloud-composition.puml` and `examples/generic/generic-reference-architecture.puml` are re-authored as `.drawio` triples, so the whole corpus is draw.io (D1).
+- **Python support: `requires-python >= 3.11`** (was `>= 3.14`). CI runs the test suite on every minor version from 3.11 to 3.14 (R11.1, R11.2, D6).
 
 ### Breaking changes for hand-authored artifacts
 
-Every check below can now **block** an artifact that published cleanly under
-1.6.x. An agent authoring artifacts for a user of the Power should expect these
-to fire on hand-written or hand-dragged sources; generated artifacts satisfy
-them by construction.
+Every check below can now **block** an artifact that published cleanly under 1.6.x. An agent authoring artifacts for a user of the Power should expect these to fire on hand-written or hand-dragged sources; generated artifacts satisfy them by construction.
 
-- **A `.drawio` that does not parse is blocked.** Previously a malformed,
-  compressed-but-corrupt, or DTD-bearing file could slip past the regex-based
-  reader and skip the geometry rules; it is now a `parse-error` ERROR (R1).
+- **A `.drawio` that does not parse is blocked.** Previously a malformed, compressed-but-corrupt, or DTD-bearing file could slip past the regex-based reader and skip the geometry rules; it is now a `parse-error` ERROR (R1).
 - **A DTD or entity declaration is rejected** with `parse-error` (R1.9).
-- **A dangling or missing edge endpoint is a finding** — WARNING on `flow`,
-  **ERROR on `landscape`** (R1.10).
-- **A Legend or title recognised only by a stray word is no longer recognised.**
-  The Legend must be a text cell whose first line is `Legend`; the title must
-  match the full title format; overlay terms count as documented only when they
-  appear in Legend lines. A diagram that "passed" because the word *legend*
-  appeared somewhere, or a `vN` token sat in a comment, will now report
-  `legend-present` / `title-versioned` / `overlay-legend-coverage` (R1.11,
-  R1.12).
-- **A KB document is validated in full**, not just for key presence. A bad
-  `status` value, an impossible date such as `2026-02-30`, an out-of-bounds
-  `tags`/`related_docs` list, a missing or wrong-length required section, a
-  second H1, over-deep list nesting, a six-column table, unparsable YAML
-  frontmatter, or a fenced code block with no `Anti-patterns` section is now a
-  CRITICAL `frontmatter` finding naming the offending key or constraint (R2).
-- **A real secret in a snapshot is caught, and only a real secret.** The
-  parsed-JSON `secret-safety` scan flags credential-keyed values and
-  secret-shaped values across every `inventory-*` text file, while `[REDACTED]`,
-  `SecureString` metadata and public certificates are no longer false positives
-  (R3).
-- **An unverifiable icon fails under `--strict`.** An OCI vertex with no
-  resolvable embedded stencil, a service vertex with no verifiable reference, or
-  an `image=` path outside `assets/` (or without a raster suffix) is now
-  `unverified`/`unresolved` and fails the CI icon gate — "0 unresolved" now
-  means a check happened (R4).
-- **A `.puml` or `.mmd` diagram is a `source-format` ERROR.** draw.io is the
-  only publishable source; convert the sketch to a `.drawio` triple (R10.3, D1).
-- **An over-limit Contract invocation errors instead of truncating.** A node
-  count above the diagram class limit returns an error naming the count and the
-  limit rather than silently dropping resources, and the Contract emits no edge
-  that is not in the input data (R9.2, R9.3).
-- **A stale generated example or raster fails CI.** A generator whose `--check`
-  output differs from the committed file, or a PNG whose embedded source sha256,
-  height or background does not match, now fails (R8).
-- **An engine upgrade surfaces edited/stale rules.** `rule-engine-init --check`
-  now exits non-zero on missing or stale files instead of reporting "OK" over
-  outdated rules; the first 1.7.0 run treats differing files as edited (nothing
-  is overwritten), and adopting the new rules requires `--force`, which backs up
-  each edited file (R7).
-- **Installation requires Python 3.11–3.14.** The floor moved down from 3.14 to
-  3.11; no action is needed unless you were pinned above 3.14 (R11).
+- **A dangling or missing edge endpoint is a finding** — WARNING on `flow`, **ERROR on `landscape`** (R1.10).
+- **A Legend or title recognised only by a stray word is no longer recognised.** The Legend must be a text cell whose first line is `Legend`; the title must match the full title format; overlay terms count as documented only when they appear in Legend lines. A diagram that "passed" because the word *legend* appeared somewhere, or a `vN` token sat in a comment, will now report `legend-present` / `title-versioned` / `overlay-legend-coverage` (R1.11, R1.12).
+- **A KB document is validated in full**, not just for key presence. A bad `status` value, an impossible date such as `2026-02-30`, an out-of-bounds `tags`/`related_docs` list, a missing or wrong-length required section, a second H1, over-deep list nesting, a six-column table, unparsable YAML frontmatter, or a fenced code block with no `Anti-patterns` section is now a CRITICAL `frontmatter` finding naming the offending key or constraint (R2).
+- **A real secret in a snapshot is caught, and only a real secret.** The parsed-JSON `secret-safety` scan flags credential-keyed values and secret-shaped values across every `inventory-*` text file, while `[REDACTED]`, `SecureString` metadata and public certificates are no longer false positives (R3).
+- **An unverifiable icon fails under `--strict`.** An OCI vertex with no resolvable embedded stencil, a service vertex with no verifiable reference, or an `image=` path outside `assets/` (or without a raster suffix) is now `unverified`/`unresolved` and fails the CI icon gate — "0 unresolved" now means a check happened (R4).
+- **A `.puml` or `.mmd` diagram is a `source-format` ERROR.** draw.io is the only publishable source; convert the sketch to a `.drawio` triple (R10.3, D1).
+- **An over-limit Contract invocation errors instead of truncating.** A node count above the diagram class limit returns an error naming the count and the limit rather than silently dropping resources, and the Contract emits no edge that is not in the input data (R9.2, R9.3).
+- **A stale generated example or raster fails CI.** A generator whose `--check` output differs from the committed file, or a PNG whose embedded source sha256, height or background does not match, now fails (R8).
+- **An engine upgrade surfaces edited/stale rules.** `rule-engine-init --check` now exits non-zero on missing or stale files instead of reporting "OK" over outdated rules; the first 1.7.0 run treats differing files as edited (nothing is overwritten), and adopting the new rules requires `--force`, which backs up each edited file (R7).
+- **Installation requires Python 3.11–3.14.** The floor moved down from 3.14 to 3.11; no action is needed unless you were pinned above 3.14 (R11).
 
 ## [1.6.1] - 2026-09-26
 

@@ -241,13 +241,15 @@ def _page_size(placed: PlacedDiagram) -> "tuple[int, int]":
     return page_w, page_h
 
 
-def build_summary(skin: ProviderSkin) -> str:
+def build_summary(skin: ProviderSkin, legacy: bool = False) -> str:
     """Build the <=12-node flow summary .drawio for ``skin``.
 
     The geometry is computed by ``layout(SUMMARY_SPEC)``; this only applies the
     provider skin (icons, region labels, container styles) and the provider
-    title."""
-    placed = layout(SUMMARY_SPEC)
+    title. ``legacy`` threads the ``--legacy`` flag to the layout pipeline so the
+    retained ten-pass ``Legacy_Path`` can be selected; with the scored solver
+    absent (Phase A) both routes produce byte-identical output."""
+    placed = layout(SUMMARY_SPEC, legacy=legacy)
     region_labels = {
         "nb_a": f"region-primary ({skin.region_primary})",
         "nb_b": f"region-passive ({skin.region_passive})",
@@ -268,12 +270,14 @@ def build_summary(skin: ProviderSkin) -> str:
     )
 
 
-def build_landscape(skin: ProviderSkin) -> str:
+def build_landscape(skin: ProviderSkin, legacy: bool = False) -> str:
     """Build the ~34-node landscape as-built .drawio for ``skin``.
 
     The geometry is computed by ``layout(LANDSCAPE_SPEC)``; this only applies the
-    provider skin (icons, account/vpc/az labels, container styles) and title."""
-    placed = layout(LANDSCAPE_SPEC)
+    provider skin (icons, account/vpc/az labels, container styles) and title.
+    ``legacy`` threads the ``--legacy`` flag to the layout pipeline (see
+    :func:`build_summary`)."""
+    placed = layout(LANDSCAPE_SPEC, legacy=legacy)
     labels = {
         "boundary-account": skin.account_label,
         "boundary-vpc-a": f"vpc-primary {skin.region_primary}",
@@ -301,13 +305,17 @@ def build_landscape(skin: ProviderSkin) -> str:
     )
 
 
-def write_pair(skin: ProviderSkin, out_dir: Path, stem: str) -> List[Path]:
-    """Write both .drawio files of the pair; return the written paths."""
+def write_pair(
+    skin: ProviderSkin, out_dir: Path, stem: str, legacy: bool = False
+) -> List[Path]:
+    """Write both .drawio files of the pair; return the written paths.
+
+    ``legacy`` threads the ``--legacy`` flag through to the layout pipeline."""
     out_dir.mkdir(parents=True, exist_ok=True)
     sp = out_dir / f"{stem}-summary.drawio"
     lp = out_dir / f"{stem}-landscape.drawio"
-    sp.write_text(build_summary(skin), encoding="utf-8")
-    lp.write_text(build_landscape(skin), encoding="utf-8")
+    sp.write_text(build_summary(skin, legacy=legacy), encoding="utf-8")
+    lp.write_text(build_landscape(skin, legacy=legacy), encoding="utf-8")
     return [sp, lp]
 
 
@@ -371,24 +379,31 @@ def run_cli(
         help="compare regenerated output byte-for-byte with the committed "
              "files without writing; exit non-zero if either is stale or missing",
     )
+    ap.add_argument(
+        "--legacy",
+        action="store_true",
+        help="route via the retained ten-pass rule-driven Legacy_Path instead "
+             "of the (Phase C) scored solver; with the solver absent both paths "
+             "produce byte-identical output (scored-router 1.8.0, Req 1.5)",
+    )
     args = ap.parse_args(argv)
     if args.stdout_summary:
-        sys.stdout.write(build_summary(skin))
+        sys.stdout.write(build_summary(skin, legacy=args.legacy))
         return 0
     if args.stdout_landscape:
-        sys.stdout.write(build_landscape(skin))
+        sys.stdout.write(build_landscape(skin, legacy=args.legacy))
         return 0
     if args.check:
         # Regenerate both diagrams in memory and compare against the committed
         # files; write nothing. Exit 0 only when BOTH match (R8.1).
         sp = out_dir / f"{stem}-summary.drawio"
         lp = out_dir / f"{stem}-landscape.drawio"
-        summary_ok = _check_one(sp, build_summary(skin), prog)
-        landscape_ok = _check_one(lp, build_landscape(skin), prog)
+        summary_ok = _check_one(sp, build_summary(skin, legacy=args.legacy), prog)
+        landscape_ok = _check_one(lp, build_landscape(skin, legacy=args.legacy), prog)
         if summary_ok and landscape_ok:
             print(f"{prog}: OK — committed summary and landscape are up to date")
             return 0
         return 1
-    for p in write_pair(skin, out_dir, stem):
+    for p in write_pair(skin, out_dir, stem, legacy=args.legacy):
         print(f"{prog}: wrote {p}")
     return 0

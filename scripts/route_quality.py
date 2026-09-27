@@ -112,8 +112,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if args.detail:
             for i, j in r.crossing_pairs:
                 print(f"    crossing: {i} x {j}")
-            for eid, nid, span in r.rail_pairs:
-                print(f"    rail:     {eid} vertical span {span} beside {nid}")
+            for eid, nid, span, clearance in r.rail_pairs:
+                print(
+                    f"    rail:     {eid} vertical span {span} beside {nid} "
+                    f"(clearance {clearance:.0f}px)"
+                )
     return 0
 
 
