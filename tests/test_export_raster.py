@@ -37,7 +37,6 @@ lands.
 from __future__ import annotations
 
 import base64
-import importlib.util
 import stat
 import subprocess
 import sys
@@ -46,14 +45,11 @@ from pathlib import Path
 import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
-_MODULE_PATH = _REPO_ROOT / "scripts" / "export_raster.py"
 
-# Import scripts/export_raster.py by path (it is a script, not an installed
-# module), mirroring tests/test_changelog_section.py.
+# The exporter now lives in the installed package (console script
+# rule-engine-export-raster); scripts/export_raster.py is a thin shim onto it.
 sys.path.insert(0, str(_REPO_ROOT / "src"))
-_spec = importlib.util.spec_from_file_location("export_raster", _MODULE_PATH)
-er = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(er)  # type: ignore[union-attr]
+from rule_engine import export_raster as er  # noqa: E402
 
 # A real, minimal, valid PNG the fake CLI can "produce" and the provenance
 # stamper can rewrite. Built with the test-only encoder in tests/strategies.py.
@@ -246,10 +242,10 @@ def test_export_one_inlines_temp_under_build_tools_outside_examples_and_cleans_u
     src = tmp_path / "examples" / "gcp" / "01.drawio"
     _write(src, 'x image=assets/vendor/gcp/s.svg; y')
 
-    # Redirect the module-level temp dir into tmp_path so the test never writes
-    # into the real repo tree; keep it OUTSIDE any examples/ dir.
-    export_tmp = tmp_path / ".build-tools" / "export-tmp"
-    monkeypatch.setattr(er, "EXPORT_TMP_DIR", export_tmp)
+    # The temp copy lands under <repo_root>/.build-tools/export-tmp, and the
+    # test passes repo_root=tmp_path, so it never touches the real repo tree
+    # and stays OUTSIDE any examples/ dir.
+    export_tmp = tmp_path / er.EXPORT_TMP_SUBDIR
 
     seen: dict = {}
     real_run = subprocess.run
@@ -296,8 +292,7 @@ def test_export_one_removes_temp_copy_even_when_cli_fails(tmp_path: Path, monkey
     src = tmp_path / "examples" / "gcp" / "01.drawio"
     _write(src, 'image=assets/vendor/gcp/s.svg;')
 
-    export_tmp = tmp_path / ".build-tools" / "export-tmp"
-    monkeypatch.setattr(er, "EXPORT_TMP_DIR", export_tmp)
+    export_tmp = tmp_path / er.EXPORT_TMP_SUBDIR
 
     # A fake CLI that always fails.
     failing = tmp_path / "failing-drawio"

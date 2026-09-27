@@ -38,6 +38,8 @@ permissions:
         - "python scripts/export_raster.py *"
         - "python scripts/fetch_assets.py *"
         - "python scripts/orthogonalise_drawio.py *"
+        - "rule-engine-export-raster *"
+        - "rule-engine-orthogonalise *"
         - "python scripts/route_quality.py*"
         - "rule-engine-lint *"
         - "rule-engine-check-rasters*"
@@ -157,7 +159,7 @@ engine**, never by hand-placing coordinates.
 ## Definition of done (run the gate before declaring success)
 
 1. Regenerate the affected examples from scratch (`python scripts/build_*`).
-2. Re-export rasters (`python scripts/export_raster.py …`).
+2. Re-export rasters (`rule-engine-export-raster …`).
 3. `rule-engine-lint --all --fail-on error,critical` is clean.
 4. `rule-engine-check-rasters` is within budget.
 5. `rule-engine-verify-icon --file <drawio>` reports zero unresolved.

@@ -66,7 +66,7 @@ defect even though its x leans right. If `container-overlap` fires between the
 Account and the on-premises boundary, the two have stopped being disjoint
 siblings: the datacenter must never nest inside the Account. Regenerate with
 `python scripts/build_aws_infra_example.py`, then re-export the raster with
-`python scripts/export_raster.py` and re-run `rule-engine-lint`.
+`rule-engine-export-raster` and re-run `rule-engine-lint`.
 
 ## See Also
 

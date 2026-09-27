@@ -465,7 +465,7 @@ The exported `NN-topic.drawio.png` must stay readable and lightweight, aligned w
 Rules:
 
 - A `flow` raster stays at **1600px or less** and **under 500KB**. If a flow diagram cannot meet that while staying readable, that is a signal it holds too much — **split it** (each split still capped at 12 nodes with an index document), rather than exporting an oversized raster.
-- A `landscape` raster may run up to **3600px** and **under 2MB** — do **not** split a comprehensive as-built to fit the flow width, since that destroys the one thing it exists to show. `scripts/export_raster.py` picks the export width from the diagram's `diagram_class` automatically (flow → 1600px, landscape → 3400px).
+- A `landscape` raster may run up to **3600px** and **under 2MB** — do **not** split a comprehensive as-built to fit the flow width, since that destroys the one thing it exists to show. `rule-engine-export-raster` (packaged; `scripts/export_raster.py` is a thin shim) picks the export width from the diagram's `diagram_class` automatically (flow → 1600px, landscape → 3400px).
 - The **model** canvas may be larger than the export width (draw.io units); it is the **exported image** that carries the width/size budget. Choose an export scale that lands the image within its class budget.
 - The class-aware budget **is** enforced — by the raster gate (`rule-engine-check-rasters`), which reads each `.drawio`'s companion `diagram_class` and applies the matching width/size ceiling. (The linter still evaluates only the `.drawio` source and companion, not the PNG; the raster gate is the pixel/byte enforcement point.)
 

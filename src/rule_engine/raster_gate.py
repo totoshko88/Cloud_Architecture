@@ -271,7 +271,7 @@ def insert_provenance(png_bytes: bytes, digest: str) -> bytes:
     chunk with the same keyword is dropped first, so re-inserting is
     idempotent). ``digest`` is the hex sha256 of the source ``.drawio``. This is
     the single writer of the provenance chunk, shared by the exporter
-    (``scripts/export_raster.py``) and used symmetrically by the checker below,
+    (``rule_engine.export_raster`` / ``rule-engine-export-raster``) and used symmetrically by the checker below,
     so the two never disagree on the chunk layout.
     """
     chunks = _iter_png_chunks(png_bytes)
@@ -643,7 +643,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             "Re-export the raster within its class budget "
             f"(flow ≤ {MAX_WIDTH_PX}px/{MAX_SIZE_BYTES // 1024}KB, "
             f"landscape ≤ {LANDSCAPE_MAX_WIDTH_PX}px/{LANDSCAPE_MAX_SIZE_BYTES // 1024}KB): "
-            "python scripts/export_raster.py <file>.drawio",
+            "rule-engine-export-raster <file>.drawio",
             file=sys.stderr,
         )
         return EXIT_OVER_BUDGET
