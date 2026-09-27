@@ -97,8 +97,9 @@ GENERATORS: tuple[Generator, ...] = (
         "build_oci_ha_example.py",
         ("oci/02-oci-ha-multiregion-summary.drawio",
          "oci/02-oci-ha-multiregion-landscape.drawio"),
-        # OCI nodes gained the ociSlug= marker in task 5.2; regenerated in 22.7.
-        stale_task="task 22.7",
+        # Regenerated in task 22.7/22.8 with the ociSlug= marker; now FRESH (exit
+        # 0) whenever the OCI stencil pack is present. In a pack-less environment
+        # its --check exits 2 (input asset missing), which the runner SKIPs.
     ),
     # --- three single-example generators (3) -----------------------------------
     Generator(
@@ -112,10 +113,17 @@ GENERATORS: tuple[Generator, ...] = (
     Generator(
         "build_oci_example.py",
         ("oci/01-oci-genai-stack.drawio",),
-        # Same ociSlug= marker drift; regenerated in task 22.7.
-        stale_task="task 22.7",
+        # Regenerated in task 22.7/22.8; now FRESH (exit 0) with the stencil pack
+        # present, and SKIPped (exit 2, input asset missing) without it.
     ),
 )
+
+
+#: A generator whose ``--check`` returns exit 2 (a missing input asset, not a
+#: broken check) with a message naming the missing stencil pack is SKIPped, not
+#: failed — the pack-less CI ``test`` job does not fetch it. Recognised from the
+#: generator's own message ("stencils not found" / "fetch_assets").
+_MISSING_PACK_MARKERS = ("stencils not found", "fetch_assets")
 
 
 def _run_check(gen: Generator) -> subprocess.CompletedProcess:
@@ -165,6 +173,19 @@ def test_generator_check_mode_runs(gen: Generator):
         f"{gen.script} --check exited {result.returncode}\n"
         f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
     )
+
+    # Exit 2 with a message naming the missing stencil pack is the generator's
+    # CORRECT "input asset missing" signal — a build-environment condition, not a
+    # broken --check. The pack-less CI ``test`` job does not fetch the OCI stencil
+    # pack, so SKIP (with the fetch instruction) rather than fail. This keeps the
+    # {0, 1} contract for every non-pack generator: a real crash (exit 2 with no
+    # pack message, or any other non-zero) still fails below.
+    message = f"{result.stdout}\n{result.stderr}"
+    if result.returncode == 2 and any(m in message for m in _MISSING_PACK_MARKERS):
+        pytest.skip(
+            f"{gen.script}: OCI stencil pack not fetched in this environment; "
+            f"run scripts/fetch_assets.py --only oci to fetch it.\n{diagnostics}"
+        )
 
     # The --check machinery must never crash: a controlled verdict is 0 or 1.
     assert result.returncode in (0, 1), diagnostics

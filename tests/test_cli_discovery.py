@@ -224,3 +224,27 @@ def test_discover_artifacts_classifies_a_mixed_tree(tmp_path):
         root, "powers", "p", "dev.kiro", "steering", "diagram-lint.md"
     )
     assert steering not in found
+
+
+def test_discover_artifacts_excludes_the_tests_tree(tmp_path):
+    """The ``tests/`` tree is test *input*, not a workspace artifact, so the
+    ``--all`` walk prunes it (like ``.git`` / ``.venv`` / ``assets``).
+
+    ``tests/fixtures/drawio/*`` holds deliberately-invalid diagrams (billion-laughs,
+    xxe, parent-cycle, …) that MUST lint as BLOCKED — that is their purpose for the
+    parser tests. Scanning them under ``--all`` would wrongly block the CI lint step,
+    so ``tests`` is in ``_EXCLUDED_DIRS`` and nothing under it is discovered."""
+    root = str(tmp_path)
+
+    # A real diagram outside tests/ IS discovered ...
+    good = os.path.join(root, "examples", "aws", "01-topic.drawio")
+    _write(good, '<mxGraphModel><root></root></mxGraphModel>')
+
+    # ... while a fixture under tests/ is pruned from the walk.
+    fixture = os.path.join(root, "tests", "fixtures", "drawio", "billion-laughs.drawio")
+    _write(fixture, '<mxGraphModel><root></root></mxGraphModel>')
+
+    found = set(discover_artifacts(root))
+    assert good in found
+    assert fixture not in found
+    assert not any(os.sep + "tests" + os.sep in p for p in found)

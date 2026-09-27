@@ -652,6 +652,7 @@ _EXCLUDED_DIRS = {
     "dist",  # built wheels/sdists
     "_bootstrap",  # bundled workspace-bootstrap payload (build-time copy of the rules)
     ".kiro",  # steering/specs are rule sources, not linted artifacts
+    "tests",  # test inputs (deliberately-invalid parser fixtures) are not workspace artifacts
 }
 
 # Hand-authored repository documents that are not engine-generated KB documents;
