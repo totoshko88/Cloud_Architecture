@@ -1,335 +1,376 @@
-# Вимоги — «Чесні гейти» (реліз 1.7.0)
+# Requirements Document
 
-> **Статус: чернетка для рев'ю (2026-09-26).** Документ спирається на рев'ю
-> проєкту від 2026-09-26 і на хотфікс 1.6.1 (PR #5). Позначки на кшталт
-> *(рев'ю H1)* вказують на знахідку, з якої виросла вимога. Перед design-фазою
-> треба закрити розділ «Відкриті рішення».
+**Feature:** Honest Gates (release 1.7.0)
 
-## Вступ
+> **Status: draft for review (2026-09-26).** This document builds on the
+> project review of 2026-09-26 and on hotfix 1.6.1 (PR #5). Markers such as
+> *(review H1)* point to the finding each requirement grew out of. The
+> "Open decisions" section must be closed before the design phase.
 
-Ця спека прибирає клас дефектів, де гейт каже «OK», нічого насправді не
-перевіривши. Особливо це стосується артефактів, написаних вручну: саме їх
-створює агент у користувача Power.
+## Introduction
 
-Причина, з якої це окремий мінорний реліз, а не патч: кожна вимога нижче робить
-перевірку суворішою. Отже вона може заблокувати артефакт, який сьогодні
-проходить. Хотфікс 1.6.1 свідомо робив лише зміни в безпечний бік.
+This spec removes a class of defects where a gate reports "OK" without having
+actually checked anything. This applies especially to hand-authored artifacts,
+which are exactly what an agent produces for a user of the Power.
 
-Результати релізу:
+Why this is a separate minor release rather than a patch: every requirement
+below makes a check stricter, so it may block an artifact that passes today.
+Hotfix 1.6.1 deliberately made only safe-direction changes.
 
-- XML-парсер `.drawio`, який бачить стиснуті, багатосторінкові та обгорнуті
-  діаграми і блокує їх, коли не може розібрати;
-- повний валідатор KB-frontmatter і структури документа;
-- `secret-safety`, що аналізує розібраний JSON, а не підрядки;
-- перевірка іконок, яка покриває OCI і не приймає «0 перевірено» за успіх;
-- схема інвентаря, що вміщує всі діаграмні ролі, і маніфест колектора, що
-  проходить власний лінтер;
-- закріплені за дайджестом пакети іконок і відтворюваний індекс;
-- `rule-engine-init`, що бачить відредаговані та застарілі файли;
-- контроль свіжості згенерованих прикладів і растрів;
-- контракт, який лінтує те, що справді записує;
-- тест синхронності таблиці правил `diagram-lint.md` з кодом.
+Release outcomes:
 
-### Поза межами (1.8.0)
+- an XML parser for `.drawio` that sees compressed, multi-page and wrapped
+  diagrams and blocks them when it cannot parse them;
+- a full validator for KB frontmatter and document structure;
+- `secret-safety` that analyses parsed JSON rather than substrings;
+- icon verification that covers OCI and does not accept "0 checked" as success;
+- an inventory schema that accommodates every diagram role, and a collector
+  manifest that passes its own linter;
+- icon packs pinned by digest and a reproducible index;
+- a `rule-engine-init` that detects edited and stale files;
+- freshness control for generated examples and rasters;
+- a contract that lints what it actually writes;
+- a test that keeps the `diagram-lint.md` rule table in sync with the code.
 
-- CLI «снапшот → layout engine → `.drawio`» і перенесення адаптера
-  `scripts/ha_multiregion_common.py` у пакет.
-- Узагальнення layout engine на N регіонів, класифікація ребер за оголошеним
-  регіоном, оракул з тим самим блокуючим набором, що й лінтер.
-- Скорочення always-on steering (≈ 22,5 тис. слів) до нормативного ядра.
-- Scored router (див. `docs/REVIEW.md` → Open gaps).
+### Out of scope (1.8.0)
 
-## Глосарій
+- The "snapshot → layout engine → `.drawio`" CLI and moving the
+  `scripts/ha_multiregion_common.py` adapter into the package.
+- Generalising the layout engine to N regions, classifying edges by declared
+  region, and an oracle with the same blocking set as the linter.
+- Trimming the always-on steering (≈ 22.5k words) down to a normative core.
+- Scored router (see `docs/REVIEW.md` → Open gaps).
 
-- **Лінтер** — `rule_engine.linter` разом із парсерами в `rule_engine.cli`
-  (`rule-engine-lint`).
-- **Артефакт** — файл, який оцінює лінтер: діаграма (`.drawio`, `.puml`,
-  `.mmd`), KB-документ (`.md`) або файл снапшоту (`.json`).
-- **Сторінка діаграми** — один елемент `<diagram>` у файлі `.drawio`.
-- **Стиснута сторінка** — `<diagram>`, чий текстовий вміст має вигляд
+## Glossary
+
+- **Linter**: `rule_engine.linter` together with the parsers in
+  `rule_engine.cli` (`rule-engine-lint`).
+- **Lint_CLI**: the `rule-engine-lint` command-line entry point of the Linter.
+- **Artifact**: a file evaluated by the Linter: a diagram (`.drawio`, `.puml`,
+  `.mmd`), a KB document (`.md`) or a snapshot file (`.json`).
+- **Diagram_Page**: one `<diagram>` element in a `.drawio` file.
+- **Compressed_Page**: a `<diagram>` whose text content has the form
   `base64(deflateRaw(encodeURIComponent(<mxGraphModel>)))`.
-- **Обгортка** — елемент `UserObject` або `object`, що містить `mxCell` і
-  тримає `id` та `label` комірки.
-- **Блокуюча знахідка** — знахідка з severity ERROR або CRITICAL.
-- **Верифікатор іконок** — `rule-engine-verify-icon`.
-- **Пін пакета** — пара `sha256` + `size` для архіву вендора в
+- **Wrapper**: a `UserObject` or `object` element that contains an `mxCell` and
+  holds the cell's `id` and `label`.
+- **Blocking_Finding**: a finding with severity ERROR or CRITICAL.
+- **Icon_Verifier**: `rule-engine-verify-icon`.
+- **Pack_Pin**: a `sha256` + `size` pair for a vendor archive in
   `mappings/asset-sources.yaml`.
-- **Lock-файл робочого простору** — `.kiro/rule-engine-init.lock.json`: версія
-  рушія та sha256 кожного скопійованого файлу.
-- **Згенерований еталон** — `.drawio` з `examples/`, що має генератор у
+- **Workspace_Lock_File**: `.kiro/rule-engine-init.lock.json`: the engine
+  version and the sha256 of every copied file.
+- **Generated_Example**: a `.drawio` in `examples/` that has a generator in
   `scripts/`.
+- **Example_Generator**: a script in `scripts/` that produces a
+  Generated_Example.
+- **Inventory_Schema**: `schemas/inventory.schema.json`, the Normalized
+  Resource schema.
+- **Terminology_Profile**: `profiles/terminology.yaml`.
+- **Collector**: the Inventory Collector that writes snapshot folders.
+- **Normalizer**: the component that converts provider responses into
+  Normalized Resources.
+- **Delta_Engine**: the component that computes the delta between snapshots.
+- **Fetcher**: the vendor-pack downloader (`scripts/fetch_assets.py`).
+- **Icon_Index**: `mappings/icon-index.json`.
+- **Slug_Normalizer**: the function that normalizes service names to slugs in
+  the asset index.
+- **Resolver**: the component that resolves a service or role to an icon via
+  the asset index.
+- **Init_Command**: `rule-engine-init`.
+- **Raster_Exporter**: `scripts/export_raster.py`.
+- **Raster_Checker**: `rule-engine-check-rasters`.
+- **Contract**: `contract.invoke`.
+- **CI_Pipeline**: the repository's continuous-integration workflow.
+- **Test_Suite**: the repository's automated test suite.
+- **Release**: the published 1.7.0 package together with its `examples/` and
+  `CHANGELOG.md`.
+- **Package_Metadata**: `pyproject.toml`.
 
-## Вимоги
+## Requirements
 
-### Вимога 1 — Розбір `.drawio` через XML
+### Requirement 1: Parse `.drawio` with an XML parser
 
-**Історія користувача:** Як автор діаграм, я хочу, щоб лінтер бачив ту саму
-модель, яку рендерить draw.io, щоб «чистий» результат означав чисту діаграму,
-а не нерозібраний файл. *(рев'ю H1, H2, H4, M1–M3, M5)*
+**User Story:** As a diagram author, I want the Linter to see the same model
+that draw.io renders, so that a "clean" result means a clean diagram rather
+than an unparsed file. *(review H1, H2, H4, M1–M3, M5)*
 
-#### Критерії приймання
+#### Acceptance Criteria
 
-1. КОЛИ лінтер отримує `.drawio`, ЛІНТЕР ПОВИНЕН розбирати його XML-парсером,
-   а не регулярними виразами.
-2. КОЛИ сторінка діаграми стиснута, ЛІНТЕР ПОВИНЕН розпакувати її і оцінити
-   розпаковану модель.
-3. КОЛИ файл містить кілька сторінок, ЛІНТЕР ПОВИНЕН оцінити кожну сторінку як
-   окремий артефакт і позначити знахідки як `<файл>#<назва сторінки>`.
-4. КОЛИ `mxCell` загорнутий в обгортку, ЛІНТЕР ПОВИНЕН брати `id` і `label`
-   з обгортки.
-5. ЛІНТЕР ПОВИНЕН декодувати XML-сутності та прибирати HTML-розмітку з label
-   перед правилами, що перевіряють назви вузлів.
-6. ЛІНТЕР ПОВИНЕН брати вейпоінти лише з `<Array as="points">`, додавати до
-   них origin батьківської комірки ребра і вважати відсутню координату нулем.
-7. ЛІНТЕР ПОВИНЕН брати крок сітки з атрибута `gridSize` моделі, а за його
-   відсутності — 10.
-8. ЯКЩО файл не розбирається як XML, сторінку не вдається розпакувати або
-   побудова геометрії кидає виняток, ТО ЛІНТЕР ПОВИНЕН видати блокуючу
-   знахідку `parse-error`, що називає файл і причину, замість мовчки пропустити
-   геометричні правила.
-9. ЯКЩО документ містить оголошення DTD або сутностей, ТО ЛІНТЕР ПОВИНЕН
-   відхилити його знахідкою `parse-error`.
-10. ЯКЩО ребро посилається на неіснуючий `source` або `target` або не має
-    жодного з них, ТО ЛІНТЕР ПОВИНЕН видати знахідку (ERROR для `landscape`,
-    WARNING для `flow`).
-11. ЛІНТЕР ПОВИНЕН визначати Legend і title-комірку за структурою (текстова
-    комірка з першим рядком `Legend`; повний формат title), а не за входженням
-    слова `legend` чи токена `vN` будь-де у файлі.
-12. ЛІНТЕР ПОВИНЕН рахувати терміни `overlay-legend-coverage` задокументованими
-    лише тоді, коли вони трапляються в рядках Legend.
-13. Кожна знахідка ЛІНТЕРА ПОВИННА містити ідентифікатори порушників (id
-    вузла, ребра чи контейнера) і причину, а CLI ПОВИНЕН їх друкувати.
+1. WHEN the Linter receives a `.drawio` file, THE Linter SHALL parse the file
+   with an XML parser rather than with regular expressions.
+2. WHEN a Diagram_Page is a Compressed_Page, THE Linter SHALL decompress the
+   Diagram_Page and evaluate the decompressed model.
+3. WHEN a file contains several Diagram_Pages, THE Linter SHALL evaluate each
+   Diagram_Page as a separate Artifact and label its findings as
+   `<file>#<page name>`.
+4. WHEN an `mxCell` is enclosed in a Wrapper, THE Linter SHALL take the `id`
+   and `label` from the Wrapper.
+5. THE Linter SHALL decode XML entities and strip HTML markup from labels
+   before evaluating the rules that check node names.
+6. THE Linter SHALL read waypoints only from `<Array as="points">`, add the
+   origin of the edge's parent cell to them, and treat a missing coordinate as
+   zero.
+7. THE Linter SHALL take the grid step from the model's `gridSize` attribute
+   and, when that attribute is absent, use 10.
+8. IF a file does not parse as XML, a Diagram_Page cannot be decompressed, or
+   geometry construction raises an exception, THEN THE Linter SHALL emit a
+   `parse-error` Blocking_Finding that names the file and the cause, instead of
+   silently skipping the geometry rules.
+9. IF a document contains a DTD or entity declaration, THEN THE Linter SHALL
+   reject the document with a `parse-error` finding.
+10. IF an edge references a non-existent `source` or `target`, or has neither,
+    THEN THE Linter SHALL emit a finding (ERROR for `landscape`, WARNING for
+    `flow`).
+11. THE Linter SHALL identify the Legend and the title cell by structure (a
+    text cell whose first line is `Legend`; the full title format) rather than
+    by an occurrence of the word `legend` or of a `vN` token anywhere in the
+    file.
+12. THE Linter SHALL treat `overlay-legend-coverage` terms as documented only
+    when the terms appear in Legend lines.
+13. THE Linter SHALL include in every finding the identifiers of the offenders
+    (node, edge or container id) and the reason, and THE Lint_CLI SHALL print
+    them.
 
-### Вимога 2 — Валідатор KB-frontmatter і структури документа
+### Requirement 2: KB frontmatter and document-structure validator
 
-**Історія користувача:** Як власник бази знань, я хочу, щоб правило
-`frontmatter` перевіряло весь контракт `kb-frontmatter.md`, а не лише наявність
-ключів, щоб документ із `status: bogus` і датою `2026-02-30` не публікувався.
-*(рев'ю H3)*
+**User Story:** As a knowledge-base owner, I want the `frontmatter` rule to
+check the whole `kb-frontmatter.md` contract rather than only the presence of
+keys, so that a document with `status: bogus` and the date `2026-02-30` is not
+published. *(review H3)*
 
-#### Критерії приймання
+#### Acceptance Criteria
 
-1. ЛІНТЕР ПОВИНЕН приймати `status` лише зі значеннями `draft`, `review`,
+1. THE Linter SHALL accept `status` only with the values `draft`, `review` or
    `published`.
-2. ЛІНТЕР ПОВИНЕН приймати `updated` і `next_review_date` лише як реальні
-   календарні дати `YYYY-MM-DD`.
-3. ЛІНТЕР ПОВИНЕН вимагати, щоб `tags` був списком з 1–20 записів, а
-   `related_docs` — списком з 0–20 записів.
-4. ЛІНТЕР ПОВИНЕН перевіряти загальну довжину (300–2000 слів), наявність і
-   довжину чотирьох обов'язкових розділів (100–200 слів кожен), рівно один H1,
-   вкладеність списків не глибше двох рівнів, таблиці не ширші за п'ять
-   колонок і секцію `Anti-patterns` у документі з fenced-блоком коду.
-5. ЯКЩО frontmatter не розбирається як YAML, ТО ЛІНТЕР ПОВИНЕН видати знахідку
-   `frontmatter`, а не переходити на поблажливий запасний парсер.
-6. ЛІНТЕР ПОВИНЕН ігнорувати UTF-8 BOM перед відкривальним `---`.
-7. Кожна знахідка `frontmatter` ПОВИННА називати ключ або порушене обмеження
-   (AC 8.9, AC 8.10 з `kb-frontmatter.md`).
-8. ЛІНТЕР ПОВИНЕН застосовувати структурні перевірки з критерію 4 лише до
-   згенерованих KB-документів, а не до steering, SKILL.md чи документів
-   репозиторію.
+2. THE Linter SHALL accept `updated` and `next_review_date` only as real
+   calendar dates in `YYYY-MM-DD` form.
+3. THE Linter SHALL require `tags` to be a list of 1–20 entries and
+   `related_docs` to be a list of 0–20 entries.
+4. THE Linter SHALL check the total length (300–2000 words), the presence and
+   length of the four required sections (100–200 words each), exactly one H1,
+   list nesting no deeper than two levels, tables no wider than five columns,
+   and an `Anti-patterns` section in any document that contains a fenced code
+   block.
+5. IF the frontmatter does not parse as YAML, THEN THE Linter SHALL emit a
+   `frontmatter` finding rather than falling back to a lenient fallback parser.
+6. THE Linter SHALL ignore a UTF-8 BOM before the opening `---`.
+7. THE Linter SHALL name the key or the violated constraint in every
+   `frontmatter` finding (AC 8.9, AC 8.10 of `kb-frontmatter.md`).
+8. THE Linter SHALL apply the structural checks of criterion 4 only to
+   generated KB documents, not to steering files, SKILL.md or repository
+   documents.
 
-### Вимога 3 — `secret-safety` на розібраному вмісті
+### Requirement 3: `secret-safety` on parsed content
 
-**Історія користувача:** Як оператор інвентаризації, я хочу, щоб лінтер
-знаходив справжні секрети в снапшоті й не блокував метадані, щоб останній
-рубіж захисту не був ні дірявим, ні шумним. *(рев'ю H10)*
+**User Story:** As an inventory operator, I want the Linter to find real
+secrets in a snapshot without blocking metadata, so that the last line of
+defence is neither leaky nor noisy. *(review H10)*
 
-#### Критерії приймання
+#### Acceptance Criteria
 
-1. КОЛИ файл снапшоту є JSON, ЛІНТЕР ПОВИНЕН розібрати його і рекурсивно
-   перевірити імена ключів та значення.
-2. ЛІНТЕР ПОВИНЕН виявляти секрет, коли значення стоїть під ключем, що
-   позначає облікові дані (password, secret, token, sessionToken,
-   clientSecret, accountKey, sharedAccessKey, connectionString, privateKey
-   тощо), без урахування регістру й розділювачів.
-3. ЛІНТЕР ПОВИНЕН виявляти секрет за формою значення: PEM `PRIVATE KEY`,
-   ідентифікатор ключа AWS у парі з секретом, `AccountKey=`,
-   `SharedAccessKey=`, `sig=` у SAS-URL, пароль у userinfo URL, JWT.
-4. ЛІНТЕР НЕ ПОВИНЕН видавати знахідку на значення `[REDACTED]`, на метадані
-   `Type: SecureString`, на `privateKeyType` і на публічний сертифікат.
-5. ЛІНТЕР ПОВИНЕН перевіряти кожен текстовий файл у папці `inventory-*`, а не
-   лише `.json`.
-6. Колектор, нормалізатор і лінтер ПОВИННІ брати словник секретів з одного
-   модуля.
-7. Нормалізатор ПОВИНЕН пропускати теги й значення через спільний редактор
-   секретів до того, як Normalized Resource буде записано.
+1. WHEN a snapshot file is JSON, THE Linter SHALL parse the file and
+   recursively check key names and values.
+2. THE Linter SHALL detect a secret when a value sits under a key that denotes
+   credentials (password, secret, token, sessionToken, clientSecret,
+   accountKey, sharedAccessKey, connectionString, privateKey, etc.), ignoring
+   case and separators.
+3. THE Linter SHALL detect a secret by the shape of a value: a PEM
+   `PRIVATE KEY`, an AWS key identifier paired with a secret, `AccountKey=`,
+   `SharedAccessKey=`, `sig=` in a SAS URL, a password in the userinfo of a
+   URL, or a JWT.
+4. THE Linter SHALL NOT emit a finding for the value `[REDACTED]`, for
+   `Type: SecureString` metadata, for `privateKeyType`, or for a public
+   certificate.
+5. THE Linter SHALL check every text file in an `inventory-*` folder, not only
+   `.json` files.
+6. THE Collector, THE Normalizer and THE Linter SHALL take the secret
+   vocabulary from one shared module.
+7. THE Normalizer SHALL pass tags and values through the shared secret
+   redactor before the Normalized Resource is written.
 
-### Вимога 4 — Верифікація іконок без сліпих зон
+### Requirement 4: Icon verification without blind spots
 
-**Історія користувача:** Як рев'юер, я хочу, щоб `rule-engine-verify-icon`
-перевіряв кожну іконку кожного провайдера, щоб «0 unresolved» означало
-перевірку, а не її відсутність. *(рев'ю H4, M6)*
+**User Story:** As a reviewer, I want `rule-engine-verify-icon` to check every
+icon of every provider, so that "0 unresolved" means a check happened rather
+than that none did. *(review H4, M6)*
 
-#### Критерії приймання
+#### Acceptance Criteria
 
-1. ВЕРИФІКАТОР ІКОНОК ПОВИНЕН перевіряти вбудовані OCI-стенсили за slug із
-   `stencils.json` (через маркер у стилі або хеш вмісту стенсила).
-2. ВЕРИФІКАТОР ІКОНОК ПОВИНЕН звітувати про сервісну вершину без
-   верифіковного посилання як про `unverified`.
-3. ДЕ передано `--strict`, ВЕРИФІКАТОР ІКОНОК ПОВИНЕН завершуватися з ненульовим
-   кодом, якщо є хоч одна `unverified` вершина або якщо файл із сервісними
-   вершинами не має жодного перевіреного посилання; CI ПОВИНЕН запускати його з
-   `--strict`.
-4. ЯКЩО шлях `image=` виходить за межі кореня `assets/` або не закінчується на
-   `.svg` чи `.png`, ТО ВЕРИФІКАТОР ІКОНОК ПОВИНЕН позначити посилання як
-   `unresolved`.
-5. Правило лінтера `icon-resolved` ПОВИННЕ звіряти `resIcon`, `grIcon` і шляхи
-   azure2 з тими самими закоміченими маніфестами, що й верифікатор, і видавати
-   ERROR на невідомий id.
+1. THE Icon_Verifier SHALL verify embedded OCI stencils by slug from
+   `stencils.json` (via a marker in the style or a hash of the stencil
+   content).
+2. THE Icon_Verifier SHALL report a service vertex that has no verifiable
+   reference as `unverified`.
+3. WHERE `--strict` is passed, THE Icon_Verifier SHALL exit with a non-zero
+   code if at least one vertex is `unverified` or if a file with service
+   vertices has no verified reference, and THE CI_Pipeline SHALL run the
+   Icon_Verifier with `--strict`.
+4. IF an `image=` path escapes the `assets/` root or does not end in `.svg` or
+   `.png`, THEN THE Icon_Verifier SHALL mark the reference as `unresolved`.
+5. THE Linter SHALL, in the `icon-resolved` rule, check `resIcon`, `grIcon`
+   and azure2 paths against the same committed manifests as the Icon_Verifier
+   and emit an ERROR for an unknown id.
 
-### Вимога 5 — Схема інвентаря, нормалізація і маніфест колектора
+### Requirement 5: Inventory schema, normalization and collector manifest
 
-**Історія користувача:** Як оператор інвентаризації, я хочу, щоб кожен ресурс
-із ролями діаграми можна було записати валідно, а снапшот колектора проходив
-власні гейти, щоб «inventory → diagram» не губив EC2, EFS чи CDN. *(рев'ю §6
-Інвентар, H5 з інвентарного рев'ю)*
+**User Story:** As an inventory operator, I want every resource that has a
+diagram role to be recordable validly, and the Collector's snapshot to pass its
+own gates, so that "inventory → diagram" does not lose EC2, EFS or CDN.
+*(review §6 Inventory, H5 of the inventory review)*
 
-#### Критерії приймання
+#### Acceptance Criteria
 
-1. СХЕМА інвентаря ПОВИННА допускати сім діаграмних ролей, яких бракує сьогодні:
-   `compute_instance`, `file_system`, `cdn`, `dns`, `waf`, `lb`, `cache` (форму
-   визначає рішення D4).
-2. `profiles/terminology.yaml` ПОВИНЕН містити аліаси нативних типів для цих
-   ролей для кожного з чотирьох вендорів.
-3. Нормалізатор ПОВИНЕН зіставляти псевдоніми полів без урахування регістру,
-   щоб PascalCase-відповіді SDK (`InstanceId`, `Tags`) нормалізувалися.
-4. `00-MANIFEST.md`, записаний колектором, ПОВИНЕН проходити `rule-engine-lint`
-   і `rule-engine-check-snapshot` (форму визначає рішення D5).
-5. Колектор ПОВИНЕН визначати ідентичність ресурсу за ключами, специфічними для
-   провайдера, без урахування регістру (`InstanceId`, `FunctionArn`,
-   `FileSystemId`, `selfLink`, `ocid` …) і НЕ ПОВИНЕН перезаписувати підпапку
-   іншого ресурсу.
-6. ЯКЩО `boundary_id` чи `region` містять символи поза `[A-Za-z0-9._:-]` або
-   шлях снапшоту виходить за межі `output_root`, ТО колектор ПОВИНЕН відмовити
-   до запису будь-якого файлу.
-7. ЯКЩО папка снапшоту з таким іменем уже існує, ТО колектор ПОВИНЕН створити
-   нову (з суфіксом) замість злиття зі старим вмістом.
-8. Delta engine ПОВИНЕН включати `boundary` і `region` в ідентичність і видавати
-   явний запис `duplicate` замість мовчазного last-writer-wins.
+1. THE Inventory_Schema SHALL admit the seven diagram roles missing today:
+   `compute_instance`, `file_system`, `cdn`, `dns`, `waf`, `lb`, `cache` (shape
+   defined by decision D4).
+2. THE Terminology_Profile SHALL contain native-type aliases for these roles
+   for each of the four vendors.
+3. THE Normalizer SHALL match field aliases case-insensitively, so that
+   PascalCase SDK responses (`InstanceId`, `Tags`) are normalized.
+4. THE Collector SHALL write a `00-MANIFEST.md` that passes `rule-engine-lint`
+   and `rule-engine-check-snapshot` (shape defined by decision D5).
+5. THE Collector SHALL determine resource identity by provider-specific keys,
+   case-insensitively (`InstanceId`, `FunctionArn`, `FileSystemId`,
+   `selfLink`, `ocid` …), and SHALL NOT overwrite another resource's
+   subfolder.
+6. IF `boundary_id` or `region` contains characters outside
+   `[A-Za-z0-9._:-]`, or the snapshot path escapes `output_root`, THEN THE
+   Collector SHALL refuse the run before writing any file.
+7. IF a snapshot folder with the same name already exists, THEN THE Collector
+   SHALL create a new folder (with a suffix) instead of merging with the old
+   content.
+8. THE Delta_Engine SHALL include `boundary` and `region` in resource identity
+   and emit an explicit `duplicate` entry instead of a silent
+   last-writer-wins.
 
-### Вимога 6 — Закріплені пакети іконок і відтворюваний індекс
+### Requirement 6: Pinned icon packs and a reproducible index
 
-**Історія користувача:** Як мейнтейнер, я хочу, щоб завантажені вендорські
-пакети були саме тими, що індексовано, щоб підмінений або оновлений архів не
-змінював іконки мовчки. *(рев'ю H13, M2 з дистрибуційного рев'ю)*
+**User Story:** As a maintainer, I want the downloaded vendor packs to be
+exactly the ones that were indexed, so that a tampered or updated archive does
+not silently change icons. *(review H13, M2 of the distribution review)*
 
-#### Критерії приймання
+#### Acceptance Criteria
 
-1. `mappings/asset-sources.yaml` ПОВИНЕН містити пін пакета для кожного
-   провайдера, а фетчер ПОВИНЕН перевіряти його до розпакування.
-2. Фетчер ПОВИНЕН приймати лише HTTPS, зокрема на кожному кроці редиректу.
-3. Фетчер ПОВИНЕН завантажувати атомарно (тимчасовий файл і `os.replace`),
-   ключувати кеш за дайджестом і розпаковувати у свіжу теку, щоб застарілі
-   файли не потрапляли в індекс.
-4. `pack_summary` у `mappings/icon-index.json` ПОВИНЕН містити sha256 кожного
-   пакета.
-5. Має існувати задокументована команда, що оновлює піни й перебудовує індекс
-   одним кроком.
-6. Нормалізатор slug НЕ ПОВИНЕН вирізати слова `service`, `cloud`, `public` зі
-   змістовних назв, щоб різні сервіси (*Private Link* і *Private Link
-   Service*) залишалися досяжними.
-7. ЯКЩО точний збіг slug неоднозначний, ТО резолвер ПОВИНЕН повертати
-   `unresolved` з переліком кандидатів замість довільного.
+1. THE `mappings/asset-sources.yaml` file SHALL contain a Pack_Pin for every
+   provider, and THE Fetcher SHALL verify the Pack_Pin before unpacking.
+2. THE Fetcher SHALL accept only HTTPS, including at every redirect step.
+3. THE Fetcher SHALL download atomically (a temporary file and `os.replace`),
+   key the cache by digest, and unpack into a fresh directory, so that stale
+   files do not reach the index.
+4. THE Icon_Index SHALL record the sha256 of every pack in `pack_summary`.
+5. THE Rule Engine SHALL provide a documented command that updates the
+   Pack_Pins and rebuilds the index in one step.
+6. THE Slug_Normalizer SHALL NOT strip the words `service`, `cloud` or
+   `public` from meaningful names, so that distinct services (*Private Link*
+   and *Private Link Service*) remain reachable.
+7. IF an exact slug match is ambiguous, THEN THE Resolver SHALL return
+   `unresolved` with the list of candidates instead of an arbitrary one.
 
-### Вимога 7 — `rule-engine-init`, що бачить зміни
+### Requirement 7: A `rule-engine-init` that detects changes
 
-**Історія користувача:** Як користувач Power, я хочу, щоб оновлення рушія
-показувало, які правила в моєму workspace застаріли чи відредаговані, щоб
-`--check` не казав «OK» над старими правилами. *(дистрибуційне рев'ю M3, M4)*
+**User Story:** As a user of the Power, I want an engine upgrade to show which
+rules in my workspace are stale or edited, so that `--check` does not report
+"OK" over outdated rules. *(distribution review M3, M4)*
 
-#### Критерії приймання
+#### Acceptance Criteria
 
-1. `rule-engine-init` ПОВИНЕН записувати lock-файл робочого простору.
-2. `rule-engine-init --check` ПОВИНЕН звітувати окремо про відсутні,
-   відредаговані, застарілі та зайві файли і завершуватися з ненульовим кодом,
-   якщо є відсутні чи застарілі.
-3. Запуск без прапорців ПОВИНЕН оновлювати лише ті файли, чий хеш збігається з
-   lock-файлом, і залишати відредаговані користувачем.
-4. `--force` ПОВИНЕН робити резервну копію кожного відредагованого файлу перед
-   перезаписом.
-5. `--check` НЕ ПОВИНЕН створювати цільову теку.
-6. `--with-assets` ПОВИНЕН писати лише всередині цільового workspace.
-7. КОЛИ `rule-engine-init` запущено з checkout репозиторію, ДЖЕРЕЛОМ ПОВИННЕ бути
-   дерево репозиторію, а не зібраний `_bootstrap`, що міг застаріти.
+1. THE Init_Command SHALL write the Workspace_Lock_File.
+2. WHEN `rule-engine-init --check` runs, THE Init_Command SHALL report missing,
+   edited, stale and extra files separately, and SHALL exit with a non-zero
+   code if any file is missing or stale.
+3. WHEN the Init_Command runs without flags, THE Init_Command SHALL update only
+   the files whose hash matches the Workspace_Lock_File and leave user-edited
+   files unchanged.
+4. WHERE `--force` is passed, THE Init_Command SHALL back up every edited file
+   before overwriting it.
+5. WHERE `--check` is passed, THE Init_Command SHALL NOT create the target
+   directory.
+6. WHERE `--with-assets` is passed, THE Init_Command SHALL write only inside
+   the target workspace.
+7. WHEN `rule-engine-init` runs from a repository checkout, THE Init_Command
+   SHALL use the repository tree as its source rather than the built
+   `_bootstrap`, which may be stale.
 
-### Вимога 8 — Свіжість згенерованих прикладів і растрів
+### Requirement 8: Freshness of generated examples and rasters
 
-**Історія користувача:** Як рев'юер, я хочу, щоб CI ловив розбіжність між
-генератором, закоміченим `.drawio` і його PNG, щоб приклади не старіли мовчки
-після зміни рушія. *(рев'ю M3, M4, M5 з layout-рев'ю)*
+**User Story:** As a reviewer, I want CI to catch a divergence between a
+generator, the committed `.drawio` and its PNG, so that examples do not go
+stale silently after an engine change. *(review M3, M4, M5 of the layout
+review)*
 
-#### Критерії приймання
+#### Acceptance Criteria
 
-1. Кожен генератор еталонів ПОВИНЕН мати режим `--check`, що без запису
-   порівнює результат із закоміченим файлом; CI ПОВИНЕН запускати його для
-   всіх одинадцяти згенерованих еталонів.
-2. `scripts/export_raster.py` ПОВИНЕН записувати sha256 джерела `.drawio` у
-   tEXt-чанк PNG, а `rule-engine-check-rasters` ПОВИНЕН падати на невідповідності.
-3. `rule-engine-check-rasters` ПОВИНЕН також перевіряти висоту, непрозорий
-   білий фон і завершуватися з ненульовим кодом, якщо в CI не знайдено жодного
-   джерела.
-4. Експорт ПОВИНЕН виконуватися з масштабом не менше 1, а діаграма, що не
-   вміщується в бюджет свого класу за такого масштабу, ПОВИННА давати помилку
-   (сигнал «розділи діаграму»).
-5. Експорт ПОВИНЕН мати timeout, тримати тимчасову копію поза `examples/` і
-   падати, коли відсутній ассет, замість писати «OK».
+1. THE Example_Generator SHALL provide a `--check` mode that compares its
+   output with the committed file without writing, and THE CI_Pipeline SHALL
+   run that mode for all eleven Generated_Examples.
+2. THE Raster_Exporter SHALL write the sha256 of the source `.drawio` into a
+   PNG tEXt chunk, and THE Raster_Checker SHALL fail on a mismatch.
+3. THE Raster_Checker SHALL also check the height and an opaque white
+   background, and SHALL exit with a non-zero code if no source is found in
+   CI.
+4. THE Raster_Exporter SHALL export at a scale of at least 1, and SHALL fail
+   with an error when a diagram does not fit the budget of its class at that
+   scale (the "split the diagram" signal).
+5. THE Raster_Exporter SHALL run with a timeout, keep its temporary copy
+   outside `examples/`, and fail when an asset is missing instead of reporting
+   "OK".
 
-### Вимога 9 — Контракт лінтує те, що записує
+### Requirement 9: The Contract lints what it writes
 
-**Історія користувача:** Як користувач `contract.invoke`, я хочу, щоб
-згенерований набір артефактів оцінювався тими самими гейтами, що й будь-який
-файл, щоб контракт не публікував вигадані зв'язки. *(рев'ю H11, M9)*
+**User Story:** As a user of `contract.invoke`, I want the generated artifact
+set to be evaluated by the same gates as any other file, so that the Contract
+does not publish invented relationships. *(review H11, M9)*
 
-#### Критерії приймання
+#### Acceptance Criteria
 
-1. `contract.invoke` ПОВИНЕН лінтувати записані файли через той самий парсер,
-   що й `rule-engine-lint --file`, а не синтетичний `Artifact`.
-2. `contract.invoke` НЕ ПОВИНЕН створювати ребра, яких немає у вхідних даних.
-3. ЯКЩО вузлів більше за ліміт класу діаграми, ТО `contract.invoke` ПОВИНЕН
-   повертати помилку, що називає кількість і ліміт, замість мовчки відкидати
-   ресурси.
-4. Frontmatter, який лінтує контракт, ПОВИНЕН бути тим самим, що записано у
-   файл.
+1. THE Contract SHALL lint the written files through the same parser as
+   `rule-engine-lint --file` rather than through a synthetic `Artifact`.
+2. THE Contract SHALL NOT create edges that are absent from the input data.
+3. IF the node count exceeds the limit of the diagram class, THEN THE Contract
+   SHALL return an error that names the count and the limit instead of
+   silently dropping resources.
+4. THE Contract SHALL lint the same frontmatter that the Contract writes to the
+   file.
 
-### Вимога 10 — Правила, код і стандарти узгоджені
+### Requirement 10: Rules, code and standards stay consistent
 
-**Історія користувача:** Як мейнтейнер, я хочу, щоб таблиця правил, severity в
-коді й матриця форматів у стандартах не могли розійтися непомітно. *(рев'ю H5,
-H7)*
+**User Story:** As a maintainer, I want the rule table, the severities in code
+and the format matrix in the standards to be unable to diverge unnoticed.
+*(review H5, H7)*
 
-#### Критерії приймання
+#### Acceptance Criteria
 
-1. Тест ПОВИНЕН розбирати таблиці правил і класових ескалацій у
-   `diagram-lint.md` і падати на будь-якій розбіжності з `RULE_SEVERITIES` та
-   ескалаціями в коді.
-2. Контракт і CLI ПОВИННІ знаходити ruleset однаково й fail-closed, якщо його
-   немає.
-3. Кожен формат джерела, який матриця `diagram-standards.md` вимагає для типу
-   діаграми, ПОВИНЕН лінтуватися `rule-engine-lint` і потрапляти в `--all`
-   (форму визначає рішення D1).
-4. КОЛИ 1.7.0 публікується, УСІ приклади з `examples/` ПОВИННІ проходити всі
-   нові й посилені перевірки, а CHANGELOG ПОВИНЕН перелічувати кожну з них як
-   breaking change для артефактів, написаних вручну.
+1. THE Test_Suite SHALL include a test that parses the rule table and the
+   class-escalation table in `diagram-lint.md` and fails on any mismatch with
+   `RULE_SEVERITIES` and the escalations in code.
+2. THE Contract and THE Lint_CLI SHALL locate the ruleset the same way and
+   SHALL fail closed when the ruleset is absent.
+3. THE Linter SHALL lint every source format that the `diagram-standards.md`
+   matrix requires for a diagram type, and `rule-engine-lint --all` SHALL
+   include that format (shape defined by decision D1).
+4. WHEN 1.7.0 is published, THE Release SHALL have every example in
+   `examples/` passing all new and tightened checks, and a CHANGELOG that lists
+   each of those checks as a breaking change for hand-authored artifacts.
 
-### Вимога 11 — Підтримувані версії Python
+### Requirement 11: Supported Python versions
 
-**Історія користувача:** Як користувач, я хочу ставити рушій на
-підтримуваному Python, не новішому, ніж потрібно коду. *(рев'ю M3)*
+**User Story:** As a user, I want to install the engine on a supported Python
+that is no newer than the code requires. *(review M3)*
 
-#### Критерії приймання
+#### Acceptance Criteria
 
-1. `pyproject.toml` ПОВИНЕН оголошувати нижню межу, визначену рішенням D6.
-2. CI ПОВИНЕН запускати тести на кожній мінорній версії від нижньої межі до
-   3.14.
+1. THE Package_Metadata SHALL declare the lower bound defined by decision D6.
+2. THE CI_Pipeline SHALL run the tests on every minor Python version from the
+   lower bound up to 3.14.
 
-## Відкриті рішення
+## Open decisions
 
-| # | Питання | Варіанти | Рекомендація |
+| # | Question | Options | Recommendation |
 | --- | --- | --- | --- |
-| D1 | Формат архітектурних діаграм | (a) draw.io канонічний, матриця оновлюється; (b) додати лінтинг PlantUML/Mermaid | (a): усі еталони й трійка вже draw.io |
-| D2 | Severity нових перевірок | одразу фінальна; або WARNING на один реліз, потім фінальна | фінальна, бо еталони виправляються в тому ж релізі |
-| D3 | Голий ключ `key` у редакторі | секрет скрізь; окрім пар `{Key, Value}` (1.6.1); окремий список ключів-метаданих | залишити правило 1.6.1 і додати список метаданих |
-| D4 | Ролі в схемі | розширити `resource_type`; додати окреме поле `role` | розширити enum: одне джерело правди |
-| D5 | Маніфест колектора | frontmatter + секції; або виключити `inventory-*/00-MANIFEST.md` з KB-правила | виключити й віддати `snapshot_gate` |
-| D6 | Нижня межа Python | 3.11; 3.12 | 3.11: код не використовує новіших можливостей |
-| D7 | Оновлення пінів пакетів | вручну командою; запланований CI-job, що відкриває PR | команда зараз, job — пізніше |
+| D1 | Format of architecture diagrams | (a) draw.io is canonical and the matrix is updated; (b) add PlantUML/Mermaid linting | (a): all examples and the triple are already draw.io |
+| D2 | Severity of the new checks | final immediately; or WARNING for one release, then final | final, because the examples are fixed in the same release |
+| D3 | Bare `key` key in the redactor | secret everywhere; except `{Key, Value}` pairs (1.6.1); a separate list of metadata keys | keep the 1.6.1 rule and add a metadata-key list |
+| D4 | Roles in the schema | extend `resource_type`; add a separate `role` field | extend the enum: one source of truth |
+| D5 | Collector manifest | frontmatter + sections; or exclude `inventory-*/00-MANIFEST.md` from the KB rule | exclude it and hand it to `snapshot_gate` |
+| D6 | Python lower bound | 3.11; 3.12 | 3.11: the code uses no newer features |
+| D7 | Updating pack pins | manually via a command; a scheduled CI job that opens a PR | the command now, the job later |
