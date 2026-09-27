@@ -198,6 +198,25 @@ jobs:
         # The per-domain JSON and per-resource documents are generated, so a
         # hand-edit that drifts from the generator is caught here.
         run: python scripts/build_example_snapshots.py --check
+      - name: Reconcile every shipped Snapshot against its diagram (Gate_Suite)
+        # v1.9.0 (R2.6): the inventory -> diagram reconciliation gate. Compare
+        # each committed inventory-* Snapshot against the diagram generated from
+        # it and block when a role-bearing enumerated resource is silently absent
+        # from the diagram (the "ten KMS keys omitted while the companion
+        # asserted completeness" defect). Called as the declared console script,
+        # consistently with the other Gate_Suite members (rule-engine-lint,
+        # rule-engine-verify-icon, rule-engine-check-rasters), so a broken
+        # [project.scripts] mapping is caught here too. Each pair is the Snapshot
+        # folder's related_docs diagram; a non-zero exit (a named omission) fails
+        # the job. Coverage_Class is read from each diagram's companion
+        # diagram_class.
+        run: |
+          rule-engine-reconcile --provider aws \
+            --snapshot examples/aws/inventory-aws-123456789012-us-east-1-2026-09-22_1430 \
+            --diagram examples/aws/01-aws-agent-platform.drawio
+          rule-engine-reconcile --provider generic \
+            --snapshot examples/generic/inventory-generic-env-prod-region-1-2026-09-22_1430 \
+            --diagram examples/generic/01-generic-reference-architecture.drawio
       - name: Verify the workspace bootstrap works from the installed package
         # Regression guard for the build_backend _PAYLOAD / init _BUNDLE_MAP sync:
         # bootstrap a FRESH empty workspace from the installed engine, then

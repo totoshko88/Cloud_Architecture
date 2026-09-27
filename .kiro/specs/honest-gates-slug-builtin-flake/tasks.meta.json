@@ -1,0 +1,130 @@
+{
+  "pbtResults": {
+    "1. Write bug condition exploration test": {
+      "status": "passed",
+      "failingExample": "resolve_asset('aws', 'eks', idx).source == 'builtin' (also s3, rds, sqs, lambda, bedrock), expected 'unresolved'. The bug-condition exploration test test_bug_condition_ambiguous_builtin_slug_collides FAILS by design on its pre-fix assertion `assert r.source == \"unresolved\"` because the resolver correctly consults _BUILTIN_STENCILS (step 1) before the ambiguous map (step 2). This failure confirms the flake root cause. The fix constrains the _core_token generator so the flaky R6.7 test test_ambiguous_exact_slug_is_unresolved_with_candidates never draws a built-in slug — that test now PASSES deterministically, as does the Property 3 contract test test_builtin_slug_that_is_also_ambiguous_resolves_to_builtin (source='builtin').",
+      "lastRunTimestamp": 1790521035208
+    }
+  },
+  "executionHistory": {
+    "1. Write bug condition exploration test": [
+      {
+        "executionId": "44aa818d-d90e-4e5b-8bbc-fe28b3de44af",
+        "chatSessionId": "sess_d1eba0c8-e120-4b39-9a59-db0af76b7b38",
+        "timestamp": 1790516131903
+      },
+      {
+        "executionId": "44aa818d-d90e-4e5b-8bbc-fe28b3de44af",
+        "chatSessionId": "sess_d1eba0c8-e120-4b39-9a59-db0af76b7b38",
+        "timestamp": 1790516139220
+      },
+      {
+        "executionId": "44aa818d-d90e-4e5b-8bbc-fe28b3de44af",
+        "chatSessionId": "sess_d1eba0c8-e120-4b39-9a59-db0af76b7b38",
+        "timestamp": 1790516260180
+      }
+    ],
+    "2. Write preservation property tests (BEFORE constraining the generator)": [
+      {
+        "executionId": "44aa818d-d90e-4e5b-8bbc-fe28b3de44af",
+        "chatSessionId": "sess_d1eba0c8-e120-4b39-9a59-db0af76b7b38",
+        "timestamp": 1790516131963
+      },
+      {
+        "executionId": "44aa818d-d90e-4e5b-8bbc-fe28b3de44af",
+        "chatSessionId": "sess_d1eba0c8-e120-4b39-9a59-db0af76b7b38",
+        "timestamp": 1790516265614
+      },
+      {
+        "executionId": "44aa818d-d90e-4e5b-8bbc-fe28b3de44af",
+        "chatSessionId": "sess_d1eba0c8-e120-4b39-9a59-db0af76b7b38",
+        "timestamp": 1790517535999
+      }
+    ],
+    "3.1 Constrain the `_core_token` strategy and add the built-in-priority contract test": [
+      {
+        "executionId": "44aa818d-d90e-4e5b-8bbc-fe28b3de44af",
+        "chatSessionId": "sess_d1eba0c8-e120-4b39-9a59-db0af76b7b38",
+        "timestamp": 1790516132002
+      },
+      {
+        "executionId": "44aa818d-d90e-4e5b-8bbc-fe28b3de44af",
+        "chatSessionId": "sess_d1eba0c8-e120-4b39-9a59-db0af76b7b38",
+        "timestamp": 1790517539526
+      },
+      {
+        "executionId": "44aa818d-d90e-4e5b-8bbc-fe28b3de44af",
+        "chatSessionId": "sess_d1eba0c8-e120-4b39-9a59-db0af76b7b38",
+        "timestamp": 1790517664503
+      }
+    ],
+    "3.2 Verify bug condition exploration test now passes": [
+      {
+        "executionId": "44aa818d-d90e-4e5b-8bbc-fe28b3de44af",
+        "chatSessionId": "sess_d1eba0c8-e120-4b39-9a59-db0af76b7b38",
+        "timestamp": 1790516132044
+      },
+      {
+        "executionId": "44aa818d-d90e-4e5b-8bbc-fe28b3de44af",
+        "chatSessionId": "sess_d1eba0c8-e120-4b39-9a59-db0af76b7b38",
+        "timestamp": 1790517668055
+      },
+      {
+        "executionId": "a6ac0b6f-bb10-44d8-8d8f-cc540c315c3d",
+        "chatSessionId": "sess_40680969-e24b-48e4-86c2-64c852431338",
+        "timestamp": 1790520969025
+      },
+      {
+        "executionId": "a6ac0b6f-bb10-44d8-8d8f-cc540c315c3d",
+        "chatSessionId": "sess_40680969-e24b-48e4-86c2-64c852431338",
+        "timestamp": 1790520975800
+      },
+      {
+        "executionId": "a6ac0b6f-bb10-44d8-8d8f-cc540c315c3d",
+        "chatSessionId": "sess_40680969-e24b-48e4-86c2-64c852431338",
+        "timestamp": 1790521076108
+      }
+    ],
+    "3.3 Verify preservation tests still pass": [
+      {
+        "executionId": "44aa818d-d90e-4e5b-8bbc-fe28b3de44af",
+        "chatSessionId": "sess_d1eba0c8-e120-4b39-9a59-db0af76b7b38",
+        "timestamp": 1790516132100
+      },
+      {
+        "executionId": "a6ac0b6f-bb10-44d8-8d8f-cc540c315c3d",
+        "chatSessionId": "sess_40680969-e24b-48e4-86c2-64c852431338",
+        "timestamp": 1790521079603
+      },
+      {
+        "executionId": "a6ac0b6f-bb10-44d8-8d8f-cc540c315c3d",
+        "chatSessionId": "sess_40680969-e24b-48e4-86c2-64c852431338",
+        "timestamp": 1790521137487
+      }
+    ],
+    "4. Checkpoint - Ensure all tests pass": [
+      {
+        "executionId": "44aa818d-d90e-4e5b-8bbc-fe28b3de44af",
+        "chatSessionId": "sess_d1eba0c8-e120-4b39-9a59-db0af76b7b38",
+        "timestamp": 1790516132137
+      },
+      {
+        "executionId": "a6ac0b6f-bb10-44d8-8d8f-cc540c315c3d",
+        "chatSessionId": "sess_40680969-e24b-48e4-86c2-64c852431338",
+        "timestamp": 1790521143000
+      },
+      {
+        "executionId": "a6ac0b6f-bb10-44d8-8d8f-cc540c315c3d",
+        "chatSessionId": "sess_40680969-e24b-48e4-86c2-64c852431338",
+        "timestamp": 1790521492479
+      }
+    ],
+    "3. Fix for the under-constrained `_core_token` test strategy (test-only, no production changes)": [
+      {
+        "executionId": "a6ac0b6f-bb10-44d8-8d8f-cc540c315c3d",
+        "chatSessionId": "sess_40680969-e24b-48e4-86c2-64c852431338",
+        "timestamp": 1790521137553
+      }
+    ]
+  }
+}

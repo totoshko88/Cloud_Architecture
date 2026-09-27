@@ -237,6 +237,36 @@ def _base_display(display: str) -> str:
     return normalize_slug(text)
 
 
+def _disambiguated_slug(slug: str, entry: "AssetEntry", taken: Dict[str, "AssetEntry"]) -> str:
+    """A stable, collision-free key for the LOSER of a slug collision (R4.2).
+
+    The winner of a collision keeps the bare ``slug``; every loser is recorded
+    under ``<slug>--<disambiguator>`` so it stays reachable from the index rather
+    than being shadowed. The disambiguator is a deterministic function of the
+    losing service alone:
+
+    1. the vendor-*un*stripped normalised slug (the token that distinguishes the
+       services — e.g. ``azure-firewall`` vs the bare ``firewall``), else the
+       loser's file stem slug;
+    2. if two losers still land on the same key, a numeric suffix by insertion
+       order (already sorted, so deterministic).
+
+    The extra tokens push the disambiguated key strictly *after* the winner in
+    both the exact-slug lookup (which never sees it) and the token subsequence
+    matcher (which prefers the fewest extra tokens and the shortest slug), so the
+    engine's own role resolution is unaffected (R4.5)."""
+    distinguisher = normalize_slug(entry.display_name, strip_vendor=False)
+    if not distinguisher or distinguisher == slug:
+        distinguisher = normalize_slug(Path(entry.path).stem, strip_vendor=False)
+    base = f"{slug}--{distinguisher}" if distinguisher else f"{slug}--dup"
+    candidate = base
+    n = 2
+    while candidate in taken:
+        candidate = f"{base}-{n}"
+        n += 1
+    return candidate
+
+
 def _best_ext(path: Path) -> Optional[str]:
     ext = path.suffix.lower()
     return ext if ext in _PREFERRED_EXTS else None
@@ -328,13 +358,18 @@ def index_provider(provider: str, pack_root: str) -> Dict[str, AssetEntry]:
     """Index one provider's unpacked official asset pack rooted at ``pack_root``.
 
     Returns a mapping of vendor-stripped slug -> :class:`AssetEntry`. When several
-    files normalise to one slug, exactly one is kept, chosen by
-    :func:`_candidate_rank` (SVG before PNG, base icon before a Dark/Light
-    variant, then :data:`_SIZE_PREFERENCE`) with a path tie-break — so the result
-    is independent of filesystem enumeration order (v1.6.1). Before 1.6.1 the
-    docstring promised "the largest available size" while the code kept whichever
-    file the walk reached first. OCI is indexed from its decoded stencil library
-    instead of a file tree.
+    files normalise to one slug for the SAME service (size/theme/format variants),
+    exactly one is kept, chosen by :func:`_candidate_rank` (SVG before PNG, base
+    icon before a Dark/Light variant, then :data:`_SIZE_PREFERENCE`) with a path
+    tie-break — so the result is independent of filesystem enumeration order
+    (v1.6.1).
+
+    When two DISTINCT services normalise to one slug (a genuine collision), the
+    winner is resolved by the same total, deterministic order and keeps the bare
+    slug; each loser is recorded under a disambiguated slug
+    (``<slug>--<disambiguator>``) rather than shadowed, so no service vanishes and
+    no collision WARNING is emitted (v1.9.0 Part D; R4.1–R4.3). OCI is indexed
+    from its decoded stencil library instead of a file tree.
     """
     if provider not in PROVIDERS:
         raise ValueError(f"unknown provider {provider!r}")
@@ -352,10 +387,15 @@ def index_provider(provider: str, pack_root: str) -> Dict[str, AssetEntry]:
         raise FileNotFoundError(f"asset pack root not found: {pack_root}")
 
     display_fn = _DISPLAY_FN.get(provider, lambda p: p.stem.replace("-", " ").replace("_", " "))
-    best: Dict[str, tuple] = {}  # slug -> (rank, rel_path, entry)
-    # Distinct services that normalise to one slug, reported once per slug and
-    # returned on the index as ``ambiguous`` so the resolver never guesses (R6.7).
-    collisions: Dict[str, set] = {}
+
+    # First pass: for every (slug, distinct-service) pick that service's single
+    # best file by the total candidate order (rank, then path tie-break). A
+    # "distinct service" is keyed by :func:`_base_display` (size/theme variants
+    # of one service collapse to one key). ``svc_best`` therefore holds one entry
+    # per real service; several distinct services under one slug is the collision
+    # case (v1.9.0 Part D).
+    #   svc_best[slug][service_key] = (rank, rel_path, entry)
+    svc_best: Dict[str, Dict[str, tuple]] = {}
 
     for path in _iter_files(root):
         ext = _best_ext(path)
@@ -375,33 +415,44 @@ def index_provider(provider: str, pack_root: str) -> Dict[str, AssetEntry]:
             category=_category_from_path(root, path),
         )
         rank = _candidate_rank(path, ext)
-        current = best.get(slug)
-        if current is not None and _base_display(current[2].display_name) != _base_display(display):
-            # Two DIFFERENT services normalised to one slug: one of them is
-            # unreachable from the index. Collected and reported once per slug
-            # below, rather than once per competing file (the 133-line warning
-            # storm of 1.6.0 was almost all size and Dark/Light variants).
-            collisions.setdefault(slug, set()).update(
-                {current[2].display_name, display}
-            )
+        service_key = _base_display(display)
+        per_slug = svc_best.setdefault(slug, {})
+        current = per_slug.get(service_key)
         if current is None or _is_better_candidate(rank, rel_path, current[0], current[1]):
-            best[slug] = (rank, rel_path, entry)
+            per_slug[service_key] = (rank, rel_path, entry)
 
+    # Second pass: for each slug pick the winning service by the SAME total,
+    # deterministic order (candidate rank of the service's best file, then a path
+    # tie-break, then the service key). The winner keeps the bare ``slug``; every
+    # loser is recorded under a DISAMBIGUATED slug (``<slug>--<disambiguator>``)
+    # rather than shadowed (R4.1, R4.2) — so no distinct service ever vanishes
+    # from the index. No collision WARNING is emitted (R4.3): the collision is
+    # resolved, not merely reported. The ``ambiguous`` map is still populated so
+    # an exact-slug lookup for a genuinely contested slug returns the candidate
+    # list (R6.7) instead of guessing.
+    index: Dict[str, AssetEntry] = {}
     ambiguous: Dict[str, tuple] = {}
-    for slug in sorted(collisions):
-        kept = best[slug][2].display_name
-        # Every distinct service competing for this slug (the kept one plus the
-        # shadowed ones), so the resolver can list all candidates.
-        names = sorted(set(collisions[slug]) | {kept})
-        ambiguous[slug] = tuple(names)
-        dropped = [n for n in names if _base_display(n) != _base_display(kept)]
-        logger.warning(
-            "slug collision for %s %r: kept %r, shadowed %s (distinct services "
-            "normalise to one slug; the shadowed ones are unreachable from the index)",
-            provider, slug, kept, dropped,
+    for slug in sorted(svc_best):
+        services = svc_best[slug]
+        # Total order over the competing services: best candidate rank first,
+        # then the file path, then the service key — every component is a stable
+        # function of the (sorted) pack contents, so the winner is deterministic.
+        ranked = sorted(
+            services.items(),
+            key=lambda kv: (kv[1][0], kv[1][1], kv[0]),
         )
+        (_win_key, (_r, _p, win_entry)) = ranked[0]
+        index[slug] = win_entry
+        if len(ranked) == 1:
+            continue
+        # Genuine collision: distinct services normalised to one slug.
+        names = sorted(e.display_name for (_k, (_rr, _pp, e)) in ranked)
+        ambiguous[slug] = tuple(names)
+        for _key, (_lr, _lp, lose_entry) in ranked[1:]:
+            index[_disambiguated_slug(slug, lose_entry, index)] = lose_entry
+
     return AssetIndex(
-        {slug: best[slug][2] for slug in sorted(best)}, ambiguous=ambiguous
+        {slug: index[slug] for slug in sorted(index)}, ambiguous=ambiguous
     )
 
 

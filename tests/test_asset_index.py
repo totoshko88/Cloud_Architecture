@@ -193,10 +193,11 @@ def test_build_index_and_json_roundtrip(aws_pack, azure_pack):
 # ---------------------------------------------------------------------------
 
 
-def test_index_provider_warns_on_slug_collision(tmp_path, caplog):
+def test_index_provider_disambiguates_slug_collision_without_warning(tmp_path, caplog):
     """Two different AWS services whose display names normalize (vendor-stripped)
-    to the same slug must WARN — the shadowed service would otherwise vanish
-    from the index silently."""
+    to the same slug are disambiguated deterministically (v1.9.0 Part D): the
+    winner keeps the bare slug, the loser is recorded under a disambiguated slug
+    rather than shadowed, and no collision WARNING is emitted (R4.1–R4.3)."""
     import logging
 
     root = tmp_path / "aws"
@@ -212,8 +213,18 @@ def test_index_provider_warns_on_slug_collision(tmp_path, caplog):
     with caplog.at_level(logging.WARNING, logger="rule_engine.asset_index"):
         idx = index_provider("aws", str(root))
 
-    assert "storage" in idx  # last-writer-wins keeps one entry
-    assert any("slug collision" in r.message for r in caplog.records)
+    # Winner keeps the bare slug; no distinct service vanishes — the loser is
+    # reachable under a disambiguated slug, not shadowed.
+    assert "storage" in idx
+    disambiguated = [s for s in idx if s.startswith("storage--")]
+    assert len(disambiguated) == 1
+    winner = idx["storage"].display_name
+    loser = idx[disambiguated[0]].display_name
+    assert {winner, loser} == {"Amazon Storage", "AWS Storage"}
+    # The collision is still recorded so an exact-slug lookup lists candidates.
+    assert set(idx.ambiguous["storage"]) == {"Amazon Storage", "AWS Storage"}
+    # No WARNING once disambiguation is in place (R4.3).
+    assert not any("slug collision" in r.message for r in caplog.records)
 
 
 # ---------------------------------------------------------------------------

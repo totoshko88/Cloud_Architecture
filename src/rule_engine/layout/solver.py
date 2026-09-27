@@ -517,3 +517,130 @@ def solve(
     # one only when it does not score worse), not here — so this returns the
     # committed greedy set and leaves the hard guarantee to the pipeline.
     return [committed[e.id] for e in spec.edges]
+
+
+# ===========================================================================
+# The placement outer loop (1.9.0, Part A — design.md §Component A2)
+# ===========================================================================
+
+
+def _placement_cost(placed: "PlacedDiagram") -> "RouteCost":
+    """Score a FINISHED :class:`PlacedDiagram` with the SHARED graded
+    ``route_cost`` (Decision D3, R5.6).
+
+    Serializes the finished diagram through the engine's own
+    :func:`rule_engine.layout.repair._serialize_candidate`, re-parses it with the
+    single ``.drawio`` parser, and measures it with the shared
+    :func:`rule_engine.geometry.route_cost` — the exact objective the router, the
+    ratchet and ``scripts/route_quality.py`` use. No private copy: the objective
+    the placement loop optimises is the objective the gate enforces, so the two
+    cannot drift (Decision D3). Identical in shape to the pipeline's own
+    ``_finished_cost`` guard; kept here so :func:`solve_placement` has a
+    self-contained scorer over finished candidates."""
+    text = _serialize_candidate(placed)
+    return route_cost(
+        build_geometry(parse_drawio(text, path="<placement-trial>.drawio")[0])
+    )
+
+
+def solve_placement(spec: "DiagramSpec") -> "PlacedDiagram":
+    """Deterministic scored PLACEMENT loop (design.md §Component A2, R1.3/R1.4).
+
+    The outer order-score-commit loop layered over the 1.8.0 routing machinery.
+    It enumerates a small, rank-ordered, deterministic set of placement variants
+    (:func:`rule_engine.layout.variants.generate_placement_variants`), and for
+    **each** variant:
+
+    1. applies the variant's move to the spec
+       (:func:`rule_engine.layout.variants.apply_placement_move`) — a pure,
+       whole-slot spec transform that keeps every node inside its declared
+       container (R1.6);
+    2. runs the **full 1.8.0 inner pipeline** — ``place → size → centre → solve →
+       repair`` — to a finished candidate (:func:`rule_engine.layout.pipeline.layout`,
+       the default scored path), so the candidate is exactly the diagram that
+       placement would publish (R1.3);
+    3. scores the finished candidate with the shared graded ``route_cost``
+       (:func:`_placement_cost`, Decision D3 / R5.6).
+
+    It then selects the ``argmin`` over the total key
+    ``(RouteCost.as_tuple(), placement_rank, placement_id)`` (R1.4). The
+    **Base_Placement (the identity, rank 0) is always a candidate**, so the
+    selected placement's ``route_cost`` can never exceed the base's — the Part A
+    analogue of Property 1 (R1.4).
+
+    **Error handling (design.md §Error Handling — the placement loop).** A
+    variant whose inner pipeline raises (:class:`~rule_engine.layout.repair.LayoutError`
+    — which subsumes an :class:`~rule_engine.layout.contacts.OverConnectedError`
+    re-raised by :func:`layout`) is scored **infeasible** and **dropped** from the
+    ``argmin``; it never becomes the winner. Because the identity is always
+    enumerated first and the base spec is the one the 1.8.0 path could already lay
+    out, at least one candidate always finishes — so ``solve_placement`` never
+    fails a spec the 1.8.0 path could lay out. A move that would break container
+    nesting / padding is not enumerated in the first place (the generator's
+    guards), so an infeasible variant here is a genuine routing dead-end, not a
+    malformed move.
+
+    **Determinism (Decision D4, R1.5 / R5.1).** ``generate_placement_variants``
+    is a pure function of the spec, ``apply_placement_move`` is a pure spec
+    transform, :func:`layout` is a deterministic function of its spec, and the
+    ``argmin`` key is **total** — ``placement_rank`` then ``placement_id`` break
+    every ``RouteCost`` tie — so the same spec always selects the same placement
+    and serializes to a byte-identical ``.drawio`` (Property 2). Ties never fall
+    to dict/iteration order: with the base at rank 0, an equal-cost move can only
+    win if it sorts before the base, which it cannot (rank 0 is minimal), so an
+    equal-cost move never displaces the base.
+
+    Returns the finished :class:`PlacedDiagram` of the winning placement, ready
+    for :func:`rule_engine.diagram_layout.build_diagram`.
+    """
+    # Lazy import to avoid the pipeline ⇄ solver import cycle: ``pipeline``
+    # imports ``solve`` from this module at load, so this module cannot import
+    # ``pipeline`` at load time. The placement loop is not on the default per-edge
+    # routing path, so importing ``layout`` here (only when a placement search is
+    # requested) keeps the load-time graph one-directional.
+    try:
+        from .pipeline import layout as _layout, LayoutError
+    except ImportError:  # pragma: no cover - flat-module execution fallback
+        from layout.pipeline import layout as _layout, LayoutError  # type: ignore[no-redef]
+
+    variants = _variants.generate_placement_variants(spec)
+
+    best_key: Optional[Tuple] = None
+    best_placed: Optional["PlacedDiagram"] = None
+
+    for variant in variants:
+        moved = _variants.apply_placement_move(spec, variant)
+        try:
+            # The full 1.8.0 inner pipeline to a FINISHED candidate (place → size →
+            # centre → scored solve → repair). ``legacy=False`` keeps the scored
+            # per-edge router as the inner routing stage; ``_placement=False``
+            # selects the INNER route-only path so this call does NOT re-enter the
+            # placement loop — the switch that breaks the layout ⇄ solve_placement
+            # recursion (R1.3).
+            candidate = _layout(moved, legacy=False, _placement=False)
+        except LayoutError:
+            # Infeasible placement (the moved layout could not be routed / repaired
+            # within bounds, or is over-connected). Drop it from the argmin; the
+            # identity always finishes, so the loop never fails (design.md §Error
+            # Handling — the base always survives).
+            continue
+
+        cost = _placement_cost(candidate)
+        # argmin over the TOTAL key (RouteCost.as_tuple(), rank, id): the rank and
+        # id break every route_cost tie, so the winner is a pure, reproducible
+        # function of the spec, and the rank-0 identity wins every tie it is part
+        # of (R1.4, Property 2, Decision D4).
+        key = (cost.as_tuple(), variant.rank, variant.id)
+        if best_key is None or key < best_key:
+            best_key = key
+            best_placed = candidate
+
+    if best_placed is None:  # pragma: no cover - the identity always finishes
+        # Defensive: the identity (base placement) is always enumerated and always
+        # finishes if the 1.8.0 path could lay out the spec at all, so this is
+        # unreachable in practice. Fall back to the base layout so the loop never
+        # returns ``None`` — again via the inner route-only path (``_placement=
+        # False``) so the fallback cannot re-enter the placement loop.
+        best_placed = _layout(spec, legacy=False, _placement=False)
+
+    return best_placed

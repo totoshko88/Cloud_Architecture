@@ -768,31 +768,53 @@ def _normalise_origin(
 
 
 
-def layout(spec: DiagramSpec, legacy: bool = False) -> "PlacedDiagram":
+def layout(
+    spec: DiagramSpec,
+    legacy: bool = False,
+    *,
+    _placement: bool = True,
+) -> "PlacedDiagram":
     """Turn a coordinate-free ``spec`` into a placed, repaired diagram (Req 9).
 
     Orchestrates ``place → size → centre → (solver | legacy) → repair``
-    (design.md §Architecture — the pipeline inversion). The ``place → size →
-    centre`` and the bounded ``repair`` stages are unchanged; only the middle
-    contacts+route stage has a seam:
+    (design.md §Architecture — the pipeline inversion), and — since 1.9.0 Part A
+    (task 3) — wraps the **default** scored path in the scored **placement** loop
+    (:func:`rule_engine.layout.solver.solve_placement`). The ``place → size →
+    centre`` and the bounded ``repair`` stages are unchanged; the seams are:
 
-    * **legacy / rule-driven path** — the retained ten-pass
+    * **legacy / rule-driven path** (``legacy=True``) — the retained ten-pass
       :func:`_place_and_route`, which selects every edge's contacts in ten
       sequential global passes and then routes. This is the ``Legacy_Path``,
       selectable by the ``--legacy`` flag threaded from the generator entry
-      points as the ``legacy`` keyword.
-    * **scored-solver path (default)** — the per-edge order-score-commit loop
-      (:func:`_place_and_route_scored`, wired to
-      :func:`rule_engine.layout.solver.solve`). This is the default from task
-      7.3: it chooses each edge's contacts *and* waypoints together, scoring
+      points as the ``legacy`` keyword. It runs no placement search and no scored
+      per-edge solver, so every ``--legacy`` diagram is byte-identical to its
+      pre-1.9.0 bytes (R5.2, R5.3).
+    * **scored placement loop (default)** — the outer placement search
+      (:func:`rule_engine.layout.solver.solve_placement`), new in 1.9.0 Part A
+      (design.md §Component A2). It enumerates a small, rank-ordered,
+      deterministic set of placement variants, runs the **inner** scored route
+      pipeline (below) on each to a finished candidate, scores each with the
+      shared graded ``route_cost``, and returns the ``argmin`` over
+      ``(RouteCost.as_tuple(), placement_rank, placement_id)``. The base
+      placement (rank 0, no move) is always a candidate, so the selected
+      placement can never score worse than the pre-placement default — the Part A
+      analogue of the 1.8.0 per-edge guarantee (R1.3, R1.4). This is the path a
+      generator gets by calling ``layout(spec)`` with no ``legacy`` flag.
+    * **inner scored route path** (``legacy=False, _placement=False``) — the
+      per-edge order-score-commit loop (:func:`_layout_scored_with_guard`, wired
+      to :func:`rule_engine.layout.solver.solve`). This is the 1.8.0 route-only
+      path: it chooses each edge's contacts *and* waypoints together, scoring
       every sanctioned variant against the edges already accepted and committing
-      the ``argmin`` (design.md §control flow). It uses no randomness, no
-      wall-clock, and no dict-iteration-order dependence and returns its edges in
-      declared order, so ``layout(spec)`` is a deterministic, byte-identical
-      function of the spec and the ``generator --check`` gate holds (R4.1). It
-      feeds the same repair / normalise / serialize stages as the legacy path, so
-      it changes only how waypoints are chosen, never the artifact format (R4.2,
-      R4.3).
+      the ``argmin`` (design.md §control flow). ``solve_placement`` invokes this
+      path once per placement variant (via ``layout(moved, _placement=False)``),
+      so the placement loop reuses the exact 1.8.0 machinery as its "score one
+      placement" step rather than duplicating it, and the private ``_placement``
+      switch is what breaks the ``layout ⇄ solve_placement`` recursion (the loop
+      never re-enters the loop). It uses no randomness, no wall-clock, and no
+      dict-iteration-order dependence and returns its edges in declared order, so
+      it is a deterministic, byte-identical function of the spec (R5.1) and feeds
+      the same repair / normalise / serialize stages as the legacy path — it
+      changes only how waypoints are chosen, never the artifact format (R5.3).
 
     After the contacts+route stage produces an initial candidate, the bounded
     repair loop runs: on each pass, run the oracle (:func:`_run_oracle`); if it
@@ -815,16 +837,38 @@ def layout(spec: DiagramSpec, legacy: bool = False) -> "PlacedDiagram":
     (Req 11.1, 11.4). An over-connected node surfaces as an
     :class:`OverConnectedError` from the pipeline, re-raised as a
     :class:`LayoutError` (unfixable, Req 9.3).
+
+    ``_placement`` is a **private** switch (keyword-only, not part of the
+    generator/CLI surface): a generator selects only ``legacy``. It exists so the
+    placement loop can request the inner route-only path from ``layout`` without
+    re-entering the placement loop, keeping the ``layout`` / ``solve_placement``
+    load- and call-time graph acyclic.
     """
-    # Contacts + route stage: (solver | legacy). The scored per-edge solver is
-    # the DEFAULT routing path (task 7.3); ``--legacy`` retains the rule-driven
-    # ten-pass :func:`_place_and_route`. Both feed the same downstream repair /
-    # normalise / serialize stages, so the choice changes only how waypoints are
-    # chosen, never the artifact format (R4.2, R4.3), and both are deterministic
-    # functions of the spec (R4.1).
+    # Contacts + route stage: (placement-loop | scored inner | legacy). The
+    # scored PLACEMENT loop is the DEFAULT (1.9.0 Part A, task 3); ``--legacy``
+    # retains the rule-driven ten-pass :func:`_place_and_route`; the private
+    # ``_placement=False`` selects the 1.8.0 scored inner route path, which the
+    # placement loop drives per variant. All three feed the same downstream
+    # repair / normalise / serialize stages, so the choice changes only how
+    # waypoints (and now the placement) are chosen, never the artifact format
+    # (R5.3), and all are deterministic functions of the spec (R5.1).
     try:
         if legacy:
             return _finish(spec, _place_and_route(spec))
+        if _placement:
+            # Default: the scored placement outer loop. Lazy import keeps the
+            # ``pipeline`` (which ``solver`` imports ``solve`` from at load) and
+            # ``solver.solve_placement`` (which imports ``layout`` back) graph
+            # one-directional at load time — the loop is entered only here, at
+            # call time.
+            try:
+                from .solver import solve_placement as _solve_placement
+            except ImportError:  # pragma: no cover - flat-module fallback
+                from layout.solver import solve_placement as _solve_placement  # type: ignore[no-redef]
+            return _solve_placement(spec)
+        # Inner scored route path (the placement loop's per-variant step, and the
+        # 1.8.0 route-only path): no placement search, just place → size → centre
+        # → scored solve → repair.
         return _layout_scored_with_guard(spec)
     except OverConnectedError as exc:
         raise LayoutError(

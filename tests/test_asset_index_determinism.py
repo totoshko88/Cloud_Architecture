@@ -128,9 +128,12 @@ def test_private_link_and_service_stay_distinct(tmp_path, caplog):
     assert not index.ambiguous
 
 
-def test_distinct_services_on_one_slug_are_reported_once(tmp_path, caplog):
+def test_distinct_services_on_one_slug_are_disambiguated(tmp_path, caplog):
     """A genuine collision (two distinct services that still normalise to one
-    slug) is reported once and recorded on the index as ``ambiguous`` (R6.7)."""
+    slug) is resolved deterministically without a WARNING (v1.9.0 Part D): the
+    winner keeps the bare slug, the loser is recorded under a disambiguated slug
+    rather than shadowed, and the collision is still recorded on the index as
+    ``ambiguous`` (R4.1–R4.3, R6.7)."""
     root = _make_pack(
         tmp_path / "azure",
         [
@@ -142,10 +145,16 @@ def test_distinct_services_on_one_slug_are_reported_once(tmp_path, caplog):
     )
     with caplog.at_level("WARNING", logger=ai.__name__):
         index = ai.index_provider("azure", str(root))
-    messages = [r.getMessage() for r in caplog.records if "slug collision" in r.getMessage()]
-    assert len(messages) == 1
-    assert "'firewall'" in messages[0]
-    assert "firewall" in index.ambiguous
+    # No collision WARNING once disambiguation is in place (R4.3).
+    assert not [r for r in caplog.records if "slug collision" in r.getMessage()]
+    # Both distinct services stay reachable: winner under the bare slug, loser
+    # under a disambiguated slug.
+    assert "firewall" in index
+    disambiguated = [s for s in index if s.startswith("firewall--")]
+    assert len(disambiguated) == 1
+    reachable = {index["firewall"].display_name, index[disambiguated[0]].display_name}
+    assert reachable == {"Azure Firewall", "Firewall"}
+    # The collision is still recorded (R6.7).
     assert set(index.ambiguous["firewall"]) == {"Azure Firewall", "Firewall"}
 
 

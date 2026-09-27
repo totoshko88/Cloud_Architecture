@@ -188,6 +188,18 @@ validate:
     - rule-engine-check-snapshot --root examples --strict
     - echo "Verifying the example Snapshot data files are current"
     - python scripts/build_example_snapshots.py --check
+    - echo "Reconciling every shipped Snapshot against its diagram (Gate_Suite)"
+    # v1.9.0 (R2.6): the inventory -> diagram reconciliation gate. Compare each
+    # committed inventory-* Snapshot against the diagram generated from it and
+    # block when a role-bearing enumerated resource is silently absent from the
+    # diagram. Called as the declared console script, consistently with the other
+    # Gate_Suite members (rule-engine-lint, rule-engine-verify-icon,
+    # rule-engine-check-rasters), so a broken [project.scripts] mapping is caught
+    # here too. Each pair is the Snapshot folder's related_docs diagram; a
+    # non-zero exit (a named omission) fails the run. Coverage_Class is read from
+    # each diagram's companion diagram_class.
+    - rule-engine-reconcile --provider aws --snapshot examples/aws/inventory-aws-123456789012-us-east-1-2026-09-22_1430 --diagram examples/aws/01-aws-agent-platform.drawio
+    - rule-engine-reconcile --provider generic --snapshot examples/generic/inventory-generic-env-prod-region-1-2026-09-22_1430 --diagram examples/generic/01-generic-reference-architecture.drawio
     - echo "Verifying the workspace bootstrap works from the installed package"
     # Bootstrap a fresh workspace from the installed engine, then --check it: a
     # payload that ships incompletely in the wheel (build_backend._PAYLOAD /
