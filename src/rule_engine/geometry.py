@@ -1127,6 +1127,43 @@ RAIL_MIN_SPAN = 300.0
 RAIL_CLEARANCE = 40.0
 
 
+def rail_penalty(clearance: float) -> float:
+    """Graded penalty for one rail run, by how close it passes an icon.
+
+    This is the module-level penalty *function* (distinct from the
+    :attr:`RouteCost.rail_penalty` *field*, which is the sum of this function
+    over a diagram's rail runs). It replaces the binary "within
+    :data:`RAIL_CLEARANCE`, yes/no" verdict with a value that grades the run:
+    a vertical 2px from an icon is the defect a reviewer objects to, while one
+    30px away is barely a rail, and the two must not score the same.
+
+    Contract (the required properties — see design Component 4, Property 6):
+
+    * **monotonically non-increasing in clearance** — for clearances
+      ``d1 <= d2``, ``rail_penalty(d1) >= rail_penalty(d2)``. A run that passes
+      closer is never penalised less than one that passes farther.
+    * **zero at and above** :data:`RAIL_CLEARANCE` — ``rail_penalty(d) == 0``
+      for every ``d >= RAIL_CLEARANCE``. Once a run clears the threshold it is
+      no longer a rail, so it carries no rail penalty (it may still be scored on
+      turns/ink elsewhere).
+
+    The concrete curve is a clamped linear ramp
+    ``max(0, (RAIL_CLEARANCE - clearance) / RAIL_CLEARANCE)``, chosen against the
+    shipped corpus: the only rail runs in the corpus (the four HA landscapes)
+    pass at exactly :data:`RAIL_CLEARANCE` (40px), so they sit at the zero end of
+    the ramp, and any future run that creeps closer registers a strictly larger
+    penalty (``d=20 -> 0.5``, ``d=2 -> 0.95``, ``d=0 -> 1.0``). The exact shape
+    is a task detail; only monotonicity and the zero-at-threshold contract are
+    required. A negative clearance (a run that has crossed into the node) is
+    clamped to the maximum penalty of ``1.0``.
+    """
+    if clearance >= RAIL_CLEARANCE:
+        return 0.0
+    if clearance <= 0.0:
+        return 1.0
+    return (RAIL_CLEARANCE - clearance) / RAIL_CLEARANCE
+
+
 @dataclass(frozen=True)
 class RouteCost:
     """The measured quality of a diagram's edge routing (lower is better).
@@ -1138,18 +1175,28 @@ class RouteCost:
 
     crossings: int = 0
     rails: int = 0
+    rail_penalty: float = 0.0
     turns: int = 0
     ink: float = 0.0
     crossing_pairs: Tuple[Tuple[str, str], ...] = ()
-    rail_pairs: Tuple[Tuple[str, str, int], ...] = ()
+    rail_pairs: Tuple[Tuple[str, str, int, float], ...] = ()
 
-    def as_tuple(self) -> Tuple[int, int, int, float]:
-        """Comparison key: crossings, then rails, then turns, then ink."""
-        return (self.crossings, self.rails, self.turns, round(self.ink))
+    def as_tuple(self) -> Tuple[int, float, int, float]:
+        """Comparison key: crossings ≫ rail_penalty ≫ turns ≫ ink.
+
+        The graded ``rail_penalty`` (Σ penalty over rail runs, inversely
+        proportional to clearance) is the second component rather than the
+        binary ``rails`` count, so a run 2px from an icon ranks worse than one
+        30px away even though both are within :data:`RAIL_CLEARANCE`. The binary
+        ``rails`` field is retained for ratchet readability but is not part of
+        the ordering key.
+        """
+        return (self.crossings, round(self.rail_penalty, 3), self.turns, round(self.ink))
 
     def summary(self) -> str:
         return (
             f"crossings={self.crossings}  rails={self.rails}  "
+            f"rail_penalty={self.rail_penalty:.3f}  "
             f"turns={self.turns}  ink={self.ink / 1000:.1f}k"
         )
 
@@ -1237,7 +1284,16 @@ def route_cost(geo: DiagramGeometry) -> RouteCost:
                 crossings += n
                 crossing_pairs.append((i, j))
 
-    rail_pairs: List[Tuple[str, str, int]] = []
+    # Each rail run records ``(eid, nid, span, clearance)`` — the clearance
+    # (nearest gap between the vertical run and the node's side border) is kept
+    # so a ``--detail`` view can display it and so the graded ``rail_penalty``
+    # is summed from the *same* detection that produces the binary ``rails``
+    # count. The two therefore stay consistent by construction: a run that is
+    # counted as a binary rail (``clearance <= RAIL_CLEARANCE``) is the same run
+    # whose graded :func:`rail_penalty` is added to ``rail_penalty_total`` — the
+    # summed field, not the module-level function it calls.
+    rail_pairs: List[Tuple[str, str, int, float]] = []
+    rail_penalty_total = 0.0
     seen = set()
     for eid, poly in polys.items():
         e = edges[eid]
@@ -1248,14 +1304,19 @@ def route_cost(geo: DiagramGeometry) -> RouteCost:
             for nid, box in sorted(geo.nodes.items()):
                 if nid in (e.source, e.target) or box.bottom < lo or box.y > hi:
                     continue
-                if min(abs(a[0] - box.x), abs(a[0] - box.right)) <= RAIL_CLEARANCE:
+                clearance = min(abs(a[0] - box.x), abs(a[0] - box.right))
+                if clearance <= RAIL_CLEARANCE:
                     if (eid, nid) not in seen:
                         seen.add((eid, nid))
-                        rail_pairs.append((eid, nid, int(abs(b[1] - a[1]))))
+                        rail_pairs.append(
+                            (eid, nid, int(abs(b[1] - a[1])), float(clearance))
+                        )
+                        rail_penalty_total += rail_penalty(float(clearance))
 
     return RouteCost(
         crossings=crossings,
         rails=len(rail_pairs),
+        rail_penalty=rail_penalty_total,
         turns=turns,
         ink=ink,
         crossing_pairs=tuple(crossing_pairs),

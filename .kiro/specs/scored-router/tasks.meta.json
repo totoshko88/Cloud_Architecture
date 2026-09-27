@@ -1,0 +1,586 @@
+{
+  "pbtResults": {},
+  "executionHistory": {
+    "1.1 Create the `layout/` package and move the model types": [
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790472644918
+      },
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790472655935
+      },
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790472986305
+      }
+    ],
+    "1.2 Relocate placement, contacts, corridors and routers behind stable names": [
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790472644968
+      },
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790472990337
+      },
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790473962229
+      }
+    ],
+    "1.3 Assemble `pipeline.py` and retain the `--legacy` ten-pass path": [
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790472645011
+      },
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790473966603
+      },
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790474830987
+      }
+    ],
+    "1.4 Turn `layout_engine.py` into a re-export shim": [
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790472645051
+      },
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790474834455
+      },
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790475537783
+      }
+    ],
+    "1.5 Write the byte-identity / behavior-preserving property test": [
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790472645092
+      },
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790475541939
+      },
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790475834747
+      }
+    ],
+    "1.6 Write example tests for the public import surface and the unwired seam": [
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790472645135
+      },
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790475543104
+      },
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790475835546
+      }
+    ],
+    "2. Checkpoint A — split landed, byte-identical, gates green, solver off": [
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790472645175
+      },
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790475846837
+      },
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790475911666
+      }
+    ],
+    "3.1 Extend `RouteCost` with `rail_penalty` and re-order the key": [
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790472645220
+      },
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790475916506
+      },
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790476087246
+      }
+    ],
+    "3.2 Implement the graded penalty function": [
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790472645269
+      },
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790476091090
+      },
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790476312690
+      }
+    ],
+    "3.3 Re-baseline the ratchet in the same change": [
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790472645319
+      },
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790476317654
+      },
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790476569653
+      }
+    ],
+    "3.4 Write the property test for penalty monotonicity": [
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790472645363
+      },
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790476574241
+      },
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790476681488
+      }
+    ],
+    "3.5 Write the property test for the tightened-not-regressed ratchet": [
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790472645410
+      },
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790476686793
+      },
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790476840771
+      }
+    ],
+    "4. Checkpoint B — graded metric in, ratchet re-baselined, corpus measured": [
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790472645451
+      },
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790476845376
+      },
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790476900277
+      }
+    ],
+    "5.1 Implement `CorridorAllocator.snapshot()` / `restore()`": [
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790472645494
+      },
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790476904376
+      },
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790477042074
+      }
+    ],
+    "5.2 Write the property test for snapshot/restore": [
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790472645536
+      },
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790477047297
+      },
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790478147328
+      }
+    ],
+    "6.1 Implement `variants.generate()` returning rank-ordered contract-legal variants": [
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790472645577
+      },
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790477048243
+      },
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790478062619
+      },
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790478074447
+      },
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790478264201
+      }
+    ],
+    "6.2 Write the property test for scored route_cost never exceeding rule-based": [
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790472645618
+      },
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790478268654
+      },
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790478468125
+      }
+    ],
+    "6.3 Write the property test for every variant being contract-legal": [
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790472645660
+      },
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790478269454
+      },
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790478871331
+      }
+    ],
+    "7.1 Implement `solver.solve()` order-score-commit loop": [
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790472645702
+      },
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790478472293
+      },
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790478872399
+      }
+    ],
+    "7.2 Implement solver error handling": [
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790472645744
+      },
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790478878684
+      },
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790479132788
+      }
+    ],
+    "7.3 Wire the solver in as the default; keep `--legacy`": [
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790472645785
+      },
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790479136745
+      },
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790480752502
+      }
+    ],
+    "7.4 Write the property test for solver determinism": [
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790472645836
+      },
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790480757209
+      },
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790480895114
+      }
+    ],
+    "7.5 Write example tests for solver error handling": [
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790472645912
+      },
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790480758091
+      },
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790480895985
+      }
+    ],
+    "8.1 Regenerate any Shipped_Diagram whose scored route improves": [
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790472645952
+      },
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790480901393
+      },
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790481216345
+      }
+    ],
+    "8.2 Confirm the full Gate_Suite stays green": [
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790472645993
+      },
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790481221106
+      },
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790481275907
+      }
+    ],
+    "8.3 Write the property test for no shipped example losing a gate": [
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790472646030
+      },
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790481280029
+      },
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790481437920
+      }
+    ],
+    "9. Checkpoint C — scored router default, deterministic, gates green, defects held": [
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790472646071
+      },
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790481447575
+      }
+    ],
+    "10.1 Bump the version triple to 1.8.0": [
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790472646112
+      },
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790481451882
+      },
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790481504682
+      }
+    ],
+    "10.2 Write the CHANGELOG 1.8.0 section": [
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790472646152
+      },
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790481508482
+      },
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790481589103
+      }
+    ],
+    "10.3 Keep CI 3.11–3.14 and run the new property tests": [
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790472646195
+      },
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790481509468
+      },
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790481590055
+      }
+    ],
+    "11. Final checkpoint — release gates green on 3.11–3.14": [
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790472646238
+      },
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790481594480
+      },
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790485537426
+      }
+    ],
+    "1. Phase A — `layout/` package skeleton and relocation": [
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790475835583
+      }
+    ],
+    "3. Phase B — graded rails metric in `route_cost`": [
+      {
+        "executionId": "14aaae5f-0874-4538-9731-cdd8b804067e",
+        "chatSessionId": "sess_4af37f30-f682-4df6-b1a3-e669cd420447",
+        "timestamp": 1790476840846
+      }
+    ],
+    "5. Phase C — allocator snapshot/restore": [
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790478147398
+      }
+    ],
+    "6. Phase C — variant generator": [
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790478871416
+      }
+    ],
+    "7. Phase C — scored solver and wiring": [
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790480896028
+      }
+    ],
+    "8. Phase C — regenerate improved diagrams and confirm gates": [
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790481437974
+      }
+    ],
+    "10. Phase D — release wrap for 1.8.0": [
+      {
+        "executionId": "e82eb106-354d-4134-b743-737cec31c58a",
+        "chatSessionId": "sess_febe348a-f64d-475d-97b9-ef669c52e0c9",
+        "timestamp": 1790481590096
+      }
+    ]
+  }
+}
