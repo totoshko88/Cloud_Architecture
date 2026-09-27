@@ -41,6 +41,14 @@ rule-engine-init --with-assets    # AND download the official GCP/OCI icon packs
   power-installed workspace has none; the bootstrap must be driven from here.
 - `rule-engine-init` resolves its source from the payload **bundled inside the
   installed package**, so it works with no repo checkout.
+- After bootstrap, **every gate is a packaged console script** on PATH —
+  `rule-engine-lint`, `-check-rasters`, `-check-asset-paths`,
+  `-check-snapshot`, `-verify-icon`, `-reconcile`, `-build-icon-sets`, and
+  (since 1.9.1) the raster exporter `rule-engine-export-raster` and the edge
+  orthogonaliser `rule-engine-orthogonalise`. None of these live only in a
+  repo `scripts/` tree; they ship with the `rule-engine` package the
+  bootstrap installs, so the full generate-and-validate loop (including the
+  mandatory `.drawio.png` export) works from a power/pip install alone.
 - **AWS and Azure** icons are built into the draw.io app and need no download.
 - **GCP and OCI** icons are official file/stencil assets that are **not
   committed** (`icon-index.json` records only their paths); a GCP or OCI diagram

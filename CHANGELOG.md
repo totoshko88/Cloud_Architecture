@@ -2,6 +2,18 @@
 
 All notable changes to the Rule Engine are recorded here, per released version, in reverse chronological order.
 
+## [1.9.2] - 2026-09-30
+
+**Theme: setup-steering wording follows 1.9.1.** A clean-room power install now bootstraps correctly and the workflow skill already names the packaged `rule-engine-export-raster` / `rule-engine-orthogonalise` console scripts (1.9.1). The Power's setup steering (`rule-engine-setup.md`) still described what the Power carries without noting that, after bootstrap, the raster exporter and edge orthogonaliser are packaged console scripts on PATH — accurate but stale in emphasis. This is a documentation-only clarification; no code, gate, or artifact behaviour changes.
+
+### Changed
+
+- **`rule-engine-setup.md` clarifies CLI delivery.** The setup steering now states explicitly that after bootstrap every gate — including the raster exporter (`rule-engine-export-raster`) and edge orthogonaliser (`rule-engine-orthogonalise`) added in 1.9.1 — is a packaged console script on PATH, none confined to a repo `scripts/` tree, so the full generate-and-validate loop (including the mandatory `.drawio.png` export) works from a power/pip install alone. The existing, correct statement that the Power itself does not run pip (the CLIs come from the `rule-engine` package the bootstrap installs) is unchanged.
+
+### Notes
+
+- **Documentation only.** No change to any CLI, lint rule, gate, or generated artifact. Version triple, `plugin.json`, the bootstrap pin, and the SessionStart hook move to 1.9.2 together, as the pin guards require.
+
 ## [1.9.1] - 2026-09-30
 
 **Theme: power self-containment — the raster exporter and edge orthogonaliser ship with the install.** A clean-room Kiro Power / pip install got the workflow skill, the steering rules, the icon mappings, and every `rule-engine-*` gate CLI, but **not** `scripts/export_raster.py` or `scripts/orthogonalise_drawio.py` — those lived only in the repo `scripts/` tree, were not console scripts, were not package modules, and were not in the bootstrap payload. So a power-bootstrapped workspace could lint and verify but had **no way to produce the mandatory `.drawio.png`** the artifact triple requires (and `rule-engine-check-rasters` then failed), and no way to re-align a hand-authored diagram. This release closes that gap by packaging both tools, with no behaviour change to either.
