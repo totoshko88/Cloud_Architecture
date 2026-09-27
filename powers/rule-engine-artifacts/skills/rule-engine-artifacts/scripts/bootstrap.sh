@@ -48,14 +48,49 @@ done
 # the repository's default branch, so a Power installed today could pull
 # tomorrow's unreleased code. tests/test_version_pins.py keeps this in step with
 # pyproject.toml.
-RULE_ENGINE_VERSION="${RULE_ENGINE_VERSION:-1.9.2}"
+RULE_ENGINE_VERSION="${RULE_ENGINE_VERSION:-1.9.3}"
 RULE_ENGINE_SPEC="${RULE_ENGINE_SPEC:-git+https://github.com/totoshko88/Cloud_Architecture.git@v${RULE_ENGINE_VERSION}}"
 
-if ! command -v rule-engine-init >/dev/null 2>&1; then
-  echo "bootstrap: rule-engine-init not found; installing the rule-engine package..."
+# Decide whether to install/upgrade. A Power is installed once but the engine
+# it pulls is PINNED (RULE_ENGINE_VERSION); a user who bootstrapped an older
+# release keeps an on-PATH `rule-engine-init` forever, so "install only when
+# absent" would leave them on stale rules and a stale CLI indefinitely (the
+# exact 1.9.0-stuck defect this hotfix closes). So: install when the CLI is
+# ABSENT, and upgrade when the installed engine is OLDER than the pinned one.
+# `rule-engine-init --version` (added 1.9.3) prints the installed version; an
+# older CLI without that flag prints usage to stderr and nothing to stdout, so
+# an empty/parse-failed version is treated as "needs upgrade".
+_installed_version=""
+if command -v rule-engine-init >/dev/null 2>&1; then
+  _installed_version="$(rule-engine-init --version 2>/dev/null | head -n1 | tr -d '[:space:]')"
+fi
+
+# Return 0 (true) when $1 is strictly older than $2, comparing dotted integers.
+_version_lt() {
+  [ "$1" = "$2" ] && return 1
+  # sort -V puts the smaller version first; if $1 sorts first AND differs, it is older.
+  _smaller="$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)"
+  [ "$_smaller" = "$1" ]
+}
+
+_need_install=0
+if [ -z "$_installed_version" ]; then
+  _need_install=1
+  echo "bootstrap: rule-engine-init not found (or too old to report --version); installing the pinned engine..."
+elif _version_lt "$_installed_version" "$RULE_ENGINE_VERSION"; then
+  _need_install=1
+  echo "bootstrap: installed engine ${_installed_version} is older than the pinned ${RULE_ENGINE_VERSION}; upgrading (else the workspace gets stale rules)..."
+else
+  echo "bootstrap: installed engine ${_installed_version} satisfies the pin ${RULE_ENGINE_VERSION}; not reinstalling."
+fi
+
+if [ "$_need_install" -eq 1 ]; then
   if [ -z "${PIP:-}" ] && command -v uv >/dev/null 2>&1; then
-    echo "bootstrap: \$ uv tool install \"${RULE_ENGINE_SPEC}\""
-    uv tool install "${RULE_ENGINE_SPEC}"
+    # `uv tool install --force` also UPGRADES an already-installed tool to the
+    # requested spec, so it covers both the fresh-install and the stale-upgrade
+    # cases in one command.
+    echo "bootstrap: \$ uv tool install --force \"${RULE_ENGINE_SPEC}\""
+    uv tool install --force "${RULE_ENGINE_SPEC}"
     # uv puts tool entry points in its own bin dir, which may not be on PATH
     # yet; add it for the rest of this run.
     UV_BIN_DIR="$(uv tool dir --bin 2>/dev/null || true)"
@@ -65,9 +100,10 @@ if ! command -v rule-engine-init >/dev/null 2>&1; then
     fi
   else
     PIP="${PIP:-python3 -m pip}"
-    echo "bootstrap: \$ ${PIP} install \"${RULE_ENGINE_SPEC}\""
+    # --upgrade so a stale pip install is bumped to the pinned tag, not left as-is.
+    echo "bootstrap: \$ ${PIP} install --upgrade \"${RULE_ENGINE_SPEC}\""
     # shellcheck disable=SC2086
-    ${PIP} install "${RULE_ENGINE_SPEC}"
+    ${PIP} install --upgrade "${RULE_ENGINE_SPEC}"
   fi
 fi
 

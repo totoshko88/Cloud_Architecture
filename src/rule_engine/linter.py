@@ -545,8 +545,24 @@ def _check_edge_label(a: Artifact) -> bool:
 
 
 def _check_node_quote(a: Artifact) -> bool:
-    """node-quote: a special-character node name is not double-quoted (ERROR)."""
+    """node-quote: a special-character node name is not double-quoted (ERROR).
+
+    The rule originates in PlantUML/Mermaid, where a node *identifier* that
+    contains a space or punctuation must be double-quoted or the source does
+    not parse. In a **draw.io** cell, by contrast, the ``value`` this reads is
+    the node's **display label** — free text rendered on the canvas — not an
+    identifier, and adding literal double quotes to satisfy the rule makes the
+    quotes show up in the drawing (the "IAM user sep" -> "IAM-user-sep"
+    workaround an author was forced into). draw.io is the only publishable
+    source (D1), so a draw.io label is always a valid display string; the rule
+    therefore applies only to non-draw.io sources (``.puml`` / ``.mmd``), where
+    quoting genuinely governs parsing (v1.9.3).
+    """
     if not _is_diagram(a):
+        return False
+    # draw.io labels are display text, not identifiers — never a node-quote
+    # defect. Keep the check for PlantUML/Mermaid identifier sources.
+    if a.is_drawio:
         return False
     for name in a.node_names:
         if name is None:

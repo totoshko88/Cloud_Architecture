@@ -81,6 +81,11 @@ When the Inventory Collector writes Snapshot content, it MUST write
   `storage.json`, `network.json`) at the root of the Snapshot folder.
 - **One per-resource subfolder** for each enumerated resource, placed under a
   `resources/` folder within the Snapshot folder.
+  This holds for a **control-plane** collection too: when the enumerated
+  "resource" is an OU, an account, or a policy, it still gets its own
+  `resources/<...>` subfolder — the snapshot gate's `resources-empty` check
+  counts every enumerated list item, so a control-plane snapshot that writes
+  none is rejected.
 
 ## 6. Service Domains to Enumerate (diagram-complete coverage)
 

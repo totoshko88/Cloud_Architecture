@@ -170,12 +170,24 @@ def test_edge_label_warning():
 
 
 def test_node_quote_error():
-    """node-quote fires as ERROR for an unquoted special-character name (AC6)."""
-    art = _clean_diagram(node_names=["Api Gateway", "Db"])
+    """node-quote fires as ERROR for an unquoted special-character *identifier*
+    in a PlantUML/Mermaid source (AC6). draw.io labels are exempt (see the
+    next test), so the ERROR case is a non-draw.io source."""
+    art = _clean_diagram(node_names=["Api Gateway", "Db"],
+                         source_format="plantuml", is_drawio=False)
     result = lint(art)
     assert RULE_NODE_QUOTE in _rules(result)
     assert _severity_of(result, RULE_NODE_QUOTE) == Severity.ERROR.value
     assert result["eligible_for_publication"] is False
+
+def test_node_quote_exempts_drawio_display_labels():
+    """v1.9.3: a draw.io cell ``value`` is a display label, not an identifier,
+    so a spaced label like "IAM user sep" is NOT a node-quote defect — quoting
+    it would render literal quotes on the canvas."""
+    art = _clean_diagram(node_names=["IAM user sep", "AWS Organizations"],
+                         source_format="drawio", is_drawio=True)
+    result = lint(art)
+    assert RULE_NODE_QUOTE not in _rules(result)
 
 
 def test_legend_present_error():

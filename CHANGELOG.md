@@ -2,6 +2,28 @@
 
 All notable changes to the Rule Engine are recorded here, per released version, in reverse chronological order.
 
+## [1.9.3] - 2026-10-01
+
+**Theme: a live clean-room run's rough edges.** Driving the power end-to-end from a fresh workspace surfaced one distribution defect and two tooling defects, plus a set of guidance gaps. The headline fix: a user who bootstrapped an earlier release kept an on-PATH `rule-engine-init` forever, so the bootstrap — which installed *only when the CLI was absent* — left them on stale rules and a stale CLI indefinitely (the workspace lock still read `engine_version: 1.9.0`). The bootstrap now version-checks and upgrades. Two gates were tightened to match the linter, and `node-quote` stopped mis-flagging draw.io display labels.
+
+### Fixed
+
+- **Bootstrap upgrades a stale engine (P0).** `scripts/bootstrap.sh` previously ran `uv tool install` / `pip install` only when `rule-engine-init` was missing, so an already-installed older engine was never bumped and `rule-engine-init` then copied *that* engine's stale rules into the workspace. The bootstrap now reads the installed version (`rule-engine-init --version`, new below), compares it to the pinned `RULE_ENGINE_VERSION`, and installs when absent **or upgrades when older** (`uv tool install --force` / `pip install --upgrade`); an up-to-date engine is left untouched. So a returning user gets the pinned rules, not whatever they first installed.
+- **Raster gate excludes vendor/build dirs.** `raster_gate.check_rasters` globbed `**/*.drawio` with only a scratch/reference-copy filter, so it picked up the OCI style guide's own `.drawio` under `assets/vendor/` and forced `--allow-missing` on any workspace that kept diagrams beside `assets/`. It now applies the **same `_EXCLUDED_DIRS`** the linter's `--all` scan uses (`assets`, `.build-tools`, `build`, `.git`, …), so a vendor/build `.drawio` is never treated as a publishable artifact.
+- **`node-quote` no longer mis-flags draw.io labels.** The rule comes from PlantUML/Mermaid, where a node *identifier* with a space must be quoted to parse. A draw.io cell's `value` is a **display label**, not an identifier, and quoting it renders literal quotes on the canvas — an author was forced to write `IAM-user-sep` instead of `IAM user sep`. Since draw.io is the only publishable source (D1), `node-quote` now exempts draw.io labels and applies only to `.puml`/`.mmd` identifier sources. `diagram-lint.md` and `diagram-standards.md` updated in sync.
+
+### Added
+
+- **`rule-engine-init --version`.** Prints the installed engine version and exits (answerable with no source tree, so it works on a bare install). This is what the bootstrap's stale-check reads.
+
+### Changed
+
+- **Skill & steering guidance from the live run.** The `rule-engine-artifacts` SKILL.md (both copies, kept byte-identical) and the setup steering now: (1) tell the agent to **ask the user for region(s), a system description, and what to look for before collecting an inventory**, and warn that an unscoped run on a 30+-region / 300+-service cloud silently drops domains (the *omitted EFS / omitted AWS Batch* defect); (2) note `rule-engine-check-rasters --examples .` for a workspace whose diagrams sit at the root; (3) note that `rule-engine-export-raster` stamps raster provenance automatically (the manual step was only ever a stale-install artifact); and (4) clarify that a control-plane inventory still needs a `resources/<...>` subfolder per enumerated OU/account/policy. `kb-frontmatter.md` adds authoring guidance to **not hard-wrap descriptive prose** (one logical line per paragraph; let it soft-wrap) — hard wraps survive into the rendered doc and every diff and reflow on a one-word edit.
+
+### Notes
+
+- **Deferred: a snapshot→diagram autogenerator (G8).** The live run confirmed there is no high-level "draw from inventory" path — `build_diagram` is a low-level builder, so a landscape is placed and routed by hand over several lint iterations. An autogenerator (role-resolve every enumerated resource via `reconcile.role_of`, place by lane order, route with the existing solver, emit the triple) is recorded as **Open (deferred), G8** in `docs/REVIEW.md` for a future release, not this hotfix.
+
 ## [1.9.2] - 2026-09-30
 
 **Theme: setup-steering wording follows 1.9.1.** A clean-room power install now bootstraps correctly and the workflow skill already names the packaged `rule-engine-export-raster` / `rule-engine-orthogonalise` console scripts (1.9.1). The Power's setup steering (`rule-engine-setup.md`) still described what the Power carries without noting that, after bootstrap, the raster exporter and edge orthogonaliser are packaged console scripts on PATH — accurate but stale in emphasis. This is a documentation-only clarification; no code, gate, or artifact behaviour changes.

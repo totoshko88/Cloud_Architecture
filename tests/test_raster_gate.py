@@ -378,3 +378,25 @@ def test_non_white_first_row_fails(tmp_path):
             fh.write(body)
         facts = read_png_facts(p)
         assert facts.row0_all_white is False, f"filter {filt} should read non-white"
+
+
+def test_check_rasters_excludes_vendor_and_build_dirs(tmp_path):
+    """v1.9.3: a .drawio under assets/vendor/ (e.g. the OCI style guide) or any
+    excluded build dir is NOT a publishable artifact, so check_rasters skips it —
+    the same _EXCLUDED_DIRS the linter's --all scan uses. Before this fix the gate
+    globbed **/*.drawio and forced --allow-missing on a workspace that kept its
+    diagrams beside assets/."""
+    # A real diagram at the workspace root must be discovered.
+    (tmp_path / "01-real.drawio").write_text("<mxfile/>", encoding="utf-8")
+    # Vendor + build .drawio inputs must be ignored.
+    for rel in ("assets/vendor/oci-style/OCI Library.drawio",
+                ".build-tools/export-tmp/x.inlined.drawio",
+                "build/lib/whatever.drawio"):
+        d = tmp_path / rel
+        d.parent.mkdir(parents=True, exist_ok=True)
+        d.write_text("<mxfile/>", encoding="utf-8")
+    found = {os.path.basename(r.source) for r in check_rasters(tmp_path, tmp_path)}
+    assert "01-real.drawio" in found
+    assert "OCI Library.drawio" not in found
+    assert "x.inlined.drawio" not in found
+    assert "whatever.drawio" not in found

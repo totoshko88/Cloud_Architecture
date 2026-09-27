@@ -64,6 +64,16 @@ Never hand-write a `fillColor` hex or guess an id. If a service has no role, add
 one to `mappings/roles.yaml` + `<provider>-icons.yaml` and re-run
 `rule-engine-build-icon-sets` — never substitute a look-alike.
 
+## Ask for scope before collecting an inventory
+
+A cloud account is huge (AWS alone is 30+ regions and 300+ services), so an
+unscoped collection silently misses whole domains (the *omitted EFS / omitted
+AWS Batch* defect). Before running an inventory, ask the user for the
+**region(s)**, a short **description of the system** (so you know which domains
+and lifecycle mechanics matter), and **what specifically to look for** — and
+warn that anything outside the stated scope may be missed. Enumerate the full
+`inventory-standards.md` §6 domain set regardless.
+
 ## Boundaries
 
 External actors (users) and on-premises nodes sit **outside** the cloud
