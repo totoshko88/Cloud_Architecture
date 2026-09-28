@@ -2,7 +2,7 @@
 
 All notable changes to the Rule Engine are recorded here, per released version, in reverse chronological order.
 
-## [1.10.1] - 2026-10-02
+## [1.10.1] - 2026-09-28
 
 **Theme: a `corridor-sharing` blind spot let a stale golden ship with merged edges.** The AWS (and, sharing the spec, all four) HA multi-region landscape example drew markers **1** (`dns → lb-primary`) and **15** (`cdn → lb-primary`) merged on top of each other in one horizontal corridor (both descending onto y=240 into the same top-entry). We used to catch a merged run like this; on review it linted clean. Two defects compounded: the committed golden `.drawio` were **stale** (an older router had merged the two edges; the router was later improved to separate them onto distinct lanes, but the goldens were never regenerated), and `corridor-sharing` had a **blind spot** — it exempted *any* two edges that shared a source or a target as a "shared trunk", wholesale, so the merged same-target descent was never flagged. The diagram-standards text only sanctions a shared *stub* before the branches diverge ("the branches never overlap"); the check now enforces exactly that.
 
@@ -19,7 +19,7 @@ All notable changes to the Rule Engine are recorded here, per released version, 
 
 - **No rule weakened; the ratchet holds.** The `corridor-sharing` change is strictly *stricter* (it flags a case it used to miss); no severity, budget, or other rule was relaxed. The full corpus Gate_Suite stays green and every shipped diagram is publication-eligible.
 
-## [1.10.0] - 2026-10-02
+## [1.10.0] - 2026-09-28
 
 **Theme: aligning with the official provider diagramming guidance.** This release closes the remaining gaps found against the published provider conventions (AWS `diagram-as-code` best-practices, the AWS Networking Best Practices conventions, the Azure Well-Architected *Create architecture design diagrams* guide, and the C4 model), as nine independently reviewable items plus a snapshot→diagram autogenerator. Four items are enforced as new **advisory WARNING** lint rules, one is a companion-driven raster mode, one adds optional companion metadata, and four are steering-only guidance. The autogenerator (`rule-engine-draw`) closes the deferred `docs/REVIEW.md` gap **G8**. Every new lint rule is WARNING severity, no existing rule is weakened, generation stays deterministic (same spec → byte-identical `.drawio`), and every shipped diagram remains eligible for publication (zero CRITICAL, zero ERROR).
 
@@ -41,7 +41,7 @@ All notable changes to the Rule Engine are recorded here, per released version, 
 - **Every new rule is WARNING; no existing rule weakened.** `edge-bidirectional`, `node-label-length`, and `ip-range` surface a convention violation without blocking publication; none is CRITICAL or ERROR. All changes are additive (new rules, new optional keys, a companion-mode branch defaulting to today's behaviour), so generation stays deterministic and every shipped diagram/companion stays valid.
 - **G8 resolved.** `rule-engine-draw` is a translator over existing machinery (`reconcile.role_of` → `DiagramSpec` → `layout()` → `build_diagram()`); it adds no lint rule and invents no relationships. On release, `docs/REVIEW.md` finding **G8** flips from Open (deferred) to Resolved (1.10.0).
 
-## [1.9.3] - 2026-10-01
+## [1.9.3] - 2026-09-28
 
 **Theme: a live clean-room run's rough edges.** Driving the power end-to-end from a fresh workspace surfaced one distribution defect and two tooling defects, plus a set of guidance gaps. The headline fix: a user who bootstrapped an earlier release kept an on-PATH `rule-engine-init` forever, so the bootstrap — which installed *only when the CLI was absent* — left them on stale rules and a stale CLI indefinitely (the workspace lock still read `engine_version: 1.9.0`). The bootstrap now version-checks and upgrades. Two gates were tightened to match the linter, and `node-quote` stopped mis-flagging draw.io display labels.
 
@@ -63,7 +63,7 @@ All notable changes to the Rule Engine are recorded here, per released version, 
 
 - **Deferred: a snapshot→diagram autogenerator (G8).** The live run confirmed there is no high-level "draw from inventory" path — `build_diagram` is a low-level builder, so a landscape is placed and routed by hand over several lint iterations. An autogenerator (role-resolve every enumerated resource via `reconcile.role_of`, place by lane order, route with the existing solver, emit the triple) is recorded as **Open (deferred), G8** in `docs/REVIEW.md` for a future release, not this hotfix.
 
-## [1.9.2] - 2026-09-30
+## [1.9.2] - 2026-09-28
 
 **Theme: setup-steering wording follows 1.9.1.** A clean-room power install now bootstraps correctly and the workflow skill already names the packaged `rule-engine-export-raster` / `rule-engine-orthogonalise` console scripts (1.9.1). The Power's setup steering (`rule-engine-setup.md`) still described what the Power carries without noting that, after bootstrap, the raster exporter and edge orthogonaliser are packaged console scripts on PATH — accurate but stale in emphasis. This is a documentation-only clarification; no code, gate, or artifact behaviour changes.
 
@@ -75,7 +75,7 @@ All notable changes to the Rule Engine are recorded here, per released version, 
 
 - **Documentation only.** No change to any CLI, lint rule, gate, or generated artifact. Version triple, `plugin.json`, the bootstrap pin, and the SessionStart hook move to 1.9.2 together, as the pin guards require.
 
-## [1.9.1] - 2026-09-30
+## [1.9.1] - 2026-09-28
 
 **Theme: power self-containment — the raster exporter and edge orthogonaliser ship with the install.** A clean-room Kiro Power / pip install got the workflow skill, the steering rules, the icon mappings, and every `rule-engine-*` gate CLI, but **not** `scripts/export_raster.py` or `scripts/orthogonalise_drawio.py` — those lived only in the repo `scripts/` tree, were not console scripts, were not package modules, and were not in the bootstrap payload. So a power-bootstrapped workspace could lint and verify but had **no way to produce the mandatory `.drawio.png`** the artifact triple requires (and `rule-engine-check-rasters` then failed), and no way to re-align a hand-authored diagram. This release closes that gap by packaging both tools, with no behaviour change to either.
 
@@ -93,7 +93,7 @@ All notable changes to the Rule Engine are recorded here, per released version, 
 
 - **No functional change to export or orthogonalisation.** The D7 class-aware budget, scale-≥-1 rule, missing-asset failure, provenance stamping, and the axis-alignment rewrite are unchanged; only the delivery mechanism (packaged console script vs repo script) changed. The `tests/test_version_pins.py` / plugin-version / bootstrap-payload-sync guards keep the Power pin, `plugin.json`, and the SessionStart hint at 1.9.1.
 
-## [1.9.0] - 2026-09-29
+## [1.9.0] - 2026-09-28
 
 **Theme: placement scoring & the remaining gates.** 1.8.0 inverted routing into a scored per-edge solver but scored *routes only*, holding the three recorded placement defects (`gcp/01` = `(4,0)`, the landscapes = `(3,2)`) and leaving a documented seam for placement scoring (Decision D2). This release closes the four remaining Open gaps from `docs/REVIEW.md` as four independently reviewable parts: (A) a scored *placement* loop layered over the same order-score-commit machinery — the design-noted next step from 1.8.0, and the only thing that can retire the held placement defects, because each is a placement problem surfacing as a routing defect; (B) an inventory → diagram reconciliation gate that fails when a role-bearing enumerated resource is silently absent from the diagram generated from it; (C) the advisory `container-dead-space` lint rule, the mirror of `container-padding`; and (D) deterministic icon-index slug-collision disambiguation. Every part respects the honest-gates contract — determinism (same inputs → byte-identical `.drawio`), no weakened lint rule, draw.io as the only publishable source (D1), and a ratchet tightened where a move improves a diagram and never regressed. Only Part A depends on 1.8.0 machinery; B, C and D are independent.
 
