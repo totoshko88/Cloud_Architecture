@@ -40,7 +40,7 @@ from __future__ import annotations
 
 from typing import List
 
-from hypothesis import assume, given
+from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
 from rule_engine.drawio_model import parse_drawio
@@ -284,6 +284,11 @@ def _assert_variants_legal_and_identity_rank_zero(spec) -> None:
 
 
 # Feature: placement-and-gates, Property 1 (legality aspect): variants legal + identity at rank 0 (broad family)
+# Each example runs the full placement + routing pipeline once per variant, so
+# per-example wall time depends on machine load; under the full suite this
+# tripped Hypothesis' default 200ms deadline (a timing flake, not a defect).
+# The example budget and the property are unchanged; only the deadline is off.
+@settings(deadline=None)
 @given(spec=_small_valid_spec())
 def test_placement_variants_legal_and_identity_rank_zero(spec) -> None:
     """Every generated placement variant is legal, and the identity is rank 0
@@ -298,6 +303,11 @@ def test_placement_variants_legal_and_identity_rank_zero(spec) -> None:
 
 
 # Feature: placement-and-gates, Property 1 (legality aspect): variants legal + identity at rank 0 (move-triggering)
+# Each example runs the full placement + routing pipeline once per variant, so
+# per-example wall time depends on machine load; under the full suite this
+# tripped Hypothesis' default 200ms deadline (a timing flake, not a defect).
+# The example budget and the property are unchanged; only the deadline is off.
+@settings(deadline=None)
 @given(spec=_move_triggering_spec())
 def test_placement_move_variants_are_legal(spec) -> None:
     """The same legality contract holds when the generator actually emits a

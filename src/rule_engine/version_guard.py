@@ -107,6 +107,27 @@ def main(argv: list[str] | None = None) -> int:
     disagree.
     """
     args = list(sys.argv[1:] if argv is None else argv)
+    if args and args[0] == "--dates":
+        if len(args) > 2:
+            print(
+                "usage: python -m rule_engine.version_guard --dates [<changelog_path>]",
+                file=sys.stderr,
+            )
+            return 2
+        path = Path(args[1] if len(args) == 2 else CHANGELOG_FILE)
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            print(f"BLOCKING: cannot read {path}: {exc}", file=sys.stderr)
+            return 1
+        problems = changelog_date_problems(text)
+        if problems:
+            print(f"BLOCKING: {path} has invalid release dates:", file=sys.stderr)
+            for problem in problems:
+                print(f"    - {problem}", file=sys.stderr)
+            return 1
+        print(f"OK: every release heading in {path} carries a valid, ordered, non-future date.")
+        return 0
     if args and args[0] == "--triple":
         if len(args) > 2:
             print(
@@ -128,7 +149,8 @@ def main(argv: list[str] | None = None) -> int:
     if len(args) != 2:
         print(
             "usage: python -m rule_engine.version_guard <changelog_path> <version>\n"
-            "   or: python -m rule_engine.version_guard --triple [<repo_root>]",
+            "   or: python -m rule_engine.version_guard --triple [<repo_root>]\n"
+            "   or: python -m rule_engine.version_guard --dates [<changelog_path>]",
             file=sys.stderr,
         )
         return 2
@@ -253,6 +275,65 @@ def assert_version_triple_consistent(repo_root: str | Path) -> str:
     if None in distinct or len(distinct) != 1:
         raise VersionMismatchError(versions)
     return distinct.pop()
+
+
+# ---------------------------------------------------------------------------
+# Changelog release dates (process fix after 1.10.1)
+# ---------------------------------------------------------------------------
+#
+# Release headings are written by hand, and from 1.9.0 to 1.10.1 they drifted
+# into the future (up to four days ahead of the real release date) without any
+# check noticing. ``changelog_date_problems`` makes the dates a checked contract:
+# every numbered release heading carries a real ``YYYY-MM-DD`` date, dates never
+# increase going down the file (the Changelog is reverse chronological), and the
+# newest date is not in the future. An ``## [Unreleased]`` heading is skipped.
+
+#: A numbered release heading and its (optional) date.
+_DATED_HEADING_RE = re.compile(
+    r"^##[ \t]*\[v?(\d[^\]]*)\][ \t]*(?:-[ \t]*(\S+))?[ \t]*$", re.MULTILINE
+)
+
+#: Grace for the "not in the future" rule. A release cut late in the evening in
+#: UTC+X is already "tomorrow" for a UTC CI runner reading the same date, so one
+#: day of slack avoids a false failure; anything further ahead is a real error.
+FUTURE_TOLERANCE_DAYS = 1
+
+
+def changelog_date_problems(changelog_text: str, today: "date | None" = None) -> list[str]:
+    """Return human-readable date problems in the Changelog (empty = clean).
+
+    ``today`` defaults to the current local date and is injectable for tests.
+    """
+    from datetime import date as _date, timedelta
+
+    today = today or _date.today()
+    limit = today + timedelta(days=FUTURE_TOLERANCE_DAYS)
+    problems: list[str] = []
+    previous: "tuple[str, _date] | None" = None
+    for match in _DATED_HEADING_RE.finditer(changelog_text):
+        version, raw = normalize_version(match.group(1)), match.group(2)
+        if raw is None:
+            problems.append(f"[{version}] has no release date (expected '- YYYY-MM-DD')")
+            continue
+        try:
+            if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
+                raise ValueError
+            released = _date.fromisoformat(raw)
+        except ValueError:
+            problems.append(f"[{version}] date {raw!r} is not a real YYYY-MM-DD date")
+            continue
+        if released > limit:
+            problems.append(
+                f"[{version}] date {raw} is in the future (today is {today.isoformat()})"
+            )
+        if previous is not None and released > previous[1]:
+            problems.append(
+                f"[{version}] date {raw} is later than the newer release "
+                f"[{previous[0]}] ({previous[1].isoformat()}); dates must not "
+                "increase going down the file"
+            )
+        previous = (version, released)
+    return problems
 
 
 # The module-run guard lives at the END of the file: ``python -m

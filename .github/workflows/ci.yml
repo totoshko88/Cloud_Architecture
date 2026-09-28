@@ -152,21 +152,19 @@ jobs:
         # verified refs — a ``skipped`` ref counts as not-verified, so a diagram
         # checked without its assets fails rather than passing on zero checks.
         run: rule-engine-verify-icon --all --strict
-      - name: Verify every Generated_Example is fresh (generator --check, all eleven)
-        # R8.1: every Example_Generator has a --check mode that compares its
-        # output with the committed file without writing, and CI runs it for all
-        # ELEVEN Generated_Examples (seven generators: four HA pairs = 8, plus
-        # three single examples). tests/test_generators_fresh.py enumerates every
-        # generator and subprocess-runs its --check, so this one step exercises
-        # the whole set with the correct venv on PATH.
-        #
-        # KNOWN-STALE (expected): the two OCI generators
-        # (build_oci_ha_example.py, build_oci_example.py) report STALE until the
-        # OCI examples are regenerated in task 22.7 — the committed OCI diagrams
-        # predate the ociSlug= marker added in task 5.2. The test xfails those
-        # two so the step still RUNS the --check for all eleven per R8.1 without
-        # blocking the pipeline; it flips to strict (XPASS) once task 22
-        # regenerates them.
+      - name: Verify CHANGELOG release dates
+        # Every numbered release heading carries a real YYYY-MM-DD date, dates
+        # never increase going down the file, and none is in the future (one day
+        # of timezone slack). Added after 1.10.1: 1.9.0-1.10.1 shipped dated up to
+        # four days ahead and nothing noticed.
+        run: python -m rule_engine.version_guard --dates CHANGELOG.md
+      - name: Verify every Generated_Example is fresh (generator --check, all thirteen)
+        # R8.1: every Example_Generator has a --check mode that regenerates in
+        # memory and compares with the committed file. The generator table lives
+        # in scripts/regen_examples.py (GENERATORS: nine generators, thirteen
+        # examples) and tests/test_generators_fresh.py imports it, so the set
+        # regenerated locally and the set checked here are the same list. A new
+        # build_*_example.py that is not registered fails the test too.
         run: pytest -q tests/test_generators_fresh.py
       - name: Enforce the exported .drawio.png export budget (D7, R8.3)
         # Class-aware budget: flow rasters <=1600px/<500KB, landscape <=3600px/<2MB.

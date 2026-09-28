@@ -2,22 +2,46 @@
 
 All notable changes to the Rule Engine are recorded here, per released version, in reverse chronological order.
 
-## [1.10.1] - 2026-09-28
+## [Unreleased]
 
-**Theme: a `corridor-sharing` blind spot let a stale golden ship with merged edges.** The AWS (and, sharing the spec, all four) HA multi-region landscape example drew markers **1** (`dns → lb-primary`) and **15** (`cdn → lb-primary`) merged on top of each other in one horizontal corridor (both descending onto y=240 into the same top-entry). We used to catch a merged run like this; on review it linted clean. Two defects compounded: the committed golden `.drawio` were **stale** (an older router had merged the two edges; the router was later improved to separate them onto distinct lanes, but the goldens were never regenerated), and `corridor-sharing` had a **blind spot** — it exempted *any* two edges that shared a source or a target as a "shared trunk", wholesale, so the merged same-target descent was never flagged. The diagram-standards text only sanctions a shared *stub* before the branches diverge ("the branches never overlap"); the check now enforces exactly that.
-
-### Fixed
-
-- **`corridor-sharing` no longer exempts a merged same-endpoint run (P1).** The shared-trunk exemption is narrowed to the one corridor line of the **stub incident to the common node**: two edges sharing a source (or a target) may run together in that stub and then branch apart, but an overlapping run on any **other** corridor line — the marker-1 / marker-15 descent merged into one line into `lb-primary` — is now flagged like any unrelated pair. The legitimate fan-out trunk (a shared stub, opposite branches with no further overlap) stays exempt. `geometry.check_corridor_sharing`; regression test in `tests/test_geometry_hard_rules.py` (`test_corridor_sharing_flags_two_same_target_edges_that_MERGE`).
-- **Regenerated the four HA landscape goldens.** `examples/{aws,azure,gcp,oci}/02-*-ha-multiregion-landscape.drawio` (and their `.drawio.png`) were stale versus the current generator; regenerating separates markers 1 and 15 onto distinct corridors (y=240 vs y=250) so they no longer merge. All four remain publication-eligible (only the expected `node-count` WARNING) and within the raster budget.
+**Theme: release process tooling.** Process fixes after 1.10.1, no engine behaviour change. The 1.10.x releases were cut by hand: six version pins edited one by one, CHANGELOG headings dated by hand (1.9.0 to 1.10.1 ended up dated up to four days in the future), examples and rasters regenerated script by script, the gate suite run step by step, and the tag pushed on the release-branch commit before its PR was merged. This section is turned into the next release by `scripts/release.py bump`.
 
 ### Added
 
-- **Golden freshness guard.** `tests/test_ha_examples_fresh.py` regenerates each provider's summary and landscape in memory and asserts byte-identity with the committed files. Nothing compared the committed `.drawio` to the generator before — `test_ha_generator_parity.py` builds from the generator, so it validated fresh geometry and never saw the stale goldens — which is why the drift shipped. A stale golden now fails the suite on any provider.
+- **`scripts/release.py bump X.Y.Z`.** Rewrites every version pin listed in the new `rule_engine.version_pins.PINS` table (pyproject, plugin.json, bootstrap.sh, the SessionStart hook, and the git-ignored `VERSION` / `_bootstrap` copies when present) and nothing else, so historical prose such as "New in 1.10.0" is untouched. Turns this `[Unreleased]` section into `## [X.Y.Z] - <today>` from the system date, or inserts a skeleton section. `--dry-run` prints the diff.
+- **`scripts/release.py preflight`.** Runs the CI gate suite locally in one command with the project venv: version pins, CHANGELOG dates, example freshness, lint, icon references, raster budget, snapshot shape, reconcile, edge alignment, then pytest (`--fast` skips pytest).
+- **`scripts/release.py publish`.** From a release branch named after the version: checks it is clean and the CHANGELOG section is filled in, runs preflight, pushes the branch, opens the PR with the CHANGELOG section as its body, waits for the PR checks, merges, and only then tags `vX.Y.Z` on the merge commit and pushes the tag. Every command is printed first and nothing runs without confirmation unless `--yes`. When SSH push fails for lack of a loaded key it retries over HTTPS through `gh auth git-credential`; `origin` is never modified.
+- **`scripts/regen_examples.py`.** Regenerates every generated example and snapshot and re-exports only the rasters whose provenance no longer matches their source. `--check` writes nothing and fails on anything stale.
+- **CHANGELOG date contract.** `version_guard --dates`: every release heading carries a real `YYYY-MM-DD` date, dates never increase going down the file, and the newest is not in the future (one day of timezone slack). Runs in CI (`ci.yml` validate), in `release.yml`, and in the GitLab `version-guard` stage.
+- **`Makefile`.** `make test / gates / preflight / examples / examples-check / bump VERSION=X.Y.Z / publish` as thin wrappers over the scripts above.
+
+### Changed
+
+- **`release.yml` refuses a tag that is not on `main`.** The tag push triggers the release, so a tag on an unmerged branch commit published a release `main` had not accepted. The workflow now checks the tagged commit is reachable from `origin/main`.
+- **One generator table.** `tests/test_generators_fresh.py` now imports `scripts/regen_examples.GENERATORS` instead of keeping its own list, so it covers nine generators and thirteen examples (it previously missed `build_generic_example.py` and `build_cross_cloud_example.py`), and fails when a new `build_*_example.py` is not registered.
+
+### Removed
+
+- **`tests/test_ha_examples_fresh.py`** (added in 1.10.1). It duplicated `tests/test_generators_fresh.py`, which CI already runs.
+
+### Fixed
+
+- **Flaky placement property tests.** `test_placement_move_variants_are_legal` and its broad-family sibling run the full placement and routing pipeline per example and tripped Hypothesis' default 200ms deadline under full-suite load. The deadline is off for these two only; the example budget and the property are unchanged.
+
+## [1.10.1] - 2026-09-28
+
+**Theme: a `corridor-sharing` blind spot let two edges merge into one line.** The HA multi-region landscape example (all four providers share the spec) drew markers **1** (`dns → lb-primary`) and **15** (`cdn → lb-primary`) on top of each other in one horizontal corridor, both descending onto y=240 into the same target. `corridor-sharing` exempted *any* two edges that shared a source or a target as a "shared trunk", so the merge was never flagged. The layout engine's repair pass (`layout/repair.py`) uses the same check to decide which runs to separate, so it never separated these two either. diagram-standards only sanctions a shared *stub* before the branches diverge ("the branches never overlap"); the check now enforces exactly that.
+
+> **Correction (post-release):** this entry first said the committed goldens were stale against an older router. They were not: at `v1.10.0` every generator's `--check` passes and CI's freshness test was green. The goldens changed because fixing the check changed what the repair pass does. The `tests/test_ha_examples_fresh.py` added here duplicated the existing `tests/test_generators_fresh.py` and was removed afterwards (see Unreleased).
+
+### Fixed
+
+- **`corridor-sharing` no longer exempts a merged same-endpoint run.** The shared-trunk exemption is narrowed to the one corridor line of the **stub incident to the common node**: two edges sharing a source (or a target) may run together in that stub and then branch apart, but an overlapping run on any **other** corridor line is flagged like any unrelated pair. The legitimate fan-out trunk (a shared stub, opposite branches with no further overlap) stays exempt. `geometry.check_corridor_sharing`; regression test `test_corridor_sharing_flags_two_same_target_edges_that_MERGE` in `tests/test_geometry_hard_rules.py`.
+- **Regenerated the four HA landscape goldens.** With the check fixed, the repair pass now separates markers 1 and 15 (y=240 vs y=250), so `examples/{aws,azure,gcp,oci}/02-*-ha-multiregion-landscape.drawio` and their rasters were regenerated. All four remain publication-eligible (only the expected `node-count` WARNING) and within the raster budget.
 
 ### Notes
 
-- **No rule weakened; the ratchet holds.** The `corridor-sharing` change is strictly *stricter* (it flags a case it used to miss); no severity, budget, or other rule was relaxed. The full corpus Gate_Suite stays green and every shipped diagram is publication-eligible.
+- **No rule weakened.** The `corridor-sharing` change is strictly stricter: it flags a case it used to miss. No severity, budget or other rule was relaxed.
 
 ## [1.10.0] - 2026-09-28
 

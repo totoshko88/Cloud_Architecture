@@ -250,6 +250,8 @@ version-guard:
     # 10.7). Non-zero exit here stops the pipeline before the build stage
     # packages a bundle.
     - python -m rule_engine.version_guard CHANGELOG.md "${RELEASE_VERSION}"
+    # Release dates are real, ordered and not in the future (added after 1.10.1).
+    - python -m rule_engine.version_guard --dates CHANGELOG.md
 
 # ---------------------------------------------------------------------------
 # Stage: build
