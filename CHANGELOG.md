@@ -2,6 +2,23 @@
 
 All notable changes to the Rule Engine are recorded here, per released version, in reverse chronological order.
 
+## [1.10.1] - 2026-10-02
+
+**Theme: a `corridor-sharing` blind spot let a stale golden ship with merged edges.** The AWS (and, sharing the spec, all four) HA multi-region landscape example drew markers **1** (`dns → lb-primary`) and **15** (`cdn → lb-primary`) merged on top of each other in one horizontal corridor (both descending onto y=240 into the same top-entry). We used to catch a merged run like this; on review it linted clean. Two defects compounded: the committed golden `.drawio` were **stale** (an older router had merged the two edges; the router was later improved to separate them onto distinct lanes, but the goldens were never regenerated), and `corridor-sharing` had a **blind spot** — it exempted *any* two edges that shared a source or a target as a "shared trunk", wholesale, so the merged same-target descent was never flagged. The diagram-standards text only sanctions a shared *stub* before the branches diverge ("the branches never overlap"); the check now enforces exactly that.
+
+### Fixed
+
+- **`corridor-sharing` no longer exempts a merged same-endpoint run (P1).** The shared-trunk exemption is narrowed to the one corridor line of the **stub incident to the common node**: two edges sharing a source (or a target) may run together in that stub and then branch apart, but an overlapping run on any **other** corridor line — the marker-1 / marker-15 descent merged into one line into `lb-primary` — is now flagged like any unrelated pair. The legitimate fan-out trunk (a shared stub, opposite branches with no further overlap) stays exempt. `geometry.check_corridor_sharing`; regression test in `tests/test_geometry_hard_rules.py` (`test_corridor_sharing_flags_two_same_target_edges_that_MERGE`).
+- **Regenerated the four HA landscape goldens.** `examples/{aws,azure,gcp,oci}/02-*-ha-multiregion-landscape.drawio` (and their `.drawio.png`) were stale versus the current generator; regenerating separates markers 1 and 15 onto distinct corridors (y=240 vs y=250) so they no longer merge. All four remain publication-eligible (only the expected `node-count` WARNING) and within the raster budget.
+
+### Added
+
+- **Golden freshness guard.** `tests/test_ha_examples_fresh.py` regenerates each provider's summary and landscape in memory and asserts byte-identity with the committed files. Nothing compared the committed `.drawio` to the generator before — `test_ha_generator_parity.py` builds from the generator, so it validated fresh geometry and never saw the stale goldens — which is why the drift shipped. A stale golden now fails the suite on any provider.
+
+### Notes
+
+- **No rule weakened; the ratchet holds.** The `corridor-sharing` change is strictly *stricter* (it flags a case it used to miss); no severity, budget, or other rule was relaxed. The full corpus Gate_Suite stays green and every shipped diagram is publication-eligible.
+
 ## [1.10.0] - 2026-10-02
 
 **Theme: aligning with the official provider diagramming guidance.** This release closes the remaining gaps found against the published provider conventions (AWS `diagram-as-code` best-practices, the AWS Networking Best Practices conventions, the Azure Well-Architected *Create architecture design diagrams* guide, and the C4 model), as nine independently reviewable items plus a snapshot→diagram autogenerator. Four items are enforced as new **advisory WARNING** lint rules, one is a companion-driven raster mode, one adds optional companion metadata, and four are steering-only guidance. The autogenerator (`rule-engine-draw`) closes the deferred `docs/REVIEW.md` gap **G8**. Every new lint rule is WARNING severity, no existing rule is weakened, generation stays deterministic (same spec → byte-identical `.drawio`), and every shipped diagram remains eligible for publication (zero CRITICAL, zero ERROR).

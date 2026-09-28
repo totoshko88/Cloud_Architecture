@@ -663,6 +663,45 @@ def test_corridor_sharing_exempts_shared_trunk_same_source():
     assert geo.check_corridor_sharing(g) == []
 
 
+def test_corridor_sharing_flags_two_same_target_edges_that_MERGE():
+    # 1.10.1 regression: two edges reaching the SAME target are a legitimate
+    # shared trunk ONLY when they share a stub and then branch apart. When they
+    # run MERGED along a genuine shared length into the same target's top-entry
+    # corridor (the ha-landscape marker-1 `dns->lb` and marker-15 `cdn->lb` both
+    # descending onto y=240), the wholesale same-target exemption used to hide
+    # the merge. They must now be flagged.
+    g = DiagramGeometry(
+        nodes={
+            "dns": Box("dns", 560, 120, 78, 78),
+            "cdn": Box("cdn", 340, 120, 78, 78),
+            "lb": Box("lb", 120, 340, 78, 78),
+        },
+        edges=[
+            # l1: dns -> lb, long horizontal run at y=240 from x=650 to x=160.
+            EdgeGeom("l1", "dns", "lb", True, (1.0, 0.77), (0.51, 0.0),
+                     points=[(650, 180), (650, 240), (160, 240)]),
+            # l15: cdn -> lb, MERGED on the same y=240 corridor, x=430..180.
+            EdgeGeom("l15", "cdn", "lb", True, (1.0, 0.51), (0.77, 0.0),
+                     points=[(430, 160), (430, 240), (180, 240)]),
+        ],
+    )
+    assert ("l1", "l15") in geo.check_corridor_sharing(g)
+
+    # But the SAME pair separated onto distinct corridor lines (y=240 vs y=250,
+    # one grid step apart — the regenerated shape) is clean: they share only the
+    # target, entering it at distinct top contacts, with no merged run.
+    g_ok = DiagramGeometry(
+        nodes=g.nodes,
+        edges=[
+            EdgeGeom("l1", "dns", "lb", True, (1.0, 0.77), (0.51, 0.0),
+                     points=[(650, 180), (650, 240), (160, 240)]),
+            EdgeGeom("l15", "cdn", "lb", True, (1.0, 0.51), (0.77, 0.0),
+                     points=[(450, 160), (450, 250), (180, 250)]),
+        ],
+    )
+    assert geo.check_corridor_sharing(g_ok) == []
+
+
 def test_golden_landscapes_clean_corridor_and_float():
     landscapes = glob.glob(
         os.path.join(HERE, "examples", "**", "*ha-multiregion-landscape.drawio"),
