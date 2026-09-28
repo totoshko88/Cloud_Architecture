@@ -1846,31 +1846,89 @@ def check_corridor_sharing(geo: DiagramGeometry, grid: int = GRID) -> List[Tuple
     edge_segs = {e.id: segments_of(e) for e in geo.edges}
     src_of = {e.id: e.source for e in geo.edges}
     tgt_of = {e.id: e.target for e in geo.edges}
+
+    def _shared_stub_lines(e_id: str, other_id: str) -> set:
+        """Return the corridor lines (``(orient, line)``) of the segment(s) of
+        edge ``e_id`` that are INCIDENT to the node it shares with ``other_id``.
+
+        Two edges that share a source (or a target) legitimately run together in
+        the one *stub* touching that common node before branching apart
+        (diagram-standards "shared trunk, opposite branches"). That stub is the
+        segment whose endpoint is the shared node's contact point, so overlap on
+        it is the sanctioned trunk, not a merge. Overlap on any OTHER segment is a
+        genuine merged run and is flagged. When the edges share neither endpoint
+        there is no trunk and this returns the empty set."""
+        e = _edge_by_id[e_id]
+        shared_pt = None
+        if src_of[e_id] == src_of[other_id] and e.source in geo.nodes and e.exit[0] is not None and e.exit[1] is not None:
+            s = geo.nodes[e.source]
+            shared_pt = (s.x + e.exit[0] * s.w, s.y + e.exit[1] * s.h)
+        elif tgt_of[e_id] == tgt_of[other_id] and e.target in geo.nodes and e.entry[0] is not None and e.entry[1] is not None:
+            t = geo.nodes[e.target]
+            shared_pt = (t.x + e.entry[0] * t.w, t.y + e.entry[1] * t.h)
+        if shared_pt is None:
+            return set()
+        px, py = shared_pt
+        lines = set()
+        for orient, line, lo, hi in edge_segs[e_id]:
+            # The stub segment is the one whose extent reaches the shared contact
+            # (on its own axis) at the corridor line the contact sits on.
+            if orient == "h" and abs(round(py) - line) <= 1 and lo - 1 <= px <= hi + 1:
+                lines.add((orient, line))
+            elif orient == "v" and abs(round(px) - line) <= 1 and lo - 1 <= py <= hi + 1:
+                lines.add((orient, line))
+        return lines
+
+    _edge_by_id = {e.id: e for e in geo.edges}
     out: List[Tuple[str, str]] = []
     ids = list(edge_segs)
     for i in range(len(ids)):
         for j in range(i + 1, len(ids)):
             a, b = ids[i], ids[j]
-            # A shared trunk is legitimate (diagram-standards "shared trunk,
-            # opposite branches"): two edges that leave the SAME source (or reach
-            # the same target) may share their stub before branching. Two edges
-            # in a CHAIN through one node (target of one is the source of the
-            # other, e.g. app→db and db→db') naturally touch that node's opposite
-            # faces at its centre row — that shared contact point is the node, not
-            # a merged corridor. Only flag genuinely unrelated edges.
-            if (
-                src_of[a] == src_of[b]
-                or tgt_of[a] == tgt_of[b]
-                or tgt_of[a] == src_of[b]
-                or tgt_of[b] == src_of[a]
-            ):
+            # A CHAIN through one node (the target of one edge is the source of
+            # the other, e.g. app→db and db→db') naturally touches that node's
+            # opposite faces at its centre row — that shared contact point is the
+            # node, not a merged corridor, so a chain pair is always exempt.
+            is_chain = tgt_of[a] == src_of[b] or tgt_of[b] == src_of[a]
+            if is_chain:
                 continue
+            # A shared TRUNK is legitimate (diagram-standards "shared trunk,
+            # opposite branches") ONLY as a shared *stub* that then branches
+            # apart — "the branches never overlap". So two edges that leave the
+            # SAME source (or reach the SAME target) are exempt when their
+            # same-corridor segments merely TOUCH (share the stub point) but not
+            # when they run merged along a genuine shared length. This closes the
+            # blind spot where two same-target descents (dns→lb and cdn→lb both
+            # dropping into one top-entry corridor) merged into one line yet were
+            # exempted wholesale by a bare source/target-equality test (1.10.1).
+            shares_endpoint = src_of[a] == src_of[b] or tgt_of[a] == tgt_of[b]
+            # For a shared-endpoint pair, the ONE corridor line of the stub that
+            # touches the common node is the sanctioned trunk; overlap there is
+            # fine, overlap anywhere else is a merged run. Intersect both edges'
+            # trunk lines so only a genuinely shared stub is exempted.
+            trunk_lines = (
+                _shared_stub_lines(a, b) & _shared_stub_lines(b, a)
+                if shares_endpoint else set()
+            )
             shared = False
             for oa, la, loa, hia in edge_segs[a]:
                 for ob, lb, lob, hib in edge_segs[b]:
-                    if oa == ob and la == lb and loa < hib and lob < hia:
-                        shared = True
-                        break
+                    if oa != ob or la != lb:
+                        continue
+                    # Overlap length on the shared corridor line. A non-positive
+                    # overlap means the segments only touch at an endpoint (the
+                    # sanctioned stub-then-branch), so it is not a merged run.
+                    overlap = min(hia, hib) - max(loa, lob)
+                    if overlap <= 0:
+                        continue
+                    # A shared-endpoint pair is exempt ONLY on the trunk line
+                    # (the stub incident to the common node); a merged run on any
+                    # other corridor line — the l1/l15 y=240 descent into one
+                    # target — is flagged like any unrelated pair.
+                    if shares_endpoint and (oa, la) in trunk_lines:
+                        continue
+                    shared = True
+                    break
                 if shared:
                     break
             if shared:
