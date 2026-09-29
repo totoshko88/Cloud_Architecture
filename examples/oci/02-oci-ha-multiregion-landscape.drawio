@@ -9,25 +9,25 @@
           <mxGeometry x="40" y="20" width="900" height="30" as="geometry" />
         </mxCell>
 
-        <mxCell id="boundary-account" value="Compartment acme-prod" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#F80000;fillColor=none;verticalAlign=top;fontColor=#F80000;fontSize=12" vertex="1" parent="1">
+        <mxCell id="boundary-account" value="Compartment acme-prod" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=1 1;strokeWidth=1;align=left;verticalAlign=top;fontFamily=Oracle Sans;fillColor=none;strokeColor=#AE562C;fontColor=#312D2A;fontSize=12;spacingLeft=5" vertex="1" parent="1">
           <mxGeometry x="30" y="60" width="2100" height="1260" as="geometry" />
         </mxCell>
-        <mxCell id="boundary-vpc-a" value="vpc-primary us-ashburn-1" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#C74634;fillColor=none;verticalAlign=top;fontColor=#C74634;fontSize=12" vertex="1" parent="1">
+        <mxCell id="boundary-vpc-a" value="vpc-primary us-ashburn-1" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;strokeWidth=2;align=left;verticalAlign=top;fontFamily=Oracle Sans;fillColor=none;strokeColor=#AE562C;fontColor=#AE562C;fontSize=12;spacingLeft=5" vertex="1" parent="1">
           <mxGeometry x="60" y="280" width="860" height="1008" as="geometry" />
         </mxCell>
-        <mxCell id="boundary-vpc-b" value="vpc-passive us-phoenix-1" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#C74634;fillColor=none;verticalAlign=top;fontColor=#C74634;fontSize=12" vertex="1" parent="1">
+        <mxCell id="boundary-vpc-b" value="vpc-passive us-phoenix-1" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;strokeWidth=2;align=left;verticalAlign=top;fontFamily=Oracle Sans;fillColor=none;strokeColor=#AE562C;fontColor=#AE562C;fontSize=12;spacingLeft=5" vertex="1" parent="1">
           <mxGeometry x="1240" y="280" width="860" height="1008" as="geometry" />
         </mxCell>
-        <mxCell id="boundary-az-a1" value="az-a1" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#312D2A;fillColor=none;verticalAlign=top;fontColor=#312D2A;fontSize=12" vertex="1" parent="1">
+        <mxCell id="boundary-az-a1" value="az-a1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;strokeWidth=1;align=center;verticalAlign=top;fontFamily=Oracle Sans;fillColor=#DFDCD8;strokeColor=#9E9892;fontColor=#312D2A;fontSize=12" vertex="1" parent="1">
           <mxGeometry x="90" y="480" width="800" height="358" as="geometry" />
         </mxCell>
-        <mxCell id="boundary-az-a2" value="az-a2" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#312D2A;fillColor=none;verticalAlign=top;fontColor=#312D2A;fontSize=12" vertex="1" parent="1">
+        <mxCell id="boundary-az-a2" value="az-a2" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;strokeWidth=1;align=center;verticalAlign=top;fontFamily=Oracle Sans;fillColor=#DFDCD8;strokeColor=#9E9892;fontColor=#312D2A;fontSize=12" vertex="1" parent="1">
           <mxGeometry x="90" y="870" width="800" height="358" as="geometry" />
         </mxCell>
-        <mxCell id="boundary-az-b1" value="az-b1" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#312D2A;fillColor=none;verticalAlign=top;fontColor=#312D2A;fontSize=12" vertex="1" parent="1">
+        <mxCell id="boundary-az-b1" value="az-b1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;strokeWidth=1;align=center;verticalAlign=top;fontFamily=Oracle Sans;fillColor=#DFDCD8;strokeColor=#9E9892;fontColor=#312D2A;fontSize=12" vertex="1" parent="1">
           <mxGeometry x="1270" y="480" width="800" height="358" as="geometry" />
         </mxCell>
-        <mxCell id="boundary-az-b2" value="az-b2" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#312D2A;fillColor=none;verticalAlign=top;fontColor=#312D2A;fontSize=12" vertex="1" parent="1">
+        <mxCell id="boundary-az-b2" value="az-b2" style="rounded=1;arcSize=8;whiteSpace=wrap;html=1;strokeWidth=1;align=center;verticalAlign=top;fontFamily=Oracle Sans;fillColor=#DFDCD8;strokeColor=#9E9892;fontColor=#312D2A;fontSize=12" vertex="1" parent="1">
           <mxGeometry x="1270" y="870" width="800" height="358" as="geometry" />
         </mxCell>
 

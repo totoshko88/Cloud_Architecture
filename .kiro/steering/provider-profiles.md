@@ -67,7 +67,7 @@ Boundary or Network Boundary is a profile-convention error.
 | aws | Account group — `mxgraph.aws4.group` / `grIcon=mxgraph.aws4.group_account` | VPC group — `mxgraph.aws4.group` / `grIcon=mxgraph.aws4.group_vpc2` | `mxgraph.aws4` (draw.io built-in, AWS 2019+) |
 | azure | Subscription boundary — dashed rectangle (`#0078D4`) | VNet boundary — dashed rectangle (`#0062AD`) | Azure icon library (custom, unpacked) |
 | gcp | Project boundary — dashed rectangle (`#4285F4`) | VPC boundary — dashed rectangle (`#34A853`) | GCP icon library (custom/built-in) |
-| oci | Tenancy/Compartment boundary — dashed rectangle (`#F80000`) | VCN boundary — dashed rectangle (`#C74634`) | OCI icon library (custom, unpacked) |
+| oci | Compartment/Tenancy boundary — dashed rectangle, terracotta `#AE562C` stroke, `#312D2A` caption | VCN boundary — dashed rectangle, terracotta `#AE562C` | OCI Style Guide for draw.io v24.2 (custom, unpacked) |
 | generic | Dashed green boundary rectangle | Dashed blue boundary rectangle | grayscale, no vendor icons |
 
 Diagram convention (see `diagram-standards.md`): the stack Boundary renders as a **dashed
@@ -76,6 +76,35 @@ Legend, regardless of provider. The container styles above are the provider-spec
 group shapes that carry those boundaries in the `.drawio` source.
 
 Only **AWS** ships a dedicated vendor **group shape** (`mxgraph.aws4.group` with `grIcon=group_account` / `group_vpc2`). Azure, GCP, and OCI have no built-in group stencil, so their Boundary / Network Boundary render as **dashed rectangles** in the profile brand color (the exact `containers.*.style` is authoritative in `mappings/<provider>-icons.yaml`); `generic` uses a grayscale dashed rectangle. All are valid container styles — the requirement is that each profile declares exactly one Boundary and one Network Boundary style, not that it be a vendor group shape.
+
+### OCI canonical nested palette (Style Guide v24.2)
+
+The OCI profile follows the official **OCI Architecture Diagram Toolkit v24.2**
+(shipped inside `OCI-Style-Guide-for-Drawio.zip` as reference `.drawio` files),
+which is a **nested neutral-grey nesting system**, not an all-red palette. OCI
+therefore declares — beyond the mandatory `boundary` / `network_boundary` pair —
+the **optional** per-level container kinds `region`, `availability_domain`,
+`fault_domain`, and `subnet` in `mappings/oci-icons.yaml`. Each level's stroke,
+fill, and caption are extracted verbatim from the reference Physical templates:
+
+| Level (container kind) | Stroke | Fill | Caption / shape |
+| --- | --- | --- | --- |
+| Compartment / Tenancy (`boundary`) | terracotta `#AE562C` | none | dashed, `#312D2A`, left |
+| VCN / OSN (`network_boundary`) | terracotta `#AE562C` | none | dashed, terracotta caption, left |
+| OCI Region (`region`) | neutral `#9E9892` | `#F5F4F2` | rounded, `#312D2A`, center |
+| Availability Domain (`availability_domain`) | neutral `#9E9892` | `#DFDCD8` | rounded, `#312D2A`, center |
+| Fault Domain (`fault_domain`) | neutral `#9E9892` | `#FCFBFA` | rounded, `#312D2A`, **italic** |
+| Subnet (`subnet`) | terracotta `#AE562C` | none | dashed, terracotta caption, left |
+
+Every level uses `fontFamily=Oracle Sans` and a `#312D2A` (Oracle near-black)
+caption — **never red text**; the service **icon** keeps its OCI-red brand fill.
+The optional levels are OCI-specific: the other four profiles declare only the
+mandatory pair, so `draw_cli._container_style` maps an `az` container to
+`availability_domain` **when the profile declares it**, else falls back to
+`network_boundary` — leaving aws/azure/gcp/generic behavior unchanged. This
+palette is source-guarded by `tests/test_mappings.py` (no legacy `#F80000` /
+`#C74634`; canonical stroke/fill per level; Oracle Sans captions) and recorded
+in `docs/REVIEW.md` D17.
 
 ## Brand Palette
 

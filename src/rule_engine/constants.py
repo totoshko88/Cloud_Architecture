@@ -36,6 +36,7 @@ __all__ = [
     "DIAGRAM_ROLE_TYPES",
     "RESOURCE_TYPES",
     "CONTAINER_KINDS",
+    "REQUIRED_CONTAINER_KINDS",
     "ICON_SOURCES",
     "BRAND_HEX",
     "SECRET_MARKERS",
@@ -91,7 +92,25 @@ DIAGRAM_ROLE_TYPES: Tuple[str, ...] = (
 RESOURCE_TYPES: Tuple[str, ...] = NEUTRAL_RESOURCE_TYPES + DIAGRAM_ROLE_TYPES
 
 #: The two structural container kinds.
-CONTAINER_KINDS: Tuple[str, ...] = ("boundary", "network_boundary")
+#: Container kinds a mapping's ``containers`` table may declare. The first two
+#: are the canonical pair every profile must provide (Requirement 2 AC6); the
+#: remaining four are OPTIONAL nested-level styles used by the OCI profile to
+#: express the official v24.2 palette (Compartment ⊃ Region/VCN ⊃ Availability
+#: Domain ⊃ Fault Domain, plus Subnet). A profile that omits them keeps the
+#: two-kind behaviour — ``draw_cli._container_style`` falls back to
+#: ``network_boundary`` for an ``az`` when no level-specific style exists.
+CONTAINER_KINDS: Tuple[str, ...] = (
+    "boundary",
+    "network_boundary",
+    "region",
+    "availability_domain",
+    "fault_domain",
+    "subnet",
+)
+
+#: The two container kinds EVERY profile must declare (Requirement 2 AC6). The
+#: remaining members of :data:`CONTAINER_KINDS` are optional nested-level styles.
+REQUIRED_CONTAINER_KINDS: Tuple[str, ...] = ("boundary", "network_boundary")
 
 #: Accepted values for a mapping's top-level ``icon_source`` field.
 ICON_SOURCES: Tuple[str, ...] = ("builtin", "custom")

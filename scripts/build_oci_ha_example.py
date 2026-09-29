@@ -23,6 +23,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from rule_engine.diagram_layout import OciStencilIcon  # noqa: E402
+from rule_engine.icon_resolver import resolve_container  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ha_multiregion_common import ProviderSkin, run_cli  # noqa: E402
@@ -71,9 +72,11 @@ RENDERERS = {
     for role, slug in _OCI_SLUGS.items()
 }
 CONTAINER_STYLES = {
-    "account": "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#F80000;fillColor=none;verticalAlign=top;fontColor=#F80000;fontSize=12",
-    "vpc": "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#C74634;fillColor=none;verticalAlign=top;fontColor=#C74634;fontSize=12",
-    "az": "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#312D2A;fillColor=none;verticalAlign=top;fontColor=#312D2A;fontSize=12",
+    # Resolved from mappings/oci-icons.yaml — the official OCI v24.2 nested
+    # palette (Compartment ⊃ VCN ⊃ Availability Domain), never hardcoded red.
+    "account": resolve_container("boundary", "oci")["style_string"],
+    "vpc": resolve_container("network_boundary", "oci")["style_string"],
+    "az": resolve_container("availability_domain", "oci")["style_string"],
 }
 SKIN = ProviderSkin("oci", RENDERERS, CONTAINER_STYLES,
                     "Compartment acme-prod", "us-ashburn-1", "us-phoenix-1")

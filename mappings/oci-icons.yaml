@@ -23,54 +23,89 @@ resources:
     icon_id: oci.boundary
     brand_hex: "#F80000"
     stencil: "assets/vendor/oci-stencils/stencils.json#compartments"  # Identity and Security - Compartments
-    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#F80000;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   network_boundary:
     icon_id: oci.network_boundary
     brand_hex: "#F80000"
     stencil: "assets/vendor/oci-stencils/stencils.json#virtual-cloud-network-vcn"  # Networking - Virtual Cloud Network VCN
-    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#F80000;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   serverless_fn:
     icon_id: oci.serverless_fn
     brand_hex: "#F80000"
     stencil: "assets/vendor/oci-stencils/stencils.json#functions"  # Compute - Functions
-    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#F80000;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   object_store:
     icon_id: oci.object_store
     brand_hex: "#F80000"
     stencil: "assets/vendor/oci-stencils/stencils.json#object-storage"  # Storage - Object Storage
-    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#F80000;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   managed_sql:
     icon_id: oci.managed_sql
     brand_hex: "#F80000"
     stencil: "assets/vendor/oci-stencils/stencils.json#autonomous-db"  # Database - Autonomous DB
-    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#F80000;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   message_queue:
     icon_id: oci.message_queue
     brand_hex: "#F80000"
     stencil: "assets/vendor/oci-stencils/stencils.json#streaming"  # Analytics and AI - Streaming
-    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#F80000;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   secrets_store:
     icon_id: oci.secrets_store
     brand_hex: "#F80000"
     stencil: "assets/vendor/oci-stencils/stencils.json#vault"  # Identity and Security - Vault
-    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#F80000;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   managed_k8s:
     icon_id: oci.managed_k8s
     brand_hex: "#F80000"
     stencil: "assets/vendor/oci-stencils/stencils.json#container-engine-for-kubernetes"  # Developer Services - Container Engine for Kubernetes
-    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#F80000;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   llm_platform:
     icon_id: oci.llm_platform
     brand_hex: "#F80000"
     stencil: "assets/vendor/oci-stencils/stencils.json#artificial-intelligence"  # Analytics and AI - Artificial Intelligence
-    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#F80000;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
 
 containers:
+  # Container styles follow the official OCI Architecture Diagram Toolkit v24.2
+  # (OCI Style Guide for draw.io) — a nested, neutral-grey nesting system, NOT
+  # an all-red palette. Extracted verbatim from the reference file's Physical
+  # templates. Palette source of truth: docs REVIEW.md D17.
+  #   Tenancy / Compartment : dashed, transparent fill; Compartment stroke is
+  #                           Oracle terracotta #AE562C, Tenancy neutral #9E9892.
+  #   OCI Region            : fill #F5F4F2, neutral #9E9892 stroke, rounded.
+  #   Availability Domain   : fill #DFDCD8 (a shade darker than Region).
+  #   Fault Domain          : fill #FCFBFA, italic caption.
+  #   Subnet / OSN          : dashed, terracotta #AE562C stroke+font (network).
+  #   Tier                  : dashed 1 1, neutral.
+  # Every level uses fontFamily=Oracle Sans and fontColor=#312D2A (Oracle near-
+  # black) for its caption — never red text. Icons stay OCI-red per brand.
   boundary:
     icon_id: oci.compartment
     brand_hex: "#F80000"
-    style: "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#F80000;fillColor=none;verticalAlign=top;fontColor=#F80000;fontSize=12"
+    # Compartment boundary — terracotta dashed, transparent, left-aligned caption.
+    style: "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=1 1;strokeWidth=1;align=left;verticalAlign=top;fontFamily=Oracle Sans;fillColor=none;strokeColor=#AE562C;fontColor=#312D2A;fontSize=12;spacingLeft=5"
   network_boundary:
     icon_id: oci.virtual_cloud_network
     brand_hex: "#F80000"
-    style: "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#C74634;fillColor=none;verticalAlign=top;fontColor=#C74634;fontSize=12"
+    # VCN / Oracle Services Network — terracotta dashed network boundary.
+    style: "rounded=0;whiteSpace=wrap;html=1;dashed=1;strokeWidth=2;align=left;verticalAlign=top;fontFamily=Oracle Sans;fillColor=none;strokeColor=#AE562C;fontColor=#AE562C;fontSize=12;spacingLeft=5"
+  region:
+    icon_id: oci.region
+    brand_hex: "#F80000"
+    # OCI Region — light-grey filled, neutral stroke, rounded.
+    style: "rounded=1;arcSize=10;whiteSpace=wrap;html=1;align=center;verticalAlign=top;fontFamily=Oracle Sans;fillColor=#F5F4F2;strokeColor=#9E9892;fontColor=#312D2A;fontSize=12"
+  availability_domain:
+    icon_id: oci.availability_domain
+    brand_hex: "#F80000"
+    # Availability Domain — one shade darker than Region, neutral stroke.
+    style: "rounded=1;arcSize=8;whiteSpace=wrap;html=1;strokeWidth=1;align=center;verticalAlign=top;fontFamily=Oracle Sans;fillColor=#DFDCD8;strokeColor=#9E9892;fontColor=#312D2A;fontSize=12"
+  fault_domain:
+    icon_id: oci.fault_domain
+    brand_hex: "#F80000"
+    # Fault Domain — near-white fill, italic caption, neutral stroke.
+    style: "rounded=1;arcSize=7;whiteSpace=wrap;html=1;strokeWidth=1;align=center;verticalAlign=top;fontFamily=Oracle Sans;fillColor=#FCFBFA;strokeColor=#9E9892;fontColor=#312D2A;fontSize=12;fontStyle=2"
+  subnet:
+    icon_id: oci.subnet
+    brand_hex: "#F80000"
+    # Subnet — terracotta dashed, transparent, left-aligned (network element).
+    style: "rounded=0;whiteSpace=wrap;html=1;dashed=1;strokeWidth=1;align=left;verticalAlign=top;fontFamily=Oracle Sans;fillColor=none;strokeColor=#AE562C;fontColor=#AE562C;fontSize=12;spacingLeft=5"

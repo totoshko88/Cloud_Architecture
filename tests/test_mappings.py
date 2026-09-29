@@ -50,7 +50,19 @@ NEUTRAL_CONCEPTS = frozenset(
 )
 
 # The two container concepts every profile must declare exactly.
-CONTAINER_KINDS = frozenset({"boundary", "network_boundary"})
+REQUIRED_CONTAINER_KINDS = frozenset({"boundary", "network_boundary"})
+# All valid container kinds: the mandatory pair plus the optional OCI
+# nested-level styles (Region ⊃ Availability Domain ⊃ Fault Domain, plus Subnet).
+CONTAINER_KINDS = frozenset(
+    {
+        "boundary",
+        "network_boundary",
+        "region",
+        "availability_domain",
+        "fault_domain",
+        "subnet",
+    }
+)
 
 # Brand hex must be a single '#' followed by exactly six hex digits.
 BRAND_HEX_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
@@ -120,15 +132,27 @@ def test_all_nine_neutral_concepts_covered(provider: str) -> None:
 # --------------------------------------------------------------------------- #
 @pytest.mark.parametrize("provider", PROVIDERS)
 def test_exactly_one_boundary_and_network_boundary_container(provider: str) -> None:
-    """The ``containers`` map declares exactly {boundary, network_boundary}."""
+    """The ``containers`` map declares the mandatory pair, plus optional levels.
+
+    Every profile MUST declare ``boundary`` and ``network_boundary`` (Req 2.6).
+    A profile MAY additionally declare the optional OCI nested-level kinds
+    (``region``/``availability_domain``/``fault_domain``/``subnet``); any key it
+    declares must be a recognised container kind, and each must carry a style.
+    """
     data = _load(provider)
     containers = data.get("containers") or {}
-    assert set(containers.keys()) == CONTAINER_KINDS, (
-        f"{provider}: containers must be exactly {sorted(CONTAINER_KINDS)}, "
-        f"got {sorted(containers.keys())}"
+    declared = set(containers.keys())
+    assert set(REQUIRED_CONTAINER_KINDS) <= declared, (
+        f"{provider}: containers must declare at least "
+        f"{sorted(REQUIRED_CONTAINER_KINDS)}, got {sorted(declared)}"
+    )
+    unknown = declared - set(CONTAINER_KINDS)
+    assert not unknown, (
+        f"{provider}: unknown container kind(s) {sorted(unknown)}; "
+        f"valid kinds are {sorted(CONTAINER_KINDS)}"
     )
     # Each declared container carries a non-empty style string.
-    for kind in CONTAINER_KINDS:
+    for kind in declared:
         style = (containers[kind] or {}).get("style")
         assert style and style.strip(), (
             f"{provider}: container {kind} must declare a non-empty style"
@@ -223,3 +247,99 @@ def test_generic_colors_are_grayscale() -> None:
                 f"generic.{section}.{key}: non-grayscale color #{hex6} in style "
                 f"{style!r}"
             )
+
+
+# --------------------------------------------------------------------------- #
+# OCI canonical v24.2 palette (docs REVIEW.md D17). The official OCI Architecture
+# Diagram Toolkit uses a nested neutral-grey nesting system with terracotta
+# network elements — never an all-red palette. These tests are the source guard
+# that a regression back to red (#F80000 / #C74634) container strokes, or a lost
+# Oracle Sans / #312D2A caption, is caught in the mapping before it reaches a
+# generated diagram.
+# --------------------------------------------------------------------------- #
+_OCI_LEGACY_RED = ("#F80000", "#C74634", "#f80000", "#c74634")
+
+# Canonical stroke per container kind, extracted verbatim from the reference
+# Physical templates (OCI Style Guide for draw.io v24.2).
+_OCI_CONTAINER_STROKE = {
+    "boundary": "#AE562C",            # Compartment — terracotta
+    "network_boundary": "#AE562C",    # VCN / OSN — terracotta
+    "region": "#9E9892",              # OCI Region — neutral grey
+    "availability_domain": "#9E9892",  # Availability Domain — neutral grey
+    "fault_domain": "#9E9892",        # Fault Domain — neutral grey
+    "subnet": "#AE562C",              # Subnet — terracotta (network element)
+}
+
+# Canonical fill per container kind (None = transparent / fillColor=none).
+_OCI_CONTAINER_FILL = {
+    "boundary": None,
+    "network_boundary": None,
+    "region": "#F5F4F2",
+    "availability_domain": "#DFDCD8",
+    "fault_domain": "#FCFBFA",
+    "subnet": None,
+}
+
+
+def _style_token(style: str, name: str):
+    m = re.search(rf"{re.escape(name)}=([^;]*)", style)
+    return m.group(1) if m else None
+
+
+def test_oci_container_styles_follow_canonical_v24_palette() -> None:
+    """Every OCI container style matches the official v24.2 stroke/fill palette.
+
+    Guards docs REVIEW.md D17: OCI containers use the neutral-grey nested system
+    (Region ⊃ AD ⊃ Fault Domain) with terracotta network elements, never the old
+    all-red palette. A regression to #F80000 / #C74634, or a wrong fill, fails.
+    """
+    data = _load("oci")
+    containers = data.get("containers") or {}
+    for kind, want_stroke in _OCI_CONTAINER_STROKE.items():
+        assert kind in containers, f"oci: missing container kind {kind!r}"
+        style = containers[kind]["style"]
+        # No legacy red anywhere in the style (stroke OR font).
+        for red in _OCI_LEGACY_RED:
+            assert red not in style, (
+                f"oci container {kind}: legacy red {red} present — "
+                f"palette regressed to the pre-D17 all-red styling"
+            )
+        assert _style_token(style, "strokeColor") == want_stroke, (
+            f"oci container {kind}: strokeColor must be {want_stroke}, "
+            f"got {_style_token(style, 'strokeColor')}"
+        )
+        want_fill = _OCI_CONTAINER_FILL[kind]
+        got_fill = _style_token(style, "fillColor")
+        if want_fill is None:
+            assert got_fill == "none", (
+                f"oci container {kind}: fillColor must be none, got {got_fill}"
+            )
+        else:
+            assert got_fill == want_fill, (
+                f"oci container {kind}: fillColor must be {want_fill}, got {got_fill}"
+            )
+        # Oracle Sans caption everywhere.
+        assert _style_token(style, "fontFamily") == "Oracle Sans", (
+            f"oci container {kind}: caption must use Oracle Sans"
+        )
+
+
+def test_oci_resource_captions_are_oracle_sans_neutral_black() -> None:
+    """Every OCI resource node caption uses Oracle Sans + #312D2A, never red text.
+
+    The icon keeps its OCI-red brand fill, but the caption font color must be the
+    Oracle near-black #312D2A (docs REVIEW.md D17), so labels read as Oracle's
+    unified visual language rather than as red-on-white.
+    """
+    data = _load("oci")
+    resources = data.get("resources") or {}
+    assert resources, "oci mapping must declare resources"
+    for key, entry in resources.items():
+        style = entry.get("style", "")
+        assert _style_token(style, "fontFamily") == "Oracle Sans", (
+            f"oci.resources.{key}: caption must use Oracle Sans, got {style!r}"
+        )
+        assert _style_token(style, "fontColor") == "#312D2A", (
+            f"oci.resources.{key}: caption fontColor must be #312D2A "
+            f"(Oracle near-black), got {_style_token(style, 'fontColor')}"
+        )

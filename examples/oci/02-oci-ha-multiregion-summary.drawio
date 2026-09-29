@@ -9,10 +9,10 @@
           <mxGeometry x="40" y="20" width="900" height="30" as="geometry" />
         </mxCell>
 
-        <mxCell id="nb_a" value="region-primary (us-ashburn-1)" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#C74634;fillColor=none;verticalAlign=top;fontColor=#C74634;fontSize=12" vertex="1" parent="1">
+        <mxCell id="nb_a" value="region-primary (us-ashburn-1)" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;strokeWidth=2;align=left;verticalAlign=top;fontFamily=Oracle Sans;fillColor=none;strokeColor=#AE562C;fontColor=#AE562C;fontSize=12;spacingLeft=5" vertex="1" parent="1">
           <mxGeometry x="30" y="160" width="358" height="518" as="geometry" />
         </mxCell>
-        <mxCell id="nb_b" value="region-passive (us-phoenix-1)" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#C74634;fillColor=none;verticalAlign=top;fontColor=#C74634;fontSize=12" vertex="1" parent="1">
+        <mxCell id="nb_b" value="region-passive (us-phoenix-1)" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;strokeWidth=2;align=left;verticalAlign=top;fontFamily=Oracle Sans;fillColor=none;strokeColor=#AE562C;fontColor=#AE562C;fontSize=12;spacingLeft=5" vertex="1" parent="1">
           <mxGeometry x="770" y="160" width="358" height="518" as="geometry" />
         </mxCell>
 

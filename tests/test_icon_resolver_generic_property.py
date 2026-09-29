@@ -49,6 +49,13 @@ _VENDOR_TOKENS: tuple[str, ...] = (
     "mxgraph.oci",
 )
 
+# The generic profile declares only the mandatory container pair; the optional
+# OCI nested-level kinds are not part of it, so sample only what it declares.
+_GENERIC_DECLARED_KINDS: tuple[str, ...] = tuple(
+    sorted((load_mapping("generic").get("containers") or {}).keys())
+)
+assert _GENERIC_DECLARED_KINDS, "generic profile declares no container kinds"
+
 #: Matches any #RRGGBB hex color embedded in a draw.io style string.
 _HEX_COLOR_RE = re.compile(r"#[0-9A-Fa-f]{6}")
 
@@ -123,7 +130,7 @@ def test_generic_resolve_icon_is_grayscale_and_vendor_free(
 
 
 @settings(max_examples=200)
-@given(kind=st.sampled_from(CONTAINER_KINDS))
+@given(kind=st.sampled_from(_GENERIC_DECLARED_KINDS))
 def test_generic_resolve_container_is_grayscale_and_vendor_free(
     kind: str,
 ) -> None:

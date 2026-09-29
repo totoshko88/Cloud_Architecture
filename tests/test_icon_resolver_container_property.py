@@ -27,15 +27,27 @@ from hypothesis import strategies as st
 
 from rule_engine.icon_resolver import (
     CONTAINER_KINDS,
+    REQUIRED_CONTAINER_KINDS,
     PROVIDERS,
     load_mapping,
     resolve_container,
 )
 
-# Full cross product of every provider and every container kind. Sampling from
-# this list guarantees each (provider, kind) combination is reachable.
+
+def _declared_kinds(provider: str) -> set[str]:
+    """Container kinds a provider's mapping actually declares."""
+    data = load_mapping(provider)
+    containers = data.get("containers") or {}
+    return set(containers.keys())
+
+
+# Every (provider, DECLARED kind) pair. A provider need not declare the optional
+# nested-level kinds, so we sample only what each mapping actually carries —
+# resolve_container is contractually defined for a kind the provider declares.
 _PROVIDER_KIND_PAIRS: list[tuple[str, str]] = [
-    (provider, kind) for provider in PROVIDERS for kind in CONTAINER_KINDS
+    (provider, kind)
+    for provider in PROVIDERS
+    for kind in sorted(_declared_kinds(provider))
 ]
 
 assert _PROVIDER_KIND_PAIRS, "expected a non-empty provider × kind product"
@@ -71,10 +83,12 @@ def test_exactly_one_container_style_per_kind(pair: tuple[str, str]) -> None:
 @settings(max_examples=100)
 @given(provider=st.sampled_from(PROVIDERS))
 def test_containers_table_declares_exactly_the_two_kinds(provider: str) -> None:
-    """Each provider's ``containers`` map holds exactly {boundary, network_boundary}.
+    """Each provider declares the mandatory pair; extra kinds are valid levels.
 
-    One style per kind, no more and no fewer — the structural guarantee behind
-    "exactly one container style per boundary and per network boundary".
+    Every profile MUST declare ``boundary`` and ``network_boundary`` — one style
+    per kind, no fewer (Req 2.6). A profile MAY additionally declare the optional
+    OCI nested-level kinds; any key it declares must be a recognised container
+    kind and resolve to exactly one non-empty style.
 
     Feature: multicloud-diagram-inventory, Property 5: Exactly one container style per boundary and per network boundary
     Validates: Requirements 2.6
@@ -83,14 +97,19 @@ def test_containers_table_declares_exactly_the_two_kinds(provider: str) -> None:
     containers = data.get("containers") or {}
 
     assert isinstance(containers, dict), f"{provider}: containers is not a mapping"
-    assert set(containers.keys()) == set(CONTAINER_KINDS), (
-        f"{provider}: containers must declare exactly {set(CONTAINER_KINDS)}, "
-        f"got {set(containers.keys())}"
+    declared = set(containers.keys())
+    assert set(REQUIRED_CONTAINER_KINDS) <= declared, (
+        f"{provider}: containers must declare at least "
+        f"{set(REQUIRED_CONTAINER_KINDS)}, got {declared}"
+    )
+    assert declared <= set(CONTAINER_KINDS), (
+        f"{provider}: unknown container kind(s) "
+        f"{declared - set(CONTAINER_KINDS)}"
     )
 
     # And each declared kind resolves to exactly one non-empty style, so the
     # per-kind style is present and singular.
-    for kind in CONTAINER_KINDS:
+    for kind in declared:
         resolved = resolve_container(kind, provider)
         assert set(resolved.keys()) == {"style_string"}
         assert resolved["style_string"], f"{provider}/{kind}: empty style_string"

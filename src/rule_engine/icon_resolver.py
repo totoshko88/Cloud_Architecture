@@ -31,7 +31,12 @@ from typing import Any, Dict
 
 import yaml
 
-from rule_engine.constants import CONTAINER_KINDS, ICON_SOURCES, PROVIDERS
+from rule_engine.constants import (
+    CONTAINER_KINDS,
+    REQUIRED_CONTAINER_KINDS,
+    ICON_SOURCES,
+    PROVIDERS,
+)
 from rule_engine.constants import NEUTRAL_RESOURCE_TYPES as RESOURCE_TYPES
 from rule_engine.constants import resolve_bundled_dir
 
