@@ -10,12 +10,12 @@
         </mxCell>
 
         <!-- Account Boundary -->
-        <mxCell id="boundary-account" parent="1" style="shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_account;grStroke=1;fillColor=none;strokeColor=#232F3E;dashed=0;verticalAlign=top;align=left;spacingLeft=30;fontColor=#232F3E;fontSize=12;html=1" value="Account 123456789012" vertex="1">
+        <mxCell id="boundary-account" parent="1" style="shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_account;grStroke=1;fillColor=none;strokeColor=#CD2264;dashed=0;verticalAlign=top;align=left;spacingLeft=30;fontColor=#CD2264;fontSize=12;html=1" value="Account 123456789012" vertex="1">
           <mxGeometry height="620" width="1100" x="40" y="70" as="geometry" />
         </mxCell>
 
         <!-- VPC Boundary (left side, only VPC-scoped services) -->
-        <mxCell id="boundary-vpc" parent="1" style="shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_vpc2;grStroke=1;fillColor=none;strokeColor=#8C4FFF;dashed=0;verticalAlign=top;align=left;spacingLeft=30;fontColor=#8C4FFF;fontSize=12;html=1" value="VPC agent-vpc" vertex="1">
+        <mxCell id="boundary-vpc" parent="1" style="shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_vpc2;grStroke=1;fillColor=none;strokeColor=#8C4FFF;dashed=0;verticalAlign=top;align=left;spacingLeft=30;fontColor=#7B3FE4;fontSize=12;html=1" value="VPC agent-vpc" vertex="1">
           <mxGeometry height="400" width="340" x="80" y="140" as="geometry" />
         </mxCell>
 
@@ -121,7 +121,7 @@
         </mxCell>
 
         <!-- Legend (right side) -->
-        <mxCell id="legend" parent="1" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF;spacingLeft=10;spacingRight=10;spacingTop=10;spacingBottom=10" value="Legend&#xa;Solid line = primary flow&#xa;Dashed line = asynchronous / event-driven flow&#xa;Red = blocked / missing / disabled&#xa;🆕 = new in version N&#xa;🔄 = changed in version N&#xa;Dashed outer boundary = Account&#xa;Dashed inner boundary = VPC&#xa;Numbered markers (1..N) = see Flow list&#xa;&#xa;Note: Regional services (Lambda, SQS, S3,&#xa;Bedrock, Secrets Manager) are placed&#xa;outside VPC to show they are accessed&#xa;via AWS backbone endpoints." vertex="1">
+        <mxCell id="legend" parent="1" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF;spacingLeft=10;spacingRight=10;spacingTop=10;spacingBottom=10" value="Legend&#xa;Solid line = primary flow&#xa;Dashed line = asynchronous / event-driven flow&#xa;Red = blocked / missing / disabled&#xa;🆕 = new in version N&#xa;🔄 = changed in version N&#xa;Outer boundary = Account (captioned; provider style)&#xa;Inner boundary = VPC (captioned; provider style)&#xa;Numbered markers (1..N) = see Flow list&#xa;&#xa;Note: Regional services (Lambda, SQS, S3,&#xa;Bedrock, Secrets Manager) are placed&#xa;outside VPC to show they are accessed&#xa;via AWS backbone endpoints." vertex="1">
           <mxGeometry height="310" width="280" x="1180" y="300" as="geometry" />
         </mxCell>
 

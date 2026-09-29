@@ -2,6 +2,12 @@
 
 All notable changes to the Rule Engine are recorded here, per released version, in reverse chronological order.
 
+## [Unreleased]
+
+### Fixed
+
+- **Three examples missed the 1.10.3 styling.** `aws/01` and `azure/01` are hand-authored and had no generator, so the new container styles never reached them (grey AWS Account, old Azure VNet); `oci/01` lacked the v24.2 Region level. A new generator, `build_restyle_example.py`, applies the mapping container styles and standard Legend wording to the hand-authored files and is gated by `--check`. `build_oci_example.py` now nests Compartment ⊃ Region ⊃ VCN.
+
 ## [1.10.3] - 2026-09-30
 
 **Theme: diagrams follow each vendor's own styling and service scope.** The layout engine now places services by scope (regional services outside the network boundary), every provider's containers use its official style and native terminology, and OCI rendering matches the Style Guide v24.2. Generation stays deterministic, no lint rule is weakened, and every shipped diagram remains publishable.

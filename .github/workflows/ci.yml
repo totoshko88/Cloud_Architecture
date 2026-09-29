@@ -165,10 +165,10 @@ jobs:
         # floor moved to 3.11. This guard makes the docs floor a checked contract
         # (the single-source-of-truth fix G5 did for the release version).
         run: python -m rule_engine.version_guard --python-docs .
-      - name: Verify every Generated_Example is fresh (generator --check, all thirteen)
+      - name: Verify every Generated_Example is fresh (generator --check, all fifteen)
         # R8.1: every Example_Generator has a --check mode that regenerates in
         # memory and compares with the committed file. The generator table lives
-        # in scripts/regen_examples.py (GENERATORS: nine generators, thirteen
+        # in scripts/regen_examples.py (GENERATORS: ten generators, fifteen
         # examples) and tests/test_generators_fresh.py imports it, so the set
         # regenerated locally and the set checked here are the same list. A new
         # build_*_example.py that is not registered fails the test too.

@@ -7,7 +7,7 @@ that mode for every generator in the shared table
 ``python scripts/regen_examples.py`` uses to regenerate the examples, so the list
 of checked generators and the list of regenerated ones cannot drift.
 
-Coverage: nine generators, thirteen Generated_Examples. The four HA generators
+Coverage: ten generators, fifteen Generated_Examples. The four HA generators
 each write a summary + landscape pair (8); five single-example generators write
 one each (aws infra, gcp, oci, generic, cross-cloud). Before the process fix
 after 1.10.1 this test hard-coded seven generators and missed the generic and
@@ -55,11 +55,11 @@ from regen_examples import (  # noqa: E402
 
 
 def test_generator_table_is_complete():
-    """Nine generators own thirteen distinct examples, one owner each."""
-    assert len(GENERATORS) == 9
+    """Ten generators own fifteen distinct examples, one owner each."""
+    assert len(GENERATORS) == 10
     owned = [ex for gen in GENERATORS for ex in gen.examples]
-    assert len(owned) == 13
-    assert len(set(owned)) == 13, "an example has more than one generator"
+    assert len(owned) == 15
+    assert len(set(owned)) == 15, "an example has more than one generator"
 
 
 def test_every_builder_script_is_in_the_table():

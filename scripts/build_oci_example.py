@@ -35,6 +35,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
@@ -159,35 +160,44 @@ FLOW_LINES = [
 ]
 
 
+#: 1.10.3: the v24.2 nesting is Compartment ⊃ OCI Region ⊃ VCN. The Region box
+#: (grey fill #F5F4F2) needs its own caption strip inside the compartment, so the
+#: whole authored node/edge block moves down by one strip (DY) and the boxes grow.
+DY = 60
+
+
+def _shifted(e: Edge) -> Edge:
+    return replace(e, points=[(x, y + DY) for x, y in e.points])
+
+
 def build(stencils: Dict[str, Any]) -> str:
     boundaries = [
-        # D8: tighten the compartment boundary to wrap the node block (rightmost
-        # node right edge 1218) with one grid step of padding, so the outermost
-        # container ends at 1260 instead of 1400. This lets the Flow/Legend block
-        # sit at legend_x=1270 (one grid step past the container) and still fit the
-        # 1600px flow budget — before D8 the boundary ran to 1400 and the block to
-        # 1840, over budget.
+        # Compartment wraps the Region with one pad + its caption strip.
         Boundary("boundary-compartment", "compartment-acme-prod",
-                 x=40, y=70, w=1220, h=790,
+                 x=40, y=70, w=1220, h=870,
                  style=resolve_container("boundary", "oci")["style_string"]),
+        # OCI Region wraps every node (x 120..1218, y 260..848 incl. labels) and
+        # the VCN, >= one grid step of padding, caption strip on top.
+        Boundary("boundary-region", "region us-ashburn-1",
+                 x=70, y=130, w=1160, h=780,
+                 style=resolve_container("region", "oci")["style_string"]),
         # Network boundary encloses streaming/ingest/generative/training/vault
-        # (x 620..958, y 200..758) with >=1 grid-step padding on every side.
+        # with >=1 grid-step padding on every side.
         Boundary("boundary-vcn", "vcn-prod",
-                 x=580, y=150, w=420, h=670,
+                 x=580, y=150 + DY, w=420, h=670,
                  style=resolve_container("network_boundary", "oci")["style_string"]),
     ]
     nodes: List[Node] = []
     for spec in NODE_SPECS:
         renderer = OciStencilIcon(stencils, spec["slug"], brand_hex=OCI_BRAND)
-        nodes.append(Node(id=spec["id"], label=spec["id"], x=spec["x"], y=spec["y"], render=renderer))
-
+        nodes.append(Node(id=spec["id"], label=spec["id"], x=spec["x"], y=spec["y"] + DY, render=renderer))
     return build_diagram(
         diagram_id="oci-genai-stack",
         diagram_name="oci-genai-stack",
         title=TITLE,
         boundaries=boundaries,
         nodes=nodes,
-        edges=EDGES,
+        edges=[_shifted(e) for e in EDGES],
         flow_lines=FLOW_LINES,
         # D8: legend at 1270 (one grid step past the tightened container right
         # edge 1260) and pinned narrow (legend_w=310) so the Flow/Legend block
