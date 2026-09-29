@@ -176,21 +176,38 @@ the artifact's *intent*. It is **descriptive metadata, not an enforced class** �
 the lint-enforced class stays `diagram_class` (`flow` / `landscape`). `diagram_type`
 is already read by the tooling (it scopes the `ip-range` rule to a
 Network_Diagram: a diagram whose `diagram_class` is `landscape` OR whose
-`diagram_type` is `network` / `infrastructure` / `deployment`). Recognised types
+`diagram_type` is `network` / `infrastructure` / `deployment`). The taxonomy is
+**provider-neutral by design** — it is the union of the diagram types the three
+major clouds' own diagramming guidance names (AWS `awslabs/diagram-as-code`,
+**Azure Well-Architected → *Architecture design diagrams***, and Google Cloud's
+architecture guidance), reconciled with the **C4 model** levels. Recognised types
 and the primary axis each expects (the axis source of truth stays *Diagram
 Orientation* above):
 
 | `diagram_type` | Primary axis | Lane reading |
 | --- | --- | --- |
 | `context` | left → right | actors/edge on the left, the system to the right |
+| `block` / `functional` | left → right | **technology-agnostic** capability blocks (an `order queue`, not `Service Bus` / `SQS` / `Pub/Sub`), read left → right along the flow — the pre-`component` abstraction level |
 | `container` | left → right | lanes read left → right along the request flow |
 | `component` | left → right | container/component boxes read left → right, nested per level |
 | `deployment` | **top → bottom (North–South)** | external/internet at the top, internal tiers descending; AZ peers side by side |
-| `data-flow` | left → right | ordered lanes follow the data flow |
+| `data-flow` | left → right | ordered lanes follow the data flow (a STRIDE threat-model DFD adds trust boundaries + per-flow protocol/encryption annotations) |
 | `sequence` | left → right | participants left → right, time descending |
 | `state` | left → right | states read left → right along transitions |
 | `network` | **top → bottom (North–South)** | ingress at the top, internal networks descending; redundancy East–West |
 | `user-flow` | left → right | steps read left → right along the journey |
+| `resilience` | **top → bottom (North–South)** | availability / DR view: redundancy + failover paths, RPO/RTO annotations (East–West peers, North–South failover) |
+| `residency` | left → right | compliance data-residency: data location, replication, classification, retention |
+| `identity` | left → right | auth/authorization flow: token issuance, trust-boundary changes, on-behalf-of flows |
+
+The last three (`resilience` / `residency` / `identity`) are the **specialized
+views** every major cloud's guidance calls out for DR/SLO reviews, regulated
+workloads, and security reviews respectively; they are provider-neutral intents,
+not new lint classes. The `block` / `functional` level is the **technology-agnostic
+capability view** (C4's "component vs container" boundary, Azure WAF's *block
+diagram*): name the *capability* (`order queue`) not the *product*, so the same
+diagram reads across providers before a `component` diagram binds it to a concrete
+service.
 
 A **Network_Diagram may be split into two complementary views** when one axis
 cannot carry both concerns: an **East–West** view for redundancy / availability
