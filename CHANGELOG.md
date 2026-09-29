@@ -2,9 +2,35 @@
 
 All notable changes to the Rule Engine are recorded here, per released version, in reverse chronological order.
 
-## [Unreleased]
+## [1.10.3] - 2026-09-30
 
-_No unreleased changes._
+**Theme: diagrams follow each vendor's own styling and service scope.** The layout engine now places services by scope (regional services outside the network boundary), every provider's containers use its official style and native terminology, and OCI rendering matches the Style Guide v24.2. Generation stays deterministic, no lint rule is weakened, and every shipped diagram remains publishable.
+
+### Added
+
+- **Service-scope placement in the layout engine (D20).** `layout.base.ROLE_SCOPE` classifies roles as `network` / `regional` / `global`; once a spec models regions, a regional role inside a `vpc`/`az` is a `SpecError`. Region-declared nodes go to a regional column outside the VPC, positioned from their edge anchors and mirrored across peer regions. Edges carry `same_region`, so in-region hops are never routed as cross-region.
+- **Region level on every HA landscape** (`boundary ⊃ region ⊃ network ⊃ zone`), with one regional object store per region (landscape: 34 → 32 nodes).
+- **Optional container kinds** `region`, `availability_domain`, `fault_domain`, `subnet`, `public_subnet`, `on_premises`; the mandatory pair stays `boundary` + `network_boundary` (`REQUIRED_CONTAINER_KINDS`).
+- **Vendor container styles in the mappings (D18/D19).** AWS containers are copied from draw.io's *AWS / Groups* palette (Account `#CD2264`, Region, VPC, private/public subnet, Corporate data center; AZ stays a plain dashed box). Azure uses a dotted VNet and a Subnet style with corner icons and borderless grey zones; GCP and all four providers gain region/zone styles. Every builder reads container styles from the mappings.
+- **Provider-native captions** from `profiles/terminology.yaml` (`vnet-…`, `vcn-…`, `ad-…`, `zone-…`; new `zone_label` table).
+- **Docs Python-floor gate** (`version_guard --python-docs`), wired into both CI pipelines.
+- **`diagram_type` taxonomy** extended with `block`/`functional`, `resilience`, `residency`, `identity`, cross-checked against Azure Well-Architected and GCP guidance.
+- **Spec `contract-layout-engine-wiring`** (G10, scheduled).
+
+### Changed
+
+- **Routing:** below-left back-edges leave the bottom face (Rule K); fan-ins into one target get distinct turn columns; the band above a container's first row is reserved for its own fan-outs; a VPC service row narrower than its zones is centred over them.
+- **Legend** names the outer/inner boundary by nesting and caption, not by line style.
+- **HA landscape crossing ceiling** 2 → 3: two crossings are forced by the correct topology (in-region DB replication between zones vs. the feeds into the regional column).
+
+### Fixed
+
+- **OCI styling (D16/D17):** nested stencil glyphs (`object-storage`, `cdn`) centred on their label; containers follow the v24.2 nested palette instead of all-red; node captions use `#312D2A` instead of brand red; bold container captions; `Oracle Sans` falls back to sans-serif instead of serif.
+- **Edges no longer cut captions:** `edge-crosses-container-label` also flags vertical legs through caption text (located from the real `align`/`spacingLeft`); a bottom-exit stub through its own node caption is drawn behind it.
+- **Caption contrast ≥ 4.5:1** on all container styles (Azure zone `#50E6FF`, GCP yellow zone, AWS/GCP light captions), enforced by a mapping test.
+- **`_container_style`** falls back only for an absent kind; a malformed level style now raises.
+- **`CONTRIBUTING.md`** Python prerequisite corrected to `>=3.11`.
+- **`overlay-legend-coverage`** no longer counts the `Legend` heading itself as documenting a marker named `legend`.
 
 ## [1.10.2] - 2026-09-29
 

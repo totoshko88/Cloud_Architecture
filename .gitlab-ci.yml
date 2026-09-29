@@ -96,6 +96,11 @@ validate:
   script:
     - echo "Validating golden examples against the Inventory Schema"
     - rule-engine-validate-schema --schema schemas/inventory.schema.json --targets 'examples/**/*.json'
+    - echo "Confirming the docs Python floor matches pyproject requires-python"
+    # The floor is authoritative in pyproject; CONTRIBUTING/INSTALL/README repeat
+    # it as prose and drifted (CONTRIBUTING said "Python 3.14+" after the floor
+    # moved to 3.11). Runs on every pipeline, not just releases.
+    - python -m rule_engine.version_guard --python-docs .
     - echo "Confirming the Inventory Schema is a valid JSON Schema"
     - |
       python -c "

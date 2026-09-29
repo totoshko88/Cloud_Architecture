@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from rule_engine.diagram_layout import OciStencilIcon  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from ha_multiregion_common import ProviderSkin, run_cli  # noqa: E402
+from ha_multiregion_common import mapping_container_styles, ProviderSkin, run_cli  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -70,11 +70,7 @@ RENDERERS = {
     role: OciStencilIcon(_STENCILS, slug, "#F80000")
     for role, slug in _OCI_SLUGS.items()
 }
-CONTAINER_STYLES = {
-    "account": "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#F80000;fillColor=none;verticalAlign=top;fontColor=#F80000;fontSize=12",
-    "vpc": "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#C74634;fillColor=none;verticalAlign=top;fontColor=#C74634;fontSize=12",
-    "az": "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#312D2A;fillColor=none;verticalAlign=top;fontColor=#312D2A;fontSize=12",
-}
+CONTAINER_STYLES = mapping_container_styles("oci")
 SKIN = ProviderSkin("oci", RENDERERS, CONTAINER_STYLES,
                     "Compartment acme-prod", "us-ashburn-1", "us-phoenix-1")
 STEM = "02-oci-ha-multiregion"

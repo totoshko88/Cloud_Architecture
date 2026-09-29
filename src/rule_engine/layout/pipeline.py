@@ -184,7 +184,27 @@ def _global_contacts(
             else:
                 entries[edge.id] = (0.5, 0.0)   # top-centre (Rule C)
         elif kind == "back-edge":
+            src = placed[edge.source]
             tgt = placed[edge.target]
+            if tgt.y >= src.bottom:
+                # Rule K (1.10.3): a back-edge to a target BELOW-LEFT leaves the
+                # BOTTOM face (diagram-standards → directional back-edge: bottom
+                # exit is acceptable when the target is both below AND left).
+                # Looping out the right face first sent it back across its own
+                # column. It enters the target's TOP when nothing stands in the
+                # target's column between the two rows, else the target's LEFT
+                # face via the free gap beside the column
+                # (:func:`routers.route_back_edge`).
+                others = [b for nid, b in placed.items()
+                          if nid not in (edge.source, edge.target)]
+                blocked = any(
+                    b.x < tgt.right and tgt.x < b.right
+                    and src.bottom <= b.y < tgt.y
+                    for b in others
+                )
+                exits[edge.id] = (0.5, 1.0)
+                entries[edge.id] = (0.0, 0.5) if blocked else (0.5, 0.0)
+                continue
             left_gap_x = tgt.x - (COL_STEP - ICON_SIZE) // 2
             if left_gap_x < CONTAINER_PAD + GRID:
                 entries[edge.id] = (0.5, 0.0)   # no left gap → top-centre (Rule G)
@@ -919,6 +939,7 @@ def layout(
     # repair / normalise / serialize stages, so the choice changes only how
     # waypoints (and now the placement) are chosen, never the artifact format
     # (R5.3), and all are deterministic functions of the spec (R5.1).
+    spec = _annotate_edge_regions(spec)
     try:
         if legacy:
             return _finish(spec, _place_and_route(spec))
@@ -942,6 +963,27 @@ def layout(
             f"layout({spec.diagram_id!r}) has an over-connected node — the "
             f"diagram must be split or re-laned: {exc}"
         ) from exc
+
+
+def _annotate_edge_regions(spec: DiagramSpec) -> DiagramSpec:
+    """Stamp each edge's ``same_region`` from its endpoints' declared regions.
+
+    Region membership is a spec fact the geometric classifier cannot read from
+    boxes; carrying it on the edge lets :func:`routers.classify_edge` refuse to
+    call a long in-region hop ``cross-region``. Idempotent, and a no-op for a
+    spec whose nodes declare no regions (every synthetic spec)."""
+    from dataclasses import replace as _replace
+    region = {n.id: n.region for n in spec.nodes}
+    edges = []
+    changed = False
+    for e in spec.edges:
+        a, b = region.get(e.source, ""), region.get(e.target, "")
+        same = (a == b) if (a and b) else None
+        if same != e.same_region:
+            e = _replace(e, same_region=same)
+            changed = True
+        edges.append(e)
+    return _replace(spec, edges=tuple(edges)) if changed else spec
 
 
 def _layout_scored_with_guard(spec: DiagramSpec) -> "PlacedDiagram":

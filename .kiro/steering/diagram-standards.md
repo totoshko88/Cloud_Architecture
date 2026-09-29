@@ -176,21 +176,38 @@ the artifact's *intent*. It is **descriptive metadata, not an enforced class** �
 the lint-enforced class stays `diagram_class` (`flow` / `landscape`). `diagram_type`
 is already read by the tooling (it scopes the `ip-range` rule to a
 Network_Diagram: a diagram whose `diagram_class` is `landscape` OR whose
-`diagram_type` is `network` / `infrastructure` / `deployment`). Recognised types
+`diagram_type` is `network` / `infrastructure` / `deployment`). The taxonomy is
+**provider-neutral by design** — it is the union of the diagram types the three
+major clouds' own diagramming guidance names (AWS `awslabs/diagram-as-code`,
+**Azure Well-Architected → *Architecture design diagrams***, and Google Cloud's
+architecture guidance), reconciled with the **C4 model** levels. Recognised types
 and the primary axis each expects (the axis source of truth stays *Diagram
 Orientation* above):
 
 | `diagram_type` | Primary axis | Lane reading |
 | --- | --- | --- |
 | `context` | left → right | actors/edge on the left, the system to the right |
+| `block` / `functional` | left → right | **technology-agnostic** capability blocks (an `order queue`, not `Service Bus` / `SQS` / `Pub/Sub`), read left → right along the flow — the pre-`component` abstraction level |
 | `container` | left → right | lanes read left → right along the request flow |
 | `component` | left → right | container/component boxes read left → right, nested per level |
 | `deployment` | **top → bottom (North–South)** | external/internet at the top, internal tiers descending; AZ peers side by side |
-| `data-flow` | left → right | ordered lanes follow the data flow |
+| `data-flow` | left → right | ordered lanes follow the data flow (a STRIDE threat-model DFD adds trust boundaries + per-flow protocol/encryption annotations) |
 | `sequence` | left → right | participants left → right, time descending |
 | `state` | left → right | states read left → right along transitions |
 | `network` | **top → bottom (North–South)** | ingress at the top, internal networks descending; redundancy East–West |
 | `user-flow` | left → right | steps read left → right along the journey |
+| `resilience` | **top → bottom (North–South)** | availability / DR view: redundancy + failover paths, RPO/RTO annotations (East–West peers, North–South failover) |
+| `residency` | left → right | compliance data-residency: data location, replication, classification, retention |
+| `identity` | left → right | auth/authorization flow: token issuance, trust-boundary changes, on-behalf-of flows |
+
+The last three (`resilience` / `residency` / `identity`) are the **specialized
+views** every major cloud's guidance calls out for DR/SLO reviews, regulated
+workloads, and security reviews respectively; they are provider-neutral intents,
+not new lint classes. The `block` / `functional` level is the **technology-agnostic
+capability view** (C4's "component vs container" boundary, Azure WAF's *block
+diagram*): name the *capability* (`order queue`) not the *product*, so the same
+diagram reads across providers before a `component` diagram binds it to a concrete
+service.
 
 A **Network_Diagram may be split into two complementary views** when one axis
 cannot carry both concerns: an **East–West** view for redundancy / availability
@@ -636,6 +653,36 @@ This separation is **architecturally accurate**: a reader immediately sees which
 services are network-isolated (inside VPC) and which are accessed via AWS/Azure/GCP
 backbone endpoints (outside VPC but inside the account).
 
+### How the layout engine enforces scope (1.10.3)
+
+The engine applies these rules itself; a spec states only a node's role and its
+container:
+
+- **Validation.** Once a spec declares a `region` container for a region, a node
+  whose role is `regional` or `global` (`layout.base.ROLE_SCOPE`) may not be
+  declared inside that region's `vpc` or `az`. `layout()` raises `SpecError`
+  naming the node and telling you to declare the region container instead.
+- **Regional column.** Nodes declared in a `region` container are placed in a
+  column right of the VPC, inside the region box. A node fed from exactly one
+  zone row sits on that row in the inner column. A node fed from several rows (an
+  object store every zone writes to) sits in the outer column on its topmost
+  feed row, so its rising feeds never cut a single-row feed. Unlinked nodes (a
+  queue → worker → secrets chain) stack below it as straight drops. Peer regions
+  mirror the arrangement of the region with the most edges.
+- **One object store per region**, not one per zone: object storage is
+  regional, so a per-AZ bucket misstates the architecture.
+- **In-region long hops are never `cross-region`.** `layout()` marks each edge
+  `same_region` from its endpoints' regions. The geometric classifier routes a
+  long in-region hop as a fan-out and keeps `cross-region` for hops between
+  regions. An upward hop to the right (a zone feeding a regional node on a higher
+  row) is a fan-out too.
+- **Below-left back-edges leave the bottom face** (Rule K). They enter the
+  target's top when its column is clear, else its left face from a free lane
+  beside the column that is off every container border.
+- **A VPC service row narrower than its zones is centred over them**, so
+  top-entry drops land mid-box instead of under the left-aligned region and VPC
+  captions.
+
 ### Private Endpoints
 
 When a regional service is accessed via a Private Endpoint (AWS PrivateLink, Azure
@@ -783,8 +830,8 @@ Every diagram includes a Legend that defines all of the following:
 - **red** = blocked or missing or disabled
 - **🆕** = new in version N
 - **🔄** = changed in version N
-- **dashed boundary, outer** = the stack Boundary (Account / Subscription / Project / Tenancy / Environment)
-- **dashed boundary, inner** = the Network Boundary (VPC / VNet / VCN / Network)Boundary **stroke color follows the Provider Profile brand palette** (e.g. AWS Account `#232F3E` / VPC `#8C4FFF`; GCP Project `#4285F4` / VPC `#34A853`; the `generic` profile uses green for the stack boundary and blue for the Network Boundary). Distinguish the two boundaries by their **dashed outer-vs-inner nesting and their labels**, never by color alone (see Accessibility & Contrast — double-encode). The legend entry names each boundary in words so it is correct for every provider.
+- **outer boundary** (captioned, provider container style) = the stack Boundary (Account / Subscription / Project / Tenancy / Environment)
+- **inner boundary** (captioned, provider container style) = the Network Boundary (VPC / VNet / VCN / Network). Boundary **stroke color follows the Provider Profile brand palette** (e.g. AWS Account `#CD2264` / VPC `#8C4FFF`; GCP Project `#4285F4` / VPC `#34A853`; the `generic` profile uses green for the stack boundary and blue for the Network Boundary). Distinguish the two boundaries by their **outer-vs-inner nesting and their captions** (the line style is the provider's: AWS groups are solid, Azure's VNet dotted, OCI's Region filled), never by color alone (see Accessibility & Contrast — double-encode). The legend entry names each boundary in words so it is correct for every provider.
 
 A diagram with no Legend is a lint ERROR (`legend-present`). Example PlantUML legend:
 
@@ -795,8 +842,8 @@ legend right
   Red = blocked / missing / disabled
   🆕 = new in version N
   🔄 = changed in version N
-  Dashed outer boundary = stack Boundary (profile brand color)
-  Dashed inner boundary = Network Boundary (profile brand color)
+  Outer boundary = stack Boundary (captioned; provider style)
+  Inner boundary = Network Boundary (captioned; provider style)
 endlegend
 
 ```

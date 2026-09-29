@@ -163,6 +163,11 @@ class DiagramGeometry:
     #: real text length, so a corridor clearing a SHORT caption (e.g. "az-a1") is
     #: not flagged while one slicing a LONG caption ("vpc-passive …") is.
     container_labels: Dict[str, str] = field(default_factory=dict)
+    #: Container id -> its raw style. Lets ``check_edge_crosses_container_label``
+    #: locate the caption TEXT where draw.io draws it (``align`` / ``spacingLeft``)
+    #: and flag a vertical leg cutting through it. Absent for a programmatic
+    #: geometry, in which case only the legacy horizontal-run check applies.
+    container_styles: Dict[str, str] = field(default_factory=dict)
     #: Text-cell id -> its box. Text cells are deliberately excluded from
     #: ``nodes`` (the linter must not count a Legend as a node), but their
     #: geometry is needed to check that the Flow/Legend furniture sits in the
@@ -217,6 +222,7 @@ def build_geometry(page: Page) -> DiagramGeometry:
             ax, ay = absolute_origin(page, cid)
             geo.containers[cid] = Box(cid, ax, ay, float(g.w), float(g.h))
             geo.container_labels[cid] = cell.label
+            geo.container_styles[cid] = cell.style
 
     for cid, cell in cells.items():
         if not cell.vertex or cid in boundary_ids:
@@ -999,6 +1005,96 @@ def _container_caption_width(label: str, box_w: float) -> float:
     return min(box_w, est)
 
 
+#: Per-character advance used when the caption's real style is known. 12px
+#: Helvetica averages ~6.3px; 7.0 is a conservative ceiling (bold ~6.9).
+_CAPTION_TEXT_CHAR_W = 7.0
+#: draw.io's default ``spacing`` around a label (added to ``spacingLeft``).
+_DRAWIO_LABEL_SPACING = 2.0
+#: Clearance an edge keeps from either end of the caption text.
+_CAPTION_CLEARANCE = 4.0
+
+
+def _style_value(style: str, key: str) -> Optional[str]:
+    m = re.search(rf"(?:^|;){re.escape(key)}=([^;]*)", style or "")
+    return m.group(1) if m else None
+
+
+def caption_text_extent(label: str, style: str, box: "Box") -> Tuple[float, float]:
+    """Return the ``(x0, x1)`` model-x extent of a container caption's TEXT.
+
+    Reads the caption's real ``align`` (draw.io default ``center``),
+    ``spacingLeft`` / ``spacingRight`` and ``spacing`` from its style, so a
+    left-aligned OCI/AWS caption and a centred Azure/GCP caption are both located
+    where draw.io actually draws them. Capped to the container's own width.
+    """
+    text_w = min(box.w, len(label or "") * _CAPTION_TEXT_CHAR_W)
+    spacing = float(_style_value(style, "spacing") or _DRAWIO_LABEL_SPACING)
+    sl = float(_style_value(style, "spacingLeft") or 0.0) + spacing
+    sr = float(_style_value(style, "spacingRight") or 0.0) + spacing
+    align = (_style_value(style, "align") or "center").lower()
+    if align == "left":
+        x0 = box.x + sl
+    elif align == "right":
+        x0 = box.x + box.w - sr - text_w
+    else:
+        inner_mid = box.x + sl + (box.w - sl - sr) / 2.0
+        x0 = inner_mid - text_w / 2.0
+    return x0, x0 + text_w
+
+
+def vertical_caption_cuts(
+    polylines: Sequence[Sequence[Tuple[float, float]]],
+    box: "Box",
+    band: float = CONTAINER_LABEL_BAND,
+) -> List[float]:
+    """Return the x of every VERTICAL leg that passes through ``box``'s caption
+    strip ``[box.y, box.y + band]`` — the candidates that can cut its text."""
+    xs: List[float] = []
+    y0, y1 = box.y, box.y + band
+    for pl in polylines:
+        for p, q in zip(pl, pl[1:]):
+            if abs(q[0] - p[0]) > 0.5:
+                continue  # not a vertical leg
+            lo, hi = min(p[1], q[1]), max(p[1], q[1])
+            if hi <= y0 or lo >= y1:
+                continue
+            if box.x < p[0] < box.x + box.w:
+                xs.append(p[0])
+    return xs
+
+
+def free_caption_x0(
+    label: str, style: str, box: "Box", cut_xs: Sequence[float]
+) -> Optional[float]:
+    """Return a caption text start ``x0`` that no ``cut_xs`` leg passes through.
+
+    ``None`` when the caption's current position is already clear. Otherwise the
+    nearest clear start to the current one, searched on the grid, rightward for a
+    left-aligned caption (it stays left-anchored) and both ways for a centred
+    one. Falls back to ``None`` when no clear slot fits inside the box.
+    """
+    x0, x1 = caption_text_extent(label, style, box)
+    text_w = x1 - x0
+
+    def clear(a: float) -> bool:
+        return all(
+            not (a - _CAPTION_CLEARANCE < cx < a + text_w + _CAPTION_CLEARANCE)
+            for cx in cut_xs
+        )
+
+    if clear(x0):
+        return None
+    lo = box.x + _DRAWIO_LABEL_SPACING + GRID
+    hi = box.x + box.w - GRID - text_w
+    align = (_style_value(style, "align") or "center").lower()
+    steps = range(1, int(box.w // GRID) + 1)
+    for k in steps:
+        for cand in ((x0 + k * GRID,) if align == "left" else (x0 + k * GRID, x0 - k * GRID)):
+            if lo <= cand <= hi and clear(cand):
+                return cand
+    return None
+
+
 def check_edge_crosses_container_label(
     geo: DiagramGeometry, band: float = CONTAINER_LABEL_BAND
 ) -> List[Tuple[str, str]]:
@@ -1067,6 +1163,21 @@ def check_edge_crosses_container_label(
                 if overlap > 2 * GRID:
                     crossed = True
                     break
+            # 1.10.3: a VERTICAL leg through the caption TEXT cuts it too. The
+            # sanctioned top entry drops through the container's top edge, but it
+            # must do so beside the caption, not through its letters (edges 1/15
+            # slicing the left-aligned ``vpc-primary …`` caption on the OCI
+            # landscape). Needs the real style to locate the text, so it applies
+            # only to a parsed diagram.
+            style = geo.container_styles.get(cid)
+            if not crossed and style is not None:
+                tx0, tx1 = caption_text_extent(
+                    geo.container_labels.get(cid, ""), style, c
+                )
+                crossed = any(
+                    tx0 - _CAPTION_CLEARANCE < cx < tx1 + _CAPTION_CLEARANCE
+                    for cx in vertical_caption_cuts([polyline], c, band)
+                )
             if crossed:
                 out.append((e.id, cid))
     return sorted(set(out))

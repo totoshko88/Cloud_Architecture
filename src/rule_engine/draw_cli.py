@@ -59,6 +59,7 @@ from rule_engine.diagram_layout import (
 from rule_engine.draw import DrawError, SnapshotSplitRequired, spec_from_snapshot
 from rule_engine.icon_resolver import (
     IconResolverError,
+    UnresolvedTypeError,
     resolve_container,
     resolve_icon,
 )
@@ -155,19 +156,47 @@ def _skin_renderers(provider: str, roles: Sequence[str]) -> Dict[str, Any]:
 def _container_style(kind: str, provider: str) -> str:
     """Resolve the draw.io style for a container ``kind`` (account/vpc/az).
 
-    The two structural kinds map onto the profile's two container conventions:
+    The structural kinds map onto the profile's container conventions:
     an ``account`` boundary is the profile's ``boundary`` container style; a
-    ``vpc`` (and an ``az`` nested inside it) uses the ``network_boundary`` style.
-    Read from ``mappings/<provider>-icons.yaml`` via
-    :func:`icon_resolver.resolve_container`, so it is offline and authoritative.
+    ``vpc`` is the ``network_boundary`` style; an ``az`` uses a level-specific
+    style (``availability_domain``) WHEN the profile declares one — this is how
+    the OCI profile expresses the official v24.2 nested palette (Compartment ⊃
+    Region/VCN ⊃ Availability Domain), each level with its own fill/stroke.
+
+    Providers that declare only the two canonical kinds (aws/azure/gcp/generic)
+    have no ``availability_domain`` entry, so ``az`` FALLS BACK to
+    ``network_boundary`` — their behaviour is unchanged. Read from
+    ``mappings/<provider>-icons.yaml`` via :func:`icon_resolver.resolve_container`,
+    so it is offline and authoritative.
     """
-    map_kind = "boundary" if kind == "account" else "network_boundary"
-    try:
-        return resolve_container(map_kind, provider)["style_string"]
-    except IconResolverError as exc:  # pragma: no cover - defensive
-        raise DrawError(
-            f"no container style for kind {kind!r} under provider {provider!r}: {exc}"
-        ) from exc
+    if kind == "account":
+        preferred = ("boundary",)
+    elif kind == "az":
+        # Level-specific first, then the generic network boundary fallback.
+        preferred = ("availability_domain", "network_boundary")
+    elif kind == "region":
+        preferred = ("region", "network_boundary")
+    else:  # vpc / anything else structural
+        preferred = ("network_boundary",)
+
+    last_exc: Optional[Exception] = None
+    for map_kind in preferred:
+        try:
+            return resolve_container(map_kind, provider)["style_string"]
+        except UnresolvedTypeError as exc:
+            # Only an ABSENT kind falls back; a declared-but-malformed entry
+            # (AssetSourceError) is a profile defect and must surface.
+            last_exc = exc
+            continue
+        except IconResolverError as exc:
+            raise DrawError(
+                f"no container style for kind {kind!r} under provider "
+                f"{provider!r}: {exc}"
+            ) from exc
+    raise DrawError(
+        f"no container style for kind {kind!r} under provider {provider!r}: "
+        f"{last_exc}"
+    ) from last_exc
 
 
 # --------------------------------------------------------------------------- #

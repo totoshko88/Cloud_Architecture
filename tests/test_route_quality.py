@@ -111,21 +111,30 @@ _EXAMPLES = _REPO_ROOT / "examples"
 #: tier-skip needs, both at the 40px threshold. ``gcp/01`` / ``oci/01`` sit at 4
 #: crossings because their hub is approached from the side it fans out on; that is
 #: a placement gap (docs/REVIEW.md), not a routing one, and is held (R5.2 / R5.3).
+#: 1.10.3 (REVIEW.md D20): the landscape ceiling moves 2 → 3 because the
+#: diagram became architecturally CORRECT, not because routing regressed. The
+#: regional services (object store, queue, worker, secrets, observability) now
+#: stand in a regional column OUTSIDE the VPC instead of inside the zones. Every
+#: zone therefore feeds that column across the zone boundary, and the in-region
+#: DB replication ``l7`` — which must descend BETWEEN the two zones — crosses both
+#: feeds (``l7×l8``, ``l7×l17``); the third is the cross-region ``l10`` passing
+#: the passive LB's drop (``l9``). The first two are forced by the topology
+#: (a vertical between two stacked rows vs. a horizontal leaving each row).
 _CEILING = {
     "aws/01-aws-agent-platform.drawio": (0, 0, 0.0),
-    "aws/02-aws-ha-multiregion-landscape.drawio": (2, 2, 0.0),
+    "aws/02-aws-ha-multiregion-landscape.drawio": (3, 2, 0.0),
     "aws/02-aws-ha-multiregion-summary.drawio": (0, 0, 0.0),
     "aws/03-aws-hybrid-infrastructure.drawio": (0, 0, 0.0),
     "azure/01-azure-openai-rag.drawio": (0, 0, 0.0),
-    "azure/02-azure-ha-multiregion-landscape.drawio": (2, 2, 0.0),
+    "azure/02-azure-ha-multiregion-landscape.drawio": (3, 2, 0.0),
     "azure/02-azure-ha-multiregion-summary.drawio": (0, 0, 0.0),
     "cross-cloud/01-cross-cloud-composition.drawio": (0, 0, 0.0),
     "gcp/01-gcp-vertex-pipeline.drawio": (4, 0, 0.0),
-    "gcp/02-gcp-ha-multiregion-landscape.drawio": (2, 2, 0.0),
+    "gcp/02-gcp-ha-multiregion-landscape.drawio": (3, 2, 0.0),
     "gcp/02-gcp-ha-multiregion-summary.drawio": (0, 0, 0.0),
     "generic/01-generic-reference-architecture.drawio": (2, 0, 0.0),
     "oci/01-oci-genai-stack.drawio": (4, 0, 0.0),
-    "oci/02-oci-ha-multiregion-landscape.drawio": (2, 2, 0.0),
+    "oci/02-oci-ha-multiregion-landscape.drawio": (3, 2, 0.0),
     "oci/02-oci-ha-multiregion-summary.drawio": (0, 0, 0.0),
 }
 

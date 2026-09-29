@@ -17,6 +17,7 @@ from __future__ import annotations
 import importlib
 import os
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -113,14 +114,16 @@ def test_ha_parity_has_expected_shape():
     lg = _build_geometry(build_landscape(_skin("aws")))
     assert len(sg.nodes) == 9
     assert len(sg.edges) == 9
-    assert len(lg.nodes) == 34
+    # 1.10.3: 32 — one regional object store per region replaces the four
+    # per-zone buckets (an object store is regional, not zonal).
+    assert len(lg.nodes) == 32
     # v1.6.0: 21 edges (was 12, which left 20 nodes unconnected).
     assert len(lg.edges) == 21
     # Every node is connected or overlay-marked (``node-connectivity``).
     assert geo.check_node_connectivity(lg) == []
-    assert len(lg.overlay_nodes) == 11
+    assert len(lg.overlay_nodes) == 10
     # both region frames present in the summary; account+vpc+az in the landscape.
-    assert set(sg.containers) == {"nb_a", "nb_b"}
+    assert set(sg.containers) == {"boundary-region-a", "boundary-region-b"}
     assert "boundary-account" in lg.containers
 
 
@@ -150,9 +153,16 @@ from rule_engine.layout_engine import TITLE_BAND  # noqa: E402
 
 # The two VPC service rows (declared members of the VPC directly, not an AZ).
 _SERVICE_ROW = {
-    "a": ("lb_a", "queue_a", "fn_a", "sec_a"),
-    "b": ("lb_b", "queue_b", "fn_b", "sec_b"),
+    # 1.10.3 (D20): only the load balancer is VPC-scoped; queue / worker /
+    # secrets are regional and live in the region's regional column.
+    "a": ("lb_a",),
+    "b": ("lb_b",),
 }
+_REGIONAL = {
+    "a": ("queue_a", "fn_a", "sec_a", "mon_a", "obj_a"),
+    "b": ("queue_b", "fn_b", "sec_b", "mon_b", "obj_b"),
+}
+_REGION_BY_REGION = {"a": "boundary-region-a", "b": "boundary-region-b"}
 _AZ_BY_REGION = {
     "a": ("boundary-az-a1", "boundary-az-a2"),
     "b": ("boundary-az-b1", "boundary-az-b2"),
@@ -214,9 +224,19 @@ def _assert_landscape_shape(g: geo.DiagramGeometry) -> None:
         _assert_horizontal_row(node_ids, f"service row {region}")
     # AZ-1 main row (sub=0 nodes): app → cache → db → obj, left→right.
     _AZ1_MAIN = {
-        "a": ("app_a1", "cache_a1", "db_a1", "obj_a1"),
-        "b": ("app_b1", "cache_b1", "db_b1", "obj_b1"),
+        "a": ("app_a1", "cache_a1", "db_a1"),
+        "b": ("app_b1", "cache_b1", "db_b1"),
     }
+
+    # --- Regional services: inside the region, OUTSIDE the VPC (D20). ---
+    for region, node_ids in _REGIONAL.items():
+        vpc = g.containers[_VPC_BY_REGION[region]]
+        reg = g.containers[_REGION_BY_REGION[region]]
+        for nid in node_ids:
+            fp = g.nodes[nid].footprint(LABEL_BAND)
+            assert fp.x >= vpc.right, f"{nid} not right of {_VPC_BY_REGION[region]}"
+            assert reg.x <= fp.x and fp.right <= reg.right and fp.bottom <= reg.bottom, (
+                f"{nid} not inside {_REGION_BY_REGION[region]}")
     for region, node_ids in _AZ1_MAIN.items():
         _assert_horizontal_row(node_ids, f"az-1 main row {region}")
 
@@ -347,3 +367,23 @@ def test_landscape_reproduces_reference_shape(provider):
     OCI is exercised only when its stencils are fetched (skipped otherwise)."""
     g = _build_geometry(build_landscape(_skin(provider)))
     _assert_landscape_shape(g)
+
+
+# 1.10.3: container captions use each provider's own words, read from
+# profiles/terminology.yaml (network_boundary label + zone_label).
+_NATIVE = {
+    "aws": ("vpc-primary", "az-a1", "app-az1"),
+    "azure": ("vnet-primary", "az-a1", "app-az1"),
+    "gcp": ("vpc-primary", "zone-a1", "app-zone1"),
+    "oci": ("vcn-primary", "ad-a1", "app-ad1"),
+}
+
+
+def test_landscape_captions_use_native_terminology():
+    root = Path(__file__).resolve().parents[1]
+    for provider, words in _NATIVE.items():
+        text = (root / "examples" / provider /
+                f"02-{provider}-ha-multiregion-landscape.drawio").read_text(encoding="utf-8")
+        for w in words:
+            assert f'value="{w}' in text, f"{provider}: expected native label {w!r}"
+        assert 'value="region-primary ' in text, f"{provider}: region level missing"

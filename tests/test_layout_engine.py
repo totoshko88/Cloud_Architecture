@@ -716,10 +716,10 @@ def test_landscape_service_row_forms_a_tier_above_the_azs():
     pd = le.layout(LANDSCAPE_SPEC)
     c, n = pd.containers, pd.nodes
     per_region = {
-        "a": (["lb_a", "queue_a", "fn_a", "sec_a"],
-              "boundary-vpc-a", ["boundary-az-a1", "boundary-az-a2"]),
-        "b": (["lb_b", "queue_b", "fn_b", "sec_b"],
-              "boundary-vpc-b", ["boundary-az-b1", "boundary-az-b2"]),
+        # 1.10.3 (D20): the load balancer is the VPC's service row; the queue /
+        # worker / secrets are regional and stand outside the VPC.
+        "a": (["lb_a"], "boundary-vpc-a", ["boundary-az-a1", "boundary-az-a2"]),
+        "b": (["lb_b"], "boundary-vpc-b", ["boundary-az-b1", "boundary-az-b2"]),
     }
     for svc_ids, vpc_id, az_ids in per_region.values():
         vpc = c[vpc_id]
@@ -1572,13 +1572,14 @@ def test_ha_specs_encode_the_shipped_topology():
     # account ⊃ vpc ⊃ az containers.
     assert len(SUMMARY_SPEC.nodes) == 9
     assert {e.id for e in SUMMARY_SPEC.edges} == {f"s{i}" for i in range(1, 10)}
-    assert {c.id for c in SUMMARY_SPEC.containers} == {"nb_a", "nb_b"}
+    assert {c.id for c in SUMMARY_SPEC.containers} == {"boundary-region-a", "boundary-region-b"}
     # The summary is a compact north-south flow: regions side-by-side, the flow
     # reading DOWN each region column (matching the hand-drawn summary reference).
     assert SUMMARY_SPEC.axis == "north-south"
     assert SUMMARY_SPEC.compact is True
 
-    assert len(LANDSCAPE_SPEC.nodes) == 34
+    # 1.10.3: 32 — one regional object store per region, not one per zone.
+    assert len(LANDSCAPE_SPEC.nodes) == 32
     # v1.6.0: l1..l21. The original l1..l12 left 20 of the 34 nodes with no
     # incident edge at all (the 2026-09-25 audit's headline finding), so
     # ``node-connectivity`` could not ship as a rule. Nine edges were added for the
@@ -1602,11 +1603,15 @@ def test_ha_specs_encode_the_shipped_topology():
     standby = sorted(n.id for n in LANDSCAPE_SPEC.nodes if n.overlay == "standby")
     assert standby == [
         "api_b1", "api_b2", "app_b2", "cache_b1", "cache_b2", "db_b2",
-        "fn_b", "mon_b", "obj_b2", "queue_b", "sec_b",
+        "fn_b", "mon_b", "queue_b", "sec_b",
     ], "the standby set is the passive region's unconnected mirror peers"
-    # account ⊃ 2 vpc ⊃ 4 az.
+    # 1.10.3: account ⊃ 2 region ⊃ 2 vpc ⊃ 4 az (the region level every
+    # provider's own diagrams draw between the boundary and the network).
     kinds = sorted(c.kind for c in LANDSCAPE_SPEC.containers)
-    assert kinds == ["account", "az", "az", "az", "az", "vpc", "vpc"]
+    assert kinds == ["account", "az", "az", "az", "az", "region", "region", "vpc", "vpc"]
+    parent = {c.id: c.parent for c in LANDSCAPE_SPEC.containers}
+    assert parent["boundary-vpc-a"] == "boundary-region-a"
+    assert parent["boundary-region-a"] == "boundary-account"
 
 
 def test_ha_specs_declare_no_coordinates():
@@ -1750,3 +1755,71 @@ def test_layout_is_deterministic_through_normalisation():
             i: (x.x, x.y, x.w, x.h) for i, x in b.containers.items()
         }, spec.diagram_id
         assert [pe.points for pe in a.edges] == [pe.points for pe in b.edges], spec.diagram_id
+
+
+# --------------------------------------------------------------------------- #
+# 1.10.3 (REVIEW.md D20): service scope is placed by the engine.
+# --------------------------------------------------------------------------- #
+from rule_engine.layout.model import ContainerSpec as _CS, DiagramSpec as _DS  # noqa: E402
+from rule_engine.layout.model import EdgeSpec as _ES, NodeSpec as _NS  # noqa: E402
+
+
+def _scope_spec(obj_container: str) -> "_DS":
+    return _DS(
+        diagram_id="scope", diagram_name="scope", axis="north-south",
+        nodes=(
+            _NS(id="lb", role="lb", lane="router", region="a", slot=0, container="vpc-a"),
+            _NS(id="app", role="k8s", lane="workers", region="a", slot=0, container="az-a1"),
+            _NS(id="db", role="sql", lane="data", region="a", slot=0, container="az-a1"),
+            _NS(id="obj", role="obj", lane="data", region="a", slot=1, container=obj_container),
+        ),
+        edges=(
+            _ES(id="e1", source="lb", target="app", marker="1"),
+            _ES(id="e2", source="app", target="db", marker="2"),
+            _ES(id="e3", source="app", target="obj", marker="3"),
+        ),
+        containers=(
+            _CS(id="acct", kind="account", region="", parent=None, label_key="acct"),
+            _CS(id="region-a", kind="region", region="a", parent="acct", label_key="r"),
+            _CS(id="vpc-a", kind="vpc", region="a", parent="region-a", label_key="v"),
+            _CS(id="az-a1", kind="az", region="a", parent="vpc-a", label_key="z"),
+        ),
+        flow_lines=("Flow", "1. a", "2. b", "3. c"), title="t | 2026-09-30 | v1",
+    )
+
+
+def test_regional_service_inside_a_vpc_is_rejected_when_regions_are_modelled():
+    with pytest.raises(le.SpecError, match="regional"):
+        le.layout(_scope_spec("az-a1"))
+
+
+def test_regional_service_is_placed_inside_region_outside_vpc():
+    pd = le.layout(_scope_spec("region-a"))
+    obj = pd.nodes["obj"].footprint(le.LABEL_BAND)
+    vpc, reg = pd.containers["vpc-a"], pd.containers["region-a"]
+    assert obj.x >= vpc.right, "regional node must stand right of the VPC"
+    assert _box_contains(reg, obj), "regional node must stay inside its region"
+    # Fed from one zone row: it sits on that row.
+    assert pd.nodes["obj"].y == pd.nodes["app"].y
+
+
+def test_role_scope_table_covers_the_nine_neutral_types():
+    from rule_engine.constants import NEUTRAL_RESOURCE_TYPES
+    from rule_engine.layout.base import role_scope
+    for t in NEUTRAL_RESOURCE_TYPES:
+        if t in ("boundary", "network_boundary"):
+            continue
+        assert role_scope(t) in ("network", "regional", "global"), t
+
+
+def test_in_region_long_hop_is_never_cross_region():
+    from rule_engine.layout.pipeline import _annotate_edge_regions
+    from rule_engine.layout.routers import classify_edge
+    from rule_engine.ha_multiregion_spec import LANDSCAPE_SPEC
+    spec = _annotate_edge_regions(LANDSCAPE_SPEC)
+    pd = le.layout(LANDSCAPE_SPEC)
+    boxes = dict(pd.nodes)
+    for e in spec.edges:
+        if e.same_region:
+            assert classify_edge(e, boxes) != "cross-region", e.id
+    assert {e.id for e in spec.edges if e.same_region is False} == {"l10", "l11"}

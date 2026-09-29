@@ -176,22 +176,12 @@ LEGEND_LINES = list(STANDARD_LEGEND_LINES) + [
 # ---------------------------------------------------------------------------
 STYLE_AWS_ACCOUNT = resolve_container("boundary", "aws")["style_string"]
 STYLE_AWS_VPC = resolve_container("network_boundary", "aws")["style_string"]
-STYLE_AZ_SUB = (
-    "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;"
-    "strokeColor=#0078D4;fillColor=none;verticalAlign=top;fontColor=#0078D4;fontSize=12"
-)
-STYLE_AZ_VNET = (
-    "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;"
-    "strokeColor=#0062AD;fillColor=none;verticalAlign=top;fontColor=#0062AD;fontSize=12"
-)
-STYLE_GCP_PROJECT = (
-    "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;"
-    "strokeColor=#4285F4;fillColor=none;verticalAlign=top;fontColor=#4285F4;fontSize=12"
-)
-STYLE_GCP_VPC = (
-    "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;"
-    "strokeColor=#34A853;fillColor=none;verticalAlign=top;fontColor=#34A853;fontSize=12"
-)
+# Every provider's boxes come from its own mapping (REVIEW.md D19), so the
+# composition shows each cloud in its own container convention.
+STYLE_AZ_SUB = resolve_container("boundary", "azure")["style_string"]
+STYLE_AZ_VNET = resolve_container("network_boundary", "azure")["style_string"]
+STYLE_GCP_PROJECT = resolve_container("boundary", "gcp")["style_string"]
+STYLE_GCP_VPC = resolve_container("network_boundary", "gcp")["style_string"]
 
 
 def _render(kind: str, style_or_path: str):

@@ -278,11 +278,43 @@ resources:
 # Container styles for boundaries (using mxgraph.aws4.group for proper draw.io
 # group behavior — these are structural elements, not service icons)
 containers:
+  # Every AWS container is the draw.io "AWS / Groups" (AWS Architecture Icons
+  # 2019+) entry, copied from the draw.io app bundle (Sidebar AWS4 groups),
+  # REVIEW.md D19. Only deviation: a caption colour below 4.5:1 on white is
+  # darkened (VPC official #AAB7B8 -> #7B3FE4; #147EBA -> #0F6FA8); strokes and
+  # group icons are untouched.
   boundary:
-    icon_id: aws.group_account
+    icon_id: mxgraph.aws4.group_account
     brand_hex: "#232F3E"
-    style: "shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_account;grStroke=1;fillColor=none;strokeColor=#232F3E;dashed=0;verticalAlign=top;align=left;spacingLeft=30;fontColor=#232F3E;fontSize=12;html=1"
+    # AWS Account — group_account, official pink #CD2264.
+    style: "shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_account;grStroke=1;fillColor=none;strokeColor=#CD2264;dashed=0;verticalAlign=top;align=left;spacingLeft=30;fontColor=#CD2264;fontSize=12;html=1"
   network_boundary:
-    icon_id: aws.group_vpc2
+    icon_id: mxgraph.aws4.group_vpc2
     brand_hex: "#8C4FFF"
-    style: "shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_vpc2;grStroke=1;fillColor=none;strokeColor=#8C4FFF;dashed=0;verticalAlign=top;align=left;spacingLeft=30;fontColor=#8C4FFF;fontSize=12;html=1"
+    style: "shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_vpc2;grStroke=1;fillColor=none;strokeColor=#8C4FFF;dashed=0;verticalAlign=top;align=left;spacingLeft=30;fontColor=#7B3FE4;fontSize=12;html=1"
+  region:
+    icon_id: mxgraph.aws4.group_region
+    brand_hex: "#232F3E"
+    # Region — group_region (flag icon), dashed teal.
+    style: "shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_region;grStroke=1;fillColor=none;strokeColor=#00A4A6;dashed=1;verticalAlign=top;align=left;spacingLeft=30;fontColor=#0F6FA8;fontSize=12;html=1"
+  availability_domain:
+    icon_id: aws.availability_zone
+    brand_hex: "#232F3E"
+    # Availability Zone — AWS ships NO group icon for an AZ: the official entry
+    # is a plain dashed #147EBA rectangle with a centred caption.
+    style: "rounded=0;whiteSpace=wrap;html=1;dashed=1;fillColor=none;strokeColor=#147EBA;verticalAlign=top;align=center;fontStyle=0;fontColor=#0F6FA8;fontSize=12"
+  subnet:
+    icon_id: mxgraph.aws4.group_security_group
+    brand_hex: "#232F3E"
+    # Private subnet — padlock group icon, teal fill #E6F6F7.
+    style: "shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_security_group;grStroke=0;fillColor=#E6F6F7;strokeColor=#00A4A6;dashed=0;verticalAlign=top;align=left;spacingLeft=30;fontColor=#0F6FA8;fontSize=12;html=1"
+  public_subnet:
+    icon_id: mxgraph.aws4.group_security_group
+    brand_hex: "#232F3E"
+    # Public subnet — padlock group icon, green fill #F2F6E8.
+    style: "shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_security_group;grStroke=0;fillColor=#F2F6E8;strokeColor=#7AA116;dashed=0;verticalAlign=top;align=left;spacingLeft=30;fontColor=#248814;fontSize=12;html=1"
+  on_premises:
+    icon_id: mxgraph.aws4.group_corporate_data_center
+    brand_hex: "#232F3E"
+    # Corporate data center — the official on-premises group.
+    style: "shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_corporate_data_center;grStroke=1;whiteSpace=wrap;fillColor=none;strokeColor=#7D8998;dashed=0;verticalAlign=top;align=left;spacingLeft=30;fontColor=#5A6C86;fontSize=12;html=1"

@@ -26,7 +26,7 @@ from rule_engine.diagram_layout import image_icon  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ha_multiregion_common import (  # noqa: E402
-    ProviderSkin, run_cli, index_renderer,
+    mapping_container_styles, ProviderSkin, run_cli, index_renderer,
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -46,11 +46,7 @@ RENDERERS = {
     "cdn": index_renderer("cdn", "azure"),
     "waf": index_renderer("waf", "azure"),
 }
-CONTAINER_STYLES = {
-    "account": "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#0078D4;fillColor=none;verticalAlign=top;fontColor=#0078D4;fontSize=12",
-    "vpc": "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#0062AD;fillColor=none;verticalAlign=top;fontColor=#0062AD;fontSize=12",
-    "az": "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#50E6FF;fillColor=none;verticalAlign=top;fontColor=#0078D4;fontSize=12",
-}
+CONTAINER_STYLES = mapping_container_styles("azure")
 SKIN = ProviderSkin("azure", RENDERERS, CONTAINER_STYLES,
                     "Subscription contoso-prod", "eastus", "westus2")
 STEM = "02-azure-ha-multiregion"

@@ -25,7 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from rule_engine.diagram_layout import image_icon  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from ha_multiregion_common import ProviderSkin, run_cli  # noqa: E402
+from ha_multiregion_common import mapping_container_styles, ProviderSkin, run_cli  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -45,11 +45,7 @@ RENDERERS = {
     "cdn": image_icon("assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg"),
     "waf": image_icon("assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg"),
 }
-CONTAINER_STYLES = {
-    "account": "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#4285F4;fillColor=none;verticalAlign=top;fontColor=#4285F4;fontSize=12",
-    "vpc": "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#34A853;fillColor=none;verticalAlign=top;fontColor=#34A853;fontSize=12",
-    "az": "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#FBBC04;fillColor=none;verticalAlign=top;fontColor=#EA4335;fontSize=12",
-}
+CONTAINER_STYLES = mapping_container_styles("gcp")
 SKIN = ProviderSkin("gcp", RENDERERS, CONTAINER_STYLES,
                     "Project acme-prod", "us-central1", "us-west1")
 STEM = "02-gcp-ha-multiregion"

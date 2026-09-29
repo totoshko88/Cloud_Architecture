@@ -146,11 +146,32 @@ def main(argv: list[str] | None = None) -> int:
             f"{agreed!r}."
         )
         return 0
+    if args and args[0] == "--python-docs":
+        if len(args) > 2:
+            print(
+                "usage: python -m rule_engine.version_guard --python-docs [<repo_root>]",
+                file=sys.stderr,
+            )
+            return 2
+        repo_root = args[1] if len(args) == 2 else "."
+        problems = python_floor_doc_problems(repo_root)
+        if problems:
+            print(
+                "BLOCKING: docs Python floor disagrees with pyproject "
+                "requires-python:",
+                file=sys.stderr,
+            )
+            for problem in problems:
+                print(f"    - {problem}", file=sys.stderr)
+            return 1
+        print("OK: every doc's stated Python floor agrees with requires-python.")
+        return 0
     if len(args) != 2:
         print(
             "usage: python -m rule_engine.version_guard <changelog_path> <version>\n"
             "   or: python -m rule_engine.version_guard --triple [<repo_root>]\n"
-            "   or: python -m rule_engine.version_guard --dates [<changelog_path>]",
+            "   or: python -m rule_engine.version_guard --dates [<changelog_path>]\n"
+            "   or: python -m rule_engine.version_guard --python-docs [<repo_root>]",
             file=sys.stderr,
         )
         return 2
@@ -333,6 +354,90 @@ def changelog_date_problems(changelog_text: str, today: "date | None" = None) ->
                 "increase going down the file"
             )
         previous = (version, released)
+    return problems
+
+
+# ---------------------------------------------------------------------------
+# Docs Python-version consistency (process fix after 1.10.2)
+# ---------------------------------------------------------------------------
+#
+# The floor Python version is authoritative in ONE place — ``requires-python``
+# in ``pyproject.toml`` (``>=3.11`` since 1.7.0). But the same floor is repeated
+# in prose across the docs (CONTRIBUTING.md, INSTALL.md, README.md), and those
+# copies drifted: CONTRIBUTING.md still said "Python 3.14+" and told contributors
+# to run ``python3.14 -m venv`` long after the floor moved to 3.11 — misleading,
+# and exactly the single-source-of-truth failure that G5 fixed for the release
+# version. This guard makes the docs floor a checked contract: any doc that names
+# a REQUIREMENT floor different from ``requires-python`` is a blocking problem.
+#
+# It is deliberately narrow to avoid false positives on legitimate prose. It only
+# flags a doc that pins the floor as a *requirement* — the phrase ``Python <X>+``
+# or ``python_requires``/``requires-python`` naming a version — when that version
+# is not the pyproject floor. A CI-matrix line that lists "3.11, 3.12, 3.13, 3.14"
+# is not a floor claim and is not flagged.
+
+#: Docs that repeat the Python floor as a prerequisite. Relative to repo root.
+PYTHON_FLOOR_DOCS = ("CONTRIBUTING.md", "INSTALL.md", "README.md")
+
+#: ``requires-python = ">=3.11"`` — capture the bare floor ``3.11``.
+_REQUIRES_PYTHON_RE = re.compile(
+    r'^\s*requires-python\s*=\s*["\']>=\s*([0-9]+\.[0-9]+)', re.MULTILINE
+)
+
+#: A doc phrase that pins the floor as a REQUIREMENT: "Python 3.14+",
+#: "python_requires >= 3.14", or "requires-python = ">=3.14"". Group 1 is the
+#: version. A plain matrix mention ("3.11, 3.12, 3.13, 3.14") has no ``+`` /
+#: ``>=`` / ``requires`` anchor and is not matched.
+_DOC_FLOOR_RES = (
+    re.compile(r"Python\s+([0-9]+\.[0-9]+)\+"),
+    re.compile(r"python_requires\s*>=\s*([0-9]+\.[0-9]+)"),
+    re.compile(r'requires-python[^\n]*?>=\s*([0-9]+\.[0-9]+)'),
+)
+
+
+def read_requires_python(repo_root: str | Path) -> str | None:
+    """Return the bare ``requires-python`` floor from ``pyproject.toml``.
+
+    ``">=3.11"`` -> ``"3.11"``. ``None`` if the pin is absent/unreadable.
+    """
+    path = Path(repo_root) / PYPROJECT_FILE
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    m = _REQUIRES_PYTHON_RE.search(text)
+    return m.group(1) if m else None
+
+
+def python_floor_doc_problems(repo_root: str | Path) -> list[str]:
+    """Return docs that name a Python floor differing from ``requires-python``.
+
+    Empty list = every doc's stated floor agrees with ``pyproject.toml`` (or the
+    doc states no floor requirement at all). Each problem names the file, the
+    floor it claims, and the authoritative floor.
+    """
+    floor = read_requires_python(repo_root)
+    if floor is None:
+        return [
+            f"{PYPROJECT_FILE}: no 'requires-python = \">=X.Y\"' pin found "
+            "(cannot verify the docs floor against it)"
+        ]
+    problems: list[str] = []
+    root = Path(repo_root)
+    for rel in PYTHON_FLOOR_DOCS:
+        path = root / rel
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError:
+            continue  # a missing optional doc is not a floor mismatch
+        for rx in _DOC_FLOOR_RES:
+            for m in rx.finditer(text):
+                if m.group(1) != floor:
+                    problems.append(
+                        f"{rel}: states Python floor {m.group(1)!r} "
+                        f"(\"{m.group(0)}\") but pyproject requires-python is "
+                        f">={floor}"
+                    )
     return problems
 
 

@@ -8,6 +8,8 @@ embedding stripping the baked-in caption while scaling the icon square.
 
 from __future__ import annotations
 
+import re
+
 from rule_engine import diagram_layout as dl
 from rule_engine.cli import _parse_drawio_page
 from rule_engine.drawio_model import parse_drawio
@@ -62,12 +64,30 @@ def test_oci_renderer_strips_caption_and_scales_square():
     icon = dl.OciStencilIcon(stencils, "functions", brand_hex="#F80000")
     node = dl.Node(id="api", label="api-function", x=120, y=440, render=icon)
     xml = node.render(node, "1")
-    # Caption removed; label carried once by the container.
-    assert "Oracle Sans" not in xml
+    # Baked-in caption removed; label carried once by the container.
+    assert 'value="Functions"' not in xml
+    assert "font-family:Oracle Sans" not in xml
     assert 'value="api-function"' in xml
     # Container is a 78x78 group; the icon (84 wide) is scaled down (< 84).
     assert 'width="78" height="78"' in xml
     assert 'width="84.000"' not in xml
+
+
+def test_oci_node_caption_is_oracle_sans_near_black_not_red():
+    # D17: the mapping's resource styles were guarded, but the stencil renderer
+    # (what every OCI diagram actually uses) still coloured captions with the
+    # brand red. The rendered caption must follow v24.2: Oracle Sans (with a
+    # sans-serif fallback) in #312D2A, whatever brand_hex the caller passes.
+    stencils = _oci_stencil_fixture()
+    icon = dl.OciStencilIcon(stencils, "functions", brand_hex="#F80000")
+    node = dl.Node(id="api", label="api-function", x=120, y=440, render=icon)
+    xml = node.render(node, "1")
+    container = next(c for c in xml.split("<mxCell")[1:] if 'id="api"' in c)
+    assert "fontColor=#312D2A" in container
+    assert "fontColor=#F80000" not in container
+    assert f"fontFamily={dl.OCI_FONT_FAMILY};" in container
+    assert dl.OCI_FONT_FAMILY.split(",")[0] == "Oracle Sans"
+    assert dl.OCI_FONT_FAMILY.endswith("sans-serif")
 
 
 def test_full_diagram_counts_one_node_per_service():
@@ -105,3 +125,142 @@ def test_embed_oci_stencil_raises_on_missing_group_cell():
     )
     with pytest.raises(dl.OciStencilError):
         dl.embed_oci_stencil("n1", bad_xml, 80, 80, "n1")
+
+
+# --- D16: nested-stencil glyph centering (the "model-storage" label shift) ---
+
+
+def _glyph_center_x(rendered: str) -> tuple[float, float]:
+    """Root-frame [min_x, max_x] of the drawn shape cells in a rendered node.
+
+    Walks the emitted ``mxCell`` tree, accumulating each cell's ``x`` onto its
+    parent's, and unions the boxes of the cells that carry a ``shape=``/stencil
+    glyph — the same way a viewer composes the group. Returns the glyph's left
+    and right edges in the node's own coordinate frame.
+    """
+    import re
+
+    cells = re.findall(r"<mxCell\b.*?(?:/>|</mxCell>)", rendered, re.S)
+    x_of: dict[str, float] = {}
+    parent_of: dict[str, str] = {}
+    is_shape: dict[str, bool] = {}
+    w_of: dict[str, float] = {}
+    for c in cells:
+        cid = re.search(r'id="([^"]+)"', c)
+        if not cid:
+            continue
+        cid = cid.group(1)
+        pm = re.search(r'parent="([^"]+)"', c)
+        parent_of[cid] = pm.group(1) if pm else ""
+        gm = re.search(r"<mxGeometry\b[^>]*", c)
+        xm = re.search(r'\bx="([-0-9.eE]+)"', gm.group(0)) if gm else None
+        wm = re.search(r'\bwidth="([-0-9.eE]+)"', gm.group(0)) if gm else None
+        x_of[cid] = float(xm.group(1)) if xm else 0.0
+        w_of[cid] = float(wm.group(1)) if wm else 0.0
+        st = re.search(r'style="([^"]*)"', c)
+        is_shape[cid] = bool(st and ("shape=" in st.group(1) or "stencil" in st.group(1)))
+
+    def abs_x(cid: str) -> float:
+        ax = 0.0
+        seen: set[str] = set()
+        cur = cid
+        while cur and cur in x_of and cur not in seen:
+            seen.add(cur)
+            ax += x_of[cur]
+            cur = parent_of.get(cur, "")
+        return ax
+
+    lo, hi = float("inf"), float("-inf")
+    for cid, shape in is_shape.items():
+        if not shape or not w_of[cid]:
+            continue
+        left = abs_x(cid)
+        lo = min(lo, left)
+        hi = max(hi, left + w_of[cid])
+    return lo, hi
+
+
+def test_nested_stencil_glyph_is_centered_in_box():
+    """A stencil that wraps its glyph in an intermediate OFFSET group (like OCI
+    ``object-storage`` / ``cdn``) must still render the glyph centred within the
+    78px node box, so the bottom label — anchored to that box — is not shifted.
+
+    Regression for docs/REVIEW.md D16: the bbox was measured in each cell's local
+    frame, so the wrapper group's ~14px offset was not cancelled by the centering
+    pad and the glyph rendered right of centre.
+    """
+    # id=2 is a pure group wrapper; id=3 is an intermediate group offset by 14px;
+    # the real glyph shape (id=4) is 78-wide inside it. Declared root box (106)
+    # is wider than the glyph, exactly the object-storage shape.
+    xml = (
+        "<mxGraphModel><root>"
+        '<mxCell id="0"/><mxCell id="1" parent="0"/>'
+        '<mxCell id="2" style="group" vertex="1" parent="1">'
+        '<mxGeometry width="106" height="101" as="geometry"/></mxCell>'
+        '<mxCell id="3" style="group" vertex="1" parent="2">'
+        '<mxGeometry x="14" y="0" width="78" height="78" as="geometry"/></mxCell>'
+        '<mxCell id="4" style="shape=stencil(AAAA);html=1" vertex="1" parent="3">'
+        '<mxGeometry x="0" y="0" width="78" height="78" as="geometry"/></mxCell>'
+        "</root></mxGraphModel>"
+    )
+    stencils = {"object-storage": {"w": 106, "h": 101, "xml": xml}}
+    icon = dl.OciStencilIcon(stencils, "object-storage")
+    node = dl.Node(id="model-storage", label="model-storage", x=0, y=0, render=icon)
+    rendered = node.render(node, "1")
+    lo, hi = _glyph_center_x(rendered)
+    center = (lo + hi) / 2.0
+    box_center = dl.ICON_SIZE / 2.0
+    assert abs(center - box_center) <= 1.5, (
+        f"glyph center_x={center:.1f} not within 1.5px of box center "
+        f"{box_center:.1f} (glyph x=[{lo:.1f},{hi:.1f}])"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# 1.10.3: captions stay readable when an edge must pass them.
+# --------------------------------------------------------------------------- #
+
+
+def _stub_icon(node, parent):
+    return (
+        f'        <mxCell id="{node.id}" value="{node.label}" '
+        f'style="shape=x;{dl._LABEL_STYLE}{dl.overlay_suffix(node)}" vertex="1" parent="{parent}">\n'
+        f'          <mxGeometry x="{node.x}" y="{node.y}" width="78" height="78" as="geometry" />\n'
+        "        </mxCell>\n"
+    )
+
+
+def test_container_caption_moves_off_a_top_entry_drop():
+    b = dl.Boundary("boundary-vpc", "vcn-primary us-ashburn-1", x=40, y=300, w=900, h=600,
+                    style="rounded=0;dashed=1;fillColor=none;align=left;verticalAlign=top;spacingLeft=5")
+    src = dl.Node("src", "src", 100, 90, render=_stub_icon)
+    tgt = dl.Node("tgt", "tgt", 110, 400, render=_stub_icon)
+    e = dl.Edge("e", "src", "tgt", "1", exit=(1.0, 0.5), entry=(0.5, 0.0),
+                points=[(220, 129), (220, 250), (149, 250)])
+    [moved] = dl._clear_container_captions([b], [src, tgt], dl._orthogonalised([e], [src, tgt]))
+    assert moved.style != b.style
+    left = int(re.search(r"spacingLeft=(\d+)", moved.style).group(1))
+    assert b.x + left > 149, "caption text must start right of the drop column"
+
+
+def test_clear_caption_is_left_byte_identical():
+    b = dl.Boundary("boundary-vpc", "vpc", x=40, y=300, w=900, h=600)
+    assert dl._clear_container_captions([b], [], []) == [b]
+
+
+def test_bottom_exit_through_own_caption_is_drawn_behind_it():
+    src = dl.Node("lb", "lb-primary", 120, 400, render=_stub_icon)
+    tgt = dl.Node("app", "app", 120, 600, render=_stub_icon)
+    zone = dl.Boundary("boundary-az", "az", x=90, y=560, w=300, h=200,
+                       style="rounded=1;fillColor=#DFDCD8;strokeColor=#9E9892")
+    edge = dl.Edge("down", "lb", "app", "3", exit=(0.5, 1.0), entry=(0.5, 0.0))
+    xml = dl.build_diagram(
+        diagram_id="d", diagram_name="d", title="t | 2026-09-30 | v1",
+        boundaries=[zone], nodes=[src, tgt], edges=[edge],
+        flow_lines=["Flow", "3. down"], legend_x=600,
+    )
+    assert xml.index('id="down"') < xml.index('id="lb"'), "edge must be painted under the node"
+    lb_cell = xml[xml.index('id="lb"'):].split("</mxCell>")[0]
+    assert "labelBackgroundColor=#FFFFFF" in lb_cell  # lb sits on the white canvas
+    app_cell = xml[xml.index('id="app"'):].split("</mxCell>")[0]
+    assert "labelBackgroundColor" not in app_cell  # untouched node

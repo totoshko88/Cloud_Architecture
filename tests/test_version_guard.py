@@ -270,3 +270,53 @@ def test_ci_changelog_stage_is_non_destructive(ci_config: dict) -> None:
     # ...and does not generate/insert a templated entry.
     assert "### Added" not in script
     assert "'w'" not in script and "open(path, 'w'" not in script
+
+
+# --- docs Python-floor consistency (process fix after 1.10.2) ----------------
+
+
+def test_python_floor_docs_agree_in_repo() -> None:
+    """The shipped docs' Python floor matches pyproject requires-python.
+
+    Guards against the CONTRIBUTING.md drift where it said "Python 3.14+" long
+    after the floor moved to 3.11 (the single-source-of-truth failure G5 fixed
+    for the release version).
+    """
+    from rule_engine.version_guard import python_floor_doc_problems
+
+    assert python_floor_doc_problems(REPO_ROOT) == []
+
+
+def test_python_floor_doc_drift_is_flagged(tmp_path: Path) -> None:
+    """A doc naming a floor different from requires-python is a problem."""
+    from rule_engine.version_guard import python_floor_doc_problems
+
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nrequires-python = ">=3.11"\n', encoding="utf-8"
+    )
+    # A stale prerequisite claim, exactly like the old CONTRIBUTING.md.
+    (tmp_path / "CONTRIBUTING.md").write_text(
+        "- **Python 3.14+** — the core targets `python_requires >= 3.14`.\n",
+        encoding="utf-8",
+    )
+    problems = python_floor_doc_problems(tmp_path)
+    assert problems, "expected the 3.14 floor claim to be flagged"
+    assert any("3.14" in p and "3.11" in p for p in problems)
+
+
+def test_python_floor_matrix_mention_is_not_flagged(tmp_path: Path) -> None:
+    """A CI-matrix list of versions is not a floor claim and must not trip."""
+    from rule_engine.version_guard import python_floor_doc_problems
+
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nrequires-python = ">=3.11"\n', encoding="utf-8"
+    )
+    (tmp_path / "README.md").write_text(
+        "The CI test matrix runs 3.11, 3.12, 3.13 and 3.14.\n", encoding="utf-8"
+    )
+    assert python_floor_doc_problems(tmp_path) == []
+
+
+def test_python_docs_cli_mode(capsys: pytest.CaptureFixture) -> None:
+    """``--python-docs`` exits 0 on the consistent repo tree."""
+    assert main(["--python-docs", str(REPO_ROOT)]) == 0

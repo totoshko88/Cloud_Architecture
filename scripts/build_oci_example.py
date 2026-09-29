@@ -48,6 +48,7 @@ from rule_engine.diagram_layout import (  # noqa: E402
     OciStencilIcon,
     build_diagram,
 )
+from rule_engine.icon_resolver import resolve_container  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STENCILS = REPO_ROOT / "assets" / "vendor" / "oci-stencils" / "stencils.json"
@@ -167,11 +168,13 @@ def build(stencils: Dict[str, Any]) -> str:
         # 1600px flow budget — before D8 the boundary ran to 1400 and the block to
         # 1840, over budget.
         Boundary("boundary-compartment", "compartment-acme-prod",
-                 x=40, y=70, w=1220, h=790, stroke="#00A000"),
+                 x=40, y=70, w=1220, h=790,
+                 style=resolve_container("boundary", "oci")["style_string"]),
         # Network boundary encloses streaming/ingest/generative/training/vault
         # (x 620..958, y 200..758) with >=1 grid-step padding on every side.
         Boundary("boundary-vcn", "vcn-prod",
-                 x=580, y=150, w=420, h=670, stroke="#0062AD"),
+                 x=580, y=150, w=420, h=670,
+                 style=resolve_container("network_boundary", "oci")["style_string"]),
     ]
     nodes: List[Node] = []
     for spec in NODE_SPECS:

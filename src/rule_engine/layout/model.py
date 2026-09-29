@@ -94,6 +94,12 @@ class EdgeSpec:
     marker: str
     dashed: bool = False
     kind_hint: Optional[str] = None
+    #: Engine-derived (never authored): ``True`` when both endpoints belong to
+    #: the same non-empty region, ``False`` for two different regions, ``None``
+    #: when unknown. Set by ``layout()`` from the node declarations so the
+    #: geometric classifier never calls an in-region hop ``cross-region`` just
+    #: because it is long (1.10.3). Not a coordinate.
+    same_region: Optional[bool] = None
 
 
 @dataclass(frozen=True)
@@ -105,7 +111,7 @@ class ContainerSpec:
     """
 
     id: str
-    kind: str  # "account" | "vpc" | "az"
+    kind: str  # "account" | "region" | "vpc" | "az"
     region: str
     parent: Optional[str]  # nesting: az.parent = vpc, vpc.parent = account
     label_key: str  # the skin fills the concrete label
