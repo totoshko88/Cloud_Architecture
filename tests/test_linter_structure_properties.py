@@ -1009,3 +1009,20 @@ def test_property_7b_secret_finding_locates_never_leaks(
             # offender is never *equal* to the value the Linter must not leak.
             _offender_locates_only(offender)
             assert offender != secret_str
+
+
+def test_overlay_named_legend_is_not_covered_by_the_legend_heading(tmp_path) -> None:
+    # Found by Hypothesis in CI (1.10.3): a marker spelled ``legend`` was counted
+    # as documented because the box's own ``Legend`` heading was tokenised.
+    cells = [
+        _legend_cell(["solid line = primary flow"]),
+        CellModel(id="n0", parent="1", label="node0",
+                  style="rounded=1;overlay=legend;whiteSpace=wrap;", vertex=True,
+                  geom=Geom(x=0.0, y=0.0, w=78.0, h=78.0)),
+    ]
+    model = DiagramModel(pages=(PageModel(name="p", cells=tuple(cells), grid_size=10),))
+    p = tmp_path / "diagram.drawio"
+    p.write_text(S.serialize_drawio(model), encoding="utf-8")
+    (artifact,) = parse_artifacts(str(p))
+    findings = _overlay_findings(lint(artifact))
+    assert len(findings) == 1 and set(findings[0]["offenders"]) == {"legend"}

@@ -346,9 +346,14 @@ def _parse_drawio_page(path: str, page: Page, text: str) -> Artifact:
             overlay_markers.append(term)
     legend_overlay_terms: List[str] = []
     if legend_lines is not None:
+        # The ``Legend`` heading names the box; it documents nothing, so a marker
+        # spelled ``legend`` must not count as covered by it.
+        body = list(legend_lines)
+        if body and body[0].strip().casefold() == _LEGEND_HEADING:
+            body = body[1:]
         legend_tokens = {
             tok.casefold()
-            for line in legend_lines
+            for line in body
             for tok in re.split(r"[^A-Za-z0-9_\-]+", line)
             if tok
         }

@@ -30,6 +30,7 @@ All notable changes to the Rule Engine are recorded here, per released version, 
 - **Caption contrast ≥ 4.5:1** on all container styles (Azure zone `#50E6FF`, GCP yellow zone, AWS/GCP light captions), enforced by a mapping test.
 - **`_container_style`** falls back only for an absent kind; a malformed level style now raises.
 - **`CONTRIBUTING.md`** Python prerequisite corrected to `>=3.11`.
+- **`overlay-legend-coverage`** no longer counts the `Legend` heading itself as documenting a marker named `legend`.
 
 ## [1.10.2] - 2026-09-29
 
