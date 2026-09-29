@@ -353,9 +353,16 @@ def _reverse_role_index(provider: str) -> Mapping[str, FrozenSet[str]]:
 
     The signature is the normalised icon reference a drawn node carries
     (:func:`_normalise_ref`): the icon-index ``ref`` basename/slug for the
-    file-path (azure/gcp) and OCI providers, and the ``resIcon`` id for AWS. One
-    signature may map to several roles (a shared fallback icon), so the value is
-    a role *set*. Built once per provider from committed data only (Decision D5).
+    file-path providers (aws/azure/gcp) and OCI slug for oci. One signature may
+    map to several roles (a shared fallback icon), so the value is a role *set*.
+    Built once per provider from committed data only (Decision D5).
+
+    Since v1.10.2, AWS uses official SVG file paths (``image=assets/vendor/aws-
+    icons/...``) instead of the legacy ``mxgraph.aws4.*`` stencils. AWS is now
+    treated the same as Azure/GCP: file-path reverse-indexing through
+    ``_mapping_style_signatures`` and the ``icon-index.json`` roles layer.
+    For backward compatibility, the legacy ``mxgraph.aws4.*`` stencil IDs are
+    also recognized via ``_AWS_PRESENTATION_RESICON`` and ``seed_icons()``.
     """
     index: Dict[str, Set[str]] = {}
 
@@ -363,18 +370,19 @@ def _reverse_role_index(provider: str) -> Mapping[str, FrozenSet[str]]:
         if signature:
             index.setdefault(signature, set()).add(role)
 
+    # AWS backward compatibility: recognize legacy mxgraph.aws4.* stencil IDs
+    # so that existing hand-authored diagrams and test fixtures still reconcile.
     if provider == "aws":
         # Nine neutral types: mxgraph.aws4.<id> from the terminology seed.
         for role, (icon_id, _name, _hex) in seed_icons().get("aws", {}).items():
             # icon_id is e.g. "mxgraph.aws4.s3" -> signature "s3".
             _add(_normalise_ref(icon_id.rsplit(".", 1)[-1]), role)
-        # Seven presentation roles: the committed resIcon table above.
+        # Presentation roles: the committed resIcon table.
         for role, ids in _AWS_PRESENTATION_RESICON.items():
             for icon_id in ids:
                 _add(_normalise_ref(icon_id), role)
-        return {sig: frozenset(roles) for sig, roles in index.items()}
 
-    # File-path (azure/gcp) and OCI providers, two committed sources folded in:
+    # All file-path providers (aws/azure/gcp) and OCI, two committed sources:
     #
     #   1. mappings/<provider>-icons.yaml `resources` — the per-provider style
     #      for each of the nine neutral types. Azure/GCP draw these as
@@ -603,6 +611,13 @@ def _drawn_signature(ref: Any) -> Optional[str]:
     * ``azure2`` / ``image`` — a file path → its basename stem.
     * ``oci-slug`` — the slug verbatim.
     Other kinds (``oci-glyph``, ``generic-shape``) carry no role signature.
+
+    An ``image`` ref's ``reference`` is already the asset *path*, not the inline
+    glyph: :func:`icon_refs.extract_refs` takes the image identity from the
+    ``iconRef=<assets/vendor/...>`` companion token when a node embeds its glyph
+    as ``image=data:image/svg+xml,<b64>`` (so it renders in the draw.io editor),
+    and falls back to the ``image=`` path otherwise. So the reverse-map reduces
+    the real asset path here and never sees the opaque data-URI.
     """
     kind = getattr(ref, "kind", None)
     reference = getattr(ref, "reference", None)

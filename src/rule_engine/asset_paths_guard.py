@@ -65,9 +65,13 @@ def _default_workspace_root() -> Path:
     return REPO_ROOT
 
 
-# Extract the path from an ``image=<path>`` draw.io style token. The value runs
-# to the next ``;`` or the end of the style string.
-_IMAGE_RE = re.compile(r"image=([^;]+)")
+# Extract the path from an ``image=<path>`` or ``iconRef=<path>`` draw.io style
+# token. Each value runs to the next ``;`` or the end of the style string. The
+# ``iconRef=`` companion carries the real asset path when a node embeds its glyph
+# inline as ``image=data:image/svg+xml,<b64>`` (so it renders in the draw.io
+# editor); validating it here keeps a missing/renamed asset caught in CI even
+# though the ``image=`` token is now an opaque data-URI.
+_IMAGE_RE = re.compile(r"(?:image|iconRef)=([^;]+)")
 
 # Prefixes that are NOT repo-relative asset files and must be skipped.
 _SKIP_PREFIXES = ("data:", "img/lib/", "http://", "https://")
@@ -100,7 +104,13 @@ class StencilRef:
 
 
 def _iter_style_images(entry: object):
-    """Yield each ``image=<path>`` value found in a mapping entry's style."""
+    """Yield each ``image=<path>`` / ``iconRef=<path>`` value in an entry's style.
+
+    Both tokens are read so an entry that embeds its glyph inline
+    (``image=data:...;iconRef=<assets/vendor/...>``) still has its real asset
+    path validated; the ``data:`` ``image=`` value itself is later skipped by
+    :func:`_is_checkable`.
+    """
     if not isinstance(entry, dict):
         return
     style = entry.get("style")

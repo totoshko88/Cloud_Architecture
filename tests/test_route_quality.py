@@ -99,29 +99,33 @@ _EXAMPLES = _REPO_ROOT / "examples"
 #: this ``0.0`` ceiling would then reject. No non-zero penalty is fabricated — the
 #: ceilings mirror the measurement exactly (all runs at clearance 40 → penalty 0.0).
 #:
-#: The landscape floor of ``(3, 2, 0.0)`` is the same crossing/rail count as the
-#: reviewer's hand-routed reference (``копія``), reached with three fewer turns. Its
-#: three remaining crossings are the ones that hand-routing also kept — two long
-#: runs in the one band above the edge tier, and two straight tier drops crossed by
-#: a run that has to pass them — and the two rails are the single left-gap corridor
-#: the tier-skip needs, both at the 40px threshold. ``gcp/01`` / ``oci/01`` sit at 4
-#: crossings because their hub is approached from the side it fans out on; that is a
-#: placement gap (docs/REVIEW.md), not a routing one, and is held (R5.2 / R5.3).
+#: The landscape floor of ``(2, 2, 0.0)`` improves on the reviewer's hand-routed
+#: reference (``копія``, three crossings) by one, reached with three fewer turns.
+#: Its two remaining crossings are two straight tier drops crossed by a run that
+#: has to pass them; the third crossing the reference kept — the two edge-tier
+#: back-edges ``l1`` (``dns→lb_a``) and ``l15`` (``cdn→lb_a``) converging on the
+#: load balancer's top — was removed in 1.10.2 by the *Converging edges* corridor
+#: ordering (``decide_converging_corridors``): ``cdn``'s drop is leftmost so it
+#: runs on the higher lane and ``dns`` on the lower, and neither vertical drop
+#: cuts the other's run. The two rails are the single left-gap corridor the
+#: tier-skip needs, both at the 40px threshold. ``gcp/01`` / ``oci/01`` sit at 4
+#: crossings because their hub is approached from the side it fans out on; that is
+#: a placement gap (docs/REVIEW.md), not a routing one, and is held (R5.2 / R5.3).
 _CEILING = {
     "aws/01-aws-agent-platform.drawio": (0, 0, 0.0),
-    "aws/02-aws-ha-multiregion-landscape.drawio": (3, 2, 0.0),
+    "aws/02-aws-ha-multiregion-landscape.drawio": (2, 2, 0.0),
     "aws/02-aws-ha-multiregion-summary.drawio": (0, 0, 0.0),
     "aws/03-aws-hybrid-infrastructure.drawio": (0, 0, 0.0),
     "azure/01-azure-openai-rag.drawio": (0, 0, 0.0),
-    "azure/02-azure-ha-multiregion-landscape.drawio": (3, 2, 0.0),
+    "azure/02-azure-ha-multiregion-landscape.drawio": (2, 2, 0.0),
     "azure/02-azure-ha-multiregion-summary.drawio": (0, 0, 0.0),
     "cross-cloud/01-cross-cloud-composition.drawio": (0, 0, 0.0),
     "gcp/01-gcp-vertex-pipeline.drawio": (4, 0, 0.0),
-    "gcp/02-gcp-ha-multiregion-landscape.drawio": (3, 2, 0.0),
+    "gcp/02-gcp-ha-multiregion-landscape.drawio": (2, 2, 0.0),
     "gcp/02-gcp-ha-multiregion-summary.drawio": (0, 0, 0.0),
     "generic/01-generic-reference-architecture.drawio": (2, 0, 0.0),
     "oci/01-oci-genai-stack.drawio": (4, 0, 0.0),
-    "oci/02-oci-ha-multiregion-landscape.drawio": (3, 2, 0.0),
+    "oci/02-oci-ha-multiregion-landscape.drawio": (2, 2, 0.0),
     "oci/02-oci-ha-multiregion-summary.drawio": (0, 0, 0.0),
 }
 

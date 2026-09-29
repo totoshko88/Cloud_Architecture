@@ -328,6 +328,16 @@ glyph, so the marker is additive only. Use it for a genuine symmetric mirror —
 passive region, a standby AZ — never to excuse a node the author simply forgot to
 connect.
 
+**CRITICAL: standby overlay MUST NOT change the icon's fillColor.** The `standby`
+marker is applied by adding `dashed=1;dashPattern=6 6;` to the node's style and
+appending `-standby` to the label. The icon's original `fillColor` (e.g.
+`fillColor=#E7157B` for SQS, `fillColor=#ED7100` for Lambda) **MUST remain
+unchanged**. A standby node renders the same brand color as an active node — only
+the dashed outline and label suffix distinguish it. Changing the fillColor to red
+or any other color violates Icon Fidelity and confuses the reader (red means
+"blocked/error", not "standby"). If you see a standby node with a changed
+fillColor, that is a defect to fix.
+
 **`callout` (v1.10.0).** A **node label stays short — the service name** — so the
 diagram stays localizable and accessible; the provider guidance (AWS
 `diagram-as-code`) is explicit: "do not embed explanatory text into images; use
@@ -458,6 +468,18 @@ Directional convention (matches the lane order and provider reference diagrams):
 - **Bottom-exit is a last resort, only to remove a crossing.** The default is a right exit (a bottom stub crosses the node's own caption). A tier-skip to a target **strictly below in the same column** MAY exit the bottom **only when** doing so removes a crossing the right-exit route would make and introduces none — verified against the geometry oracle, never applied speculatively.
 - **No edge–label / edge–legend crossings.** Keep every edge clear of the right-side `Flow` and `Legend` cells; reserve the right margin for those blocks and route edges within the diagram body.
 - **Shared trunk, opposite branches (fan-out from one node).** When a single source fans out to targets stacked on the same side, route the edges into **one shared trunk** just outside the source (one clear grid column/row beyond its edge), then branch off it in **opposite directions** — up to the upper targets, down to the lower ones. The branches never overlap, ink and corner count stay low, and the picture reads as a clean tree. This is the one place edges may share a stub (the `corridor-sharing` exemption for a common source/target); prefer it over giving every fan-out edge its own long detour corridor.
+- **Fan-out exit ordering (spatial logic).** When a node fans out multiple edges, assign exit points by the **spatial direction of each target** to avoid crossings:
+  - A target **directly below** (same column) takes the **bottom-centre** exit — a straight vertical drop.
+  - A target **to the right** takes a **right-face** exit — the default direction.
+  - A target **to the left** (a back-edge) takes the **bottom-left** exit band (e.g. `exitX=0.25;exitY=1`) if the back-edge must loop under, OR preferably the **right-face** exit with a clockwise loop over/under. Never share the exact same exit point as another edge.
+  - Order exits left-to-right across the bottom face: **leftward targets get left-band exits**, **downward targets get centre**, **rightward-then-down targets get right-band exits**. This prevents the "cross your own sibling" defect where a leftward loop crosses a rightward run.
+  
+  Example: Lambda fans out to SQS (below), Secrets (right-below), and RDS (left-below):
+  - Edge to SQS: `exitX=0.5;exitY=1` (centre) — straight down
+  - Edge to RDS: `exitX=0.25;exitY=1` (left band) — drops then loops left
+  - Edge to Secrets: `exitX=0.75;exitY=1` (right band) — drops then goes right
+  
+  The three stubs diverge immediately from the glyph with no crossing. Lint-checked: `exit-thirds` (WARNING when too close, **ERROR when identical**).
 
 A node should not sit directly between two other nodes on a straight horizontal or vertical line that an edge must traverse; stagger nodes across lanes (vary the row) so edges route around icons rather than through them.
 
@@ -473,6 +495,21 @@ They were distilled from building a 40-node as-built against this standard.
   target's left** — never exit the same side it enters. Exiting left and
   re-entering left makes the edge cross its own column. Give the back-edge its
   own grid-step corridor above (or below) the node rows so it clears every icon.
+  **Bottom exit is acceptable for a back-edge** only when the target is both
+  **below AND to the left** — in which case use the **bottom-left band**
+  (`exitX≈0.25;exitY=1`) so the stub drops into a leftward corridor without
+  crossing siblings that exit centre or right. Lint-checked: `back-edge-exit`
+  (WARNING when a leftward target is reached via bottom-centre or right-band exit
+  that crosses other downward edges).
+- **Converging edges: corridor y priority by entry x proximity.** When multiple edges **from different sources** converge on the same target's top face (top entry), assign horizontal corridor y-coordinates so **the edge with the entry point closest to the target's left edge (smallest entryX) gets the higher corridor (smaller y), and the edge with the entry point closest to the target's right edge (largest entryX) gets the lower corridor (larger y)**. The rule ensures that vertical drops from the horizontal corridor to the entry points do not cross each other.
+  
+  Example: `cdn → lb_a` (entryX=0.26, left side) and `dns → lb_a` (entryX=0.77, right side):
+  - cdn edge: corridor y=220 (higher) → drops to entry x=140
+  - dns edge: corridor y=300 (lower) → drops to entry x=180
+  
+  With cdn's horizontal run above dns's run, their vertical drops are parallel and do not intersect — cdn drops first (at x=140), dns continues past it and drops second (at x=180). If the corridors were reversed (dns higher, cdn lower), the dns vertical drop at x=180 would cross the cdn horizontal run at y=300.
+  
+  The general principle: **the last vertical leg (drop to target) has priority for the edge that turns first** — order the horizontal corridors so the vertical drops occur left-to-right (or right-to-left) in the same sequence as the entry points across the target's face.
 - **Longer clean detour over a short crossing.** When routing an edge either
   short-but-through an unrelated icon, or longer-but-around it, always choose the
   longer path that stays in declared corridors. A fan-out edge from a stacked
@@ -508,9 +545,107 @@ Practically: give each region/VPC its own horizontal band with a clear gap betwe
 
 **Size a parent's envelope from its deepest child's FOOTPRINT, not its top.** A parent container's bottom (and right) must clear its deepest/rightmost child by ≥ 1 grid step measured against that child's **footprint** (icon + label band), and the child container must clear ITS deepest node the same way. Grow the parent's height/width to satisfy this — never shrink a child box until its own node's label touches its border. Concretely: if the lowest node's footprint bottom is `B`, the enclosing AZ box bottom is ≥ `B + 30`, the VPC box bottom is ≥ `AZ_bottom + 30`, and the Account box bottom is ≥ `VPC_bottom + 30`; the page height follows the Account box. A nested box whose bottom coincides with its parent's bottom (flush) is a `container-padding` finding.
 
+**Containers wrap children snugly — no large empty zones.** A container's size is
+derived **from its children**, not from an arbitrary canvas size or visual
+preference. The formula for each edge:
+
+- **top**: caption strip + `CONTAINER_PAD` (60px total, see above)
+- **left/right**: `min(child.left) - CONTAINER_PAD` / `max(child.right) + CONTAINER_PAD`
+- **bottom**: `max(child_footprint.bottom) + CONTAINER_PAD`
+
+A container that leaves large empty space below its lowest child (hundreds of
+pixels of dead space) is a sizing defect: shrink the container to hug its content.
+Conversely, do not shrink so tight that padding falls below the 30px minimum. The
+goal is **snug fit**: children breathe (≥30px padding on all sides), but no more.
+When the container has no children (an empty placeholder), size it to show its
+purpose — typically 2-3 icon widths — rather than spanning the entire canvas.
+
+This rule prevents diagrams where the Account boundary spans 1800px vertically
+but all content sits in the top 800px, leaving 1000px of empty space below that
+suggests missing content. Calculate container bounds **after** placing all nodes,
+not before.
+
 ## External actors and on-premises sit OUTSIDE the cloud boundaries
 
 An actor (lane `actors`) or an on-premises / external-datacenter node (lane `on-premises`) is **not** an account/region resource and must be placed **outside** the stack Boundary and Network Boundary containers. Only cloud resources live inside them. On-premises resources get their **own** boundary container (an On-premise group) drawn outside and separate from the cloud Account/Region boundary — never inside it, and never as a bare floating icon. The cross-boundary edge (a cloud tool → an on-prem server) then visibly crosses from the cloud boundary into the on-prem boundary, which is the point.
+
+## Service Scope Placement (VPC-scoped vs Regional vs Global)
+
+Cloud services operate at different **scopes** — some require a VPC subnet to deploy
+(VPC-scoped), others are **regional managed services** accessed via endpoints, and some
+are **global**. The diagram MUST reflect this accurately: a regional service drawn
+inside a VPC misrepresents the architecture and implies network isolation that does not
+exist.
+
+### Placement Rules
+
+| Scope | Definition | Diagram placement |
+| --- | --- | --- |
+| **VPC-scoped** | Requires a subnet; instances run inside the network | Inside the Network Boundary container |
+| **Regional** | Managed service; accessed via regional endpoints or private endpoints | Inside the Boundary (Account/Subscription/Project) but **OUTSIDE** the Network Boundary |
+| **Global/Edge** | Service spans regions or is at the network edge | At the top of the diagram (edge lane) or outside all boundaries |
+
+### Common Service Classifications (by provider)
+
+**AWS:**
+- **VPC-scoped:** EC2, EKS (workers), RDS, ElastiCache, ALB/NLB
+- **Regional:** Lambda¹, S3, SQS, SNS, Secrets Manager, Bedrock, DynamoDB
+- **Global/Edge:** CloudFront, Route 53, WAF (when attached to CloudFront)
+
+**Azure:**
+- **VNet-scoped:** VMs, AKS (nodes), Application Gateway
+- **Regional:** Functions¹, Blob Storage, Service Bus, Key Vault, Azure OpenAI, Azure SQL DB²
+- **Global/Edge:** Azure Front Door, Azure CDN, Azure DNS
+
+**GCP:**
+- **VPC-scoped:** Compute Engine, GKE (nodes), Cloud SQL (private IP)
+- **Regional:** Cloud Functions¹, Vertex AI
+- **Global:** Cloud Storage, Pub/Sub, Secret Manager, Cloud CDN, Cloud DNS, Cloud Load Balancing
+
+**OCI:**
+- **VCN-scoped:** Compute, OKE (nodes), Autonomous DB (private endpoint), Load Balancer
+- **Regional:** Functions¹, Object Storage, Streaming, Vault, OCI Generative AI
+
+¹ Serverless functions (Lambda, Functions, Cloud Functions) are **regional by default**.
+When VPC-attached/integrated, represent them with a VPC endpoint icon inside the VPC and
+the function itself outside, or note "VPC-attached" in the label.
+
+² Azure SQL DB can use VNet service endpoints or private endpoints. When using private
+endpoint, draw the endpoint inside VNet and the service outside.
+
+### Visual Layout
+
+The reference layout for a diagram with mixed scopes:
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  [CDN]  [DNS]  [WAF]                  ← Global/Edge (top)    │
+├──────────────────────────────────────────────────────────────┤
+│ Account / Subscription / Project                             │
+│  ┌─────────────────────────┐  ┌────────────────────────────┐ │
+│  │ VPC / VNet / VCN        │  │ Regional Services          │ │
+│  │                         │  │                            │ │
+│  │  [EKS]   [RDS]   [ALB]  │  │  [S3]   [SQS]   [Bedrock]  │ │
+│  │  [EC2]   [Cache]        │  │  [Secrets]   [Lambda]      │ │
+│  │                         │  │                            │ │
+│  └─────────────────────────┘  └────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────┘
+```
+
+This separation is **architecturally accurate**: a reader immediately sees which
+services are network-isolated (inside VPC) and which are accessed via AWS/Azure/GCP
+backbone endpoints (outside VPC but inside the account).
+
+### Private Endpoints
+
+When a regional service is accessed via a Private Endpoint (AWS PrivateLink, Azure
+Private Endpoint, GCP Private Service Connect), draw:
+1. The **endpoint** (interface endpoint, private endpoint resource) **inside** the VPC
+2. The **service** (S3, Secrets Manager, etc.) **outside** the VPC in the regional zone
+3. An edge labeled "private endpoint" or "PrivateLink" connecting them
+
+This accurately shows that the service itself is regional but traffic flows through a
+private network path.
 
 ## Layout Geometry (canonical, all providers)
 
@@ -673,6 +808,73 @@ endlegend
 - Produce a **C4 container diagram** for a cross-cloud composition that names each provider and labels every cross-provider edge with the data flow it represents.
 - Render every Boundary and Network Boundary of each provider using the container group style of the corresponding Provider Profile.
 - If a referenced Provider Profile declares no container group style for its Boundary or Network Boundary, return a profile-convention error identifying the affected provider and boundary, and exclude the incomplete diagram from publication.
+
+## Live Agent Generation (hand-authored `.drawio`)
+
+When generating a `.drawio` diagram **without** using the layout engine (`layout()` +
+`build_diagram()` pipeline), follow these exact formulas and rules to avoid the
+defects that occur when values are guessed.
+
+### Flow/Legend Box Sizing (mandatory formulas)
+
+The two right-margin text boxes (`Flow` and `Legend`) must be sized to their actual
+content, accounting for text wrap when a narrow width is pinned.
+
+**Width calculation** (both boxes share one width):
+```
+chars_per_line = (width - 20) / 5.6   # ~5.6px per 12px glyph
+# width = max_line_chars * 5.6 + 20, rounded up to grid (10)
+```
+
+**Height calculation** (wrap-aware):
+```
+visual_lines = sum(ceil(len(line) / chars_per_line) for line in lines)
+height = visual_lines * 16 + 20       # 16px leading + 20px padding
+```
+
+**Position calculation**:
+```
+legend_x = account_boundary.right + 30   # CONTAINER_PAD gap
+legend_y_legend = max(legend_y_hint, flow_y + flow_h + 10)  # clear Flow by 1 grid step
+page_w = max(all_containers.right, legend_x + box_w) + 60   # PAGE_MARGIN
+```
+
+**Anti-pattern**: hard-coding `height="200"` without calculating the actual wrapped
+line count. A 10-line Flow list at `width=180` can need 340px, not 200px.
+
+### Icon Styles (never invent colors)
+
+Every node icon **must** use the official style from `mappings/<provider>-icons.yaml`.
+The style includes the correct `fillColor` for the service family.
+
+**AWS service family colors** (non-exhaustive — always consult the mapping):
+
+| Family | fillColor | Example services |
+| --- | --- | --- |
+| Compute / Lambda | `#ED7100` | Lambda, EC2, ECS |
+| Networking / ELB | `#8C4FFF` | ALB, NLB, API Gateway |
+| Database | `#527FFF` | RDS, Aurora, DynamoDB |
+| Storage | `#7AA116` | S3, EFS |
+| Security | `#DD344C` | WAF, IAM, Secrets Manager, KMS |
+| Integration / SQS | `#E7157B` | SQS, SNS, EventBridge |
+| AI/ML / Bedrock | `#01A88D` | Bedrock, SageMaker |
+| Management | `#BC1356` | Systems Manager, CloudWatch |
+
+**Anti-pattern**: inventing a gray `fillColor=#F5F5F5` or white `fillColor=#FFFFFF` for
+a service icon. Gray/white is **only** for the `spec-required-not-deployed` overlay
+state (an explicit finding, documented in the Legend), never for a deployed service.
+
+**Resolution**: use `icon_resolver.resolve_icon(role, provider)` or read the `style`
+field directly from `mappings/<provider>-icons.yaml` for the service's role.
+
+### External Actors and Edge Crossings
+
+Nodes in the `actors` lane (Slack, webhooks, users) and `on-premises` lane sit
+**outside** the cloud boundary container. Edges from these nodes to services inside
+the boundary **correctly cross the boundary border** — this is not a defect.
+
+**Anti-pattern**: placing external actors inside the Account boundary to avoid
+edge crossings, or marking the crossing edge as an error.
 
 ## Quick Checklist
 

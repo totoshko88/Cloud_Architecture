@@ -53,7 +53,7 @@ every applicable rule against every artifact.
 | `ip-range` | On-diagram text in a Network_Diagram carries a public IP literal (a routable global IPv4/IPv6 that is neither a documentation range — 192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24, 2001:db8::/32 — nor private). Only a Network_Diagram (`landscape` class OR companion `diagram_type` in network/infrastructure/deployment) is evaluated. | WARNING | diagram-standards Documentation IP Ranges / R3 |
 | `orphan-landscape` | A `landscape`-class diagram declares no valid `summary_of` cross-link to a `flow` summary. | ERROR | diagram-standards Diagram Class |
 | `overlay-legend-coverage` | A diagram carries an overlay marker (findings/state vocabulary) whose term does not appear as a whole token in a Legend line. | WARNING | diagram-standards Overlay Vocabulary / R1 AC12 |
-| `exit-thirds` | A node fans out **more than three** edges on one side, or two same-side exits sit closer than ~⅕ of the side (they merge into one doubled line). | WARNING | diagram-standards Label-safe exits |
+| `exit-thirds` | A node fans out **more than three** edges on one side, or two same-side exits sit closer than ~⅕ of the side (they merge into one doubled line). **Raised to ERROR** when two exits share the **exact same** contact point (identical `exitX` and `exitY`). | WARNING/ERROR | diagram-standards Label-safe exits |
 | `entry-thirds` | **More than three** edges arrive on one target face, or two arrivals on one face sit closer than ~⅕ of the face (they stack on one contact point — the entry-side mirror of `exit-thirds`). Raised to ERROR for `landscape`. | WARNING/ERROR | diagram-standards Label-safe exits |
 | `container-overlap` | Two sibling (non-nested) Boundary/Network-Boundary containers overlap. Raised to ERROR for `landscape`. | WARNING/ERROR | diagram-standards Container Nesting |
 | `edge-direction` | An edge with explicit contact points does not exit its source right/bottom and enter its target left/top. Raised to ERROR for `landscape`. | WARNING/ERROR | diagram-standards Edge Routing (directional contract) |
@@ -257,7 +257,7 @@ every applicable rule against every artifact.
   the system, the `landscape` carries the full as-built, and neither ships
   orphaned. `flow` diagrams are unaffected.
 
-- **`exit-thirds` (WARNING)** — *Geometry-enforced from the parsed `.drawio`
+- **`exit-thirds` (WARNING/ERROR)** — *Geometry-enforced from the parsed `.drawio`
   model.* A node's service name renders under its icon, so edges fan out on the
   **right** side (see *Label-safe exits*). The rule enforces two soft, unambiguous
   conditions rather than a rigid grid: (1) a side carries **at most three** exits —
@@ -268,7 +268,12 @@ every applicable rule against every artifact.
   opposite) on the centre while the others spread around it — more readable than
   forced thirds. The rule reads *exit* points only (source-side fan-out); a
   left-side exit is left to `edge-direction`, and edges that float their contact
-  point are ignored. A violation is a WARNING for both classes.
+  point are ignored. **Raised to ERROR** when two exits share the **exact same**
+  contact point (identical `exitX` and `exitY` values) — this is a collision that
+  always renders as overlapping lines, the canonical defect where two edges leave
+  `exitX=0.5;exitY=1` and their stubs run along the same corridor. A near-miss
+  (distinct but too close) stays a WARNING; an exact collision is an ERROR on both
+  classes.
 - **`entry-thirds` (WARNING/ERROR)** — *Geometry-enforced (new in v1.5.1).* The
   **entry-side mirror** of `exit-thirds`. `exit-thirds` inspects only *source*
   fan-out, so two edges arriving on the **same target face at the same contact

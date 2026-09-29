@@ -165,7 +165,13 @@ jobs:
         # examples) and tests/test_generators_fresh.py imports it, so the set
         # regenerated locally and the set checked here are the same list. A new
         # build_*_example.py that is not registered fails the test too.
-        run: pytest -q tests/test_generators_fresh.py
+        #
+        # Also runs tests/test_layout_split_properties.py here: since v1.10.2 the
+        # committed examples embed data-URI icons whose bytes come from the
+        # fetched packs, so its byte-identity / --check assertions can only be
+        # reproduced WITH the packs — they skip in the asset-less ``test`` job and
+        # run for real here, after the fetch above.
+        run: pytest -q tests/test_generators_fresh.py tests/test_layout_split_properties.py
       - name: Enforce the exported .drawio.png export budget (D7, R8.3)
         # Class-aware budget: flow rasters <=1600px/<500KB, landscape <=3600px/<2MB.
         # The linter checks the .drawio source + companion, not the rendered PNG,

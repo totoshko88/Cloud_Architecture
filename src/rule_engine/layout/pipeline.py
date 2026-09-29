@@ -70,6 +70,7 @@ try:  # package-relative import when used as ``rule_engine.layout.pipeline``
         _grid_contact,
         _free_left_corridor_x,
         decide_lane_sides,
+        decide_converging_corridors,
         _exit_band_rank,
         _assign_exit_bands,
         _has_free_left_approach,
@@ -109,6 +110,7 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
         _grid_contact,
         _free_left_corridor_x,
         decide_lane_sides,
+        decide_converging_corridors,
         _exit_band_rank,
         _assign_exit_bands,
         _has_free_left_approach,
@@ -228,6 +230,47 @@ def _global_contacts(
                 ) is not None:
                     exits[edge.id] = (0.5, 1.0)     # bottom-centre → left gap
                     entries[edge.id] = (0.0, 0.5)   # target LEFT face
+
+    # 1b2. Fan-out-row into a CONTENDED left-approach row → enter the TOP instead.
+    #      A fan-out-row hop enters its same-row target's LEFT face along that
+    #      row's centre line. When the node immediately LEFT of the target is the
+    #      *source* of a CROSS-REGION hop, that node's right-centre exit stub runs
+    #      on the very same centre line in the very same gap — so the fan-out's
+    #      left-approach stub and the cross-region exit stub overlap on it
+    #      (``check_corridor-sharing`` flags the pair). The repair loop cannot
+    #      separate them: the shared line is the target's own left-face row, pinned
+    #      by the contact, so bumping only walks the fan-out's drop column sideways
+    #      until it lands ON the cross-region rise — the ``l8``x``l10`` coincident
+    #      point at the AZ-1 db/obj gap. Entering the target's TOP-centre keeps the
+    #      fan-out off the contended centre line entirely (the same reasoning
+    #      :func:`select_contacts` already applies to a below-target that shares a
+    #      replication row), so the finding never arises. Narrow by construction:
+    #      only a left-entering fan-out-row whose target has a cross-region source
+    #      one column to its left on the same row is retargeted; everything else is
+    #      byte-unchanged.
+    xregion_sources = {
+        edge.source
+        for edge in spec.edges
+        if classify_edge(edge, placed) == "cross-region"
+    }
+    for edge in spec.edges:
+        if classify_edge(edge, placed) != "fan-out-row":
+            continue
+        if entries[edge.id] != (0.0, 0.5):   # only a LEFT-face fan-out entry
+            continue
+        tgt = placed[edge.target]
+        # The node one column-step to the target's left, on the same row.
+        left_neighbour = next(
+            (
+                b for nid, b in placed.items()
+                if nid in xregion_sources
+                and abs((b.y + b.h / 2) - (tgt.y + tgt.h / 2)) < 1e-6
+                and abs(b.x + COL_STEP - tgt.x) < 1e-6
+            ),
+            None,
+        )
+        if left_neighbour is not None:
+            entries[edge.id] = (0.5, 0.0)     # top-centre → off the contended row
 
     # 1c. Two-sided fan-out for a SOURCE node (v1.5.1, variant A). A node that is
     #     the *start* of several downward flows — a load balancer or DNS that
@@ -399,17 +442,34 @@ def _global_contacts(
         for eid, pt in spread_contacts(group):
             exits[eid] = pt
 
-    # 2b. Spread shared ENTRY faces per target the same way: the first edge (by
-    #     marker) entering a given target face keeps its centre, the rest shift
-    #     off it, so several arrivals on one face don't stack on one point.
+    # 2b. Spread shared ENTRY faces per target the same way: the first edge
+    #     entering a given target face keeps its centre, the rest shift off it, so
+    #     several arrivals on one face don't stack on one point.
+    #
+    #     Ordering within the group: normally edge-marker order. BUT for a TOP
+    #     face reached by >= 2 edges from DIFFERENT sources (a convergence), order
+    #     by the SOURCE's x instead — leftmost source takes the leftmost band — so
+    #     the drops land left-to-right in source order and the paired
+    #     :func:`decide_converging_corridors` can run the leftmost drop on the
+    #     highest corridor with no crossing (diagram-standards → *Converging
+    #     edges*; the ``l1``x``l15`` fix). Marker order is kept for every other
+    #     face, so no other diagram shape changes.
     by_entry: Dict[Tuple[str, str], List[str]] = {}
     for edge in spec.edges:
         face = _entry_face(entries[edge.id])
         by_entry.setdefault((edge.target, face), []).append(edge.id)
-    for eids in by_entry.values():
+    for (tgt_id, face), eids in by_entry.items():
         if len(eids) < 2:
             continue
-        eids_sorted = sorted(eids, key=_mk)
+        distinct_srcs = {spec.edges[order_index[e]].source for e in eids}
+        if face == "top" and len(distinct_srcs) >= 2:
+            # Converging top face: leftmost source → leftmost drop band.
+            eids_sorted = sorted(
+                eids,
+                key=lambda e: (placed[spec.edges[order_index[e]].source].x, _mk(e)),
+            )
+        else:
+            eids_sorted = sorted(eids, key=_mk)
         group = [(eid, entries[eid]) for eid in eids_sorted]
         for eid, pt in spread_entries(group):
             entries[eid] = pt
@@ -527,11 +587,18 @@ def _route_all_legacy(
     the legacy path is byte-identical (R1.5)."""
     obstacles = [placed[n.id] for n in spec.nodes]
     allocator = CorridorAllocator()
+    # Coordinate the loop corridors of edges that converge on one target's top
+    # face, so the leftmost drop runs on the highest lane (diagram-standards →
+    # *Converging edges*; the ``l1``x``l15`` fix). Absent edges keep their normal
+    # per-edge allocation.
+    corridor_y = decide_converging_corridors(
+        spec, placed, containers, exits, entries, lane_sides
+    )
     placed_edges: List[PlacedEdge] = []
     for edge in spec.edges:
         pts = route_edge(
             edge, exits[edge.id], entries[edge.id], allocator, obstacles, containers,
-            lane_sides.get(edge.id),
+            lane_sides.get(edge.id), corridor_y.get(edge.id),
         )
         # Orthogonalise once, centrally (v1.6.0). Every router computes its
         # corridor correctly but emits the waypoint next to a contact from the

@@ -27,10 +27,9 @@ two further rules no other example covers:
   application node and a database node — the availability dimension read
   horizontally while traffic reads vertically.
 
-Geometry comes from the shared standard (``rule_engine.diagram_layout``): 78×78
-icons, grid step 10, column step 220, row step 160, ≥ 30px container padding,
-right-margin Flow/Legend. Icons are built-in ``mxgraph.aws4.*`` stencils, so the
-diagram renders without the fetched vendor packs.
+**Migration 1.10.2:** Service icons now resolve via ``mappings/aws-icons.yaml``
+using official AWS SVG file paths (like Azure/GCP). Container styles still use
+mxgraph.aws4.group for proper draw.io group behavior.
 
 Usage::
 
@@ -43,7 +42,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import Dict, List, Optional, Sequence
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -54,20 +53,29 @@ from rule_engine.diagram_layout import (  # noqa: E402
     build_diagram,
     builtin_icon,
 )
+from rule_engine.icon_resolver import resolve_icon, resolve_container  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 OUT = REPO_ROOT / "examples" / "aws" / "03-aws-hybrid-infrastructure.drawio"
 
 TITLE = "aws hybrid-infrastructure — Account 111122223333 / eu-central-1 | 2026-09-25 | v1"
 
-# Built-in AWS stencil style per node, verified against mappings/aws4-icons.json
-# (an unknown resIcon renders as an empty box → icon-resolved ERROR).
-_AWS = "shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4"
-_TAIL = "strokeColor=#ffffff;aspect=fixed;html=1"
+
+def _icon(role: str) -> str:
+    """Resolve an icon style from mappings/aws-icons.yaml."""
+    result = resolve_icon(role, "aws")
+    return result["style_string"]
 
 
-def _icon(res: str, fill: str) -> str:
-    return f"{_AWS}.{res};fillColor={fill};{_TAIL}"
+# Cache resolved icon styles
+_ICON_CACHE: Dict[str, str] = {}
+
+
+def _get_icon(role: str) -> str:
+    """Get cached icon style."""
+    if role not in _ICON_CACHE:
+        _ICON_CACHE[role] = _icon(role)
+    return _ICON_CACHE[role]
 
 
 # ---------------------------------------------------------------------------
@@ -84,29 +92,29 @@ ROW_ROUTER = 390
 ROW_APP = 590
 ROW_DATA = 750
 
-# (node id, label, resIcon, brand fill, x, y)
+# (node id, label, role (for icon resolver), x, y)
 NODE_SPECS = [
     # actors lane — OUTSIDE every cloud boundary (left of the Account).
-    ("corp-user", "corporate-user", "user", "#232F3E", 60, ROW_ROUTER),
+    ("corp-user", "corporate-user", "user", 60, ROW_ROUTER),
     # edge lane — global services, inside the Account but outside the VPC.
-    ("dns", "route53-public-zone", "route_53", "#8C4FFF", 380, ROW_EDGE),
-    ("cdn", "cloudfront-edge", "cloudfront", "#8C4FFF", 660, ROW_EDGE),
+    ("dns", "route53-public-zone", "dns", 380, ROW_EDGE),
+    ("cdn", "cloudfront-edge", "cdn", 660, ROW_EDGE),
     # router lane — the public-subnet load balancer, inside the VPC.
-    ("alb", "alb-public", "application_load_balancer", "#8C4FFF", 520, ROW_ROUTER),
+    ("alb", "alb-public", "lb", 520, ROW_ROUTER),
     # workers lane — one application node per Availability Zone (East–West).
-    ("app-a", "ec2-app-az-a", "ec2", "#ED7100", 380, ROW_APP),
-    ("app-b", "ec2-app-az-b", "ec2", "#ED7100", 660, ROW_APP),
+    ("app-a", "ec2-app-az-a", "compute_instance", 380, ROW_APP),
+    ("app-b", "ec2-app-az-b", "compute_instance", 660, ROW_APP),
     # data lane — the writer and its cross-AZ standby.
-    ("db-a", "rds-writer-az-a", "rds", "#527FFF", 380, ROW_DATA),
-    ("db-b", "rds-standby-az-b", "rds", "#527FFF", 660, ROW_DATA),
+    ("db-a", "rds-writer-az-a", "managed_sql", 380, ROW_DATA),
+    ("db-b", "rds-standby-az-b", "managed_sql", 660, ROW_DATA),
     # regional services — in the Account, OUTSIDE the VPC, own column.
-    ("efs", "efs-shared-state", "efs_standard", "#7AA116", 1020, ROW_APP),
-    ("logs", "s3-access-logs", "s3", "#7AA116", 1020, ROW_EDGE),
+    ("efs", "efs-shared-state", "file_system", 1020, ROW_APP),
+    ("logs", "s3-access-logs", "object_store", 1020, ROW_EDGE),
     # on-premises — in its OWN boundary, outside the Account. D8: pulled left
     # from x=1300 to x=1180 (still a disjoint sibling of the Account, gap ≥ grid)
     # so the whole canvas — and the Flow/Legend block one grid step past the
     # tightened on-prem boundary — fits the 1600px flow budget.
-    ("onprem-db", "onprem-oracle", "traditional_server", "#232F3E", 1180, ROW_DATA),
+    ("onprem-db", "onprem-oracle", "traditional_server", 1180, ROW_DATA),
 ]
 
 # Node centres (icon 78 → +39): corp-user(99,429) dns(419,189) cdn(699,189)
@@ -166,16 +174,13 @@ FLOW_LINES = [
     "11. Database replicates to on-premises Oracle (async)",
 ]
 
-# AWS provider container styles (mappings/aws-icons.yaml). The on-premises group
-# uses the dedicated ``group_on_premise`` container icon so it reads as a
-# non-cloud boundary rather than a second account.
+# AWS provider container styles. Containers still use mxgraph.aws4.group for
+# proper draw.io group behavior (only structural elements, not service icons).
+# The on-premises group uses the dedicated ``group_on_premise`` container icon
+# so it reads as a non-cloud boundary rather than a second account.
 _GROUP = "shape=mxgraph.aws4.group;grStroke=1;fillColor=none;dashed=0;verticalAlign=top;align=left;spacingLeft=30;fontSize=12;html=1"
-STYLE_ACCOUNT = (
-    f"{_GROUP};grIcon=mxgraph.aws4.group_account;strokeColor=#232F3E;fontColor=#232F3E"
-)
-STYLE_VPC = (
-    f"{_GROUP};grIcon=mxgraph.aws4.group_vpc2;strokeColor=#8C4FFF;fontColor=#8C4FFF"
-)
+STYLE_ACCOUNT = resolve_container("boundary", "aws")["style_string"]
+STYLE_VPC = resolve_container("network_boundary", "aws")["style_string"]
 STYLE_ONPREM = (
     f"{_GROUP};grIcon=mxgraph.aws4.group_on_premise;strokeColor=#5A6C7D;fontColor=#5A6C7D"
 )
@@ -211,8 +216,8 @@ def build() -> str:
                  x=1150, y=650, w=150, h=300, style=STYLE_ONPREM),
     ]
     nodes: List[Node] = [
-        Node(id=nid, label=label, x=x, y=y, render=builtin_icon(_icon(res, fill)))
-        for (nid, label, res, fill, x, y) in NODE_SPECS
+        Node(id=nid, label=label, x=x, y=y, render=builtin_icon(_get_icon(role)))
+        for (nid, label, role, x, y) in NODE_SPECS
     ]
     return build_diagram(
         diagram_id="aws-hybrid-infrastructure",

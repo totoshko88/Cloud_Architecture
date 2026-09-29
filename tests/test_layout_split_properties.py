@@ -118,6 +118,19 @@ from tests.test_layout_engine_property import _small_valid_spec  # noqa: E402
 _OCI_STENCILS = _REPO / "assets" / "vendor" / "oci-stencils" / "stencils.json"
 _OCI_ASSETS_PRESENT = _OCI_STENCILS.is_file()
 
+# Since v1.10.2 the generators EMBED each ``assets/vendor`` icon as a
+# ``data:image/svg+xml,<base64>`` data-URI so the glyph renders in the draw.io
+# editor. That base64 is a function of the fetched SVG bytes, so the committed
+# byte-for-byte example can only be reproduced where the icon packs are present.
+# A bare CI ``test`` checkout does not fetch them (only ``validate`` does), where
+# the generator falls back to the legacy ``image=<path>`` form and the committed
+# embed-form no longer matches — an ENVIRONMENT condition, not a broken split.
+# The byte-identity / --check gates run for real in the with-assets ``validate``
+# job and skip here when the packs are absent, exactly like the OCI skip.
+from rule_engine.asset_paths_guard import asset_root_present  # noqa: E402
+
+_ICON_ASSETS_PRESENT = asset_root_present(_REPO)
+
 _HA_PROVIDERS = ("aws", "azure", "gcp", "oci")
 
 
@@ -196,6 +209,12 @@ def test_layout_output_is_byte_identical_to_committed(provider, kind, rel_path):
             "OCI stencil pack not fetched in this environment; run "
             "scripts/fetch_assets.py --only oci to fetch it."
         )
+    if not _ICON_ASSETS_PRESENT:
+        pytest.skip(
+            "icon packs not fetched (assets/vendor absent); the committed "
+            "example embeds data-URI icons that cannot be reproduced without "
+            "the packs. The with-assets ``validate`` CI job fetches them first."
+        )
     committed_path = _EXAMPLES / rel_path
     assert committed_path.is_file(), f"missing committed example examples/{rel_path}"
     committed = committed_path.read_text(encoding="utf-8")
@@ -239,6 +258,13 @@ def test_generator_check_reports_no_difference(script):
         pytest.skip(
             f"{script}: OCI stencil pack not fetched; run "
             f"scripts/fetch_assets.py --only oci.\n{diagnostics}"
+        )
+    if not _ICON_ASSETS_PRESENT:
+        pytest.skip(
+            f"{script}: icon packs not fetched (assets/vendor absent); the "
+            "committed example embeds data-URI icons that cannot be reproduced "
+            "without the packs. The with-assets ``validate`` CI job fetches them "
+            f"first.\n{diagnostics}"
         )
     assert result.returncode == 0, (
         f"generator --check reports a DIFFERENCE after the layout/ split — the "
@@ -312,6 +338,12 @@ def test_legacy_generator_reproduces_pre_placement_loop_geometry(provider, kind,
     :func:`test_layout_output_is_byte_identical_to_committed` (Part 1)."""
     if provider == "oci" and not _OCI_ASSETS_PRESENT:
         pytest.skip("OCI stencil pack not fetched in this environment.")
+    if not _ICON_ASSETS_PRESENT:
+        pytest.skip(
+            "icon packs not fetched (assets/vendor absent); the committed "
+            "example embeds data-URI icons that cannot be reproduced without the "
+            "packs. The with-assets ``validate`` CI job fetches them first."
+        )
     committed_path = _EXAMPLES / rel_path
     assert committed_path.is_file(), f"missing committed example examples/{rel_path}"
 

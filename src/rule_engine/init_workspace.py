@@ -487,8 +487,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         "--with-assets", action="store_true",
         help="After copying, download the official provider icon packs into the "
         "target workspace (assets/vendor) and rebuild its icon-index.json. "
-        "Required for GCP/OCI icons to actually render (AWS/Azure are built into "
-        "draw.io; GCP/OCI icons are file/stencil assets that are not committed).",
+        "Required for AWS/GCP/OCI icons to render and to embed as data-URIs "
+        "(since v1.10.2 they are file/stencil assets that are not committed; only "
+        "Azure's bulk icons are built into draw.io).",
     )
     parser.add_argument(
         "--version", action="store_true",
@@ -595,12 +596,16 @@ def _report_check(source: Path, target: Path, groups: dict[str, list[str]]) -> i
 def _fetch_assets_into(target: Path) -> int:
     """Download the official icon packs into ``target`` and rebuild its index.
 
-    AWS/Azure icons ship inside the draw.io app, but GCP (file-path SVGs) and OCI
-    (embedded stencils) resolve to files under ``assets/vendor`` — which are NOT
-    committed (git-ignored). Without them a GCP/OCI diagram renders empty boxes in
-    a fresh workspace. This fetches the packs into the target and rebuilds the
-    target's ``mappings/icon-index.json`` so those references resolve on disk.
-    Every write stays inside ``target`` (R7.6).
+    Since v1.10.2 AWS, GCP and OCI all resolve their icons to files under
+    ``assets/vendor`` (AWS + GCP as file-path SVGs, OCI as embedded stencils) —
+    which are NOT committed (git-ignored) — and the generator EMBEDS each SVG as a
+    ``data:image/svg+xml`` data-URI so the glyph renders in the draw.io editor.
+    Without the packs a fresh workspace generates those icons in the legacy
+    ``image=<path>`` form, which renders blank in the editor. Only Azure's bulk
+    icons ship inside the draw.io app (``img/lib/azure2``); its two fetched-pack
+    icons need the packs like the others. This fetches the packs into the target
+    and rebuilds the target's ``mappings/icon-index.json`` so every reference
+    resolves and embeds on disk. Every write stays inside ``target`` (R7.6).
     """
     try:
         from rule_engine import fetch_assets
@@ -614,7 +619,7 @@ def _fetch_assets_into(target: Path) -> int:
         return EXIT_FAIL
 
     print("rule-engine-init: fetching official icon packs into "
-          f"{target / 'assets' / 'vendor'} (GCP/OCI icons)...")
+          f"{target / 'assets' / 'vendor'} (AWS/GCP/OCI + Azure fetched icons)...")
     try:
         failures = fetch_assets.fetch_all(target)
     except Exception as exc:  # noqa: BLE001

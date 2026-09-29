@@ -30,6 +30,20 @@ import pytest
 _REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_REPO / "scripts"))
 
+# Since v1.10.2 the generators EMBED each ``assets/vendor`` icon as a
+# ``data:image/svg+xml,<base64>`` data-URI (so the glyph renders in the draw.io
+# editor, not only in PNG export). That base64 is a function of the fetched SVG
+# bytes, so a committed example can only be reproduced where the icon packs are
+# present. A bare CI ``test`` checkout does not fetch them (only the ``validate``
+# job does), so without the packs the generator falls back to the legacy
+# ``image=<path>`` form and ``--check`` reports STALE — an ENVIRONMENT condition,
+# not a broken generator. The freshness gate therefore runs for real in the
+# with-assets ``validate`` job and is skipped here when the packs are absent,
+# exactly as the OCI-stencil skip already does per-generator.
+from rule_engine.asset_paths_guard import asset_root_present  # noqa: E402
+
+_ASSETS_PRESENT = asset_root_present(_REPO)
+
 from regen_examples import (  # noqa: E402
     EXAMPLES,
     GENERATORS,
@@ -75,6 +89,13 @@ def test_generator_output_is_fresh(gen: Generator):
     )
     if is_missing_pack(result):
         pytest.skip(f"OCI stencil pack not fetched; run scripts/fetch_assets.py --only oci\n{diagnostics}")
+    if not _ASSETS_PRESENT:
+        pytest.skip(
+            "icon packs not fetched (assets/vendor absent); the committed "
+            "examples embed data-URI icons that cannot be reproduced without the "
+            "packs. Run scripts/fetch_assets.py, or rely on the with-assets "
+            f"``validate`` CI job which fetches them first.\n{diagnostics}"
+        )
     assert result.returncode in (0, 1), f"--check crashed\n{diagnostics}"
     assert result.returncode == 0, (
         f"examples/{gen.examples} is STALE; regenerate with "

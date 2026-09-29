@@ -58,6 +58,7 @@ try:  # package-relative import when used as ``rule_engine.layout_engine``
         COL_STEP,
         ROW_STEP,
         CONTAINER_PAD,
+        STAIR_STEP,
     )
     # Geometry helpers the pre-split module re-exposed.
     from .geometry import (  # noqa: F401
@@ -216,6 +217,7 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
         COL_STEP,
         ROW_STEP,
         CONTAINER_PAD,
+        STAIR_STEP,
     )
     from geometry import (  # type: ignore[no-redef]  # noqa: F401
         Box,
@@ -373,6 +375,7 @@ __all__ = [
     "MERGE_THRESHOLD",
     "MAX_SIDE_EXITS",
     "CROSS_REGION_SPAN",
+    "STAIR_STEP",
     "LEGEND_W",
     "LABEL_BAND",
     "Box",

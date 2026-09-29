@@ -30,7 +30,10 @@ providers:
     size: 13988918                    # populated by --update-pins
     unpack_to: aws-icons
     kind: svg-png-tree          # per-service SVG/PNG files in category folders
-    icon_source: builtin        # mxgraph.aws4 exists in draw.io; pack is the fallback for new services
+    icon_source: custom         # official SVG icons, referenced by file path (like azure2/gcp)
+    # Pack layout: Architecture-Service-Icons_*/Arch_<Category>/48/Arch_<Service>_48.svg
+    #              Resource-Icons_*/Res_<Category>/Res_<Service>_<Resource>_48.svg
+    #              Architecture-Group-Icons_*/[AWS-Account|VPC|Region]_32.svg
 
   azure:
     pack: Azure Public Service Icons

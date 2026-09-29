@@ -23,8 +23,8 @@ authentication tier lives on **AWS**, the retrieval-augmented-generation tier on
 service nodes across three provider stacks, connected by six labeled edges that
 close a loop AWS → Azure → GCP → AWS.
 
-Icons resolve through ``mappings/<provider>-icons.yaml`` — AWS built-in
-``mxgraph.aws4.*`` stencils, Azure ``img/lib/azure2/*`` image shapes, and GCP
+Icons resolve through ``mappings/<provider>-icons.yaml`` — AWS official SVG
+file paths (migrated in 1.10.2), Azure ``img/lib/azure2/*`` image shapes, and GCP
 official 2025 file-path SVGs — never a hand-written ``shape=`` id or ``fillColor``.
 Geometry (78x78 icons, grid step 10, container padding, right-margin Flow/Legend)
 comes entirely from ``rule_engine.diagram_layout``.
@@ -60,18 +60,18 @@ OUT = REPO_ROOT / "examples" / "cross-cloud" / "01-cross-cloud-composition.drawi
 TITLE = "multicloud agent-platform — acme-multicloud / multi-region | 2026-09-22 | v1"
 
 # ---------------------------------------------------------------------------
-# Icon styles — taken verbatim from mappings/<provider>-icons.yaml so each node
+# Icon styles — resolved via mappings/<provider>-icons.yaml so each node
 # carries the correct service-family style (never a hand-written id/fillColor).
+#
+# Migration 1.10.2: AWS now uses official SVG file paths (like Azure/GCP),
+# not mxgraph.aws4 stencils. All providers now use the same image= approach.
 # ---------------------------------------------------------------------------
-# AWS built-in mxgraph.aws4.* resource stencils.
-_AWS_CDN = (
-    "shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudfront;"
-    "fillColor=#8C4FFF;strokeColor=#ffffff;aspect=fixed;html=1"
-)
-_AWS_LAMBDA = (
-    "shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;"
-    "fillColor=#ED7100;strokeColor=#ffffff;aspect=fixed;html=1"
-)
+from rule_engine.icon_resolver import resolve_icon, resolve_container  # noqa: E402
+
+# AWS - resolve via mappings/aws-icons.yaml (now official SVG file paths)
+_AWS_CDN = resolve_icon("cdn", "aws")["style_string"]
+_AWS_LAMBDA = resolve_icon("serverless_fn", "aws")["style_string"]
+
 # Azure azure2 file-path image shapes (built into the draw.io app, per
 # mappings/azure-icons.yaml — img/lib/azure2/<category>/<Name>.svg).
 _AZ_OPENAI = "img/lib/azure2/ai_machine_learning/Azure_OpenAI.svg"
@@ -111,8 +111,8 @@ X_GCP = 1160
 
 # (node id, label, renderer-kind, style/path, x, y)
 NODE_SPECS = [
-    ("edge-gateway", "edge-gateway", "builtin", _AWS_CDN, X_AWS, ROW_TOP),
-    ("auth-lambda", "auth-lambda", "builtin", _AWS_LAMBDA, X_AWS, ROW_BOT),
+    ("edge-gateway", "edge-gateway", "resolved", _AWS_CDN, X_AWS, ROW_TOP),
+    ("auth-lambda", "auth-lambda", "resolved", _AWS_LAMBDA, X_AWS, ROW_BOT),
     ("openai-service", "openai-service", "image", _AZ_OPENAI, X_AZ, ROW_TOP),
     ("service-bus", "service-bus", "image", _AZ_SERVICEBUS, X_AZ, ROW_BOT),
     ("vertex-ai", "vertex-ai", "image", _GCP_VERTEX, X_GCP, ROW_TOP),
@@ -174,18 +174,8 @@ LEGEND_LINES = list(STANDARD_LEGEND_LINES) + [
 # AWS ships a dedicated group stencil; Azure and GCP render as dashed rectangles
 # in the profile brand color (they have no built-in group shape).
 # ---------------------------------------------------------------------------
-_AWS_GROUP = (
-    "shape=mxgraph.aws4.group;grStroke=1;fillColor=none;dashed=0;"
-    "verticalAlign=top;align=left;spacingLeft=30;fontSize=12;html=1"
-)
-STYLE_AWS_ACCOUNT = (
-    f"{_AWS_GROUP};grIcon=mxgraph.aws4.group_account;"
-    "strokeColor=#232F3E;fontColor=#232F3E"
-)
-STYLE_AWS_VPC = (
-    f"{_AWS_GROUP};grIcon=mxgraph.aws4.group_vpc2;"
-    "strokeColor=#8C4FFF;fontColor=#8C4FFF"
-)
+STYLE_AWS_ACCOUNT = resolve_container("boundary", "aws")["style_string"]
+STYLE_AWS_VPC = resolve_container("network_boundary", "aws")["style_string"]
 STYLE_AZ_SUB = (
     "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;"
     "strokeColor=#0078D4;fillColor=none;verticalAlign=top;fontColor=#0078D4;fontSize=12"
@@ -209,6 +199,9 @@ def _render(kind: str, style_or_path: str):
         return builtin_icon(style_or_path)
     if kind == "image":
         return image_icon(style_or_path)
+    if kind == "resolved":
+        # Already a full style string from icon_resolver
+        return builtin_icon(style_or_path)
     raise ValueError(f"unknown renderer kind: {kind}")
 
 

@@ -27,9 +27,9 @@ from dataclasses import dataclass
 from typing import Dict, List, Set, Tuple
 
 try:  # package-relative import when used as ``rule_engine.layout.corridors``
-    from ..diagram_layout import ICON_SIZE, GRID
+    from ..diagram_layout import ICON_SIZE, GRID, STAIR_STEP
 except ImportError:  # pragma: no cover - fallback for flat-module execution
-    from diagram_layout import ICON_SIZE, GRID  # type: ignore[no-redef]
+    from diagram_layout import ICON_SIZE, GRID, STAIR_STEP  # type: ignore[no-redef]
 
 
 class CorridorExhaustedError(RuntimeError):
@@ -130,20 +130,24 @@ class CorridorAllocator:
 
         The gap is the clear plane between the **right edge** of the left column
         icon and the **left edge** of the right column icon, INSET by one
-        ``GRID`` step off the left glyph so the first corridor lane is a clean
-        step away from the icon (not glued 0–2px to its edge — the "no step-out"
-        defect): ``left_col_x + ICON_SIZE + GRID`` … ``right_col_x``."""
-        return (left_col_x + ICON_SIZE + GRID, right_col_x)
+        ``STAIR_STEP`` (30px = 3 grid steps) off the left glyph so the first
+        corridor lane produces a standardized stair step — neither too cramped
+        nor too loose. See diagram-standards Edge Routing.
+
+        Gap span: ``left_col_x + ICON_SIZE + STAIR_STEP`` … ``right_col_x``."""
+        return (left_col_x + ICON_SIZE + STAIR_STEP, right_col_x)
 
     @staticmethod
     def row_gap(top_row_y: float, bottom_row_y: float) -> Tuple[float, float]:
         """Return the ``(low, high)`` span of the gap between two node rows.
 
         The plane between the **bottom edge** of the upper row icon and the
-        **top edge** of the lower row icon, INSET by one ``GRID`` step off the
-        upper glyph so the first lane clears the icon: ``top_row_y + ICON_SIZE +
-        GRID`` … ``bottom_row_y``."""
-        return (top_row_y + ICON_SIZE + GRID, bottom_row_y)
+        **top edge** of the lower row icon, INSET by one ``STAIR_STEP`` (30px =
+        3 grid steps) off the upper glyph so the first lane produces a
+        standardized stair step for consistency with vertical corridors.
+
+        Gap span: ``top_row_y + ICON_SIZE + STAIR_STEP`` … ``bottom_row_y``."""
+        return (top_row_y + ICON_SIZE + STAIR_STEP, bottom_row_y)
 
     # -- allocation ---------------------------------------------------------
 

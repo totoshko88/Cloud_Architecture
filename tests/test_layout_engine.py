@@ -930,11 +930,12 @@ from rule_engine.layout_engine import (
 
 def test_corridor_lines_are_grid_aligned_and_inside_the_gap():
     # Req 6.2: every corridor line is a whole GRID multiple, strictly inside the
-    # gap. A column gap between x=100 and x=100+COL_STEP is inset one GRID off the
-    # left glyph → (100+ICON_SIZE+GRID, 320) so the first lane clears the icon.
+    # gap. A column gap between x=100 and x=100+COL_STEP is inset one STAIR_STEP
+    # off the left glyph → (100+ICON_SIZE+STAIR_STEP, 320) so the first lane
+    # produces a standardized stair step distance from the icon.
     alloc = CorridorAllocator()
     low, high = alloc.column_gap(100, 100 + le.COL_STEP)
-    assert (low, high) == (100 + le.ICON_SIZE + le.GRID, 100 + le.COL_STEP)
+    assert (low, high) == (100 + le.ICON_SIZE + le.STAIR_STEP, 100 + le.COL_STEP)
     cap = alloc.register_gap("col:0-1", low, high)
     assert cap >= 2
     lines = [alloc.allocate("col:0-1", low, high) for _ in range(cap)]
@@ -982,9 +983,9 @@ def test_row_gap_allocates_grid_aligned_horizontal_corridors():
     # Req 6.1/6.2 on the inter-row axis (over/under-row corridors).
     alloc = CorridorAllocator()
     low, high = alloc.row_gap(200, 200 + le.ROW_STEP)
-    # The gap low is inset by one GRID off the icon edge so the first lane clears
-    # the glyph (the step-out padding fix).
-    assert (low, high) == (200 + le.ICON_SIZE + le.GRID, 200 + le.ROW_STEP)
+    # The gap low is inset by STAIR_STEP off the icon edge so the first lane
+    # clears the glyph and leaves ~30px for the stair corner.
+    assert (low, high) == (200 + le.ICON_SIZE + le.STAIR_STEP, 200 + le.ROW_STEP)
     y0 = alloc.allocate("row:edge-router", low, high)
     y1 = alloc.allocate("row:edge-router", low, high)
     assert y0 % le.GRID == 0 and y1 % le.GRID == 0
