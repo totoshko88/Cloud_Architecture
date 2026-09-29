@@ -618,10 +618,23 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
             ordered = sorted(members, key=lambda m: (LANE_INDEX[m.lane], m.slot, m.sub, m.id))
             single = [m for m in ordered if len(anchors[m.id]) == 1]
             multi = [m for m in ordered if len(anchors[m.id]) >= 2]
-            loose = [m for m in ordered if not anchors[m.id]]
+            # Loose nodes stack by ``slot`` first: the column is one vertical
+            # stack, so lanes carry no position there and ``slot`` is the
+            # author's order down the stack (lane breaks ties).
+            loose = sorted(
+                (m for m in members if not anchors[m.id]),
+                key=lambda m: (m.slot, LANE_INDEX[m.lane], m.sub, m.id),
+            )
             two_cols = bool(single) and bool(multi or loose)
+            inner_used: set = set()
             for m in single:
-                regional_y[m.id] = anchors[m.id][0]
+                # Two single-row nodes anchored on one row cannot share a cell:
+                # the later one (lane/slot order) steps down to the next free row.
+                y = anchors[m.id][0]
+                while y in inner_used:
+                    y += ROW_STEP
+                inner_used.add(y)
+                regional_y[m.id] = y
                 regional_outer[m.id] = False
             used: set = set()
             for m in multi:

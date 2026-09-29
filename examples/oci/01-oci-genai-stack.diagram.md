@@ -27,8 +27,8 @@ This companion document describes the `01-oci-genai-stack` golden example, a
 reference architecture for a generative-AI inference and training stack built on
 Oracle Cloud Infrastructure. The diagram lives inside a Compartment boundary
 (`compartment-acme-prod`) and a Virtual Cloud Network boundary (`vcn-prod`),
-rendered with the dashed green stack boundary and the dashed blue network boundary
-defined in the shared diagram standards. The workload accepts HTTPS requests at a
+with a region level between them, and regional managed services stand outside
+the network boundary per the diagram standards. The workload accepts HTTPS requests at a
 Functions entry point, routes inference traffic to OCI Generative AI, and processes
 asynchronous ingestion events through OCI Streaming. It demonstrates the mandatory
 artifact triple, the versioned title cell, the full Legend block, resolved OCI

@@ -387,3 +387,22 @@ def test_landscape_captions_use_native_terminology():
         for w in words:
             assert f'value="{w}' in text, f"{provider}: expected native label {w!r}"
         assert 'value="region-primary ' in text, f"{provider}: region level missing"
+
+
+def test_genai_examples_share_one_geometry():
+    """gcp/01 and oci/01 are one spec (``genai_pipeline_spec``): same node
+    boxes, containers and routes; only icons, labels and styles differ."""
+    root = Path(__file__).resolve().parents[1] / "examples"
+    geos = [
+        _build_geometry((root / rel).read_text(encoding="utf-8"))
+        for rel in ("gcp/01-gcp-vertex-pipeline.drawio", "oci/01-oci-genai-stack.drawio")
+    ]
+    a, b = geos
+    assert a.nodes == b.nodes
+    assert a.containers == b.containers
+    assert [(e.id, e.exit, e.entry, e.points) for e in a.edges] == \
+        [(e.id, e.exit, e.entry, e.points) for e in b.edges]
+    # Regional services sit outside the network boundary.
+    vpc = a.containers["boundary-vpc-a"]
+    for nid in ("queue", "ingest", "hub", "sec", "obj"):
+        assert a.nodes[nid].x >= vpc.right, nid

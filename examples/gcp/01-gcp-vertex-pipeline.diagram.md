@@ -26,9 +26,8 @@ related_docs:
 This companion document describes the `01-gcp-vertex-pipeline` golden example, a
 reference architecture for a machine-learning inference and training pipeline built
 on Google Cloud. The diagram lives inside a Project boundary (`project-acme-prod`)
-and a VPC network boundary (`vpc-prod`), rendered with the dashed green stack
-boundary and the dashed blue network boundary defined in the shared diagram
-standards. The workload accepts HTTPS requests at an API entry point, routes
+and a VPC network boundary (`vpc-prod`), with a region level between them, and regional managed services stand outside
+the network boundary per the diagram standards. The workload accepts HTTPS requests at an API entry point, routes
 inference traffic to Vertex AI, and processes asynchronous ingestion events through
 Pub/Sub. It demonstrates the mandatory artifact triple, the versioned title cell,
 the full Legend block, resolved GCP provider icons, and labeled edges. Every node

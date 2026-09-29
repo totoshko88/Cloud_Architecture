@@ -798,6 +798,18 @@ def decide_lane_sides(
         if any(run_lo < col < run_hi for col in approach_cols.get(src.y, ())):
             continue        # an inbound approach must cross this band
         above_capable.setdefault(edge.source, []).append(edge.id)
+    # 1.10.3: a fan-out to a target exactly ONE row up runs in the band ABOVE
+    # its row — that band is the gap between the two rows, so the run turns up
+    # into the target's left face at once. In the below lane it would leave under
+    # the source's level sibling and cut it on the way up (GenAI ``e9 × e8``).
+    for edge in spec.edges:
+        if classify_edge(edge, placed) != "fan-out-row":
+            continue
+        src, tgt = placed[edge.source], placed[edge.target]
+        ey = exits[edge.id][1]
+        if (ey is None or ey < 1.0) and 0 < src.y - tgt.y <= ROW_STEP:
+            sides[edge.id] = True
+
     for src_id, eids in sorted(above_capable.items()):
         src = placed[src_id]
         farthest = min(

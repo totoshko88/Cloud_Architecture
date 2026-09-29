@@ -263,6 +263,27 @@ def _back_edge_variants(edge: "EdgeSpec", rule_exit: Contact,
     ]
 
 
+def _face(pt: Contact) -> str:
+    x, y = pt
+    if y is not None and y <= 0.0:
+        return "top"
+    if y is not None and y >= 1.0:
+        return "bottom"
+    if x is not None and x <= 0.0:
+        return "left"
+    return "right"
+
+
+def _keep_band(rule_pt: Contact, pt: Contact) -> Contact:
+    """Keep the global spread band when an alternative uses the same face.
+
+    The global pass spreads several arrivals (or departures) on one face apart;
+    an alternative shape that lands on the SAME face must not snap back to the
+    face centre, or two edges meet on one contact point (1.10.3: two spines into
+    the GenAI hub's top both re-centred to 0.5, ``entry-thirds``)."""
+    return rule_pt if _face(rule_pt) == _face(pt) else pt
+
+
 def _spine_variants(edge: "EdgeSpec", placed: Dict[str, "Box"],
                     containers: Dict[str, "Box"], rule_exit: Contact,
                     rule_entry: Contact, start_rank: int) -> List[RouteVariant]:
@@ -292,14 +313,16 @@ def _spine_variants(edge: "EdgeSpec", placed: Dict[str, "Box"],
         # The straight drop is a genuine sanctioned alternative only when the
         # column is clear; emit it as its own variant.
         variants.append(
-            _variant(edge.id, "straight-drop", _EXIT_BOTTOM, _ENTRY_TOP,
+            _variant(edge.id, "straight-drop", _keep_band(rule_exit, _EXIT_BOTTOM),
+                     _keep_band(rule_entry, _ENTRY_TOP),
                      RoutePlan.STRAIGHT_DROP, rank)
         )
         rank += 1
 
     # side-corridor, right gap: the default right-corridor + top-entry spine.
     variants.append(
-        _variant(edge.id, "right-gap", _EXIT_RIGHT, _ENTRY_TOP,
+        _variant(edge.id, "right-gap", _keep_band(rule_exit, _EXIT_RIGHT),
+                 _keep_band(rule_entry, _ENTRY_TOP),
                  RoutePlan.RIGHT_GAP, rank)
     )
     rank += 1
@@ -309,7 +332,8 @@ def _spine_variants(edge: "EdgeSpec", placed: Dict[str, "Box"],
     # no usable left gap does not offer a shape the router would have to reject.
     if _left_gap_available(src, tgt, others, containers):
         variants.append(
-            _variant(edge.id, "left-gap", _EXIT_BOTTOM, _ENTRY_LEFT,
+            _variant(edge.id, "left-gap", _keep_band(rule_exit, _EXIT_BOTTOM),
+                     _keep_band(rule_entry, _ENTRY_LEFT),
                      RoutePlan.LEFT_GAP, rank)
         )
         rank += 1

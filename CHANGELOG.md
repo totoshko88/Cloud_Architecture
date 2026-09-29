@@ -4,6 +4,11 @@ All notable changes to the Rule Engine are recorded here, per released version, 
 
 ## [Unreleased]
 
+### Changed
+
+- **`gcp/01` and `oci/01` are one engine-laid spec (D21).** Both GenAI examples were hand-placed copies of the same nine-node workload, each with its own coordinate literals, and both drew five regional services inside the VPC/VCN. They now share `rule_engine.genai_pipeline_spec`, laid out by `layout()` through one builder (`scripts/genai_pipeline_common.py`): byte-identical geometry (a parity test), queue / ingest / hub / secrets / object store outside the network boundary, Region level on both. Crossings 4 → 5, forced by the regional hub's three links into the VPC.
+- **Layout engine:** loose regional nodes stack by `slot`; two single-row nodes anchored on one row step apart; an alternative spine route keeps the global spread band on its face instead of re-centring onto a sibling's contact; a fan-out to a target one row up runs in the band above its row.
+
 ### Fixed
 
 - **Three examples missed the 1.10.3 styling.** `aws/01` and `azure/01` are hand-authored and had no generator, so the new container styles never reached them (grey AWS Account, old Azure VNet); `oci/01` lacked the v24.2 Region level. A new generator, `build_restyle_example.py`, applies the mapping container styles and standard Legend wording to the hand-authored files and is gated by `--check`. `build_oci_example.py` now nests Compartment ⊃ Region ⊃ VCN.
