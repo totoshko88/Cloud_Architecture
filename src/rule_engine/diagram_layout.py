@@ -866,8 +866,11 @@ STANDARD_LEGEND_LINES = (
     "Red = blocked / missing / disabled",
     "🆕 = new in version N",
     "🔄 = changed in version N",
-    "Dashed outer boundary = stack Boundary (profile brand color)",
-    "Dashed inner boundary = Network Boundary (profile brand color)",
+    # 1.10.3: boundaries are named by NESTING and caption, not by line style —
+    # AWS Account / VPC are solid vendor groups, Azure's VNet is dotted, OCI's
+    # Region is filled. "Dashed" was wrong on every provider but generic.
+    "Outer boundary = stack Boundary (captioned; provider style)",
+    "Inner boundary = Network Boundary (captioned; provider style)",
     "Numbered markers (1..N) = ordered data flow steps; see Flow list",
 )
 

@@ -77,11 +77,11 @@ containers:
   boundary:
     icon_id: gcp.project
     brand_hex: "#4285F4"
-    style: "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#4285F4;fillColor=none;verticalAlign=top;fontColor=#1A73E8;fontSize=12"
+    style: "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#4285F4;fillColor=none;verticalAlign=top;align=left;spacingLeft=8;fontColor=#1A73E8;fontSize=12"
   network_boundary:
     icon_id: gcp.virtual_private_cloud
     brand_hex: "#4285F4"
-    style: "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#34A853;fillColor=none;verticalAlign=top;fontColor=#188038;fontSize=12"
+    style: "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#34A853;fillColor=none;verticalAlign=top;align=left;spacingLeft=8;fontColor=#188038;fontSize=12"
   # Optional nested levels, following Google Cloud architecture diagrams: a
   # Region is a dashed neutral-grey frame, a Zone a borderless light-grey block.
   # Neutral #5F6368 keeps lines and captions above 4.5:1 on white (the old

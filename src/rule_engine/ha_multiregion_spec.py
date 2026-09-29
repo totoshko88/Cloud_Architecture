@@ -146,9 +146,13 @@ _LANDSCAPE_NODES = (
     NodeSpec(id="dns", role="dns", lane="edge", region="", slot=1),
     NodeSpec(id="cdn", role="cdn", lane="edge", region="", slot=2),
     NodeSpec(id="audit", role="obj", lane="edge", region="", slot=3),
-    # region A — VPC service row. These sit in the VPC directly, ABOVE the AZ
-    # boxes, so they declare the VPC as their container (never an AZ) — the AZ
-    # boxes wrap only their own AZ nodes, not the service row.
+    # region A — the load balancer is the VPC's service row (it sits in the VPC
+    # directly, above the AZ boxes). Queue / worker / secrets / observability /
+    # object store are REGIONAL managed services: they declare the REGION
+    # container, so the engine draws them in the region's regional column,
+    # outside the VPC (1.10.3, REVIEW.md D20; ``_validate_spec`` rejects a
+    # regional role declared inside a VPC or AZ). The object store is one
+    # regional bucket, not one per AZ.
     #
     # The two availability zones are STACKED vertically (Req 12.1): AZ-1 sits in
     # an upper primary-axis tier band and AZ-2 in the band directly below it, so
@@ -158,12 +162,12 @@ _LANDSCAPE_NODES = (
     # is declared, so the AZ boxes wrap exactly their declared nodes regardless
     # of geometry.
     NodeSpec(id="lb_a", role="lb", lane="router", region="a", slot=0, container="boundary-vpc-a"),
-    NodeSpec(id="queue_a", role="queue", lane="async", region="a", slot=0, container="boundary-vpc-a"),
-    NodeSpec(id="fn_a", role="fn", lane="workers", region="a", slot=0, container="boundary-vpc-a"),
-    NodeSpec(id="sec_a", role="sec", lane="platform", region="a", slot=0, container="boundary-vpc-a"),
+    NodeSpec(id="queue_a", role="queue", lane="async", region="a", slot=0, container="boundary-region-a"),
+    NodeSpec(id="fn_a", role="fn", lane="workers", region="a", slot=0, container="boundary-region-a"),
+    NodeSpec(id="sec_a", role="sec", lane="platform", region="a", slot=0, container="boundary-region-a"),
     # region A — AZ-1 (slots 0..2) — declared members of az-a1.
     NodeSpec(id="db_a1", role="sql", lane="data", region="a", slot=0, container="boundary-az-a1"),
-    NodeSpec(id="obj_a1", role="obj", lane="data", region="a", slot=1, container="boundary-az-a1"),
+    NodeSpec(id="obj_a", role="obj", lane="data", region="a", slot=1, container="boundary-region-a"),
     NodeSpec(id="app_a1", role="k8s", lane="workers", region="a", slot=1, container="boundary-az-a1"),
     # api / observability form the AZ's SECOND row (sub=1): the engine lays each
     # band out horizontally (one column per lane) and drops sub=1 nodes to a
@@ -171,10 +175,9 @@ _LANDSCAPE_NODES = (
     # main row + api/mon sub-row (see layout_engine._place_base north-south).
     NodeSpec(id="api_a1", role="k8s", lane="workers", region="a", slot=2, sub=1, container="boundary-az-a1"),
     NodeSpec(id="cache_a1", role="cache", lane="platform", region="a", slot=1, container="boundary-az-a1"),
-    NodeSpec(id="mon_a", role="fn", lane="platform", region="a", slot=2, sub=1, container="boundary-az-a1"),
+    NodeSpec(id="mon_a", role="fn", lane="platform", region="a", slot=2, sub=1, container="boundary-region-a"),
     # region A — AZ-2 (same slots as AZ-1; distinguished by its lower tier band).
     NodeSpec(id="db_a2", role="sql", lane="data", region="a", slot=0, container="boundary-az-a2"),
-    NodeSpec(id="obj_a2", role="obj", lane="data", region="a", slot=1, container="boundary-az-a2"),
     NodeSpec(id="app_a2", role="k8s", lane="workers", region="a", slot=1, container="boundary-az-a2"),
     NodeSpec(id="api_a2", role="k8s", lane="workers", region="a", slot=2, sub=1, container="boundary-az-a2"),
     NodeSpec(id="cache_a2", role="cache", lane="platform", region="a", slot=1, container="boundary-az-a2"),
@@ -192,19 +195,18 @@ _LANDSCAPE_NODES = (
     # label token, and a Legend entry, so it survives grayscale and colour-vision
     # deficiency.
     NodeSpec(id="lb_b", role="lb", lane="router", region="b", slot=0, container="boundary-vpc-b"),
-    NodeSpec(id="queue_b", role="queue", lane="async", region="b", slot=0, container="boundary-vpc-b", overlay="standby"),
-    NodeSpec(id="fn_b", role="fn", lane="workers", region="b", slot=0, container="boundary-vpc-b", overlay="standby"),
-    NodeSpec(id="sec_b", role="sec", lane="platform", region="b", slot=0, container="boundary-vpc-b", overlay="standby"),
+    NodeSpec(id="queue_b", role="queue", lane="async", region="b", slot=0, container="boundary-region-b", overlay="standby"),
+    NodeSpec(id="fn_b", role="fn", lane="workers", region="b", slot=0, container="boundary-region-b", overlay="standby"),
+    NodeSpec(id="sec_b", role="sec", lane="platform", region="b", slot=0, container="boundary-region-b", overlay="standby"),
     # region B — AZ-1 (slots 0..2).
     NodeSpec(id="db_b1", role="sql", lane="data", region="b", slot=0, container="boundary-az-b1"),
-    NodeSpec(id="obj_b1", role="obj", lane="data", region="b", slot=1, container="boundary-az-b1"),
+    NodeSpec(id="obj_b", role="obj", lane="data", region="b", slot=1, container="boundary-region-b"),
     NodeSpec(id="app_b1", role="k8s", lane="workers", region="b", slot=1, container="boundary-az-b1"),
     NodeSpec(id="api_b1", role="k8s", lane="workers", region="b", slot=2, sub=1, container="boundary-az-b1", overlay="standby"),
     NodeSpec(id="cache_b1", role="cache", lane="platform", region="b", slot=1, container="boundary-az-b1", overlay="standby"),
-    NodeSpec(id="mon_b", role="fn", lane="platform", region="b", slot=2, sub=1, container="boundary-az-b1", overlay="standby"),
+    NodeSpec(id="mon_b", role="fn", lane="platform", region="b", slot=2, sub=1, container="boundary-region-b", overlay="standby"),
     # region B — AZ-2 (same slots as AZ-1; distinguished by its lower tier band).
     NodeSpec(id="db_b2", role="sql", lane="data", region="b", slot=0, container="boundary-az-b2", overlay="standby"),
-    NodeSpec(id="obj_b2", role="obj", lane="data", region="b", slot=1, container="boundary-az-b2", overlay="standby"),
     NodeSpec(id="app_b2", role="k8s", lane="workers", region="b", slot=1, container="boundary-az-b2", overlay="standby"),
     NodeSpec(id="api_b2", role="k8s", lane="workers", region="b", slot=2, sub=1, container="boundary-az-b2", overlay="standby"),
     NodeSpec(id="cache_b2", role="cache", lane="platform", region="b", slot=1, container="boundary-az-b2", overlay="standby"),
@@ -224,10 +226,10 @@ _LANDSCAPE_EDGES = (
     EdgeSpec(id="l5", source="app_a1", target="db_a1", marker="5"),
     EdgeSpec(id="l6", source="app_a1", target="cache_a1", marker="6"),
     EdgeSpec(id="l7", source="db_a1", target="db_a2", marker="7", dashed=True),
-    EdgeSpec(id="l8", source="app_a1", target="obj_a1", marker="8"),
+    EdgeSpec(id="l8", source="app_a1", target="obj_a", marker="8"),
     EdgeSpec(id="l9", source="lb_b", target="app_b1", marker="9"),
     EdgeSpec(id="l10", source="db_a1", target="db_b1", marker="10", dashed=True, kind_hint="cross-region"),
-    EdgeSpec(id="l11", source="obj_a1", target="obj_b1", marker="11", dashed=True, kind_hint="cross-region"),
+    EdgeSpec(id="l11", source="obj_a", target="obj_b", marker="11", dashed=True, kind_hint="cross-region"),
     EdgeSpec(id="l12", source="queue_a", target="fn_a", marker="12", dashed=True),
     # --- v1.6.0: connect the account edge tier and the primary region --------
     # Before 1.6.0 this landscape drew 34 nodes joined by 12 edges, leaving 20
@@ -248,11 +250,11 @@ _LANDSCAPE_EDGES = (
     # is re-sourced rather than the spread being bent to accommodate it. ``fn_a``
     # then has exactly one straight-down branch (``sec_a``) plus this one, the
     # two-face fan-out shape the engine handles cleanly.
-    EdgeSpec(id="l16", source="fn_a", target="api_a1", marker="16"),
+    EdgeSpec(id="l16", source="app_a1", target="api_a1", marker="16"),
     EdgeSpec(id="l17", source="api_a1", target="mon_a", marker="17", dashed=True),
     EdgeSpec(id="l18", source="fn_a", target="sec_a", marker="18"),
     EdgeSpec(id="l19", source="app_a2", target="cache_a2", marker="19"),
-    EdgeSpec(id="l20", source="app_a2", target="obj_a2", marker="20"),
+    EdgeSpec(id="l20", source="app_a2", target="obj_a", marker="20"),
     EdgeSpec(id="l21", source="app_a2", target="api_a2", marker="21"),
 )
 
@@ -278,7 +280,7 @@ _LANDSCAPE_FLOW = (
     "5. AZ-1 app to AZ-1 writer DB",
     "6. AZ-1 app to AZ-1 cache",
     "7. In-region standby DB replication (AZ-1 to AZ-2)",
-    "8. AZ-1 app writes AZ-1 object store",
+    "8. AZ-1 app writes the regional object store",
     "9. Passive LB to AZ-1 app",
     "10. Cross-region DB replication (primary to passive)",
     "11. Cross-region object-store replication (CRR)",
@@ -286,11 +288,11 @@ _LANDSCAPE_FLOW = (
     "13. Edge WAF policy fronts the CDN",
     "14. CDN access logs to the audit bucket (async)",
     "15. CDN origin fetch to the primary LB",
-    "16. Primary LB to the AZ-1 API tier",
+    "16. AZ-1 app to the AZ-1 API tier",
     "17. API tier emits telemetry to observability (async)",
     "18. Primary worker reads the secrets store",
     "19. AZ-2 app to AZ-2 cache",
-    "20. AZ-2 app writes AZ-2 object store",
+    "20. AZ-2 app writes the regional object store",
     "21. AZ-2 app to the AZ-2 API tier",
 )
 

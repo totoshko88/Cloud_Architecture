@@ -93,6 +93,35 @@ class SpecError(ValueError):
     """
 
 
+#: Service scope per diagram role (provider-profiles → Service Scope
+#: Classification). ``network`` services need a subnet and are drawn inside the
+#: Network Boundary; ``regional`` managed services are reached over endpoints
+#: and are drawn inside the region but OUTSIDE the Network Boundary; ``global``
+#: services sit at the edge. Keys are the neutral/presentation role names plus
+#: the short role aliases the shipped specs use. A role not listed is not
+#: judged (a spec may use roles this table has not classified yet).
+ROLE_SCOPE: Dict[str, str] = {
+    # network-scoped (VPC / VNet / VCN)
+    "managed_sql": "network", "sql": "network",
+    "managed_k8s": "network", "k8s": "network",
+    "compute_instance": "network", "lb": "network",
+    "cache": "network", "file_system": "network",
+    # regional managed services
+    "object_store": "regional", "obj": "regional",
+    "message_queue": "regional", "queue": "regional",
+    "serverless_fn": "regional", "fn": "regional",
+    "secrets_store": "regional", "sec": "regional",
+    "llm_platform": "regional",
+    # global / edge
+    "cdn": "global", "dns": "global", "waf": "global",
+}
+
+
+def role_scope(role: str) -> Optional[str]:
+    """Return ``network`` / ``regional`` / ``global`` for ``role`` (else None)."""
+    return ROLE_SCOPE.get(role)
+
+
 def _validate_spec(spec: DiagramSpec) -> None:
     """Validate a declaration on entry; raise :class:`SpecError` naming the fault.
 
@@ -152,6 +181,22 @@ def _validate_spec(spec: DiagramSpec) -> None:
                     f"{node.container!r} (kind={target.kind!r}); a node may only "
                     "belong to a region container (an az or a vpc), never the "
                     "account envelope"
+                )
+            # Scope is enforced once the spec models the region level: only then
+            # does a regional service have a legal home (the region container,
+            # outside the network). A spec without region containers (every
+            # synthetic layout spec) keeps its pre-1.10.3 behaviour.
+            if (
+                target.kind in ("vpc", "az")
+                and role_scope(node.role) in ("regional", "global")
+                and any(c.kind == "region" and c.region == node.region for c in spec.containers)
+            ):
+                raise SpecError(
+                    f"node {node.id!r} (role {node.role!r}, scope "
+                    f"{role_scope(node.role)!r}) declares network-boundary container "
+                    f"{node.container!r}; a {role_scope(node.role)} service is not "
+                    "deployed in a subnet — declare the region container instead "
+                    "(provider-profiles → Service Scope Classification)"
                 )
             if target.region != node.region:
                 raise SpecError(
@@ -331,10 +376,21 @@ def _band_within(spec: DiagramSpec) -> Dict[str, Tuple[int, int]]:
         if n.container is not None and kind_of.get(n.container) in banded_kinds:
             key = (band_of[n.id], n.region, n.sub)
             groups.setdefault(key, []).append(n)
+    # 1.10.3: a VPC-direct service row narrower than the region's widest AZ row
+    # is CENTRED over it (the way vendor references draw a load balancer that
+    # spans its zones). A row pinned to column 0 put every top-entry drop into
+    # it right under the left-aligned region / VPC captions.
+    widest: Dict[str, int] = {}
+    for (_band, region, _sub), members in groups.items():
+        if any(kind_of.get(m.container) == "az" for m in members):
+            widest[region] = max(widest.get(region, 0), len(members))
     within: Dict[str, Tuple[int, int]] = {}
-    for (_band, _region, sub), members in groups.items():
+    for (_band, region, sub), members in groups.items():
+        offset = 0
+        if all(kind_of.get(m.container) == "vpc" for m in members):
+            offset = max(0, (widest.get(region, 0) - len(members)) // 2)
         for col, n in enumerate(sorted(members, key=lambda m: (LANE_INDEX[m.lane], m.slot))):
-            within[n.id] = (col, sub)
+            within[n.id] = (col + offset, sub)
     return within
 
 
@@ -512,11 +568,104 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
     if spec.compact:
         occupied = sorted({LANE_INDEX[n.lane] for n in spec.nodes})
         compact_rank = {li: r for r, li in enumerate(occupied)}
+    # 1.10.3: REGIONAL services (declared members of a ``region`` container)
+    # stand in their own column right of the region's network block — inside
+    # the region, outside the VPC (provider-profiles → Service Scope). The
+    # column starts one column past the widest banded row plus two pads, so the
+    # VPC's own right padding and a vertical corridor fit between them.
+    #
+    # Rows are the region's OWN banded rows (so an edge between the network and
+    # the column runs straight along a row). Assignment is deterministic:
+    #   * a regional node linked to exactly ONE banded row sits in the INNER
+    #     column, on that row;
+    #   * a node linked to SEVERAL banded rows (an object store written by every
+    #     zone) sits in the OUTER column, on its topmost linked row — its feeds
+    #     rise and fall in the gap beyond the inner column, so they never cut the
+    #     single-row feeds that end at the inner column;
+    #   * unlinked nodes (a queue → worker → secrets chain) stack in the outer
+    #     column below the multi-linked ones, one ROW_STEP apart, so the chain is
+    #     a run of straight drops that passes no anchored node.
+    # When one of the two columns is empty the other takes the inner position.
+    region_direct = {
+        n.id for n in spec.nodes
+        if n.container is not None and kind_of.get(n.container) == "region"
+    }
+    regional_col_x: Dict[str, int] = {}
+    regional_y: Dict[str, int] = {}
+    regional_outer: Dict[str, bool] = {}
+    if region_direct and spec.axis == "north-south":
+        banded_y: Dict[str, int] = {}
+        for n in spec.nodes:
+            if n.id in band_within and n.container is not None:
+                regional_col_x[n.region] = max(
+                    regional_col_x.get(n.region, 0), band_within[n.id][0]
+                )
+                banded_y[n.id] = base_y + band_start[az_band[n.id]] + band_within[n.id][1] * ROW_STEP
+        region_of = {n.id: n.region for n in spec.nodes}
+        by_region: Dict[str, list] = {}
+        for n in spec.nodes:
+            if n.id in region_direct:
+                by_region.setdefault(n.region, []).append(n)
+        anchored_count: Dict[str, int] = {}
+        for region, members in by_region.items():
+            member_ids = {m.id for m in members}
+            anchors: Dict[str, List[int]] = {m.id: [] for m in members}
+            for e in spec.edges:
+                for reg, other in ((e.source, e.target), (e.target, e.source)):
+                    if reg in member_ids and other in banded_y and region_of.get(other) == region:
+                        if banded_y[other] not in anchors[reg]:
+                            anchors[reg].append(banded_y[other])
+            ordered = sorted(members, key=lambda m: (LANE_INDEX[m.lane], m.slot, m.sub, m.id))
+            single = [m for m in ordered if len(anchors[m.id]) == 1]
+            multi = [m for m in ordered if len(anchors[m.id]) >= 2]
+            loose = [m for m in ordered if not anchors[m.id]]
+            two_cols = bool(single) and bool(multi or loose)
+            for m in single:
+                regional_y[m.id] = anchors[m.id][0]
+                regional_outer[m.id] = False
+            used: set = set()
+            for m in multi:
+                y = min(anchors[m.id])
+                while y in used:
+                    y += ROW_STEP
+                regional_y[m.id] = y
+                used.add(y)
+                regional_outer[m.id] = two_cols
+            if not two_cols:
+                used |= {regional_y[m.id] for m in single}
+            nxt = (max(used) + ROW_STEP) if used else (
+                base_y + (min(band_start.values()) if band_start else 0))
+            for m in loose:
+                regional_y[m.id] = nxt
+                regional_outer[m.id] = two_cols
+                nxt += ROW_STEP
+            anchored_count[region] = sum(1 for m in members if anchors[m.id])
+
+        # Peer regions are mirror images (Req 3.3): a passive region whose
+        # peers carry no edges must not get a different arrangement. Every
+        # region copies the (row, column) of its structural peer — same
+        # (role, lane, slot, sub) — from the region with the most edge anchors.
+        if anchored_count:
+            ref = max(sorted(anchored_count), key=lambda r: anchored_count[r])
+            ref_pos = {
+                (m.role, m.lane, m.slot, m.sub): (regional_y[m.id], regional_outer[m.id])
+                for m in by_region[ref]
+            }
+            for region, members in by_region.items():
+                for m in members:
+                    key = (m.role, m.lane, m.slot, m.sub)
+                    if key in ref_pos:
+                        regional_y[m.id], regional_outer[m.id] = ref_pos[key]
+
     placed: Dict[str, Box] = {}
     for node in spec.nodes:
         lane_i = LANE_INDEX[node.lane]
         banded = node.container is not None and kind_of.get(node.container) in banded_kinds
-        if banded and spec.axis == "north-south":
+        if node.id in regional_y:
+            col = regional_col_x.get(node.region, 0) + (2 if regional_outer[node.id] else 1)
+            x = base_x + col * COL_STEP + 2 * CONTAINER_PAD
+            y = regional_y[node.id]
+        elif banded and spec.axis == "north-south":
             # Horizontal band: column across (x), tier band + sub-row down (y).
             band = az_band[node.id]
             col, sub_row = band_within[node.id]

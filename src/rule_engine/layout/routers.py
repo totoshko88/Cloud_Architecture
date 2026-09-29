@@ -123,12 +123,23 @@ def classify_edge(edge: EdgeSpec, placed: Dict[str, Box]) -> str:
     if _same_row(src, tgt) and 0 < dx <= COL_STEP + src.w:
         return "straight"
 
-    # 3. cross-region: a large rightward hop at roughly the same tier.
-    if dx >= CROSS_REGION_SPAN and abs(dy) <= ROW_STEP:
+    # 3. cross-region: a large rightward hop at roughly the same tier — but
+    #    never between two nodes the spec places in ONE region (1.10.3: a zone
+    #    app feeding the regional object store column is long, not cross-region).
+    if dx >= CROSS_REGION_SPAN and abs(dy) <= ROW_STEP and edge.same_region is not True:
         return "cross-region"
 
     # 4. fan-out-row: same row, to the right, but not adjacent.
     if _same_row(src, tgt) and dx > 0:
+        return "fan-out-row"
+
+    # 4b. (1.10.3) An UPWARD hop to the right — a zone's app writing the
+    # regional object store that stands on a higher row — is a fan-out: it runs
+    # in the SOURCE row's own below-row lane, clear of that row's icons, and
+    # turns up in the gap before the target into its left face. The spine's
+    # side corridor was built for DESCENDING tiers and cut straight across the
+    # rows in between (``knee-through-db``).
+    if dy < 0 and dx > 0:
         return "fan-out-row"
 
     # 5. spine: a tier hop within a region (different row, rightward/near column).
@@ -576,6 +587,18 @@ def route_fan_out_row(
     # Turn back toward the row in the gap just LEFT of the target (target_x -
     # ~half a gap): UP from a below-row lane, DOWN from an above-row one.
     turn_x = _snap(tgt.x - (COL_STEP - ICON_SIZE) // 2)
+    # 1.10.3: several fan-outs into ONE target's left face (the regional object
+    # store fed from every zone) must not share that turn column. The first keeps
+    # the centred column; each later one (declared order — the lower source row)
+    # turns two grid steps closer to the target, so its longer rise stays right
+    # of every earlier run and no rise cuts a sibling's lane.
+    if not (entry_pt[1] is not None and entry_pt[1] <= 0.0):
+        claims = allocator._taken.setdefault(f"turn-left:{tgt.id}", set())
+        k = 0
+        while int(turn_x + k * 2 * GRID) in claims and turn_x + (k + 1) * 2 * GRID < tgt.x - GRID:
+            k += 1
+        turn_x = _snap(turn_x + k * 2 * GRID)
+        claims.add(int(turn_x))
 
     if bottom_exit:
         # Honour the bottom exit: drop STRAIGHT DOWN from the bottom contact into
@@ -762,6 +785,14 @@ def decide_lane_sides(
             continue        # a bottom-face spill leaves downward → below lane
         src, tgt = placed[edge.source], placed[edge.target]
         if not _fanout_above_row(src, obstacles, containers):
+            continue
+        # 1.10.3: the empty band above a container's first row belongs to that
+        # container's OWN fan-outs. A run to a target OUTSIDE the source's box (a
+        # zone app writing the regional object store beyond the VPC) keeps the
+        # below lane, so the band above stays free for the long-haul replication
+        # run that leaves the same row (decided next, against these claims).
+        home = _enclosing_container(src, containers)
+        if home is not None and not _box_contains(home, tgt):
             continue
         run_lo, run_hi = src.right, tgt.x - (COL_STEP - ICON_SIZE) // 2
         if any(run_lo < col < run_hi for col in approach_cols.get(src.y, ())):
@@ -1340,6 +1371,9 @@ def route_back_edge(
     others = _relevant_obstacles(edge, obstacles)
 
     entry = _contact_point(tgt, entry_pt)
+    if exit_pt[1] is not None and exit_pt[1] >= 1.0:
+        return _route_back_edge_down(edge, src, tgt, exit_pt, entry_pt, allocator,
+                                     others, containers)
     # Loop corridor above the source by default, but BELOW when the source is in
     # the top band (no room above → the loop would rise above the account box) OR
     # when the target sits a full row or more below — the same rule
@@ -1420,6 +1454,76 @@ def route_back_edge(
     route = [_contact_point(src, exit_pt)] + waypoints + [entry]
     route = _detour_clockwise_if_blocked(route, others)
     return _interior_waypoints(route)
+
+
+def _route_back_edge_down(
+    edge: EdgeSpec,
+    src: Box,
+    tgt: Box,
+    exit_pt: Contact,
+    entry_pt: Contact,
+    allocator: "CorridorAllocator",
+    others: List[Box],
+    containers: Optional[Dict[str, Box]],
+) -> List[Point]:
+    """Rule K (1.10.3): a back-edge to a target BELOW-LEFT, from the BOTTOM face.
+
+    Drop from the bottom exit into the row gap below the source, run left, then:
+
+    * **top entry** — drop straight into the target's top-centre;
+    * **left entry** (something stands in the target's column above it) — run
+      further left to a free lane in the gap beside the target's column, clear of
+      every container border, descend to the target's centre row and step right
+      into its left face.
+
+    Siblings from one source share the gap, so the lane is chosen by shape, not
+    by arrival order: a left-entry branch (it turns farthest out, from the
+    bottom-left band) takes the UPPER lane and a top-entry branch the lower one.
+    Their stubs then diverge from the face and no drop cuts a sibling's run."""
+    ex = _contact_point(src, exit_pt)
+    entry = _contact_point(tgt, entry_pt)
+    row_low, row_high = _hcorridor_band(edge, src, tgt, True, containers)
+    # Never a lane ON a container border (a run along a box edge reads as part
+    # of the edge): drop grid lines within one step of any top/bottom border the
+    # run's x-span crosses.
+    x_lo, x_hi = min(src.x, tgt.x), max(src.right, tgt.right)
+    hborders = [
+        by for c in (containers or {}).values()
+        if not (c.right < x_lo or c.x > x_hi) for by in (c.y, c.bottom)
+    ]
+    lanes = [y for y in range(int(_snap(row_low)), int(row_high) + 1, GRID)
+             if row_low <= y <= row_high and all(abs(y - b) >= GRID for b in hborders)]
+    left_entry = entry_pt[0] is not None and entry_pt[0] <= 0.0
+    if not lanes:
+        lane_y = _snap((row_low + row_high) / 2.0)
+    elif left_entry:
+        lane_y = lanes[0]
+    else:
+        lane_y = lanes[-1]
+    _pin_corridor(allocator, f"hcorr-below:{int(src.y)}", row_low, row_high, lane_y)
+    if not left_entry:
+        waypoints = [(ex[0], lane_y), (_snap(entry[0]), lane_y)]
+    else:
+        # A free lane left of the target's column: inside the outermost box that
+        # holds both ends, never on a container border (diagram-standards → a
+        # long vertical never coincides with a container border).
+        outer = _enclosing_container(src, containers)
+        left_edge = outer.x if outer is not None else 0.0
+        lo_y, hi_y = lane_y, entry[1]
+        borders = [
+            bx for c in (containers or {}).values()
+            if not (c.bottom < lo_y or c.y > hi_y) for bx in (c.x, c.right)
+        ]
+        cands = [
+            x for x in range(int(_snap(left_edge + GRID)), int(tgt.x - GRID) + 1, GRID)
+            if all(abs(x - b) >= GRID for b in borders)
+            and not any(b.x <= x <= b.right and not (b.bottom < lo_y or b.y > hi_y)
+                        for b in others)
+        ]
+        centre = (left_edge + tgt.x) / 2.0
+        left_x = min(cands, key=lambda x: (abs(x - centre), x)) if cands else _snap(tgt.x - GRID)
+        waypoints = [(ex[0], lane_y), (left_x, lane_y), (left_x, _snap(entry[1]))]
+    return _interior_waypoints([ex] + waypoints + [entry])
 
 
 ROUTERS = {

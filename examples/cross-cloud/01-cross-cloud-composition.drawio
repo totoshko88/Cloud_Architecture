@@ -21,10 +21,10 @@
         <mxCell id="boundary-azure-vnet" value="Azure VNet vnet-core" style="shape=label;image=img/lib/azure2/networking/Virtual_Networks.svg;imageWidth=26;imageHeight=16;imageAlign=left;imageVerticalAlign=top;rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=1 3;strokeWidth=2;strokeColor=#0078D4;fillColor=none;verticalAlign=top;align=left;spacingLeft=36;spacingTop=2;fontColor=#000000;fontSize=12" vertex="1" parent="1">
           <mxGeometry x="650" y="260" width="138" height="358" as="geometry" />
         </mxCell>
-        <mxCell id="boundary-gcp-project" value="GCP Project acme-data" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#4285F4;fillColor=none;verticalAlign=top;fontColor=#1A73E8;fontSize=12" vertex="1" parent="1">
+        <mxCell id="boundary-gcp-project" value="GCP Project acme-data" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#4285F4;fillColor=none;verticalAlign=top;align=left;spacingLeft=8;fontColor=#1A73E8;fontSize=12" vertex="1" parent="1">
           <mxGeometry x="1100" y="200" width="198" height="448" as="geometry" />
         </mxCell>
-        <mxCell id="boundary-gcp-vpc" value="GCP VPC vpc-data" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#34A853;fillColor=none;verticalAlign=top;fontColor=#188038;fontSize=12" vertex="1" parent="1">
+        <mxCell id="boundary-gcp-vpc" value="GCP VPC vpc-data" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#34A853;fillColor=none;verticalAlign=top;align=left;spacingLeft=8;fontColor=#188038;fontSize=12" vertex="1" parent="1">
           <mxGeometry x="1130" y="260" width="138" height="358" as="geometry" />
         </mxCell>
 
@@ -86,7 +86,7 @@
         <mxCell id="flow-legend" value="Flow&#10;1. edge-gateway validates the caller via auth-lambda (AWS)&#10;2. auth-lambda forwards the RAG prompt to Azure OpenAI (AWS to Azure)&#10;3. openai-service publishes a completion event to Service Bus (async)&#10;4. service-bus streams embeddings to Vertex AI (Azure to GCP)&#10;5. vertex-ai persists model artifacts to Cloud Storage (GCP)&#10;6. cloud-storage returns a signed artifact URL to edge-gateway (GCP to AWS)" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF;spacingLeft=10;spacingRight=10;spacingTop=10;spacingBottom=10" vertex="1" parent="1">
           <mxGeometry x="1310" y="120" width="270" height="228" as="geometry" />
         </mxCell>
-        <mxCell id="legend" value="Legend&#10;Solid line = primary flow&#10;Dashed line = asynchronous / event-driven flow&#10;Red = blocked / missing / disabled&#10;🆕 = new in version N&#10;🔄 = changed in version N&#10;Dashed outer boundary = stack Boundary (profile brand color)&#10;Dashed inner boundary = Network Boundary (profile brand color)&#10;Numbered markers (1..N) = ordered data flow steps; see Flow list&#10;AWS = brand #232F3E ; Azure = brand #0078D4 ; GCP = brand #4285F4" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF;spacingLeft=10;spacingRight=10;spacingTop=10;spacingBottom=10" vertex="1" parent="1">
+        <mxCell id="legend" value="Legend&#10;Solid line = primary flow&#10;Dashed line = asynchronous / event-driven flow&#10;Red = blocked / missing / disabled&#10;🆕 = new in version N&#10;🔄 = changed in version N&#10;Outer boundary = stack Boundary (captioned; provider style)&#10;Inner boundary = Network Boundary (captioned; provider style)&#10;Numbered markers (1..N) = ordered data flow steps; see Flow list&#10;AWS = brand #232F3E ; Azure = brand #0078D4 ; GCP = brand #4285F4" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF;spacingLeft=10;spacingRight=10;spacingTop=10;spacingBottom=10" vertex="1" parent="1">
           <mxGeometry x="1310" y="360" width="270" height="260" as="geometry" />
         </mxCell>
       </root>

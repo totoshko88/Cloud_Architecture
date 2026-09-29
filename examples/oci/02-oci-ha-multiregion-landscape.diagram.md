@@ -31,7 +31,7 @@ workload in Compartment acme-prod. Where the paired summary shows the shape, thi
 what is actually deployed: two regions (us-ashburn-1 primary, us-phoenix-1 passive), each with
 two availability zones, full application, cache, database, object-store, queue,
 worker, secrets, and observability tiers, wrapped in a nested container hierarchy
-(account → region VPC → availability zone). Its value is completeness on one
+(account → region → network → zone). Its value is completeness on one
 canvas, so it deliberately exceeds the twelve-node flow cap — the `landscape`
 class relaxes `node-count` to a warning while making container padding an error,
 because the nested boundaries are what keep thirty-plus nodes legible. It
@@ -39,9 +39,10 @@ cross-links back to its summary via `summary_of`.
 
 ## Main Content
 
-The diagram carries about thirty-four nodes across the two regions. Each region
-frame nests two availability-zone boundaries; every node sits inside its zone or
-region with at least one grid step of padding, so the raised
+The diagram carries thirty-two nodes across the two regions. Each network
+frame nests two zone boundaries; regional managed services (object store, queue,
+worker, secrets, observability) stand in a column outside the network but inside
+the region, and every node sits inside its zone or region with at least one grid step of padding, so the raised
 `container-padding` error stays clean. Numbered markers trace DNS failover to
 both regions, the load-balancer fan-out to per-AZ application tiers, in-region
 standby database replication, cross-region database and object-store

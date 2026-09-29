@@ -1108,24 +1108,20 @@ def test_left_corridor_branch_exits_bottom_left():
 
 
 def test_three_fanout_targets_split_across_the_two_row_bands():
-    """``app_a1`` has 3 right fan-out targets (cache / db / obj) on one face.
+    """``app_a1`` has 3 right fan-out targets (cache / db / regional obj).
 
-    Up to v1.6.0 the overflow valve spilled the farthest onto the BOTTOM face,
-    because every fan-out ran below its row and two below-row lanes was the limit.
-    Now that a fan-out can also run in the free band ABOVE its row, the same three
-    exits are served from the right face alone: the farthest (obj, ``l8``) leaves
-    HIGH and runs above, the level neighbour (cache, ``l6``) keeps the centre, and
-    the middle one (db, ``l5``) leaves LOW and runs below — each stub diverging
-    toward its own lane. No spill, three distinct bands, contract-legal throughout.
+    1.10.3 (D20): the object store is now REGIONAL and stands outside the VPC,
+    so its run (``l8``) leaves the zone and keeps the LOW band — the empty band
+    above the zone's first row belongs to the zone's own fan-out (db, ``l5``),
+    which leaves HIGH. The level neighbour (cache, ``l6``) keeps the centre. All
+    three stay on the right face, distinct and contract-legal.
     """
     g = _aws_landscape_geo()
     exits = {eid: next(e for e in g.edges if e.id == eid).exit for eid in ("l5", "l6", "l8")}
     for eid, pt in exits.items():
         assert pt[0] is not None and pt[0] >= 0.5, f"{eid} not a right exit: {pt}"
-    # Bands ordered by the lane each run takes: obj above < cache level < db below.
-    assert exits["l8"][1] < exits["l6"][1] < exits["l5"][1], exits
+    assert exits["l5"][1] < exits["l6"][1] < exits["l8"][1], exits
     assert abs(exits["l6"][1] - 0.5) < 0.05, f"level run off centre: {exits['l6']}"
-    # Distinct enough not to merge at the glyph, and contract-legal.
     assert geo.check_exit_thirds(g) == []
     assert geo.check_edge_direction(g) == []
 
