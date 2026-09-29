@@ -25,9 +25,9 @@ from __future__ import annotations
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
+from rule_engine.constants import REQUIRED_CONTAINER_KINDS
 from rule_engine.icon_resolver import (
     CONTAINER_KINDS,
-    REQUIRED_CONTAINER_KINDS,
     PROVIDERS,
     load_mapping,
     resolve_container,

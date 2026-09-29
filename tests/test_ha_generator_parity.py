@@ -17,6 +17,7 @@ from __future__ import annotations
 import importlib
 import os
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -120,7 +121,7 @@ def test_ha_parity_has_expected_shape():
     assert geo.check_node_connectivity(lg) == []
     assert len(lg.overlay_nodes) == 11
     # both region frames present in the summary; account+vpc+az in the landscape.
-    assert set(sg.containers) == {"nb_a", "nb_b"}
+    assert set(sg.containers) == {"boundary-region-a", "boundary-region-b"}
     assert "boundary-account" in lg.containers
 
 
@@ -347,3 +348,23 @@ def test_landscape_reproduces_reference_shape(provider):
     OCI is exercised only when its stencils are fetched (skipped otherwise)."""
     g = _build_geometry(build_landscape(_skin(provider)))
     _assert_landscape_shape(g)
+
+
+# 1.10.3: container captions use each provider's own words, read from
+# profiles/terminology.yaml (network_boundary label + zone_label).
+_NATIVE = {
+    "aws": ("vpc-primary", "az-a1", "app-az1"),
+    "azure": ("vnet-primary", "az-a1", "app-az1"),
+    "gcp": ("vpc-primary", "zone-a1", "app-zone1"),
+    "oci": ("vcn-primary", "ad-a1", "app-ad1"),
+}
+
+
+def test_landscape_captions_use_native_terminology():
+    root = Path(__file__).resolve().parents[1]
+    for provider, words in _NATIVE.items():
+        text = (root / "examples" / provider /
+                f"02-{provider}-ha-multiregion-landscape.drawio").read_text(encoding="utf-8")
+        for w in words:
+            assert f'value="{w}' in text, f"{provider}: expected native label {w!r}"
+        assert 'value="region-primary ' in text, f"{provider}: region level missing"

@@ -106,6 +106,10 @@ CONTAINER_KINDS: Tuple[str, ...] = (
     "availability_domain",
     "fault_domain",
     "subnet",
+    # 1.10.3 (D19): AWS draws public and private subnets as two distinct
+    # official group boxes, and an on-premises estate as "Corporate data center".
+    "public_subnet",
+    "on_premises",
 )
 
 #: The two container kinds EVERY profile must declare (Requirement 2 AC6). The

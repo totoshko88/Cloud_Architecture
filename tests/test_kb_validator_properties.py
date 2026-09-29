@@ -217,8 +217,11 @@ def test_property_8_near_miss_mapping_is_rejected_and_named(
 
 # Feature: honest-gates, Property 8: Frontmatter validation matches the contract
 @given(
-    prefix=st.text(max_size=20),
-    body=st.text(max_size=40),
+    # No ``}``: the second block is meant to be an UNTERMINATED flow mapping, and
+    # a ``}`` in either part can close it into valid YAML (``{0: }`` parses to
+    # ``{0: None}``), which the validator rightly accepts as a mapping.
+    prefix=st.text(alphabet=st.characters(blacklist_characters="}"), max_size=20),
+    body=st.text(alphabet=st.characters(blacklist_characters="}"), max_size=40),
 )
 def test_property_8_malformed_yaml_is_a_named_yaml_parse_violation(
     prefix: str, body: str,

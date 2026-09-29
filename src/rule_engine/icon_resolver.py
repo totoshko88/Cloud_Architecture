@@ -31,12 +31,7 @@ from typing import Any, Dict
 
 import yaml
 
-from rule_engine.constants import (
-    CONTAINER_KINDS,
-    REQUIRED_CONTAINER_KINDS,
-    ICON_SOURCES,
-    PROVIDERS,
-)
+from rule_engine.constants import CONTAINER_KINDS, ICON_SOURCES, PROVIDERS
 from rule_engine.constants import NEUTRAL_RESOURCE_TYPES as RESOURCE_TYPES
 from rule_engine.constants import resolve_bundled_dir
 
@@ -228,9 +223,12 @@ def resolve_icon(resource_type: str, provider: str) -> Dict[str, str]:
 def resolve_container(kind: str, provider: str) -> Dict[str, str]:
     """Resolve the container group style for ``kind`` under ``provider``.
 
-    ``kind`` must be one of ``boundary`` or ``network_boundary``. Returns exactly
-    one style per kind as ``{"style_string": <style>}`` (Requirement 2 AC6),
-    read from the mapping's ``containers`` table.
+    ``kind`` must be one of :data:`~rule_engine.constants.CONTAINER_KINDS`: the
+    mandatory ``boundary`` / ``network_boundary`` pair every profile declares, or
+    an optional nested level (``region``, ``availability_domain``,
+    ``fault_domain``, ``subnet``) that only some profiles (OCI) declare. Returns
+    exactly one style per kind as ``{"style_string": <style>}`` (Requirement 2
+    AC6), read from the mapping's ``containers`` table.
 
     Raises :class:`UnresolvedTypeError` when ``kind`` is not a container kind or
     is absent from the provider's ``containers`` table, and

@@ -33,7 +33,7 @@ from __future__ import annotations
 
 import base64
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
@@ -118,6 +118,9 @@ class Node:
     #: Rendered by :func:`overlay_suffix` as a dashed outline plus the
     #: machine-readable ``overlay=<term>`` token the linter reads.
     overlay: Optional[str] = None
+    #: Caption background colour; set by ``build_diagram`` only for a node whose
+    #: own bottom-exit edge runs through its caption (see ``_own_caption_cuts``).
+    label_bg: Optional[str] = None
 
 
 # Visual encoding of an overlay marker. diagram-standards → *Icon Fidelity*
@@ -139,10 +142,16 @@ def overlay_suffix(node: "Node") -> str:
     carries a marker (so ``overlay-legend-coverage`` can check it is documented
     and ``node-connectivity`` can exempt it).
     """
-    if not node.overlay:
-        return ""
-    shape = _OVERLAY_SHAPE.get(node.overlay, "dashed=1")
-    return f";{shape};overlay={node.overlay}"
+    out = ""
+    if node.overlay:
+        shape = _OVERLAY_SHAPE.get(node.overlay, "dashed=1")
+        out = f";{shape};overlay={node.overlay}"
+    if node.label_bg:
+        # Set by ``build_diagram`` for a node whose own bottom-exit edge drops
+        # through its caption: the caption is painted on the local background so
+        # the line passes BEHIND the text instead of striking it through.
+        out += f";labelBackgroundColor={node.label_bg}"
+    return out
 
 
 @dataclass
@@ -330,6 +339,14 @@ def _embed_asset_style(style: str) -> str:
 
 
 # --- OCI embedded-stencil renderer ----------------------------------------
+
+#: OCI v24.2 caption typeface. Oracle Sans is not a web font and is rarely
+#: installed, so a bare ``fontFamily=Oracle Sans`` falls back to the browser's
+#: default SERIF face (every CI raster export). The list keeps it sans-serif.
+#: Must stay in sync with the ``fontFamily`` in ``mappings/oci-icons.yaml``.
+OCI_FONT_FAMILY = "Oracle Sans,Helvetica,Arial,sans-serif"
+#: OCI v24.2 caption colour — Oracle near-black, never red.
+OCI_CAPTION_HEX = "#312D2A"
 
 _CELL_RE = re.compile(r"<mxCell\b[^>]*?(?:/>|>.*?</mxCell>)", re.S)
 _ID_RE = re.compile(r'\bid="([^"]*)"')
@@ -572,22 +589,34 @@ class OciStencilIcon:
     """Renderer for an OCI node whose glyph is an embedded stencil group.
 
     ``stencils`` maps a slug -> ``{"w", "h", "xml"}`` (as produced by
-    ``scripts/fetch_assets.py``). ``brand_hex`` colors the node label.
+    ``scripts/fetch_assets.py``). ``brand_hex`` is the profile's brand anchor
+    (kept for the Icon Resolver contract); the node CAPTION uses the OCI v24.2
+    text style — ``OCI_FONT_FAMILY`` in ``caption_hex`` (Oracle near-black
+    ``#312D2A``), never red: red on a diagram means blocked/missing/disabled
+    (Legend), and the v24.2 guide never sets captions in red (docs/REVIEW.md D17).
     """
 
-    def __init__(self, stencils: Dict[str, Any], slug: str, brand_hex: str = "#F80000"):
+    def __init__(
+        self,
+        stencils: Dict[str, Any],
+        slug: str,
+        brand_hex: str = "#F80000",
+        caption_hex: str = OCI_CAPTION_HEX,
+    ):
         if slug not in stencils:
             raise KeyError(f"OCI stencil slug {slug!r} not found in extracted pack")
         self.entry = stencils[slug]
         self.slug = slug
         self.brand_hex = brand_hex
+        self.caption_hex = caption_hex
 
     def __call__(self, node: Node, parent_id: str) -> str:
         gw = float(self.entry.get("w") or ICON_SIZE)
         gh = float(self.entry.get("h") or ICON_SIZE)
         style = (
             "group;html=1;fillColor=none;strokeColor=none;"
-            f"{_LABEL_STYLE};fontColor={self.brand_hex};"
+            f"{_LABEL_STYLE};fontFamily={OCI_FONT_FAMILY};"
+            f"fontColor={self.caption_hex};"
             f"ociSlug={self.slug}{overlay_suffix(node)}"
         )
         container = (
@@ -616,12 +645,109 @@ def title_cell(text: str, x: int = 40, y: int = 20, w: int = 900) -> str:
     )
 
 
-def boundary_cell(b: Boundary) -> str:
-    style = b.style or (
+def _boundary_style(b: Boundary) -> str:
+    return b.style or (
         "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;"
         f"strokeColor={b.stroke};fillColor=none;verticalAlign=top;"
         f"fontColor={b.stroke};fontSize=12"
     )
+
+
+def _set_style_token(style: str, key: str, value: str) -> str:
+    parts = [p for p in style.split(";") if p and not p.startswith(f"{key}=")]
+    parts.append(f"{key}={value}")
+    return ";".join(parts)
+
+
+def _clear_container_captions(
+    boundaries: Sequence[Boundary], nodes: Sequence[Node], edges: Sequence[Edge]
+) -> List[Boundary]:
+    """Move a container caption off any vertical edge leg that would cut it.
+
+    A draw.io group draws its caption inside its own top edge. A top entry into a
+    node near a container's left (or centre) drops straight through that strip,
+    and when the caption text sits on the drop column the line slices the words
+    — the ``vpc-primary …`` caption on every HA landscape whose VPC caption is
+    left-aligned (AWS, OCI). Geometry is fixed by the layout engine, so the
+    CAPTION moves instead: to the nearest grid slot no leg passes through,
+    expressed as ``align=left;spacingLeft=N``. A caption that is already clear
+    is left byte-identical. ``edge-crosses-container-label`` is the check.
+    """
+    from rule_engine.geometry import Box, free_caption_x0, vertical_caption_cuts
+
+    boxes = {n.id: Box(n.id, n.x, n.y, ICON_SIZE, ICON_SIZE) for n in nodes}
+    polylines = []
+    for e in edges:
+        s, t = boxes.get(e.source), boxes.get(e.target)
+        if s is None or t is None:
+            continue
+        pl = [(s.x + e.exit[0] * s.w, s.y + e.exit[1] * s.h)]
+        pl += [tuple(p) for p in e.points]
+        pl.append((t.x + e.entry[0] * t.w, t.y + e.entry[1] * t.h))
+        polylines.append(pl)
+    out: List[Boundary] = []
+    for b in boundaries:
+        style = _boundary_style(b)
+        box = Box(b.id, b.x, b.y, b.w, b.h)
+        x0 = free_caption_x0(b.label, style, box, vertical_caption_cuts(polylines, box))
+        if x0 is None:
+            out.append(b)
+            continue
+        spacing = 2  # draw.io default label spacing, added to spacingLeft
+        new = _set_style_token(style, "align", "left")
+        new = _set_style_token(new, "spacingLeft", str(int(round(x0 - b.x - spacing))))
+        out.append(Boundary(b.id, b.label, b.x, b.y, b.w, b.h, b.stroke, b.parent, new))
+    return out
+
+
+#: Approximate advance of a 12px node-caption glyph and the clearance kept
+#: from either end of the text (matches ``geometry.caption_text_extent``).
+_NODE_CAPTION_CHAR_W = 7.0
+_NODE_CAPTION_CLEARANCE = 4.0
+
+
+def _own_caption_cuts(nodes: Sequence[Node], edges: Sequence[Edge]) -> set:
+    """Return the ids of edges whose bottom-exit stub drops through the SOURCE
+    node's own caption text.
+
+    A bottom exit is the sanctioned straight drop to a target directly below
+    (diagram-standards → fan-out bottom branch), but the service name is drawn
+    directly under the icon, centred, so the stub strikes it through
+    (``lb-pr|imary``). Geometry stays as routed; ``build_diagram`` instead draws
+    these edges BEHIND the nodes and gives the node's caption an opaque
+    background, so the line passes under the text.
+    """
+    by_id = {n.id: n for n in nodes}
+    out = set()
+    for e in edges:
+        n = by_id.get(e.source)
+        if n is None or e.exit[1] < 1.0:
+            continue
+        half = min(ICON_SIZE * 2, len(n.label) * _NODE_CAPTION_CHAR_W) / 2.0
+        mid = n.x + ICON_SIZE / 2.0
+        x = n.x + e.exit[0] * ICON_SIZE
+        if mid - half - _NODE_CAPTION_CLEARANCE < x < mid + half + _NODE_CAPTION_CLEARANCE:
+            out.add(e.id)
+    return out
+
+
+def _local_background(n: Node, boundaries: Sequence[Boundary]) -> str:
+    """The fill of the innermost FILLED container holding ``n`` (else white)."""
+    best: Optional[Boundary] = None
+    for b in boundaries:
+        if not (b.x <= n.x and n.x + ICON_SIZE <= b.x + b.w
+                and b.y <= n.y and n.y + ICON_SIZE <= b.y + b.h):
+            continue
+        m = re.search(r"(?:^|;)fillColor=(#[0-9A-Fa-f]{6})", _boundary_style(b))
+        if m and (best is None or b.w * b.h < best.w * best.h):
+            best = b
+    if best is None:
+        return "#FFFFFF"
+    return re.search(r"(?:^|;)fillColor=(#[0-9A-Fa-f]{6})", _boundary_style(best)).group(1)
+
+
+def boundary_cell(b: Boundary) -> str:
+    style = _boundary_style(b)
     return (
         f'        <mxCell id="{b.id}" value="{b.label}" style="{style}" '
         f'vertex="1" parent="{b.parent}">\n'
@@ -777,14 +903,31 @@ def build_diagram(
     )
     parts.append(title_cell(title))
     parts.append("\n")
-    for b in boundaries:
+    routed = _orthogonalised(edges, nodes)
+    for b in _clear_container_captions(boundaries, nodes, routed):
         parts.append(boundary_cell(b))
     parts.append("\n")
+    # Edges whose bottom stub drops through their source's caption are drawn
+    # BEFORE the nodes (draw.io paints in document order), and that source's
+    # caption gets an opaque background in the local container fill — the line
+    # then passes behind the service name instead of striking it through.
+    under = _own_caption_cuts(nodes, routed)
+    if under:
+        masked = {e.source for e in routed if e.id in under}
+        nodes = [
+            replace(n, label_bg=_local_background(n, boundaries)) if n.id in masked else n
+            for n in nodes
+        ]
+        for e in routed:
+            if e.id in under:
+                parts.append(edge_cell(e))
+        parts.append("\n")
     for n in nodes:
         parts.append(n.render(n, "1"))
     parts.append("\n")
-    for e in _orthogonalised(edges, nodes):
-        parts.append(edge_cell(e))
+    for e in routed:
+        if e.id not in under:
+            parts.append(edge_cell(e))
     parts.append("\n")
     # Size each text box from its content plus uniform padding so no line is
     # clipped or abuts the border. Height: one 12px line ~= 16px of leading, plus

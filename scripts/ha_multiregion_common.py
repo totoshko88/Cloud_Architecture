@@ -53,6 +53,8 @@ from rule_engine.diagram_layout import (  # noqa: E402
     CONTAINER_PAD,
     STANDARD_LEGEND_LINES,
 )
+from rule_engine.constants import load_terminology  # noqa: E402
+from rule_engine.icon_resolver import resolve_container  # noqa: E402
 from rule_engine.layout_engine import PlacedDiagram, layout  # noqa: E402
 from rule_engine.ha_multiregion_spec import (  # noqa: E402
     LANDSCAPE_LEGEND_EXTRA,
@@ -108,6 +110,44 @@ LABELS: Dict[str, str] = {
 }
 
 
+def mapping_container_styles(provider: str) -> Dict[str, str]:
+    """Container styles for every HA container kind, read from the mapping.
+
+    ``account`` → ``boundary``, ``region`` → ``region``, ``vpc`` →
+    ``network_boundary``, ``az`` → ``availability_domain`` (the zone level).
+    ``mappings/<provider>-icons.yaml`` is the single source; no builder
+    hardcodes a container style (REVIEW.md D17/D18)."""
+    kinds = {
+        "account": "boundary",
+        "region": "region",
+        "vpc": "network_boundary",
+        "az": "availability_domain",
+    }
+    return {k: resolve_container(v, provider)["style_string"] for k, v in kinds.items()}
+
+
+def native_terms(provider: str) -> "tuple[str, str]":
+    """Return the provider's native ``(network, zone)`` caption slugs.
+
+    Read from ``profiles/terminology.yaml`` (the terminology single source of
+    truth), so a container is captioned in the provider's own words —
+    ``vnet-primary`` on Azure, ``vcn-primary`` / ``ad-a1`` on OCI — rather than
+    the AWS ``vpc`` / ``az`` for everyone (provider-profiles → labels are native
+    names)."""
+    data = load_terminology()
+    net = data["resources"]["network_boundary"][provider]["label"]
+    zone = (data.get("zone_label") or {}).get(provider, "AZ")
+    return net.lower(), zone.lower()
+
+
+def _skinned_flow(lines: Sequence[str], provider: str) -> List[str]:
+    """Flow text in the provider's zone term (``AD-1`` on OCI, ``Zone-1`` on GCP)."""
+    zone = (load_terminology().get("zone_label") or {}).get(provider, "AZ")
+    if zone == "AZ":
+        return list(lines)
+    return [ln.replace("AZ-", f"{zone}-") for ln in lines]
+
+
 # A provider skin: role -> icon renderer, plus the three container styles and
 # region/account labels.
 IconRenderer = Callable[[Node, str], str]
@@ -152,10 +192,11 @@ def _nodes_from(placed: PlacedDiagram, skin: ProviderSkin) -> List[Node]:
     Each node's role (which chooses the provider icon renderer) comes from its
     ``NodeSpec.role``; its coordinates come from the engine's placement."""
     role_of = {n.id: n.role for n in placed.spec.nodes}
+    _net, zone = native_terms(skin.provider)
     return [
         Node(
             id=n.id,
-            label=_skinned_label(n),
+            label=_skinned_label(n, zone),
             x=int(placed.nodes[n.id].x),
             y=int(placed.nodes[n.id].y),
             render=skin.renderers[role_of[n.id]],
@@ -165,7 +206,7 @@ def _nodes_from(placed: PlacedDiagram, skin: ProviderSkin) -> List[Node]:
     ]
 
 
-def _skinned_label(spec_node) -> str:
+def _skinned_label(spec_node, zone: str = "az") -> str:
     """Return the node's label, suffixed with its overlay term when it has one.
 
     The overlay marker's **label channel**: a ``standby`` peer reads
@@ -175,12 +216,19 @@ def _skinned_label(spec_node) -> str:
     ``node-quote`` safe set ``[A-Za-z0-9_-]``, so no label needs quoting.
     """
     label = LABELS.get(spec_node.id, spec_node.id)
+    if zone != "az":
+        # Keep node names in the same words as their zone container
+        # (``app-ad1`` inside ``ad-a1`` on OCI, ``app-zone1`` on GCP).
+        label = label.replace("-az", f"-{zone}")
     overlay = getattr(spec_node, "overlay", None)
     return f"{label}-{overlay}" if overlay else label
 
 
 def _boundaries_from(
-    placed: PlacedDiagram, skin: ProviderSkin, labels: Dict[str, str]
+    placed: PlacedDiagram,
+    skin: ProviderSkin,
+    labels: Dict[str, str],
+    style_kind: Optional[Dict[str, str]] = None,
 ) -> List[Boundary]:
     """Build the skinned ``Boundary`` list from the placed container boxes.
 
@@ -201,7 +249,9 @@ def _boundaries_from(
                 y=int(box.y),
                 w=int(box.w),
                 h=int(box.h),
-                style=skin.container_styles[kind_of[c.id]],
+                style=skin.container_styles[
+                    (style_kind or {}).get(kind_of[c.id], kind_of[c.id])
+                ],
             )
         )
     return out
@@ -251,10 +301,12 @@ def build_summary(skin: ProviderSkin, legacy: bool = False) -> str:
     absent (Phase A) both routes produce byte-identical output."""
     placed = layout(SUMMARY_SPEC, legacy=legacy)
     region_labels = {
-        "nb_a": f"region-primary ({skin.region_primary})",
-        "nb_b": f"region-passive ({skin.region_passive})",
+        "boundary-region-a": f"region-primary ({skin.region_primary})",
+        "boundary-region-b": f"region-passive ({skin.region_passive})",
     }
-    boundaries = _boundaries_from(placed, skin, region_labels)
+    # The summary's two containers ARE the regions (``region-primary (…)``), so
+    # they take the provider's Region style, not its network-boundary style.
+    boundaries = _boundaries_from(placed, skin, region_labels, {"vpc": "region"})
     nodes = _nodes_from(placed, skin)
     edges = _edges_from(placed)
     page_w, page_h = _page_size(placed)
@@ -264,7 +316,7 @@ def build_summary(skin: ProviderSkin, legacy: bool = False) -> str:
         diagram_id=f"{skin.provider}-ha-summary",
         diagram_name=f"{skin.provider}-ha-multiregion-summary",
         title=title, boundaries=boundaries, nodes=nodes, edges=edges,
-        flow_lines=placed.spec.flow_lines,
+        flow_lines=_skinned_flow(placed.spec.flow_lines, skin.provider),
         legend_x=placed.legend_x, legend_w=placed.legend_w,
         page_w=page_w, page_h=page_h,
     )
@@ -278,12 +330,15 @@ def build_landscape(skin: ProviderSkin, legacy: bool = False) -> str:
     ``legacy`` threads the ``--legacy`` flag to the layout pipeline (see
     :func:`build_summary`)."""
     placed = layout(LANDSCAPE_SPEC, legacy=legacy)
+    net, zone = native_terms(skin.provider)
     labels = {
         "boundary-account": skin.account_label,
-        "boundary-vpc-a": f"vpc-primary {skin.region_primary}",
-        "boundary-vpc-b": f"vpc-passive {skin.region_passive}",
-        "boundary-az-a1": "az-a1", "boundary-az-a2": "az-a2",
-        "boundary-az-b1": "az-b1", "boundary-az-b2": "az-b2",
+        "boundary-region-a": f"region-primary {skin.region_primary}",
+        "boundary-region-b": f"region-passive {skin.region_passive}",
+        "boundary-vpc-a": f"{net}-primary",
+        "boundary-vpc-b": f"{net}-passive",
+        "boundary-az-a1": f"{zone}-a1", "boundary-az-a2": f"{zone}-a2",
+        "boundary-az-b1": f"{zone}-b1", "boundary-az-b2": f"{zone}-b2",
     }
     boundaries = _boundaries_from(placed, skin, labels)
     nodes = _nodes_from(placed, skin)
@@ -295,7 +350,7 @@ def build_landscape(skin: ProviderSkin, legacy: bool = False) -> str:
         diagram_id=f"{skin.provider}-ha-landscape",
         diagram_name=f"{skin.provider}-ha-multiregion-landscape",
         title=title, boundaries=boundaries, nodes=nodes, edges=edges,
-        flow_lines=placed.spec.flow_lines,
+        flow_lines=_skinned_flow(placed.spec.flow_lines, skin.provider),
         legend_x=placed.legend_x, legend_y_flow=120, legend_y_legend=460,
         legend_w=placed.legend_w,
         # The landscape uses the ``standby`` overlay, so its Legend must document

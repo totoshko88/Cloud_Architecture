@@ -105,7 +105,7 @@ class ContainerSpec:
     """
 
     id: str
-    kind: str  # "account" | "vpc" | "az"
+    kind: str  # "account" | "region" | "vpc" | "az"
     region: str
     parent: Optional[str]  # nesting: az.parent = vpc, vpc.parent = account
     label_key: str  # the skin fills the concrete label

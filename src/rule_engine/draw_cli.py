@@ -59,6 +59,7 @@ from rule_engine.diagram_layout import (
 from rule_engine.draw import DrawError, SnapshotSplitRequired, spec_from_snapshot
 from rule_engine.icon_resolver import (
     IconResolverError,
+    UnresolvedTypeError,
     resolve_container,
     resolve_icon,
 )
@@ -173,6 +174,8 @@ def _container_style(kind: str, provider: str) -> str:
     elif kind == "az":
         # Level-specific first, then the generic network boundary fallback.
         preferred = ("availability_domain", "network_boundary")
+    elif kind == "region":
+        preferred = ("region", "network_boundary")
     else:  # vpc / anything else structural
         preferred = ("network_boundary",)
 
@@ -180,9 +183,16 @@ def _container_style(kind: str, provider: str) -> str:
     for map_kind in preferred:
         try:
             return resolve_container(map_kind, provider)["style_string"]
-        except IconResolverError as exc:
+        except UnresolvedTypeError as exc:
+            # Only an ABSENT kind falls back; a declared-but-malformed entry
+            # (AssetSourceError) is a profile defect and must surface.
             last_exc = exc
             continue
+        except IconResolverError as exc:
+            raise DrawError(
+                f"no container style for kind {kind!r} under provider "
+                f"{provider!r}: {exc}"
+            ) from exc
     raise DrawError(
         f"no container style for kind {kind!r} under provider {provider!r}: "
         f"{last_exc}"

@@ -33,6 +33,16 @@ brand_hex:
   oci: "#F80000"      # Oracle red
   generic: "#FFFFFF"  # grayscale — no vendor color (white fill / black stroke)
 
+# Native short name of a redundancy zone inside a region (diagram container
+# captions only; not an inventory type). OCI calls it an Availability Domain,
+# GCP a zone, AWS/Azure an Availability Zone.
+zone_label:
+  aws: AZ
+  azure: AZ
+  gcp: Zone
+  oci: AD
+  generic: Zone
+
 resources:
   boundary:
     aws:

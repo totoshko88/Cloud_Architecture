@@ -1572,7 +1572,7 @@ def test_ha_specs_encode_the_shipped_topology():
     # account ⊃ vpc ⊃ az containers.
     assert len(SUMMARY_SPEC.nodes) == 9
     assert {e.id for e in SUMMARY_SPEC.edges} == {f"s{i}" for i in range(1, 10)}
-    assert {c.id for c in SUMMARY_SPEC.containers} == {"nb_a", "nb_b"}
+    assert {c.id for c in SUMMARY_SPEC.containers} == {"boundary-region-a", "boundary-region-b"}
     # The summary is a compact north-south flow: regions side-by-side, the flow
     # reading DOWN each region column (matching the hand-drawn summary reference).
     assert SUMMARY_SPEC.axis == "north-south"
@@ -1604,9 +1604,13 @@ def test_ha_specs_encode_the_shipped_topology():
         "api_b1", "api_b2", "app_b2", "cache_b1", "cache_b2", "db_b2",
         "fn_b", "mon_b", "obj_b2", "queue_b", "sec_b",
     ], "the standby set is the passive region's unconnected mirror peers"
-    # account ⊃ 2 vpc ⊃ 4 az.
+    # 1.10.3: account ⊃ 2 region ⊃ 2 vpc ⊃ 4 az (the region level every
+    # provider's own diagrams draw between the boundary and the network).
     kinds = sorted(c.kind for c in LANDSCAPE_SPEC.containers)
-    assert kinds == ["account", "az", "az", "az", "az", "vpc", "vpc"]
+    assert kinds == ["account", "az", "az", "az", "az", "region", "region", "vpc", "vpc"]
+    parent = {c.id: c.parent for c in LANDSCAPE_SPEC.containers}
+    assert parent["boundary-vpc-a"] == "boundary-region-a"
+    assert parent["boundary-region-a"] == "boundary-account"
 
 
 def test_ha_specs_declare_no_coordinates():

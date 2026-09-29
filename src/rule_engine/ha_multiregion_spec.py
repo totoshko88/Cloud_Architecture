@@ -18,8 +18,8 @@ Topology fidelity (must match ``ha_multiregion_common.py``):
 
 * **Summary** — 9 nodes: ``dns`` (account-level) fanning out to two mirror
   regions, each ``lb → app → db`` with an ``obj`` object store, plus the
-  cross-region DB replication edge. Two network-boundary frames (``nb_a`` /
-  ``nb_b``). Edges ``s1``..``s9``. Class ``flow``, north-south axis (the flow
+  cross-region DB replication edge. Two network-boundary frames (``boundary-region-a`` /
+  ``boundary-region-b``). Edges ``s1``..``s9``. Class ``flow``, north-south axis (the flow
   reads DOWN each region column, the two regions side-by-side, DNS centred above).
 * **Landscape** — 34 nodes: an account-level edge row (waf / dns / cdn / audit)
   above two mirror region VPCs, each VPC carrying a service row and two
@@ -58,7 +58,7 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
 # region the tier progression lb → app → db reads DOWN the column (the lane
 # order router → workers → data maps to top→bottom on the north-south axis);
 # the object store shares the data lane at a
-# distinct slot. The two network-boundary frames (nb_a / nb_b) are the region
+# distinct slot. The two network-boundary frames (boundary-region-a / boundary-region-b) are the region
 # VPC containers. Roles match the tables: dns→dns, lb→lb, app→k8s (managed_k8s),
 # db→sql (managed_sql), obj→obj (object_store).
 
@@ -92,8 +92,8 @@ _SUMMARY_EDGES = (
 # The two region (network-boundary) frames. No account container in the summary
 # — the frames are the only boundaries, and dns sits outside them.
 _SUMMARY_CONTAINERS = (
-    ContainerSpec(id="nb_a", kind="vpc", region="a", parent=None, label_key="nb_a"),
-    ContainerSpec(id="nb_b", kind="vpc", region="b", parent=None, label_key="nb_b"),
+    ContainerSpec(id="boundary-region-a", kind="vpc", region="a", parent=None, label_key="boundary-region-a"),
+    ContainerSpec(id="boundary-region-b", kind="vpc", region="b", parent=None, label_key="boundary-region-b"),
 )
 
 _SUMMARY_FLOW = (
@@ -259,8 +259,10 @@ _LANDSCAPE_EDGES = (
 # Nested containers: account ⊃ region VPC ⊃ availability zone.
 _LANDSCAPE_CONTAINERS = (
     ContainerSpec(id="boundary-account", kind="account", region="", parent=None, label_key="account"),
-    ContainerSpec(id="boundary-vpc-a", kind="vpc", region="a", parent="boundary-account", label_key="vpc_a"),
-    ContainerSpec(id="boundary-vpc-b", kind="vpc", region="b", parent="boundary-account", label_key="vpc_b"),
+    ContainerSpec(id="boundary-region-a", kind="region", region="a", parent="boundary-account", label_key="region_a"),
+    ContainerSpec(id="boundary-region-b", kind="region", region="b", parent="boundary-account", label_key="region_b"),
+    ContainerSpec(id="boundary-vpc-a", kind="vpc", region="a", parent="boundary-region-a", label_key="vpc_a"),
+    ContainerSpec(id="boundary-vpc-b", kind="vpc", region="b", parent="boundary-region-b", label_key="vpc_b"),
     ContainerSpec(id="boundary-az-a1", kind="az", region="a", parent="boundary-vpc-a", label_key="az_a1"),
     ContainerSpec(id="boundary-az-a2", kind="az", region="a", parent="boundary-vpc-a", label_key="az_a2"),
     ContainerSpec(id="boundary-az-b1", kind="az", region="b", parent="boundary-vpc-b", label_key="az_b1"),
@@ -296,6 +298,7 @@ _LANDSCAPE_FLOW = (
 #: ``overlay-legend-coverage`` is satisfied by a real legend entry rather than by
 #: the marker merely appearing twice in the file.
 LANDSCAPE_LEGEND_EXTRA = (
+    "Nesting: boundary > region > network boundary > zone (AZ / AD / zone)",
     "standby (dashed outline, -standby label) = passive peer mirrors the active "
     "one; edges omitted for clarity",
 )

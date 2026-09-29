@@ -27,10 +27,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from rule_engine.diagram_layout import builtin_icon  # noqa: E402
-from rule_engine.icon_resolver import resolve_icon, resolve_container  # noqa: E402
+from rule_engine.icon_resolver import resolve_icon  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from ha_multiregion_common import ProviderSkin, run_cli  # noqa: E402
+from ha_multiregion_common import mapping_container_styles, ProviderSkin, run_cli  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -60,11 +60,7 @@ RENDERERS = {role: _icon(yaml_key) for role, yaml_key in _ROLE_MAP.items()}
 
 # Container styles: still use mxgraph.aws4.group for proper draw.io group behavior
 # (only structural elements, not service icons)
-CONTAINER_STYLES = {
-    "account": resolve_container("boundary", "aws")["style_string"],
-    "vpc": resolve_container("network_boundary", "aws")["style_string"],
-    "az": "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#00A4A6;fillColor=none;verticalAlign=top;fontColor=#00A4A6;fontSize=12",
-}
+CONTAINER_STYLES = mapping_container_styles("aws")
 SKIN = ProviderSkin("aws", RENDERERS, CONTAINER_STYLES,
                     "Account 111122223333", "us-east-1", "us-west-2")
 STEM = "02-aws-ha-multiregion"

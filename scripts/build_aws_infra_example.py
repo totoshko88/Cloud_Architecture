@@ -178,18 +178,13 @@ FLOW_LINES = [
 # proper draw.io group behavior (only structural elements, not service icons).
 # The on-premises group uses the dedicated ``group_on_premise`` container icon
 # so it reads as a non-cloud boundary rather than a second account.
-_GROUP = "shape=mxgraph.aws4.group;grStroke=1;fillColor=none;dashed=0;verticalAlign=top;align=left;spacingLeft=30;fontSize=12;html=1"
 STYLE_ACCOUNT = resolve_container("boundary", "aws")["style_string"]
 STYLE_VPC = resolve_container("network_boundary", "aws")["style_string"]
-STYLE_ONPREM = (
-    f"{_GROUP};grIcon=mxgraph.aws4.group_on_premise;strokeColor=#5A6C7D;fontColor=#5A6C7D"
-)
-# Availability Zones are dashed rectangles (AWS ships no AZ group stencil), in
-# the AWS teal used by the reference architectures.
-STYLE_AZ = (
-    "rounded=0;dashed=1;dashPattern=8 8;fillColor=none;strokeColor=#00A4A6;"
-    "verticalAlign=top;align=center;fontColor=#00A4A6;fontSize=12;html=1"
-)
+# On-premises and AZ boxes come from the mapping too: the official AWS
+# "Corporate data center" group and the plain dashed #147EBA AZ rectangle
+# (AWS ships no AZ group icon). REVIEW.md D19.
+STYLE_ONPREM = resolve_container("on_premises", "aws")["style_string"]
+STYLE_AZ = resolve_container("availability_domain", "aws")["style_string"]
 
 
 def build() -> str:

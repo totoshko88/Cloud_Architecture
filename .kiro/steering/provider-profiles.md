@@ -96,15 +96,45 @@ fill, and caption are extracted verbatim from the reference Physical templates:
 | Fault Domain (`fault_domain`) | neutral `#9E9892` | `#FCFBFA` | rounded, `#312D2A`, **italic** |
 | Subnet (`subnet`) | terracotta `#AE562C` | none | dashed, terracotta caption, left |
 
-Every level uses `fontFamily=Oracle Sans` and a `#312D2A` (Oracle near-black)
-caption — **never red text**; the service **icon** keeps its OCI-red brand fill.
-The optional levels are OCI-specific: the other four profiles declare only the
-mandatory pair, so `draw_cli._container_style` maps an `az` container to
-`availability_domain` **when the profile declares it**, else falls back to
-`network_boundary` — leaving aws/azure/gcp/generic behavior unchanged. This
-palette is source-guarded by `tests/test_mappings.py` (no legacy `#F80000` /
+Every level uses `fontFamily=Oracle Sans,Helvetica,Arial,sans-serif` (Oracle Sans
+first; the fallback list keeps captions sans-serif where Oracle Sans is not
+installed) and a `#312D2A` (Oracle near-black) caption — **never red text**,
+including the node captions drawn by `OciStencilIcon`; the service **icon** keeps
+its OCI-red brand fill. Every OCI container caption is bold (`fontStyle=1`;
+Fault Domain bold italic), and rounded levels use an absolute corner radius
+(`absoluteArcSize=1`) so a large Region box does not get oversized corners.
+The palette is source-guarded by `tests/test_mappings.py` (no legacy `#F80000` /
 `#C74634`; canonical stroke/fill per level; Oracle Sans captions) and recorded
 in `docs/REVIEW.md` D17.
+
+### Optional nested levels on the other profiles (1.10.3)
+
+The optional `region` and `availability_domain` (the zone level, whatever the
+provider calls it) kinds are declared by all four vendor profiles, so the HA
+landscape draws `boundary ⊃ region ⊃ network boundary ⊃ zone` on every provider.
+The styles follow each vendor's own published diagrams (`docs/REVIEW.md` D18):
+
+| Provider | Region | Network Boundary | Zone |
+| --- | --- | --- | --- |
+| aws | `group_region` group, dashed `#00A4A6` | `group_vpc2` group, `#8C4FFF` | dashed `#147EBA` box (AWS ships no AZ icon) |
+| azure | dashed neutral `#737373` | dotted `#0078D4` + Virtual Networks corner icon | borderless `#F2F2F2` block |
+| gcp | dashed neutral `#5F6368` | dashed `#34A853` | borderless `#F1F3F4` block |
+| oci | filled `#F5F4F2`, rounded | dashed terracotta `#AE562C` | filled `#DFDCD8`, rounded |
+
+AWS container styles are copied from draw.io's own *AWS / Groups* palette:
+Account `group_account` `#CD2264`, private subnet / public subnet
+`group_security_group` on `#E6F6F7` / `#F2F6E8` (kinds `subnet` / `public_subnet`),
+on-premises `group_corporate_data_center` (kind `on_premises`). Azure network boxes
+carry their corner icon via `shape=label;image=img/lib/azure2/networking/…;imageAlign=left;imageVerticalAlign=top`
+(VNet: Virtual Networks, `subnet`: Subnet). No builder hardcodes a container style.
+Captions must meet 4.5:1 on white. Where a brand stroke colour is lighter than
+that (AWS `#8C4FFF` / `#147EBA`, GCP `#4285F4` / `#34A853`), the stroke keeps the
+brand colour and only the caption text is darkened. Azure captions are black.
+Container captions use the provider's own words from `profiles/terminology.yaml`
+(`vnet-…` on Azure, `vcn-…` / `ad-…` on OCI, `zone-…` on GCP). `generic` still
+declares only the mandatory pair; `draw_cli._container_style` maps `az` →
+`availability_domain` and `region` → `region` when declared, else falls back to
+`network_boundary`.
 
 ## Brand Palette
 

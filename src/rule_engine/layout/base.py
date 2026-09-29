@@ -439,6 +439,8 @@ def _band_packing(spec: DiagramSpec) -> Tuple[Dict[int, int], Dict[int, int]]:
             # and the account-row runs (WAF→CDN, DNS→passive-LB) sliced the
             # ``vpc-…`` captions no matter how the band was narrowed.
             start = _snap(lo * ROW_STEP + CONTAINER_LABEL_BAND + CONTAINER_PAD)
+            if any(c.kind == "region" for c in spec.containers):
+                start += CONTAINER_LABEL_BAND + CONTAINER_PAD
         else:
             # The gap between the previous band's content bottom and this band's
             # content top clears the previous band's own bottom box-padding (only

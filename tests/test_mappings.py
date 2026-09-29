@@ -61,6 +61,9 @@ CONTAINER_KINDS = frozenset(
         "availability_domain",
         "fault_domain",
         "subnet",
+        # 1.10.3 (D19): AWS public subnet + Corporate data center groups.
+        "public_subnet",
+        "on_premises",
     }
 )
 
@@ -286,6 +289,21 @@ def _style_token(style: str, name: str):
     return m.group(1) if m else None
 
 
+def _assert_oracle_sans(family, where: str) -> None:
+    """Oracle Sans first, then a sans-serif fallback.
+
+    Oracle Sans is not a web font and is rarely installed, so a bare
+    ``fontFamily=Oracle Sans`` renders in the browser's default SERIF face on
+    most machines (and in every CI raster export). The fallback list keeps the
+    caption sans-serif wherever Oracle Sans is missing.
+    """
+    families = [f.strip() for f in (family or "").split(",")]
+    assert families[0] == "Oracle Sans", f"{where}: caption must use Oracle Sans, got {family!r}"
+    assert families[-1] == "sans-serif", (
+        f"{where}: fontFamily must end with a sans-serif fallback, got {family!r}"
+    )
+
+
 def test_oci_container_styles_follow_canonical_v24_palette() -> None:
     """Every OCI container style matches the official v24.2 stroke/fill palette.
 
@@ -318,10 +336,8 @@ def test_oci_container_styles_follow_canonical_v24_palette() -> None:
             assert got_fill == want_fill, (
                 f"oci container {kind}: fillColor must be {want_fill}, got {got_fill}"
             )
-        # Oracle Sans caption everywhere.
-        assert _style_token(style, "fontFamily") == "Oracle Sans", (
-            f"oci container {kind}: caption must use Oracle Sans"
-        )
+        # Oracle Sans caption everywhere, with a sans-serif fallback.
+        _assert_oracle_sans(_style_token(style, "fontFamily"), f"oci container {kind}")
 
 
 def test_oci_resource_captions_are_oracle_sans_neutral_black() -> None:
@@ -336,10 +352,98 @@ def test_oci_resource_captions_are_oracle_sans_neutral_black() -> None:
     assert resources, "oci mapping must declare resources"
     for key, entry in resources.items():
         style = entry.get("style", "")
-        assert _style_token(style, "fontFamily") == "Oracle Sans", (
-            f"oci.resources.{key}: caption must use Oracle Sans, got {style!r}"
-        )
+        _assert_oracle_sans(_style_token(style, "fontFamily"), f"oci.resources.{key}")
         assert _style_token(style, "fontColor") == "#312D2A", (
             f"oci.resources.{key}: caption fontColor must be #312D2A "
             f"(Oracle near-black), got {_style_token(style, 'fontColor')}"
         )
+
+
+# --------------------------------------------------------------------------- #
+# 1.10.3 (REVIEW.md D18): container levels + styles follow each provider's own
+# published diagrams, read from the mapping by every HA builder.
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("provider", ["aws", "azure", "gcp", "oci"])
+def test_ha_providers_declare_region_and_zone_levels(provider: str) -> None:
+    containers = _load(provider).get("containers") or {}
+    for kind in ("boundary", "region", "network_boundary", "availability_domain"):
+        assert kind in containers, f"{provider}: missing container kind {kind!r}"
+        assert containers[kind].get("style"), f"{provider}.{kind}: empty style"
+
+
+def test_azure_containers_follow_architecture_center_style() -> None:
+    c = _load("azure")["containers"]
+    vnet = c["network_boundary"]["style"]
+    assert _style_token(vnet, "dashPattern") == "1 3", "VNet border is dotted"
+    assert _style_token(vnet, "strokeColor") == "#0078D4"
+    zone = c["availability_domain"]["style"]
+    assert _style_token(zone, "fillColor") == "#F2F2F2"
+    assert _style_token(zone, "strokeColor") == "none", "zones are borderless blocks"
+    for kind, entry in c.items():
+        assert _style_token(entry["style"], "fontColor") == "#000000", (
+            f"azure.{kind}: captions are black, never blue on blue"
+        )
+    # The old AZ stroke #50E6FF was ~1.5:1 on white.
+    assert "#50E6FF" not in str(c)
+
+
+def _contrast_on_white(hex_color: str) -> float:
+    def lin(v: int) -> float:
+        s = v / 255.0
+        return s / 12.92 if s <= 0.03928 else ((s + 0.055) / 1.055) ** 2.4
+    r, g, b = (int(hex_color[i:i + 2], 16) for i in (1, 3, 5))
+    lum = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+    return 1.05 / (lum + 0.05)
+
+
+@pytest.mark.parametrize("provider", ["aws", "azure", "gcp", "oci"])
+def test_container_captions_meet_contrast(provider: str) -> None:
+    for kind, entry in (_load(provider).get("containers") or {}).items():
+        font = _style_token(entry["style"], "fontColor")
+        assert font and _contrast_on_white(font) >= 4.5, (
+            f"{provider}.{kind}: caption {font} is below 4.5:1 on white"
+        )
+
+
+# --------------------------------------------------------------------------- #
+# 1.10.3 (REVIEW.md D19): vendor group boxes, copied from the draw.io app's own
+# AWS / Groups palette, and the Azure VNet/Subnet corner icons.
+# --------------------------------------------------------------------------- #
+_AWS_OFFICIAL_GROUPS = {
+    "boundary": ("group_account", "#CD2264"),
+    "region": ("group_region", "#00A4A6"),
+    "network_boundary": ("group_vpc2", "#8C4FFF"),
+    "subnet": ("group_security_group", "#00A4A6"),
+    "public_subnet": ("group_security_group", "#7AA116"),
+    "on_premises": ("group_corporate_data_center", "#7D8998"),
+}
+
+
+@pytest.mark.parametrize("kind", sorted(_AWS_OFFICIAL_GROUPS))
+def test_aws_containers_use_official_group_shapes(kind: str) -> None:
+    style = _load("aws")["containers"][kind]["style"]
+    icon, stroke = _AWS_OFFICIAL_GROUPS[kind]
+    assert _style_token(style, "grIcon") == f"mxgraph.aws4.{icon}"
+    assert _style_token(style, "strokeColor") == stroke
+
+
+def test_aws_availability_zone_is_the_official_plain_dashed_box() -> None:
+    # AWS ships no AZ group icon: the official entry is a dashed #147EBA box.
+    style = _load("aws")["containers"]["availability_domain"]["style"]
+    assert "grIcon" not in style
+    assert _style_token(style, "strokeColor") == "#147EBA"
+    assert _style_token(style, "dashed") == "1"
+
+
+@pytest.mark.parametrize(
+    "kind,icon",
+    [("network_boundary", "Virtual_Networks.svg"), ("subnet", "Subnet.svg")],
+)
+def test_azure_network_boxes_carry_their_corner_icon(kind: str, icon: str) -> None:
+    style = _load("azure")["containers"][kind]["style"]
+    assert _style_token(style, "shape") == "label"
+    assert _style_token(style, "image") == f"img/lib/azure2/networking/{icon}"
+    assert _style_token(style, "imageAlign") == "left"
+    assert _style_token(style, "imageVerticalAlign") == "top"

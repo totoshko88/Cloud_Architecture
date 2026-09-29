@@ -23,10 +23,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from rule_engine.diagram_layout import OciStencilIcon  # noqa: E402
-from rule_engine.icon_resolver import resolve_container  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from ha_multiregion_common import ProviderSkin, run_cli  # noqa: E402
+from ha_multiregion_common import mapping_container_styles, ProviderSkin, run_cli  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -71,13 +70,7 @@ RENDERERS = {
     role: OciStencilIcon(_STENCILS, slug, "#F80000")
     for role, slug in _OCI_SLUGS.items()
 }
-CONTAINER_STYLES = {
-    # Resolved from mappings/oci-icons.yaml — the official OCI v24.2 nested
-    # palette (Compartment ⊃ VCN ⊃ Availability Domain), never hardcoded red.
-    "account": resolve_container("boundary", "oci")["style_string"],
-    "vpc": resolve_container("network_boundary", "oci")["style_string"],
-    "az": resolve_container("availability_domain", "oci")["style_string"],
-}
+CONTAINER_STYLES = mapping_container_styles("oci")
 SKIN = ProviderSkin("oci", RENDERERS, CONTAINER_STYLES,
                     "Compartment acme-prod", "us-ashburn-1", "us-phoenix-1")
 STEM = "02-oci-ha-multiregion"

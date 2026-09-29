@@ -1128,3 +1128,48 @@ def test_three_fanout_targets_split_across_the_two_row_bands():
     # Distinct enough not to merge at the glyph, and contract-legal.
     assert geo.check_exit_thirds(g) == []
     assert geo.check_edge_direction(g) == []
+
+
+# --------------------------------------------------------------------------- #
+# 1.10.3: a VERTICAL leg through a container caption's TEXT is flagged when the
+# caption's real style is known (left-aligned OCI/AWS captions sliced by the
+# top-entry drops of edges 1/15).
+# --------------------------------------------------------------------------- #
+
+
+def _drop_through(style: str, drop_x: float):
+    return DiagramGeometry(
+        nodes={
+            "src": Box("src", 100, 90, 78, 78),
+            "tgt": Box("tgt", drop_x - 39, 400, 78, 78),
+        },
+        containers={"vpc": _container("vpc", 40, 300, 900, 600)},
+        container_labels={"vpc": "vcn-primary us-ashburn-1"},
+        container_styles={"vpc": style},
+        edges=[
+            EdgeGeom(
+                id="e", source="src", target="tgt", orthogonal=True,
+                exit=(1.0, 0.5), entry=(0.5, 0.0),
+                points=[(drop_x, 129.0)],
+            )
+        ],
+    )
+
+
+def test_vertical_drop_through_left_caption_text_is_flagged():
+    style = "rounded=0;dashed=1;fillColor=none;align=left;spacingLeft=5"
+    assert geo.check_edge_crosses_container_label(_drop_through(style, 150.0)) == [("e", "vpc")]
+
+
+def test_vertical_drop_beside_moved_caption_is_clear():
+    # Same drop, caption pushed right past it (what build_diagram emits).
+    style = "rounded=0;dashed=1;fillColor=none;align=left;spacingLeft=120"
+    assert geo.check_edge_crosses_container_label(_drop_through(style, 150.0)) == []
+
+
+def test_centred_caption_extent_follows_align():
+    box = Box("b", 0, 0, 800, 400)
+    x0, x1 = geo.caption_text_extent("az-a1", "align=center", box)
+    assert x0 > 350 and x1 < 450
+    x0, _ = geo.caption_text_extent("az-a1", "align=left;spacingLeft=30", box)
+    assert x0 == 32.0
