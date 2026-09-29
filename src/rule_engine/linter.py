@@ -857,6 +857,15 @@ def _check_icon_resolved(a: Artifact):
     that would render as an empty box — is an ERROR whose offender is the
     **cell id** carrying it.
 
+    Since 1.10.2, an ``image=data:image/svg...`` inline glyph is a **resolved**
+    icon when it carries an ``iconRef=<assets/vendor/...>`` companion token
+    (``diagram_layout.image_icon`` emits that pair so the glyph renders in the
+    draw.io editor while the asset path stays reverse-identifiable): the
+    placeholder check exempts it (see ``cli._icon_descriptor_for_style``), and
+    the manifest-backed check takes the ``image`` ref's identity from ``iconRef``
+    (see ``icon_refs.extract_refs``). A **bare** ``image=data:...`` with no
+    companion path is still an unresolved placeholder.
+
     File-path (``image``) refs are **not** resolved here: they are the
     Icon_Verifier's business because the referenced asset may be absent at lint
     time (design §6). A ``skipped`` status (a manifest not committed) never

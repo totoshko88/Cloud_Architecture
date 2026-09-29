@@ -122,10 +122,28 @@ def _icon_descriptor_for_style(style: str) -> Dict[str, Any]:
     :data:`_UNRESOLVED_STYLE_MARKERS`; any other concrete style — a provider
     stencil, a shaped node, an embedded stencil group, or the generic profile's
     grayscale fill/stroke box — is a resolved icon.
+
+    Exception: an ``image=data:image/svg...`` inline glyph that also carries an
+    ``iconRef=<assets/vendor/...>`` companion token is a RESOLVED icon, not a
+    placeholder. ``diagram_layout.image_icon`` emits that pair on purpose — the
+    data-URI makes the glyph render in the draw.io editor (a relative
+    ``image=<path>`` does not), and ``iconRef=`` preserves the real asset path
+    the honest-gates reverse-identify roles from. Only the ``iconRef``-backed
+    data-URI is exempted; a bare ``image=data:...`` with no companion path is
+    still an unresolved placeholder (an editor node that leaked its identity).
     """
     low = (style or "").strip().lower()
     if low == "":
         return {"style": style, "resolved": False, "placeholder": True}
+    if "iconref=" in low and "image=data:image/svg" in low:
+        # A resolved inline glyph carrying its asset path; do not flag it as the
+        # bare-data-URI placeholder. Any OTHER unresolved marker still applies.
+        other_markers = tuple(
+            m for m in _UNRESOLVED_STYLE_MARKERS if m != "image=data:image/svg"
+        )
+        if any(marker in low for marker in other_markers):
+            return {"style": style, "resolved": False, "placeholder": True}
+        return {"style": style, "resolved": True}
     if any(marker in low for marker in _UNRESOLVED_STYLE_MARKERS):
         return {"style": style, "resolved": False, "placeholder": True}
     return {"style": style, "resolved": True}

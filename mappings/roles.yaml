@@ -120,3 +120,125 @@ roles:
     azure: "Azure Files"
     gcp_category: "Storage"
     oci: "file-storage"
+
+  # --- additional AWS services (commonly used in architecture diagrams) ------
+  # These extend beyond the core presentation roles to cover services that appear
+  # frequently in real-world diagrams. The query string matches the official AWS
+  # icon pack's Arch_<Service> naming. Each service has its own icon — never
+  # substitute a look-alike (diagram-standards.md "Icon Fidelity").
+
+  # AWS Systems Manager — Management & Governance family (pink)
+  ssm:
+    aws: "Systems Manager"
+    azure: "Automation Accounts"
+    gcp_category: "Management Tools"
+    oci: "resource-manager"
+
+  # Amazon Aurora — Database family (blue)
+  aurora:
+    aws: "Aurora"
+    azure: "Azure Database MySQL Server"
+    gcp: "Cloud SQL"
+    oci: "autonomous-db"
+
+  # Amazon DynamoDB — Database family (blue)
+  dynamodb:
+    aws: "DynamoDB"
+    azure: "Cosmos DB"
+    gcp_category: "Databases"
+    oci: "nosql"
+
+  # AWS Identity and Access Management — Security family (red)
+  iam:
+    aws: "Identity and Access Management"
+    azure: "Entra ID"
+    gcp_category: "Security Identity"
+    oci: "identity-and-access-management"
+
+  # Amazon Simple Notification Service — Application Integration (pink)
+  sns:
+    aws: "Simple Notification Service"
+    azure: "Notification Hubs"
+    gcp_category: "Integration Services"
+    oci: "notifications"
+
+  # AWS Step Functions — Application Integration (pink)
+  step_functions:
+    aws: "Step Functions"
+    azure: "Logic Apps"
+    gcp_category: "Integration Services"
+    oci: "resource-manager"
+
+  # Amazon EventBridge — Application Integration (pink)
+  eventbridge:
+    aws: "EventBridge"
+    azure: "Event Grid"
+    gcp_category: "Integration Services"
+    oci: "events"
+
+  # Amazon API Gateway — Networking & Content Delivery (purple)
+  api_gateway:
+    aws: "API Gateway"
+    azure: "API Management"
+    gcp: "Apigee"
+    oci: "api-gateway"
+
+  # Amazon Cognito — Security family (red)
+  cognito:
+    aws: "Cognito"
+    azure: "Entra ID"
+    gcp_category: "Security Identity"
+    oci: "identity-and-access-management"
+
+  # Amazon CloudWatch — Management & Governance family (pink)
+  cloudwatch:
+    aws: "CloudWatch"
+    azure: "Monitor"
+    gcp_category: "Management Tools"
+    oci: "monitoring"
+
+  # Amazon Bedrock AgentCore — AI/ML family (green)
+  bedrock_agentcore:
+    aws: "Bedrock AgentCore"
+    azure: "Azure OpenAI"
+    gcp: "Vertex AI"
+    oci: "artificial-intelligence"
+
+  # --- Resource-level icons (specific instances, not services) ---------------
+  # These are for when you need to show a specific RESOURCE (like a bucket) vs
+  # the SERVICE (like S3). Resource icons come from Res_* in the AWS pack.
+
+  # S3 Bucket — a specific storage bucket, not the S3 service itself
+  s3_bucket:
+    aws: "Simple Storage Service Bucket"
+    azure: "Storage Accounts"
+    gcp: "Cloud Storage"
+    oci: "bucket"
+
+  # S3 Bucket with objects — shows bucket contains data
+  s3_bucket_with_objects:
+    aws: "Simple Storage Service Bucket With Objects"
+    azure: "Storage Accounts"
+    gcp: "Cloud Storage"
+    oci: "bucket"
+
+  # Lambda Function — a specific function, not the Lambda service
+  lambda_function:
+    aws: "Lambda Lambda Function"
+    azure: "Function Apps"
+    gcp_category: "Serverless Computing"
+    oci: "functions"
+
+  # EC2 Instance — a specific VM instance
+  ec2_instance:
+    aws: "EC2 Instance"
+    azure: "Virtual Machines"
+    gcp_category: "Compute"
+    oci: "virtual-machine-vm"
+
+  # RDS DB Instance — a specific database instance
+  rds_instance:
+    aws: "Aurora Amazon RDS Instance"
+    azure: "SQL Database"
+    gcp: "Cloud SQL"
+    oci: "autonomous-db"

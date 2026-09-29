@@ -56,7 +56,8 @@ CONTAINER_KINDS = frozenset({"boundary", "network_boundary"})
 BRAND_HEX_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 # AWS resource style prefix per Requirement 2 AC3.
-AWS_RESOURCE_STYLE_PREFIX = "shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4."
+# Updated in 1.10.2 to use official SVG file paths instead of mxgraph.aws4 stencils.
+AWS_RESOURCE_STYLE_PREFIX = "image=assets/vendor/aws-icons/"
 
 # Vendor icon tokens that must never appear in the generic profile.
 VENDOR_ICON_TOKENS = (
@@ -170,10 +171,11 @@ def test_every_resource_entry_has_brand_hex(provider: str) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# Requirement 2.3 — AWS resource styles use the aws4 resourceIcon prefix.
+# Requirement 2.3 — AWS resource styles use official SVG file paths.
+# Updated in 1.10.2 to use official pack SVGs instead of mxgraph.aws4 stencils.
 # --------------------------------------------------------------------------- #
 def test_aws_resource_styles_use_aws4_resource_icon_prefix() -> None:
-    """Every AWS resource style contains the aws4 resourceIcon prefix."""
+    """Every AWS resource style contains the official SVG file path prefix."""
     data = _load("aws")
     resources = data.get("resources") or {}
     assert resources, "aws mapping must declare resources"

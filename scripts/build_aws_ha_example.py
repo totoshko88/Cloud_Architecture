@@ -7,6 +7,10 @@ and region/account labels. The verified layout geometry (node coordinates, neste
 container boxes, edge waypoint corridors) lives in the shared module, so this
 provider's pair is byte-identical in layout to the other three.
 
+**Migration 1.10.2:** Icons now resolve via ``mappings/aws-icons.yaml`` using
+official AWS SVG file paths (like Azure/GCP), not hardcoded mxgraph.aws4 stencils.
+This provides exact AWS brand colors and consistent icon handling across providers.
+
 Usage::
 
     python scripts/build_aws_ha_example.py                 # write both .drawio files
@@ -23,34 +27,42 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from rule_engine.diagram_layout import builtin_icon  # noqa: E402
+from rule_engine.icon_resolver import resolve_icon, resolve_container  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ha_multiregion_common import ProviderSkin, run_cli  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-def _res(name: str, color: str):
-    return builtin_icon(
-        f"shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.{name};"
-        f"fillColor={color};strokeColor=#ffffff;aspect=fixed;html=1"
-    )
 
-RENDERERS = {
-    "dns": _res("route_53", "#8C4FFF"),
-    "cdn": _res("cloudfront", "#8C4FFF"),
-    "waf": _res("waf", "#DD344C"),
-    "lb": _res("application_load_balancer", "#8C4FFF"),  # matches mappings/aws-icons.yaml `lb`
-    "k8s": _res("eks", "#ED7100"),
-    "sql": _res("rds", "#527FFF"),
-    "obj": _res("s3", "#7AA116"),
-    "fn": _res("lambda", "#ED7100"),
-    "queue": _res("sqs", "#E7157B"),
-    "sec": _res("secrets_manager", "#DD344C"),
-    "cache": _res("elasticache", "#527FFF"),
+def _icon(role: str):
+    """Resolve an icon from mappings/aws-icons.yaml."""
+    result = resolve_icon(role, "aws")
+    return builtin_icon(result["style_string"])
+
+
+# Role -> yaml key mapping (the HA example uses short role names)
+_ROLE_MAP = {
+    "dns": "dns",
+    "cdn": "cdn",
+    "waf": "waf",
+    "lb": "lb",
+    "k8s": "managed_k8s",
+    "sql": "managed_sql",
+    "obj": "object_store",
+    "fn": "serverless_fn",
+    "queue": "message_queue",
+    "sec": "secrets_store",
+    "cache": "cache",
 }
+
+RENDERERS = {role: _icon(yaml_key) for role, yaml_key in _ROLE_MAP.items()}
+
+# Container styles: still use mxgraph.aws4.group for proper draw.io group behavior
+# (only structural elements, not service icons)
 CONTAINER_STYLES = {
-    "account": "shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_account;grStroke=1;fillColor=none;strokeColor=#232F3E;dashed=0;verticalAlign=top;align=left;spacingLeft=30;fontColor=#232F3E;fontSize=12;html=1",
-    "vpc": "shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_vpc2;grStroke=1;fillColor=none;strokeColor=#8C4FFF;dashed=0;verticalAlign=top;align=left;spacingLeft=30;fontColor=#8C4FFF;fontSize=12;html=1",
+    "account": resolve_container("boundary", "aws")["style_string"],
+    "vpc": resolve_container("network_boundary", "aws")["style_string"],
     "az": "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#00A4A6;fillColor=none;verticalAlign=top;fontColor=#00A4A6;fontSize=12",
 }
 SKIN = ProviderSkin("aws", RENDERERS, CONTAINER_STYLES,

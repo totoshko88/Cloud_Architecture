@@ -385,6 +385,15 @@ def extract_refs(page: Page) -> Dict[str, List[IconRef]]:
         res_icon = style_map.get("resIcon")
         gr_icon = style_map.get("grIcon")
         image = style_map.get("image")
+        # The image identity is the ``iconRef=<path>`` companion token when
+        # present, else the ``image=`` value. ``diagram_layout.image_icon`` emits
+        # the glyph inline as ``image=data:image/svg+xml,<b64>`` so it renders in
+        # the draw.io editor, and preserves the real asset path in ``iconRef=`` —
+        # so every reverse-identification path (this extractor, the linter's
+        # ``icon-resolved``, reconcile's role reverse-map, the verifier) takes the
+        # identity from ``iconRef`` and never from the opaque data-URI.
+        icon_ref = style_map.get("iconRef")
+        image_identity = icon_ref if icon_ref else image
         slug = _oci_slug_from_cell(cell)
         # An OCI node's glyph is embedded in its child sub-cells, so scan the
         # cell's whole subtree (not just its own style) for a stencil payload.
@@ -396,15 +405,19 @@ def extract_refs(page: Page) -> Dict[str, List[IconRef]]:
             cell_refs.append(IconRef(cell.id, "grIcon", gr_icon.strip()))
         if slug:
             cell_refs.append(IconRef(cell.id, "oci-slug", slug))
-        if image:
-            image = image.strip()
-            if image.startswith("img/lib/azure2/"):
-                cell_refs.append(IconRef(cell.id, "azure2", image))
-            elif not image.startswith("data:") and "/" not in image and "." not in image:
+        if image_identity:
+            image_identity = image_identity.strip()
+            if image_identity.startswith("img/lib/azure2/"):
+                cell_refs.append(IconRef(cell.id, "azure2", image_identity))
+            elif (
+                not image_identity.startswith("data:")
+                and "/" not in image_identity
+                and "." not in image_identity
+            ):
                 # a bare token in image= is treated as an OCI stencil slug
-                cell_refs.append(IconRef(cell.id, "oci-slug", image))
+                cell_refs.append(IconRef(cell.id, "oci-slug", image_identity))
             else:
-                cell_refs.append(IconRef(cell.id, "image", image))
+                cell_refs.append(IconRef(cell.id, "image", image_identity))
         # Generic-profile shapes: a plain base shape with no vendor reference.
         if not cell_refs and not has_stencil:
             for token in _generic_shape_tokens(cell.style or ""):

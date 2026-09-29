@@ -48,7 +48,12 @@ def _roles() -> set[str]:
 
 
 def test_resource_type_vocabulary_is_one_set() -> None:
-    """Schema enum, constants.RESOURCE_TYPES and roles.yaml are the same set (R5.1/R5.2)."""
+    """Schema enum, constants.RESOURCE_TYPES and roles.yaml core roles are the same set (R5.1/R5.2).
+
+    The 16 core roles (9 neutral + 7 presentation) must be present in all three
+    sources. roles.yaml may additionally contain extended roles for AWS-specific
+    services; these are allowed but not required in constants or schema.
+    """
     constants_set = set(C.RESOURCE_TYPES)
     schema_set = _schema_enum()
     roles_set = _roles()
@@ -62,10 +67,12 @@ def test_resource_type_vocabulary_is_one_set() -> None:
         f"only in schema={schema_set - constants_set}, "
         f"only in constants={constants_set - schema_set}"
     )
-    assert roles_set == constants_set, (
-        "mappings/roles.yaml roles and constants.RESOURCE_TYPES disagree: "
-        f"only in roles={roles_set - constants_set}, "
-        f"only in constants={constants_set - roles_set}"
+    # roles.yaml must include all 16 core roles; it may have additional extended
+    # roles for AWS-specific services beyond the core set.
+    missing_core_roles = constants_set - roles_set
+    assert not missing_core_roles, (
+        "mappings/roles.yaml is missing core roles: "
+        f"{missing_core_roles}"
     )
 
 

@@ -115,15 +115,17 @@ def test_index_provider_missing_root_raises():
 
 
 # ---------------------------------------------------------------------------
-# resolve_asset — built-in short-circuit
+# resolve_asset — official-asset for AWS (migrated from built-in in 1.10.2)
 # ---------------------------------------------------------------------------
 
 
-def test_resolve_builtin_stencil_wins(aws_pack):
+def test_resolve_aws_uses_official_svgs(aws_pack):
+    """AWS icons now resolve to official SVG file paths (migrated in 1.10.2)."""
     idx = index_provider("aws", aws_pack)
     r = resolve_asset("aws", "EKS", idx)
-    assert r.source == "builtin"
-    assert r.stencil == "mxgraph.aws4.eks"
+    assert r.source == "official-asset"
+    assert r.ext == ".svg"
+    assert "Amazon-Elastic-Kubernetes-Service" in r.asset_path or "EKS" in r.asset_path
 
 
 # ---------------------------------------------------------------------------

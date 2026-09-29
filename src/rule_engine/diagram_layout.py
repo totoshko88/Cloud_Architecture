@@ -31,8 +31,10 @@ Both strategies emit a node that the Linter counts as exactly one top-level node
 
 from __future__ import annotations
 
+import base64
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 # ---------------------------------------------------------------------------
@@ -55,6 +57,12 @@ ROW_STEP = 160
 #: Minimum padding between a container border and its children / a nested
 #: container (>= one grid step, per diagram-standards Container Padding).
 CONTAINER_PAD = 30
+
+#: Standard stair step distance (3 grid steps = 30px). The first waypoint off
+#: an exit point steps out by this amount before the vertical turn, keeping
+#: all stair corners consistent and visually balanced (neither too cramped
+#: at 10px nor too loose at 60-70px). Per diagram-standards Edge Routing.
+STAIR_STEP = 3 * GRID
 
 #: Minimum on-diagram font size, in px. AWS diagram conventions require a
 #: >= 12px floor for readability/accessibility (see diagram-standards.md
@@ -188,10 +196,19 @@ def builtin_icon(shape_style: str) -> IconRenderer:
     ``shape_style`` is the provider style prefix, e.g.
     ``"shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;fillColor=#ED7100;strokeColor=#ffffff;aspect=fixed;html=1"``.
     The standard label suffix is appended so every provider's labels match.
+
+    Since 1.10.2, AWS resolves its official SVGs to a **file-path image style**
+    (``image;...;image=assets/vendor/aws-icons/...svg``) and feeds that whole
+    style here (see ``scripts/build_aws_ha_example.py`` / ``resolve_icon``). Such
+    a style is run through :func:`_embed_asset_style`, which inlines the
+    ``assets/vendor`` SVG as ``image=data:image/svg+xml,<b64>`` so it renders in
+    the draw.io editor and adds the ``iconRef=<path>`` companion — identical
+    treatment to :func:`image_icon`. A genuine ``mxgraph.*`` stencil style carries
+    no ``image=assets/vendor`` token and is emitted unchanged.
     """
 
     def render(node: Node, parent_id: str) -> str:
-        style = f"{shape_style};{_LABEL_STYLE}{overlay_suffix(node)}"
+        style = _embed_asset_style(f"{shape_style};{_LABEL_STYLE}{overlay_suffix(node)}")
         return (
             f'        <mxCell id="{node.id}" value="{node.label}" style="{style}" '
             f'vertex="1" parent="{parent_id}">\n'
@@ -204,25 +221,41 @@ def builtin_icon(shape_style: str) -> IconRenderer:
 
 
 def image_icon(image_path: str) -> IconRenderer:
-    """Renderer for a file-path image-shape node (GCP official icons, Azure azure2).
+    """Renderer for a file-path image-shape node (AWS/GCP official icons, Azure azure2).
 
-    ``image_path`` is the icon path under the fetched asset root, e.g.
-    ``"assets/vendor/gcp-core/Unique Icons/Vertex AI/SVG/VertexAI-512-color.svg"``
-    or ``"img/lib/azure2/<category>/<Name>.svg"``. The path is emitted verbatim as
-    the draw.io ``image=`` style token, so it must be a file path — never an inline
-    ``data:`` URI, which the linter flags as ``icon-resolved`` (see
-    ``.kiro/steering/asset-packs.md`` -> "Image-style caveat").
+    ``image_path`` is the icon path a role resolves to. Two shapes are handled so
+    the glyph renders in the draw.io **editor**, not only in PNG export:
+
+    * A **repo-relative asset path** under ``assets/vendor/`` (AWS official SVGs,
+      GCP official 2025 icons). The draw.io editor cannot resolve a relative
+      ``image=<path>`` — its base path is the app, not the ``.drawio`` file — so
+      such nodes show blank in the editor. We therefore read the SVG bytes from
+      the cwd-relative asset root, base64-encode them, and emit
+      ``image=data:image/svg+xml,<b64>`` (the **comma** form draw.io renders,
+      matching ``export_raster.inline_local_images`` — *not* ``;base64,``). The
+      original path is preserved verbatim in a companion ``iconRef=<path>`` style
+      token so every honest-gate that reverse-identifies a role FROM the asset
+      path keeps working (draw.io ignores the unknown ``iconRef`` style key).
+      If the asset is missing at generation time, the old ``image=<path>`` form
+      is kept (never crash) — the asset-paths guard / verifier still flag it.
+
+    * A **draw.io-internal path** (``img/lib/azure2/<category>/<Name>.svg``).
+      draw.io ships these inside the app, so they already render in the editor;
+      the path is emitted verbatim as ``image=<path>`` and NOT embedded.
 
     Produces one flat ``image`` cell with the same 78x78 footprint and bottom
     label placement as :func:`builtin_icon`, so file-path providers match the AWS
     reference exactly.
     """
 
+    embedded_image, icon_ref = _embed_asset_image(image_path)
+
     def render(node: Node, parent_id: str) -> str:
+        ref_token = f"iconRef={icon_ref};" if icon_ref else ""
         style = (
             "image;html=1;aspect=fixed;points=[];align=center;"
             f"verticalLabelPosition=bottom;verticalAlign=top;fontSize={MIN_FONT_SIZE};"
-            f"image={image_path}{overlay_suffix(node)}"
+            f"{ref_token}image={embedded_image}{overlay_suffix(node)}"
         )
         return (
             f'        <mxCell id="{node.id}" value="{node.label}" style="{style}" '
@@ -233,6 +266,67 @@ def image_icon(image_path: str) -> IconRenderer:
         )
 
     return render
+
+
+#: Icon-asset roots whose SVGs are embedded as data-URIs so they render in the
+#: draw.io editor. A path under one of these is read cwd-relative at generation
+#: time; ``img/lib/...`` (azure2, shipped inside draw.io) and any already-inline
+#: ``data:`` URI are deliberately excluded.
+_EMBEDDABLE_ASSET_PREFIX = "assets/vendor/"
+
+
+def _embed_asset_image(image_path: str) -> Tuple[str, Optional[str]]:
+    """Return ``(image_token_value, icon_ref)`` for an ``image=`` style value.
+
+    For a repo-relative ``assets/vendor/*.svg`` path that exists cwd-relative,
+    returns the ``data:image/svg+xml,<b64>`` (comma form) inline value plus the
+    original path as ``icon_ref`` (the honest-gates reverse-identification key).
+    For an ``img/lib/...`` draw.io-internal path, an already-inline ``data:``
+    URI, or an asset that cannot be read, returns the path unchanged and
+    ``icon_ref=None`` so the caller emits the legacy ``image=<path>`` form.
+    """
+    path = image_path.strip()
+    if path.startswith("data:") or not path.startswith(_EMBEDDABLE_ASSET_PREFIX):
+        return image_path, None
+    try:
+        raw = Path(path).read_bytes()
+    except OSError:
+        # Asset not present at generation time — keep the path form (do not
+        # crash); the asset-paths guard / Icon_Verifier still flag it.
+        return image_path, None
+    b64 = base64.b64encode(raw).decode("ascii")
+    return f"data:image/svg+xml,{b64}", path
+
+
+# ``image=<path>`` token in a style string (value runs to the next ``;`` or end).
+_STYLE_IMAGE_RE = re.compile(r"(?:^|;)image=([^;]+)")
+
+
+def _embed_asset_style(style: str) -> str:
+    """Inline an ``image=assets/vendor/*.svg`` token in a whole style string.
+
+    AWS resolves its official icons to a *file-path image style* and renders it
+    through :func:`builtin_icon`, so the embedding must work on a style string,
+    not only on a bare path. When ``style`` carries an ``image=assets/vendor/*``
+    token whose asset exists cwd-relative, the token value is replaced with the
+    ``data:image/svg+xml,<b64>`` comma form and an ``iconRef=<path>;`` companion
+    is prepended (unless already present). A style with no embeddable
+    ``image=assets/vendor`` token — a genuine ``mxgraph.*`` stencil, an
+    ``img/lib/...`` azure2 path, or an already-inline ``data:`` URI — is returned
+    unchanged. Idempotent: an already-embedded style carries a ``data:`` value
+    that :func:`_embed_asset_image` leaves alone.
+    """
+    m = _STYLE_IMAGE_RE.search(style or "")
+    if not m:
+        return style
+    value = m.group(1)
+    embedded, icon_ref = _embed_asset_image(value)
+    if icon_ref is None:
+        return style
+    new_style = style[: m.start(1)] + embedded + style[m.end(1):]
+    if "iconRef=" not in new_style:
+        new_style = f"iconRef={icon_ref};{new_style}"
+    return new_style
 
 
 # --- OCI embedded-stencil renderer ----------------------------------------

@@ -28,17 +28,18 @@ Dependencies, all leaf or already-defined by import time (no cycle):
 
 from __future__ import annotations
 
+import math
 from typing import Dict, List, Optional, Tuple
 
 try:  # package-relative import when used as ``rule_engine.layout.routers``
-    from ..diagram_layout import ICON_SIZE, GRID, COL_STEP, ROW_STEP, CONTAINER_PAD
+    from ..diagram_layout import ICON_SIZE, GRID, STAIR_STEP, COL_STEP, ROW_STEP, CONTAINER_PAD
     from ..geometry import Box, LABEL_BAND, CONTAINER_LABEL_BAND, segment_crosses_box
     from .model import Contact, Point, EdgeSpec, DiagramSpec
     from .contacts import _UPPER_QUARTER, _LOWER_QUARTER
     from .corridors import CorridorAllocator, CorridorExhaustedError
     from .base import SpecError, _snap, REGION_GAP
 except ImportError:  # pragma: no cover - fallback for flat-module execution
-    from diagram_layout import ICON_SIZE, GRID, COL_STEP, ROW_STEP, CONTAINER_PAD  # type: ignore[no-redef]
+    from diagram_layout import ICON_SIZE, GRID, STAIR_STEP, COL_STEP, ROW_STEP, CONTAINER_PAD  # type: ignore[no-redef]
     from geometry import Box, LABEL_BAND, CONTAINER_LABEL_BAND, segment_crosses_box  # type: ignore[no-redef]
     from layout.model import Contact, Point, EdgeSpec, DiagramSpec  # type: ignore[no-redef]
     from layout.contacts import _UPPER_QUARTER, _LOWER_QUARTER  # type: ignore[no-redef]
@@ -251,6 +252,29 @@ def _enclosing_container(box: Box, containers: Optional[Dict[str, Box]]) -> Opti
     return best
 
 
+def _outermost_container(
+    box: Box, containers: Optional[Dict[str, Box]], exclude: Optional[Box] = None
+) -> Optional[Box]:
+    """Return the WIDEST container enclosing ``box`` but NOT ``exclude`` (or ``None``).
+
+    For a cross-region hop this resolves to the source's own region container
+    (its VPC): the account box encloses BOTH endpoints, so excluding a box in the
+    other region drops it, leaving the widest region-local container. Used to
+    push a region-rightmost source's exit stub clear of every box it sits in
+    before the hop turns toward its lane (marker 11)."""
+    if not containers:
+        return None
+    best: Optional[Box] = None
+    for c in containers.values():
+        if not (c.x <= box.x and c.y <= box.y and box.right <= c.right and box.bottom <= c.bottom):
+            continue
+        if exclude is not None and (c.x <= exclude.x and exclude.right <= c.right):
+            continue   # also encloses the excluded box → the shared account, skip
+        if best is None or (c.right - c.x) > (best.right - best.x):
+            best = c
+    return best
+
+
 def _free_left_corridor_x(
     src: Box,
     tgt: Box,
@@ -434,7 +458,7 @@ def route_spine(
             (_snap(exit_src[0]), _snap(src.bottom + GRID)),  # step down off the glyph
             (left_x, _snap(src.bottom + GRID)),              # into the left corridor
             (left_x, turn_y),                                # drop to the target row
-            (_snap(entry_left[0] - GRID), turn_y),           # step in to the left face
+            (_snap(entry_left[0] - STAIR_STEP), turn_y),     # standardized approach: step in one stair (30px)
         ]
         waypoints = _dedupe_axis_collapse(waypoints, waypoints[0])
         route = [exit_src] + waypoints + [entry_left]
@@ -579,12 +603,29 @@ def route_fan_out_row(
     step_x = _gap_column_x(allocator, src, edge.id)
     first = (step_x, first[1])
 
-    waypoints = [
-        first,
-        (first[0], lane_y),
-        (turn_x, lane_y),
-        (turn_x, _snap(entry[1])),
-    ]
+    top_entry = entry_pt[1] is not None and entry_pt[1] <= 0.0
+    if top_entry:
+        # A TOP-face entry (a fan-out retargeted off a contended left-approach
+        # row, step 1b2) descends straight into the target's top-centre COLUMN —
+        # run across the lane to ``entry[0]`` and drop, with no mid-gap turn. The
+        # left-face ``turn_x`` (a column ~half a gap left of the target) would
+        # leave a spurious 10px step-then-across nub before the top face
+        # (``710 → down → 820`` on markers 8 / 14); running to the entry column
+        # directly is the single clean drop the top entry is for.
+        drop_x = _snap(entry[0])
+        waypoints = [
+            first,
+            (first[0], lane_y),     # drop into the lane
+            (drop_x, lane_y),       # run across to the target's top-centre column
+            (drop_x, _snap(entry[1])),  # straight drop into the top face
+        ]
+    else:
+        waypoints = [
+            first,
+            (first[0], lane_y),
+            (turn_x, lane_y),
+            (turn_x, _snap(entry[1])),
+        ]
     waypoints = _dedupe_axis_collapse(waypoints, first)
     route = [_contact_point(src, exit_pt)] + waypoints + [entry]
     route = _detour_clockwise_if_blocked(route, others)
@@ -767,6 +808,7 @@ def decide_lane_sides(
             (min(run_lo, run_hi), max(run_lo, run_hi))
         )
 
+    _below_left_entry_spans: List[Tuple[float, float]] = []
     for edge in sorted(
         (e for e in spec.edges
          if classify_edge(e, placed) in ("cross-region", "back-edge")),
@@ -776,16 +818,142 @@ def decide_lane_sides(
         natural = not _hcorridor_below(src, tgt)
         room_above = (src.y - ROW_STEP) > CONTAINER_PAD
         span = _span(src, tgt)
+        # A same-tier LEFT-entry hop (a replication run: rises near A, runs across,
+        # drops into the target's LEFT face near B) prefers the roomier gap BELOW
+        # the row over the band ABOVE it. The above band is pinched between the
+        # row-above label strip and this row's own icons (~one stair tall), so a
+        # run there sits a hair over the service glyphs and rides the AZ/VPC
+        # caption (marker 11 "наклався із vpc"); the below gap is a full row pitch.
+        # Two such runs whose extents NEST (one fully contains the other, e.g.
+        # obj_a1→obj_b1 over db_a1→db_b1) don't cross when they share a side — the
+        # turn legs are nested, not interleaved — so nesting does not count as a
+        # conflict for them.
+        left_entry = entries.get(edge.id, (None, None))[0] == 0.0
+        same_tier = abs(src.y - tgt.y) < 1e-6
+        prefers_below = left_entry and same_tier
+        if prefers_below:
+            natural = False   # roomier below gap is the natural side for a replication run
+
+        def _conflict(claims: List[Tuple[float, float]]) -> bool:
+            for c in claims:
+                if not _overlaps(span, c):
+                    continue
+                if prefers_below and c in _below_left_entry_spans:
+                    # Two same-direction replication runs (both rise near A, run
+                    # across, drop into a LEFT face near B) are parallel: the
+                    # allocator gives them distinct lanes and their turn legs do
+                    # not interleave, so they share the below gap cleanly even when
+                    # their extents overlap. (Verified: obj_a1→obj_b1 over
+                    # db_a1→db_b1, crossings unchanged.)
+                    continue
+                return True
+            return False
+
         options = [natural, not natural] if room_above else [False]
         chosen = options[0]
         for above in options:
-            if not any(_overlaps(span, s) for s in claimed.get((src.y, above), ())):
+            if not _conflict(claimed.get((src.y, above), ())):
                 chosen = above
                 break
         sides[edge.id] = chosen
         claimed.setdefault((src.y, chosen), []).append(span)
+        if prefers_below and chosen is False:
+            _below_left_entry_spans.append(span)
 
     return sides
+
+
+def decide_converging_corridors(
+    spec: DiagramSpec,
+    placed: Dict[str, Box],
+    containers: Optional[Dict[str, Box]],
+    exits: Dict[str, Contact],
+    entries: Dict[str, Contact],
+    lane_sides: Dict[str, "bool | None"],
+) -> Dict[str, float]:
+    """Order the loop corridors of edges that CONVERGE on one target's top face.
+
+    diagram-standards → *Converging edges: corridor y priority by entry x
+    proximity*: when several edges **from different sources** enter the SAME
+    target's top face, the edge whose vertical drop is **leftmost** (smallest
+    entry x) must run on the **highest** corridor (smallest y), and the drops
+    must occur left-to-right in the same order as the corridors run top-to-bottom
+    — so no vertical drop crosses another edge's horizontal run.
+
+    The per-edge router cannot arrange this: it allocates the next free lane in
+    **routing order**, and the edge that must sit highest is not always routed
+    first (in the AWS landscape ``dns→lb_a`` is declared before ``cdn→lb_a`` but
+    ``cdn`` — nearer the target, smaller drop x — has to run over ``dns``). This
+    whole-group pass computes each converging edge's corridor y up front and the
+    routers pin it (:func:`_pin_corridor`), so the group is ordered correctly
+    regardless of declared order — the ``l1``×``l15`` crossing.
+
+    Only genuine convergences qualify: two or more **cross-region / back-edge**
+    hops (the long-haul classes that run a loop corridor) from **distinct
+    sources** onto one target's **top** face, sharing one ``hcorr`` band+side. A
+    lone arrival, a shared-source fan, or a left-face entry is left to the normal
+    per-edge allocation and is absent from the result.
+
+    Returns ``{edge_id: corridor_y}`` for the coordinated edges only; every other
+    edge keeps its default allocation.
+    """
+    order_index = {e.id: i for i, e in enumerate(spec.edges)}
+
+    def _drop_x(eid: str) -> float:
+        """Absolute x where the edge's vertical drop meets the target top face."""
+        edge = spec.edges[order_index[eid]]
+        tgt = placed[edge.target]
+        fx, _fy = entries[eid]
+        return tgt.x + (fx if fx is not None else 0.5) * tgt.w
+
+    # Group the long-haul TOP-entry edges by (target, band-side). The band side
+    # matches what the router will use, so the pinned line lands in the same
+    # ``hcorr`` namespace the router allocates from.
+    groups: Dict[Tuple[str, str, int], List[str]] = {}
+    src_of: Dict[str, set] = {}
+    for edge in spec.edges:
+        kind = classify_edge(edge, placed)
+        if kind not in ("cross-region", "back-edge"):
+            continue
+        fx, fy = entries[edge.id]
+        if fy is None or fy > 0.0:
+            continue  # only TOP-face arrivals share a drop-into-top geometry
+        src, tgt = placed[edge.source], placed[edge.target]
+        below = (_hcorridor_below(src, tgt)
+                 if lane_sides.get(edge.id) is None else not lane_sides[edge.id])
+        side = "below" if below else "above"
+        key = (edge.target, side, int(src.y))
+        groups.setdefault(key, []).append(edge.id)
+        src_of.setdefault(key, set()).add(edge.source)
+
+    out: Dict[str, float] = {}
+    for key, eids in groups.items():
+        # A real convergence needs >= 2 edges from DISTINCT sources; otherwise the
+        # per-edge allocator already does the right thing.
+        if len(eids) < 2 or len(src_of[key]) < 2:
+            continue
+        target, side, src_y = key
+        # Sort by drop x ascending (leftmost drop first), marker as a stable
+        # tiebreak, then hand out corridor lines low→high (highest lane first) so
+        # the leftmost drop runs on the highest corridor.
+        def _mk(eid: str):
+            m = spec.edges[order_index[eid]].marker
+            return (0, int(m)) if m.isdigit() else (1, m)
+        ordered = sorted(eids, key=lambda e: (_drop_x(e), _mk(e)))
+        # Band + stride from the first edge's geometry (all share the band).
+        e0 = spec.edges[order_index[ordered[0]]]
+        src0, tgt0 = placed[e0.source], placed[e0.target]
+        below = side == "below"
+        row_low, row_high = _hcorridor_band(e0, src0, tgt0, below, containers)
+        line = int(math.floor(row_low / GRID)) + 1
+        y = line * GRID
+        for eid in ordered:
+            if y >= row_high:      # band exhausted — leave the rest to allocate
+                break
+            out[eid] = float(y)
+            y += 2 * GRID          # stride, matching CorridorAllocator default
+    return out
+
 
 
 def _assign_exit_bands(ranked: List[Tuple[str, int]]) -> Dict[str, float]:
@@ -1016,13 +1184,19 @@ def route_cross_region(
     obstacles: List[Box],
     containers: Optional[Dict[str, Box]] = None,
     lane_above: Optional[bool] = None,
+    corridor_y: Optional[float] = None,
 ) -> List[Point]:
     """Route a ``cross-region`` A→B hop through its own over-row corridor (Req 7.5).
 
     Shape: step out of the source's right into the gap (the stair moves both
     axes), rise into an over-row corridor allocated for this edge (one lane
     each), run across to above the target, then drop into the target's top
-    face."""
+    face.
+
+    ``corridor_y`` (optional) pins the horizontal-corridor line explicitly — set
+    by the converging-edges coordinator so several hops meeting on one target's
+    top face are ordered *smallest drop-x highest* (diagram-standards →
+    *Converging edges*). ``None`` keeps the normal per-edge allocation."""
     src = obstacle_box(edge.source, obstacles)
     tgt = obstacle_box(edge.target, obstacles)
     others = _relevant_obstacles(edge, obstacles)
@@ -1047,11 +1221,46 @@ def route_cross_region(
         # is what stops the two replication hops crossing each other).
         row_low, row_high = _hcorridor_band(edge, src, tgt, below, containers)
         side = "below" if below else "above"
-        lane_y = _snap(_allocate_or_first(allocator, f"hcorr-{side}:{int(src.y)}", row_low, row_high))
+        _gap = f"hcorr-{side}:{int(src.y)}"
+        if corridor_y is not None:
+            lane_y = _snap(_pin_corridor(allocator, _gap, row_low, row_high, corridor_y))
+        else:
+            lane_y = _snap(_allocate_or_first(allocator, _gap, row_low, row_high))
         rise_x = _gap_column_x(allocator, src, edge.id)
+        # Turn down OUTSIDE the boxes (marker 11 — the user's route). When the
+        # source is its region's RIGHTMOST node (obj_a1, flush against the AZ/VPC
+        # right borders), the sliver right of its glyph puts the rise leg on that
+        # border, tracing the box edge. A cross-region hop should instead run its
+        # exit stub RIGHT — through the empty space past the region-rightmost node,
+        # clear of the VPC border — and only then turn toward its lane, so the
+        # vertical stands in the inter-region gap outside every box. Because the
+        # source is rightmost, that stub crosses no A-region node and, crucially,
+        # starts to the RIGHT of a sibling replication hop's turn column (marker
+        # 10 turns near db_a1), so their centre-row stubs never share an x-range —
+        # this is what keeps ``check_corridor_sharing`` clean where a rise nearer
+        # the source did not (obj_a1 and db_a1 both exit on the row centre line).
+        outer = _outermost_container(src, containers, exclude=tgt)
+        tgt_vpc = _outermost_container(tgt, containers, exclude=src)
+        # Escape ONLY a REGION-RIGHTMOST source (obj_a1): a source with another
+        # node to its right (db_a1) has a real gap to turn down in and must turn
+        # there — pushing it out to the region gap too would merge it with the
+        # rightmost hop. "Rightmost" = no node lies between the source's right
+        # edge and its container's right border.
+        src_is_rightmost = outer is not None and not any(
+            o.y == src.y and o.x > src.x and o.right <= outer.right
+            for o in obstacles
+        )
+        if outer is not None and src_is_rightmost and rise_x <= outer.right + GRID:
+            # Turn down in the MIDDLE of the inter-region gap: clear of both VPC
+            # borders and well right of any sibling hop that turned early, so the
+            # centre-row exit stubs never share an x-range.
+            if tgt_vpc is not None:
+                rise_x = _snap((outer.right + tgt_vpc.x) / 2.0)
+            else:
+                rise_x = _snap(outer.right + CONTAINER_PAD)
         exit_abs = _contact_point(src, exit_pt)
         entry_left = _contact_point(tgt, entry_pt)
-        left_of_tgt = _snap(tgt.x - GRID)   # step in to the left face
+        left_of_tgt = _snap(tgt.x - STAIR_STEP)   # standardized approach: step in one stair (30px)
         waypoints = [
             (rise_x, _snap(exit_abs[1])),       # step out into the gap right of src
             (rise_x, lane_y),                   # drop into the below-row lane
@@ -1084,7 +1293,11 @@ def route_cross_region(
     # gets a DISTINCT lane from the shared allocator — two edges in different
     # per-class namespaces used to both grab the first line and merge (e.g. edge
     # 1 back-edge and edge 2 cross-region both leaving dns).
-    over_y = _snap(_allocate_or_first(allocator, f"hcorr-{side}:{int(src.y)}", row_low, row_high))
+    _gap = f"hcorr-{side}:{int(src.y)}"
+    if corridor_y is not None:
+        over_y = _snap(_pin_corridor(allocator, _gap, row_low, row_high, corridor_y))
+    else:
+        over_y = _snap(_allocate_or_first(allocator, _gap, row_low, row_high))
 
     across_x = _snap(entry[0])
     waypoints = [
@@ -1107,6 +1320,7 @@ def route_back_edge(
     obstacles: List[Box],
     containers: Optional[Dict[str, Box]] = None,
     lane_above: Optional[bool] = None,
+    corridor_y: Optional[float] = None,
 ) -> List[Point]:
     """Route a ``back-edge`` (target left of source) out the right and back (Req 7.6).
 
@@ -1114,7 +1328,13 @@ def route_back_edge(
     gap (the stair moves both axes), rise into a dedicated loop corridor above
     the rows, run left past the target's column, then drop into the target's
     **left** face. Exiting right and entering left is the whole point of a
-    back-edge (diagram-standards → directional back-edge)."""
+    back-edge (diagram-standards → directional back-edge).
+
+    ``corridor_y`` (optional) pins the loop-corridor line explicitly instead of
+    allocating the next free one — set by the converging-edges coordinator so a
+    group of edges meeting on one target's top face is ordered *smallest drop-x
+    highest* (diagram-standards → *Converging edges*). ``None`` keeps the normal
+    per-edge allocation."""
     src = obstacle_box(edge.source, obstacles)
     tgt = obstacle_box(edge.target, obstacles)
     others = _relevant_obstacles(edge, obstacles)
@@ -1141,8 +1361,14 @@ def route_back_edge(
     row_low, row_high = _hcorridor_band(edge, src, tgt, below, containers)
     side = "below" if below else "above"
     # Shared horizontal-corridor namespace (see route_cross_region): a back-edge
-    # and a cross-region run in the same band+side get distinct lanes.
-    loop_y = _snap(_allocate_or_first(allocator, f"hcorr-{side}:{int(src.y)}", row_low, row_high))
+    # and a cross-region run in the same band+side get distinct lanes. When the
+    # converging coordinator pinned a line for this edge, reserve THAT line
+    # (still marking it taken) so the group's drops are ordered correctly.
+    _gap = f"hcorr-{side}:{int(src.y)}"
+    if corridor_y is not None:
+        loop_y = _snap(_pin_corridor(allocator, _gap, row_low, row_high, corridor_y))
+    else:
+        loop_y = _snap(_allocate_or_first(allocator, _gap, row_low, row_high))
 
     if entry_pt[1] <= 0.0:
         # TOP entry (Rule G: the target has no left gap — set by the pipeline):
@@ -1213,6 +1439,7 @@ def route_edge(
     obstacles: List[Box],
     containers: Optional[Dict[str, Box]] = None,
     lane_above: Optional[bool] = None,
+    corridor_y: Optional[float] = None,
 ) -> List[Point]:
     """Classify ``edge`` and dispatch to the matching ``route_<kind>`` router.
 
@@ -1228,13 +1455,18 @@ def route_edge(
     horizontal corridor ignore it, so synthetic specs that pass no containers are
     byte-unchanged.
 
-    ``lane_above`` (optional, v1.6.0) carries the corridor side the pipeline chose
-    for this edge (:func:`decide_lane_sides`) — a whole-row decision no single
-    router can make. ``None`` means "use your own default", so a router called
-    directly is unchanged."""
+    ``corridor_y`` (optional) pins the horizontal loop-corridor line for a
+    converging cross-region / back-edge hop (:func:`decide_converging_corridors`
+    in the pipeline). Forwarded only to those two routers; the others ignore it,
+    so a router called directly is unchanged."""
     placed = {b.id: b for b in obstacles}
     kind = classify_edge(edge, placed)
-    if kind in ("cross-region", "back-edge", "fan-out-row"):
+    if kind in ("cross-region", "back-edge"):
+        return ROUTERS[kind](
+            edge, exit_pt, entry_pt, allocator, obstacles, containers, lane_above,
+            corridor_y,
+        )
+    if kind == "fan-out-row":
         return ROUTERS[kind](
             edge, exit_pt, entry_pt, allocator, obstacles, containers, lane_above
         )
@@ -1252,6 +1484,32 @@ def obstacle_box(node_id: str, obstacles: List[Box]) -> Box:
         if b.id == node_id:
             return b
     raise SpecError(f"router given no placed box for node {node_id!r}")
+
+
+def _pin_corridor(
+    allocator: "CorridorAllocator", gap_id: str, low: float, high: float, y: float
+) -> float:
+    """Reserve an EXPLICIT corridor line ``y`` in a gap, marking it taken.
+
+    The converging-edges coordinator (:func:`decide_converging_corridors` in the
+    pipeline) decides the loop-corridor y for a whole group of edges that meet on
+    one target's top face *together* — a per-run allocation cannot, because the
+    run that must sit HIGHER (the edge whose vertical drop is leftmost) is not
+    always the one routed first. So the pipeline hands each such edge its y and
+    the router pins it here instead of calling :func:`_allocate_or_first`.
+
+    Pinning still goes through the allocator's occupancy so the reserved line is
+    marked **taken**: any other long-haul run sharing this ``hcorr`` gap then
+    allocates a DIFFERENT line, exactly as if the line had been handed out
+    normally (``check_corridor_sharing`` stays clean by construction). ``y`` is
+    snapped to the grid; the gap is registered so its span is known."""
+    allocator.register_gap(gap_id, low, high)
+    line = int(_snap(y))
+    taken = allocator._taken.setdefault(gap_id, set())
+    taken.add(line)
+    if gap_id in allocator._free:
+        allocator._free[gap_id] = [ln for ln in allocator._free[gap_id] if ln != line]
+    return float(line)
 
 
 def _allocate_or_first(

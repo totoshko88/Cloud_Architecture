@@ -644,6 +644,9 @@ _SINGLE_TOKEN_BUILTIN_AWS_SLUGS = ("eks", "s3", "rds", "sqs", "lambda", "bedrock
 
 # Feature: honest-gates-slug-builtin-flake, Property 1: Bug Condition — Ambiguity Test Never Collides With A Built-in Slug
 # **Validates: Requirements 1.1, 1.2**
+# NOTE (1.10.2): AWS now uses official SVG file paths exclusively, so these built-in
+# stencil tests are no longer applicable. Skipped until another provider has built-ins.
+@pytest.mark.skip(reason="AWS no longer uses built-in stencils (1.10.2 migration)")
 @pytest.mark.parametrize("core", _SINGLE_TOKEN_BUILTIN_AWS_SLUGS)
 def test_bug_condition_ambiguous_builtin_slug_collides(core, tmp_path):
     """Built-in priority pinned across every single-token built-in AWS slug.
@@ -717,6 +720,9 @@ def test_bug_condition_ambiguous_builtin_slug_collides(core, tmp_path):
 
 # Feature: honest-gates-slug-builtin-flake, Property 3: Built-in Priority — A Built-in Slug That Is Also Ambiguous Resolves To Built-in
 # **Validates: Requirements 2.2**
+# NOTE (1.10.2): AWS now uses official SVG file paths exclusively, so this built-in
+# stencil test is no longer applicable. Skipped until another provider has built-ins.
+@pytest.mark.skip(reason="AWS no longer uses built-in stencils (1.10.2 migration)")
 def test_builtin_slug_that_is_also_ambiguous_resolves_to_builtin(tmp_path):
     """R2.2: a built-in slug that is also ambiguous resolves to ``builtin``.
 

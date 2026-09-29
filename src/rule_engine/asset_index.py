@@ -464,16 +464,15 @@ def index_provider(provider: str, pack_root: str) -> Dict[str, AssetEntry]:
 # thin, curated set: the nine neutral types are already handled by the Icon
 # Resolver; this table lets the asset resolver prefer an editable built-in
 # stencil for a few common *specific* services before falling back to a file.
+#
+# NOTE (1.10.2): AWS now uses official SVG file paths (like Azure/GCP), so no
+# AWS entries here — all AWS icons resolve to the official pack files.
 _BUILTIN_STENCILS: Dict[str, Dict[str, str]] = {
-    "aws": {
-        "eks": "mxgraph.aws4.eks",
-        "lambda": "mxgraph.aws4.lambda",
-        "s3": "mxgraph.aws4.s3",
-        "rds": "mxgraph.aws4.rds",
-        "sqs": "mxgraph.aws4.sqs",
-        "secrets-manager": "mxgraph.aws4.secrets_manager",
-        "bedrock": "mxgraph.aws4.bedrock",
-    },
+    # AWS: empty — uses official SVG pack (1.10.2 migration)
+    "aws": {},
+    # Azure: uses azure2 image shapes (file paths), not mxgraph stencils
+    # GCP: uses official pack file paths, not mxgraph.gcp2 stencils
+    # OCI: embedded stencils from OCI Library.xml, resolved through stencils.json
 }
 
 
