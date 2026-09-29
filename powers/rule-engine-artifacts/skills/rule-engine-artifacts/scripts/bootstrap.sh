@@ -48,7 +48,7 @@ done
 # the repository's default branch, so a Power installed today could pull
 # tomorrow's unreleased code. tests/test_version_pins.py keeps this in step with
 # pyproject.toml.
-RULE_ENGINE_VERSION="${RULE_ENGINE_VERSION:-1.10.2}"
+RULE_ENGINE_VERSION="${RULE_ENGINE_VERSION:-1.10.3}"
 RULE_ENGINE_SPEC="${RULE_ENGINE_SPEC:-git+https://github.com/totoshko88/Cloud_Architecture.git@v${RULE_ENGINE_VERSION}}"
 
 # Decide whether to install/upgrade. A Power is installed once but the engine
