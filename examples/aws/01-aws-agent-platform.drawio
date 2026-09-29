@@ -63,54 +63,54 @@
 
         <!-- Edges -->
         <!-- 1. EKS → ALB -->
-        <mxCell id="edge-eks-alb" edge="1" parent="1" source="node-eks" target="node-alb" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1;exitY=0.5;entryX=0;entryY=0.5;fontSize=12;fontStyle=1" value="1">
+        <mxCell id="edge-eks-alb" edge="1" parent="1" source="node-eks" target="node-alb" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1;exitY=0.5128;entryX=0;entryY=0.5128;fontSize=12;fontStyle=1" value="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
         <!-- 2. ALB → Lambda (crosses VPC boundary) -->
-        <mxCell id="edge-alb-lambda" edge="1" parent="1" source="node-alb" target="node-lambda" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1;exitY=0.5;entryX=0;entryY=0.5;fontSize=12;fontStyle=1" value="2">
+        <mxCell id="edge-alb-lambda" edge="1" parent="1" source="node-alb" target="node-lambda" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1;exitY=0.5128;entryX=0;entryY=0.5128;fontSize=12;fontStyle=1" value="2">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
         <!-- 3. Lambda → SQS (async, target directly below - bottom centre) -->
-        <mxCell id="edge-lambda-sqs" edge="1" parent="1" source="node-lambda" target="node-sqs" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.5;exitY=1;entryX=0.5;entryY=0;fontSize=12;fontStyle=1" value="3">
+        <mxCell id="edge-lambda-sqs" edge="1" parent="1" source="node-lambda" target="node-sqs" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.5128;exitY=1;entryX=0.5128;entryY=0;fontSize=12;fontStyle=1" value="3">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
         <!-- 4. Lambda → Bedrock (target right - right centre) -->
-        <mxCell id="edge-lambda-bedrock" edge="1" parent="1" source="node-lambda" target="node-bedrock" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1;exitY=0.5;entryX=0;entryY=0.5;fontSize=12;fontStyle=1" value="4">
+        <mxCell id="edge-lambda-bedrock" edge="1" parent="1" source="node-lambda" target="node-bedrock" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1;exitY=0.5128;entryX=0;entryY=0.5128;fontSize=12;fontStyle=1" value="4">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
         <!-- 5. Lambda → Secrets Manager (target right-below - right face lower band) -->
-        <mxCell id="edge-lambda-secrets" edge="1" parent="1" source="node-lambda" target="node-secrets" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1;exitY=0.75;entryX=0;entryY=0.5;fontSize=12;fontStyle=1" value="5">
+        <mxCell id="edge-lambda-secrets" edge="1" parent="1" source="node-lambda" target="node-secrets" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1;exitY=0.7692;entryX=0;entryY=0.5128;fontSize=12;fontStyle=1" value="5">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="610" y="278" />
-              <mxPoint x="610" y="439" />
+              <mxPoint x="610.00" y="280.00" />
+              <mxPoint x="610.00" y="440.00" />
             </Array>
           </mxGeometry>
         </mxCell>
 
         <!-- 6. Lambda → RDS (target left-below - bottom-left band, loop left) -->
-        <mxCell id="edge-lambda-rds" edge="1" parent="1" source="node-lambda" target="node-rds" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.25;exitY=1;entryX=1;entryY=0.5;fontSize=12;fontStyle=1" value="6">
+        <mxCell id="edge-lambda-rds" edge="1" parent="1" source="node-lambda" target="node-rds" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.2564;exitY=1;entryX=1;entryY=0.5128;fontSize=12;fontStyle=1" value="6">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="520" y="360" />
-              <mxPoint x="440" y="360" />
-              <mxPoint x="440" y="439" />
+              <mxPoint x="520.00" y="360.00" />
+              <mxPoint x="440.00" y="360.00" />
+              <mxPoint x="440.00" y="440.00" />
             </Array>
           </mxGeometry>
         </mxCell>
 
         <!-- 7. Lambda → S3 (exit right-top, horizontal then down to S3) -->
-        <mxCell id="edge-lambda-s3" edge="1" parent="1" source="node-lambda" target="node-s3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1;exitY=0;entryX=0;entryY=0.5;fontSize=12;fontStyle=1" value="7">
+        <mxCell id="edge-lambda-s3" edge="1" parent="1" source="node-lambda" target="node-s3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1;exitY=0;entryX=0;entryY=0.5128;fontSize=12;fontStyle=1" value="7">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="600" y="220" />
-              <mxPoint x="600" y="180" />
-              <mxPoint x="900" y="180" />
-              <mxPoint x="900" y="349" />
+              <mxPoint x="600.00" y="220.00" />
+              <mxPoint x="600.00" y="180.00" />
+              <mxPoint x="900.00" y="180.00" />
+              <mxPoint x="900.00" y="350.00" />
             </Array>
           </mxGeometry>
         </mxCell>
