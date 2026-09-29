@@ -425,6 +425,41 @@ def embed_oci_stencil(
     # ``shape=``/``stencil`` geometry) yields the actual glyph extent, so every
     # provider glyph normalizes to the same visual size — matching the reference
     # pack where all service icons share one standardized icon footprint.
+    #
+    # A shape cell's ``x``/``y`` are RELATIVE to its parent group. Most OCI
+    # stencils draw straight under the root (id="2"), so the local coordinate is
+    # already the root-frame one; but a few (``object-storage``, ``cdn``) wrap the
+    # glyph in an intermediate group offset by ~14px. Measuring those shapes in
+    # their LOCAL frame understates the glyph's true left edge, the centering pad
+    # then cannot cancel the wrapper's offset, and the glyph renders off-centre
+    # from the bottom label — the visible "model-storage" shift (docs/REVIEW.md
+    # D16). Accumulating every ancestor group's offset into a root-frame origin
+    # first makes the bbox — and thus the pad — correct for a flat OR a nested
+    # stencil (the accumulation is a no-op when the root is the only ancestor).
+    geom_x_of: Dict[str, float] = {}
+    geom_y_of: Dict[str, float] = {}
+    for cell in cells:
+        m = _ID_RE.search(cell)
+        if not m:
+            continue
+        gm = _GEOM_RE.search(cell)
+        geom_x_of[m.group(1)] = (_num(gm.group(0), "x") if gm else None) or 0.0
+        geom_y_of[m.group(1)] = (_num(gm.group(0), "y") if gm else None) or 0.0
+
+    def _ancestor_offset(cid: str) -> Tuple[float, float]:
+        # Sum the offsets of every group STRICTLY ABOVE ``cid`` up to the root
+        # (id="2"), which itself is repositioned by the pad below — so the root's
+        # own offset is deliberately excluded here.
+        ax = ay = 0.0
+        seen: set[str] = set()
+        cur = parent_of.get(cid, "")
+        while cur and cur not in ("0", "1", _OCI_GROUP_CELL_ID) and cur not in seen:
+            seen.add(cur)
+            ax += geom_x_of.get(cur, 0.0)
+            ay += geom_y_of.get(cur, 0.0)
+            cur = parent_of.get(cur, "")
+        return ax, ay
+
     gx0 = gy0 = float("inf")
     gx1 = gy1 = float("-inf")
     for cell in cells:
@@ -437,12 +472,13 @@ def embed_oci_stencil(
         if not gm:
             continue
         g = gm.group(0)
-        x = _num(g, "x") or 0.0
-        y = _num(g, "y") or 0.0
         w = _num(g, "width")
         h = _num(g, "height")
         if w is None or h is None:
             continue
+        aox, aoy = _ancestor_offset(m.group(1))
+        x = (_num(g, "x") or 0.0) + aox
+        y = (_num(g, "y") or 0.0) + aoy
         gx0, gy0 = min(gx0, x), min(gy0, y)
         gx1, gy1 = max(gx1, x + w), max(gy1, y + h)
 

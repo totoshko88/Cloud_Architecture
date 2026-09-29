@@ -6,8 +6,9 @@ a provider.
 
 ## Prerequisites
 
-- **Python 3.14+** — the core and CLIs target `python_requires >= 3.14` (Python
-  3.10 reaches end-of-life in October 2026; see [INSTALL.md](INSTALL.md)).
+- **Python 3.11+** — the core and CLIs target `requires-python = ">=3.11"`; the
+  code uses no newer language features, so any of 3.11, 3.12, 3.13 or 3.14 works
+  (this is the CI test matrix; see [INSTALL.md](INSTALL.md)).
 - A virtual environment is recommended so the console scripts land on your PATH.
 
 ## Dev setup
@@ -15,7 +16,7 @@ a provider.
 Install the engine editable, with the test/dev extras:
 
 ```bash
-python3.14 -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"
 ```

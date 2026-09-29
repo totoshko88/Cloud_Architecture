@@ -4,7 +4,22 @@ All notable changes to the Rule Engine are recorded here, per released version, 
 
 ## [Unreleased]
 
-_No unreleased changes._
+**Theme: OCI icon centering, docs single-source-of-truth, and a scheduled Contract↔Layout-Engine spec.** A visible defect on every OCI diagram — the glyph of a nested stencil (`object-storage`, the "model-storage" node, and `cdn`) rendered ~14px right of centre while its caption stayed centred on the node box — is fixed at the root, plus two governance items. Generation stays deterministic (same spec → byte-identical `.drawio`), no lint rule is weakened, and every shipped diagram remains publishable (zero CRITICAL, zero ERROR).
+
+### Added
+
+- **Docs Python-floor consistency gate (`version_guard --python-docs`, G9).** The floor is authoritative in `pyproject.toml` (`requires-python = ">=3.11"`), but the same floor is repeated as prose in `CONTRIBUTING.md` / `INSTALL.md` / `README.md` and had drifted — `CONTRIBUTING.md` still said "Python 3.14+" and told contributors to run `python3.14 -m venv` long after the floor moved to 3.11. The new guard reads `requires-python` and blocks any doc naming a *requirement* floor (`Python X.Y+`, `python_requires >= X.Y`, `requires-python … >= X.Y`) that differs from it; a plain CI-matrix list ("3.11, 3.12, 3.13, 3.14") is not a floor claim and is not flagged. Wired into the always-run stage of both CI pipelines (`.github/workflows/ci.yml`, `.gitlab-ci.yml`). Files: `version_guard.py` (`python_floor_doc_problems`, `read_requires_python`, `--python-docs`), `tests/test_version_guard.py`.
+- **Regression test for nested-stencil glyph centering** (`tests/test_diagram_layout.py::test_nested_stencil_glyph_is_centered_in_box`): builds a stencil that wraps its glyph in an intermediate offset group (the `object-storage` shape) and asserts the rendered glyph centres within the 78px node box.
+- **Spec `contract-layout-engine-wiring` (G10, Scheduled).** The Contract (`contract.py`) still emits a coordinate-free set of resolved nodes with no relationship information; placement/routing (`layout()`) is used only by the HA generators and the `rule-engine-draw` autogenerator. The new spec re-points the Contract's diagram step onto the shared Snapshot → `DiagramSpec` → `layout()` → `build_diagram()` pipeline and extracts one assembler shared with `rule-engine-draw`. Requirements/design/tasks under `.kiro/specs/contract-layout-engine-wiring/`.
+
+### Fixed
+
+- **Nested OCI stencil glyph rendered off-centre from its label (D16).** `embed_oci_stencil` measured the glyph bounding box in each shape cell's LOCAL frame, so for a stencil whose glyph sits under an intermediate offset group (`object-storage` — the "model-storage" node — and `cdn`, offset ~14px) the wrapper's offset was not accumulated into the centering pad: the glyph rendered ~14px right of the node's 78px box while the bottom caption centred on the box, a visible label shift on every OCI diagram carrying those slugs. The bbox now accumulates every ancestor group's offset into a root-frame origin before centering, so a flat OR a nested stencil centres correctly; flat stencils are unaffected (the accumulation is a no-op). Regenerated the three OCI examples (`01-oci-genai-stack`, `02-oci-ha-multiregion-summary`, `02-oci-ha-multiregion-landscape`). Files: `diagram_layout.py` (`embed_oci_stencil`).
+- **`CONTRIBUTING.md` Python prerequisite corrected** from "Python 3.14+" / `python3.14 -m venv` to the real `>=3.11` floor (now enforced by the G9 gate above).
+
+### Notes
+
+- The OCI landscape `node-count` WARNING (all four provider landscapes are 34 nodes, above the `LANDSCAPE_NODE_WARN` = 30 soft threshold) is **working as designed** — a density advisory for the as-built class, not a defect; it does not block publication (`LANDSCAPE_NODE_ERROR` = 50). No change.
 
 ## [1.10.2] - 2026-09-29
 
