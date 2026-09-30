@@ -4,7 +4,8 @@
 A thin skin over :mod:`genai_pipeline_common`: the geometry comes from the shared
 coordinate-free spec via ``layout()`` (byte-identical to ``oci/01``), and this
 file supplies only the official Google Cloud 2025 icons (Core Product first,
-Product Category fallback; Apigee for the API front door), the labels and the
+Product Category fallback; Apigee for the API front door; the LLM hub uses the Agents category icon since
+Vertex AI became the Gemini Enterprise Agent Platform), the labels and the
 Flow text. Container styles come from ``mappings/gcp-icons.yaml``.
 
 Usage::
@@ -35,27 +36,31 @@ _ICONS = {
     "queue": f"{_CAT}/Integration Services/SVG/IntegrationServices-512-color.svg",
     "sec": f"{_CAT}/Security Identity/SVG/SecurityIdentity-512-color.svg",
     "ingest": f"{_CAT}/Serverless Computing/SVG/ServerlessComputing-512-color.svg",
-    "hub": f"{_CORE}/Vertex AI/SVG/VertexAI-512-color.svg",
+    # Vertex AI was renamed Gemini Enterprise Agent Platform (Cloud Next 2026);
+    # Google ships no dedicated product icon yet, so use the official Agents
+    # category icon (product-first, category-fallback — Google's own convention).
+    "hub": f"{_CAT}/Agents/SVG/Agents-512-color.svg",
     "train": f"{_CORE}/GKE/SVG/GKE-512-color.svg",
     "sql": f"{_CORE}/Cloud SQL/SVG/CloudSQL-512-color.svg",
     "obj": f"{_CORE}/Cloud Storage/SVG/Cloud_Storage-512-color.svg",
 }
 LABELS = {
     "api": "api-gateway", "lb": "load-balancer", "queue": "pubsub-events",
-    "sec": "secret-manager", "ingest": "ingest-function", "hub": "vertex-ai",
+    "sec": "secret-manager", "ingest": "ingest-function",
+    "hub": "gemini-agent-platform",
     "train": "training-gke", "sql": "cloud-sql", "obj": "model-storage",
 }
 FLOW_LINES = (
     "Flow",
     "1. api-gateway forwards request to load-balancer",
-    "2. load-balancer routes inference to Vertex AI",
+    "2. load-balancer routes inference to Gemini Agent Platform",
     "3. api-gateway publishes event to Pub/Sub (async)",
     "4. Pub/Sub delivers event to ingest-function (async)",
     "5. ingest-function submits training job to GKE",
-    "6. GKE registers trained model with Vertex AI",
-    "7. Vertex AI reads metadata from Cloud SQL",
-    "8. Vertex AI stores artifacts in Cloud Storage",
-    "9. Vertex AI fetches credentials from Secret Manager",
+    "6. GKE registers trained model with Gemini Agent Platform",
+    "7. Gemini Agent Platform reads metadata from Cloud SQL",
+    "8. Gemini Agent Platform stores artifacts in Cloud Storage",
+    "9. Gemini Agent Platform fetches credentials from Secret Manager",
 )
 
 

@@ -63,7 +63,7 @@ GRID = 10
 # each child's footprint by this on all four sides to compute the container's
 # minimum legitimate area demand. ``diagram_layout`` imports ``geometry`` only
 # lazily (inside functions), so this top-level import is cycle-safe.
-from rule_engine.diagram_layout import CONTAINER_PAD
+from rule_engine.diagram_layout import CONTAINER_PAD, STAIR_STEP
 
 # The label band drawn *below* a node's icon (``verticalLabelPosition=bottom``).
 # A node's on-canvas footprint is not just its 78x78 icon box — the service name
@@ -1781,6 +1781,59 @@ def force_contact_axis(
     return out
 
 
+def stretch_contact_approach(
+    pts: Sequence[Point],
+    want: Optional[str],
+    *,
+    at_end: bool,
+    faces: frozenset[str] = frozenset(),
+    step: int = STAIR_STEP,
+    grid: int = GRID,
+) -> List[Point]:
+    """Ensure the head-on leg touching a contact is at least ``step`` long.
+
+    ``force_contact_axis`` guarantees the final/first leg is perpendicular to the
+    face; this guarantees it is a proper **stair** and not a stub. A perpendicular
+    approach shorter than ``STAIR_STEP`` reads as the arrow starting inside the
+    glyph (a 10px drop into ``obj``/``ingest`` on the GenAI pipeline). It moves the
+    turn point (the neighbour of the contact) out along the leg's own axis so the
+    contact leg spans ``step``, then relies on the surrounding
+    ``insert_orthogonal_corners`` / ``collapse_collinear`` passes to re-align the
+    leg feeding that turn. A leg already ``>= step`` (or one that is not
+    perpendicular — ``force_contact_axis`` owns that) is left unchanged, so a
+    correct route comes back untouched.
+    """
+    out = list(pts)
+    if want is None or len(out) < 2:
+        return out
+    ci = len(out) - 1 if at_end else 0
+    ni = len(out) - 2 if at_end else 1
+    contact, neighbour = out[ci], out[ni]
+    if leg_axis(neighbour, contact) != want:
+        return out  # not head-on; force_contact_axis handles that first
+    # The turn is only free to move when the leg feeding it is perpendicular (a
+    # real corner). Moving it would otherwise slide a straight run sideways and
+    # change the whole path shape — the byte-stable synthetic routes and any
+    # node-free contact. So require a further point and a perpendicular feeder.
+    fi = ni - 1 if at_end else ni + 1
+    if not 0 <= fi < len(out):
+        return out
+    feeder = out[fi]
+    perp = "H" if want == "V" else "V"
+    if leg_axis(feeder, neighbour) != perp:
+        return out
+    nx, ny = _face_normal(faces, want)
+    if want == "V":
+        if abs(neighbour[1] - contact[1]) >= step:
+            return out
+        out[ni] = (neighbour[0], snap(contact[1] + ny * step, grid))
+    else:
+        if abs(neighbour[0] - contact[0]) >= step:
+            return out
+        out[ni] = (snap(contact[0] + nx * step, grid), neighbour[1])
+    return out
+
+
 def grid_resolve_contact(
     box: "Box", frac: Tuple[float, float], grid: int = GRID
 ) -> Tuple[Point, Tuple[float, float]]:
@@ -1842,6 +1895,16 @@ def orthogonalise_route(
         pts, required_leg_axis(entry_faces), at_end=True, faces=entry_faces, grid=grid
     )
     pts = force_contact_axis(
+        pts, required_leg_axis(exit_faces), at_end=False, faces=exit_faces, grid=grid
+    )
+    # Both contact legs now meet their face head-on; grow either that is a stub
+    # shorter than one stair, so the arrow steps cleanly into the glyph instead
+    # of starting inside it. Re-run the corner/collapse passes so the leg feeding
+    # the moved turn stays aligned.
+    pts = stretch_contact_approach(
+        pts, required_leg_axis(entry_faces), at_end=True, faces=entry_faces, grid=grid
+    )
+    pts = stretch_contact_approach(
         pts, required_leg_axis(exit_faces), at_end=False, faces=exit_faces, grid=grid
     )
     pts = insert_orthogonal_corners(pts, required_leg_axis(exit_faces))
@@ -1991,6 +2054,28 @@ def check_corridor_sharing(geo: DiagramGeometry, grid: int = GRID) -> List[Tuple
         return lines
 
     _edge_by_id = {e.id: e for e in geo.edges}
+
+    def _node_stub_lines(e_id: str, node_id: str) -> set:
+        """Corridor lines of ``e_id``'s segment(s) touching its contact on ``node_id``."""
+        e = _edge_by_id[e_id]
+        pt = None
+        if e.source == node_id and node_id in geo.nodes and None not in e.exit:
+            n = geo.nodes[node_id]
+            pt = (n.x + e.exit[0] * n.w, n.y + e.exit[1] * n.h)
+        elif e.target == node_id and node_id in geo.nodes and None not in e.entry:
+            n = geo.nodes[node_id]
+            pt = (n.x + e.entry[0] * n.w, n.y + e.entry[1] * n.h)
+        if pt is None:
+            return set()
+        px, py = pt
+        lines = set()
+        for orient, line, lo, hi in edge_segs[e_id]:
+            if orient == "h" and abs(round(py) - line) <= 1 and lo - 1 <= px <= hi + 1:
+                lines.add((orient, line))
+            elif orient == "v" and abs(round(px) - line) <= 1 and lo - 1 <= py <= hi + 1:
+                lines.add((orient, line))
+        return lines
+
     out: List[Tuple[str, str]] = []
     ids = list(edge_segs)
     for i in range(len(ids)):
@@ -2000,9 +2085,19 @@ def check_corridor_sharing(geo: DiagramGeometry, grid: int = GRID) -> List[Tuple
             # the other, e.g. app→db and db→db') naturally touches that node's
             # opposite faces at its centre row — that shared contact point is the
             # node, not a merged corridor, so a chain pair is always exempt.
-            is_chain = tgt_of[a] == src_of[b] or tgt_of[b] == src_of[a]
-            if is_chain:
-                continue
+            #
+            # 1.10.3: exempt only the two stubs INCIDENT to the chain node. The
+            # wholesale exemption let a chain pair merge on a lane away from the
+            # node (GenAI ``e6`` train→hub and ``e7`` hub→sql sharing y=690) with
+            # no finding, so the repair loop never separated them.
+            chain_node = (
+                tgt_of[a] if tgt_of[a] == src_of[b]
+                else src_of[a] if tgt_of[b] == src_of[a] else None
+            )
+            chain_lines = (
+                _node_stub_lines(a, chain_node) | _node_stub_lines(b, chain_node)
+                if chain_node is not None else set()
+            )
             # A shared TRUNK is legitimate (diagram-standards "shared trunk,
             # opposite branches") ONLY as a shared *stub* that then branches
             # apart — "the branches never overlap". So two edges that leave the
@@ -2037,6 +2132,8 @@ def check_corridor_sharing(geo: DiagramGeometry, grid: int = GRID) -> List[Tuple
                     # other corridor line — the l1/l15 y=240 descent into one
                     # target — is flagged like any unrelated pair.
                     if shares_endpoint and (oa, la) in trunk_lines:
+                        continue
+                    if chain_node is not None and (oa, la) in chain_lines:
                         continue
                     shared = True
                     break

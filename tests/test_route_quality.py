@@ -111,8 +111,11 @@ _EXAMPLES = _REPO_ROOT / "examples"
 #: tier-skip needs, both at the 40px threshold. ``gcp/01`` / ``oci/01`` sit at 4
 #: crossings because their hub is approached from the side it fans out on; that is
 #: a placement gap (docs/REVIEW.md), not a routing one, and is held (R5.2 / R5.3).
-#: 1.10.3 (D21): ``gcp/01`` / ``oci/01`` are now one shared spec laid out by the
-#: engine (4 → 5). The regional LLM hub stands outside the VPC and keeps three
+#: 1.10.3 (D21/D22): ``gcp/01`` / ``oci/01`` are one shared engine-laid spec
+#: (4 → 6). The extra crossings buy a fully warning-clean layout: the network
+#: tier sub-rows and the regional-column order were chosen (over the 5-crossing
+#: variant) because they leave zero corridor-sharing, exit-thirds and
+#: caption-crossing findings — correctness over a lower raw crossing count. The regional LLM hub stands outside the VPC and keeps three
 #: links into it (lb → hub, train → hub, hub → sql): the two feeds descend into
 #: the hub's top while its read of the DB runs back past them, and the async
 #: queue → ingest feed passes the ingest → train run. The old 4 was measured on a
@@ -135,11 +138,11 @@ _CEILING = {
     "azure/02-azure-ha-multiregion-landscape.drawio": (3, 2, 0.0),
     "azure/02-azure-ha-multiregion-summary.drawio": (0, 0, 0.0),
     "cross-cloud/01-cross-cloud-composition.drawio": (0, 0, 0.0),
-    "gcp/01-gcp-vertex-pipeline.drawio": (5, 0, 0.0),
+    "gcp/01-gcp-vertex-pipeline.drawio": (6, 0, 0.0),
     "gcp/02-gcp-ha-multiregion-landscape.drawio": (3, 2, 0.0),
     "gcp/02-gcp-ha-multiregion-summary.drawio": (0, 0, 0.0),
     "generic/01-generic-reference-architecture.drawio": (2, 0, 0.0),
-    "oci/01-oci-genai-stack.drawio": (5, 0, 0.0),
+    "oci/01-oci-genai-stack.drawio": (6, 0, 0.0),
     "oci/02-oci-ha-multiregion-landscape.drawio": (3, 2, 0.0),
     "oci/02-oci-ha-multiregion-summary.drawio": (0, 0, 0.0),
 }

@@ -19,8 +19,8 @@
         <mxCell id="s1" value="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.5128205128205128;exitY=1.0256410256410255;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5128205128205128;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="dns" target="lb_a">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="580.00" y="210.00" />
-              <mxPoint x="100.00" y="210.00" />
+              <mxPoint x="580.00" y="190.00" />
+              <mxPoint x="100.00" y="190.00" />
             </Array>
           </mxGeometry>
         </mxCell>
@@ -78,8 +78,8 @@
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="650.00" y="100.00" />
-              <mxPoint x="650.00" y="200.00" />
-              <mxPoint x="840.00" y="200.00" />
+              <mxPoint x="650.00" y="190.00" />
+              <mxPoint x="840.00" y="190.00" />
             </Array>
           </mxGeometry>
         </mxCell>
@@ -87,8 +87,8 @@
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="910.00" y="420.00" />
-              <mxPoint x="910.00" y="520.00" />
-              <mxPoint x="1060.00" y="520.00" />
+              <mxPoint x="910.00" y="510.00" />
+              <mxPoint x="1060.00" y="510.00" />
             </Array>
           </mxGeometry>
         </mxCell>

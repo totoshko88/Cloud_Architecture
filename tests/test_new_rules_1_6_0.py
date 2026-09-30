@@ -398,7 +398,9 @@ def test_overshoot_at_the_target_collapses_to_one_run():
         (420, 140), [(450, 140), (450, 270), (1290, 270), (1290, 410)],
         (1300, 380), _RIGHT, _LEFT,
     )
-    assert out[-1] == (1290, 380)
+    # 1.10.3: single run (no backtrack) AND a full-stair left approach (the
+    # turn sits 30px off the face, not 10px).
+    assert out[-1] == (1270, 380)
     assert (1290, 410) not in out
 
 
@@ -411,7 +413,9 @@ def test_horizontal_leg_into_a_top_entry_gets_an_approach_lane():
         (640, 360), [(710, 360), (710, 320), (200, 320), (200, 700)],
         (160, 700), _RIGHT, _TOP,
     )
-    assert out[-2:] == [(200, 690), (160, 690)]
+    # 1.10.3: the approach lane is a full STAIR_STEP (30px) above the node,
+    # not a 10px stub, so the arrow steps cleanly into the top face.
+    assert out[-2:] == [(200, 670), (160, 670)]
 
 
 def test_approach_lane_side_comes_from_the_face_not_the_route():
@@ -434,7 +438,9 @@ def test_bottom_exit_leaves_vertically():
 
 
 def test_an_already_aligned_route_is_unchanged():
-    pts = [(450, 140), (450, 270), (1290, 270), (1290, 380)]
+    # 1.10.3: a route already orthogonal AND with full-stair contact legs comes
+    # back unchanged; the entry sits a full STAIR_STEP from its turn.
+    pts = [(450, 140), (450, 270), (1270, 270), (1270, 380)]
     assert geo.orthogonalise_route(
         (420, 140), pts, (1300, 380), _RIGHT, _LEFT
     ) == pts

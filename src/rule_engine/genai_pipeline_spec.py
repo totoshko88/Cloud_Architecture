@@ -30,15 +30,15 @@ _NODES = (
     # Network-scoped: inside the VPC / VCN.
     NodeSpec(id="lb", role="lb", lane="router", region="a", slot=0, sub=1, container="vpc-a"),
     NodeSpec(id="train", role="k8s", lane="workers", region="a", slot=0, sub=1, container="vpc-a"),
-    NodeSpec(id="sql", role="sql", lane="data", region="a", slot=0, sub=1, container="vpc-a"),
+    NodeSpec(id="sql", role="sql", lane="data", region="a", slot=0, sub=2, container="vpc-a"),
     # Regional managed services: inside the region, outside the network. The
     # unanchored ones stack by ``slot`` (queue, secrets, object store), so the
     # api→queue feed stays at the top of the column, clear of the hub's fan-out.
-    NodeSpec(id="queue", role="queue", lane="async", region="a", slot=2, container="region-a"),
+    NodeSpec(id="queue", role="queue", lane="async", region="a", slot=3, container="region-a"),
     NodeSpec(id="ingest", role="fn", lane="workers", region="a", slot=1, container="region-a"),
     NodeSpec(id="hub", role="llm_platform", lane="platform", region="a", slot=0, container="region-a"),
-    NodeSpec(id="sec", role="sec", lane="platform", region="a", slot=3, container="region-a"),
-    NodeSpec(id="obj", role="obj", lane="data", region="a", slot=4, container="region-a"),
+    NodeSpec(id="sec", role="sec", lane="platform", region="a", slot=4, container="region-a"),
+    NodeSpec(id="obj", role="obj", lane="data", region="a", slot=2, container="region-a"),
 )
 
 _EDGES = (

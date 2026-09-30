@@ -1169,3 +1169,51 @@ def test_centred_caption_extent_follows_align():
     assert x0 > 350 and x1 < 450
     x0, _ = geo.caption_text_extent("az-a1", "align=left;spacingLeft=30", box)
     assert x0 == 32.0
+
+
+# --------------------------------------------------------------------------- #
+# 1.10.3 (D22): a chain pair merging on a lane away from the chain node is
+# flagged (the old wholesale chain exemption hid it), and a too-short head-on
+# approach leg is stretched to a full stair.
+# --------------------------------------------------------------------------- #
+
+
+def test_chain_pair_merging_off_the_chain_node_is_flagged():
+    # a→b→c: b→c leaves b, a→b arrives at b. They share b, but if a SECOND
+    # segment of each runs along one lane away from b, that is a merge, not the
+    # trunk stub.
+    g = DiagramGeometry(
+        nodes={
+            "a": Box("a", 100, 100, 78, 78),
+            "b": Box("b", 100, 400, 78, 78),
+            "c": Box("c", 900, 400, 78, 78),
+        },
+        edges=[
+            EdgeGeom(id="ab", source="a", target="b", orthogonal=True,
+                     exit=(1.0, 0.5), entry=(0.0, 0.5),
+                     points=[(300, 139), (300, 690), (60, 690), (60, 439)]),
+            EdgeGeom(id="bc", source="b", target="c", orthogonal=True,
+                     exit=(1.0, 0.5), entry=(0.0, 0.5),
+                     points=[(300, 439), (300, 690), (860, 690)]),
+        ],
+    )
+    # Both run along y=690; only ab's stub touches b there. The pair is flagged.
+    assert ("ab", "bc") in geo.check_corridor_sharing(g)
+
+
+def test_stretch_grows_a_short_head_on_approach_to_a_stair():
+    # A 10px vertical drop into a top entry, fed by a horizontal turn, grows to a
+    # full STAIR_STEP.
+    from rule_engine.geometry import stretch_contact_approach, STAIR_STEP
+    pts = [(500, 300), (500, 690), (700, 690), (700, 700)]  # last leg 10px into top
+    out = stretch_contact_approach(pts, "V", at_end=True,
+                                   faces=frozenset({"top"}), step=STAIR_STEP)
+    assert out[-2] == (700, 700 - STAIR_STEP)
+
+
+def test_stretch_leaves_a_full_length_approach_untouched():
+    from rule_engine.geometry import stretch_contact_approach, STAIR_STEP
+    pts = [(500, 300), (500, 640), (700, 640), (700, 700)]  # last leg 60px
+    out = stretch_contact_approach(pts, "V", at_end=True,
+                                   faces=frozenset({"top"}), step=STAIR_STEP)
+    assert out == pts
