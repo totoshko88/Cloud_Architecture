@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from rule_engine.constants import load_terminology  # noqa: E402
 from rule_engine.diagram_layout import Boundary, Edge, Node, build_diagram  # noqa: E402
-from rule_engine.genai_pipeline_spec import GENAI_SPEC  # noqa: E402
+from rule_engine.genai_pipeline_spec import genai_spec  # noqa: E402
 from rule_engine.icon_resolver import resolve_container  # noqa: E402
 from rule_engine.layout_engine import layout  # noqa: E402
 
@@ -42,6 +42,7 @@ class GenaiSkin:
     flow_lines: Sequence[str]
     title: str
     diagram_id: str
+    api_global: bool = True
 
 
 def _native_net(provider: str) -> str:
@@ -49,14 +50,15 @@ def _native_net(provider: str) -> str:
 
 
 def build(skin: GenaiSkin) -> str:
-    placed = layout(GENAI_SPEC)
+    spec = genai_spec(api_global=skin.api_global)
+    placed = layout(spec)
     labels = {
         "account": skin.account_label,
         "region": f"region {skin.region}",
         "vpc": f"{_native_net(skin.provider)}-{skin.network_name}",
     }
     boundaries: List[Boundary] = []
-    for c in GENAI_SPEC.containers:
+    for c in spec.containers:
         b = placed.containers[c.id]
         boundaries.append(Boundary(
             id=f"boundary-{c.id}", label=labels[c.label_key],
@@ -67,7 +69,7 @@ def build(skin: GenaiSkin) -> str:
         Node(id=n.id, label=skin.labels[n.id],
              x=int(placed.nodes[n.id].x), y=int(placed.nodes[n.id].y),
              render=skin.renderers[n.id])
-        for n in GENAI_SPEC.nodes
+        for n in spec.nodes
     ]
     edges = [
         Edge(id=pe.spec.id, source=pe.spec.source, target=pe.spec.target,
@@ -107,5 +109,5 @@ def run_cli(skin_factory: Callable[[], GenaiSkin], out: Path, prog: str,
         print(f"{prog}: STALE: regenerate {path}", file=sys.stderr)
         return 1
     path.write_text(xml, encoding="utf-8")
-    print(f"{prog}: wrote {path} ({len(GENAI_SPEC.nodes)} nodes)")
+    print(f"{prog}: wrote {path} ({len(genai_spec(api_global=skin_factory().api_global).nodes)} nodes)")
     return 0

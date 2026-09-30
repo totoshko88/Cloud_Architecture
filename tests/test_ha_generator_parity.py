@@ -389,20 +389,40 @@ def test_landscape_captions_use_native_terminology():
         assert 'value="region-primary ' in text, f"{provider}: region level missing"
 
 
-def test_genai_examples_share_one_geometry():
-    """gcp/01 and oci/01 are one spec (``genai_pipeline_spec``): same node
-    boxes, containers and routes; only icons, labels and styles differ."""
+def test_genai_examples_share_one_spec_diverging_only_on_api_scope():
+    """gcp/01 and oci/01 are one spec (``genai_pipeline_spec``): same containers
+    and the same node/edge set, differing ONLY on the API front door's scope —
+    GCP Apigee is regional (front door inside the region), OCI API Gateway is
+    global (front door in the account edge row) — plus the regional/network
+    slots that re-pack forces (D23). Everything else stays identical, so the two
+    providers still share the whole body of the layout."""
     root = Path(__file__).resolve().parents[1] / "examples"
-    geos = [
+    a, b = (
         _build_geometry((root / rel).read_text(encoding="utf-8"))
         for rel in ("gcp/01-gcp-vertex-pipeline.drawio", "oci/01-oci-genai-stack.drawio")
-    ]
-    a, b = geos
-    assert a.nodes == b.nodes
-    assert a.containers == b.containers
-    assert [(e.id, e.exit, e.entry, e.points) for e in a.edges] == \
-        [(e.id, e.exit, e.entry, e.points) for e in b.edges]
-    # Regional services sit outside the network boundary.
-    vpc = a.containers["boundary-vpc-a"]
-    for nid in ("queue", "ingest", "hub", "sec", "obj"):
-        assert a.nodes[nid].x >= vpc.right, nid
+    )
+    # Same node ids, same container ids, same edge ids on both providers. The
+    # container *boxes* legitimately differ: placing Apigee in the region
+    # re-packs the GCP layout, so the boundaries resize to wrap their children.
+    assert set(a.nodes) == set(b.nodes)
+    assert set(a.containers) == set(b.containers)
+    assert {e.id for e in a.edges} == {e.id for e in b.edges}
+
+    # The API front door legitimately diverges: GCP regional vs OCI global.
+    assert a.nodes["api"] != b.nodes["api"]
+    vpc_gcp = a.containers["boundary-vpc-a"]
+    region_gcp = a.containers["boundary-region-a"]
+    api_gcp = a.nodes["api"]
+    # GCP Apigee sits inside the region but outside the VPC (a regional service).
+    assert region_gcp.x <= api_gcp.x and api_gcp.x + api_gcp.w <= region_gcp.right
+    assert api_gcp.x >= vpc_gcp.right
+    # OCI API Gateway sits outside the region entirely (global/edge).
+    region_oci = b.containers["boundary-region-a"]
+    api_oci = b.nodes["api"]
+    assert api_oci.x < region_oci.x or api_oci.y < region_oci.y
+
+    # Regional services sit outside the network boundary on both providers.
+    for geo in (a, b):
+        vpc = geo.containers["boundary-vpc-a"]
+        for nid in ("queue", "ingest", "hub", "sec", "obj"):
+            assert geo.nodes[nid].x >= vpc.right, nid

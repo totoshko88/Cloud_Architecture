@@ -72,6 +72,9 @@ def skin() -> GenaiSkin:
         network_name="prod", flow_lines=FLOW_LINES,
         title="gcp vertex-pipeline — acme-prod / us-central1 | 2026-09-30 | v2",
         diagram_id="gcp-vertex-pipeline",
+        # Apigee is a REGIONAL product, so the API front door sits inside the
+        # region (unlike OCI API Gateway, which is global).
+        api_global=False,
     )
 
 
