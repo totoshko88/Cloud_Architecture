@@ -26,28 +26,28 @@
           </mxGeometry>
         </mxCell>
 
-        <mxCell id="end-user" value="End_User" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12;fontStyle=0" vertex="1" parent="1">
+        <mxCell id="end-user" value="End_User" style="shape=actor;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12;fontStyle=0;labelBackgroundColor=#FFFFFF" vertex="1" parent="1">
           <mxGeometry x="40" y="500" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="api-cluster" value="api-cluster" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#333333;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12;fontStyle=0" vertex="1" parent="1">
+        <mxCell id="api-cluster" value="api-cluster" style="shape=mxgraph.networks.server;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12;fontStyle=0;labelBackgroundColor=#FFFFFF" vertex="1" parent="1">
           <mxGeometry x="320" y="500" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="task-queue" value="task-queue" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#333333;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12;fontStyle=0" vertex="1" parent="1">
+        <mxCell id="task-queue" value="task-queue" style="shape=mxgraph.flowchart.manual_input;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12;fontStyle=0;labelBackgroundColor=#FFFFFF" vertex="1" parent="1">
           <mxGeometry x="560" y="340" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="tool-invoker" value="tool-invoker" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12;fontStyle=0;labelBackgroundColor=#FFFFFF" vertex="1" parent="1">
+        <mxCell id="tool-invoker" value="tool-invoker" style="shape=mxgraph.flowchart.predefined_process;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12;fontStyle=0;labelBackgroundColor=#FFFFFF;labelBackgroundColor=#FFFFFF" vertex="1" parent="1">
           <mxGeometry x="780" y="500" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="inference" value="inference" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12;fontStyle=0" vertex="1" parent="1">
+        <mxCell id="inference" value="inference" style="shape=mxgraph.flowchart.multi-document;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12;fontStyle=0;labelBackgroundColor=#FFFFFF" vertex="1" parent="1">
           <mxGeometry x="1040" y="180" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="state-db" value="state-db" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000;boundedLbl=1;backgroundOutline=1;size=15;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12;fontStyle=0" vertex="1" parent="1">
+        <mxCell id="state-db" value="state-db" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000;boundedLbl=1;backgroundOutline=1;size=15;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12;fontStyle=0;labelBackgroundColor=#FFFFFF" vertex="1" parent="1">
           <mxGeometry x="1040" y="400" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="artifact-store" value="artifact-store" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12;fontStyle=0" vertex="1" parent="1">
+        <mxCell id="artifact-store" value="artifact-store" style="shape=mxgraph.flowchart.internal_storage;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12;fontStyle=0;labelBackgroundColor=#FFFFFF" vertex="1" parent="1">
           <mxGeometry x="1040" y="620" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="app-secrets" value="app-secrets" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000;dashed=0;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12;fontStyle=0" vertex="1" parent="1">
+        <mxCell id="app-secrets" value="app-secrets" style="shape=mxgraph.flowchart.preparation;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12;fontStyle=0;labelBackgroundColor=#FFFFFF" vertex="1" parent="1">
           <mxGeometry x="1040" y="840" width="78" height="78" as="geometry" />
         </mxCell>
 
@@ -73,8 +73,8 @@
         <mxCell id="e4" value="4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0;exitY=0.2564102564102564;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="tool-invoker" target="inference">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="970.00" y="520.00" />
-              <mxPoint x="970.00" y="220.00" />
+              <mxPoint x="920.00" y="520.00" />
+              <mxPoint x="920.00" y="220.00" />
             </Array>
           </mxGeometry>
         </mxCell>

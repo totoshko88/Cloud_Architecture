@@ -57,6 +57,12 @@ from rule_engine.geometry import (
     grid_resolve_contact,
     orthogonalise_route,
     required_leg_axis,
+    check_marker_collision,
+    resolve_marker_collisions,
+    check_port_bunching,
+    distribute_ports,
+    check_parallel_trunks,
+    offset_parallel_trunks,
 )
 
 _EDGE_CELL_RE = re.compile(r'(<mxCell\b[^>]*\bedge="1"[^>]*?)(/>|>.*?</mxCell>)', re.S)
@@ -143,6 +149,136 @@ def orthogonalise_text(text: str) -> tuple[str, List[str]]:
     return _EDGE_CELL_RE.sub(rewrite, text), changed
 
 
+# --------------------------------------------------------------------------- #
+# Edge hygiene (1.10.5, Feature A): marker de-collision, port distribution,
+# parallel-trunk offset. Each is a deterministic, idempotent geometry pass;
+# this module applies the computed changes back to the source XML.
+# --------------------------------------------------------------------------- #
+
+_GEOM_OPEN_RE = re.compile(r'<mxGeometry\b([^>]*?)(/?)>')
+
+
+def _set_geom_relative_x(body: str, value: float) -> str:
+    """Set ``x=<value>`` and ``relative="1"`` on the edge's ``<mxGeometry>``.
+
+    The along-edge label position is the ``x`` of a ``relative="1"`` edge
+    geometry. This edits the first ``<mxGeometry>`` opening tag in ``body``,
+    adding/replacing ``x`` and ensuring ``relative="1"``, without disturbing an
+    ``as="geometry"`` marker or a nested ``<Array>`` (only the opening tag's
+    attributes are touched).
+    """
+    text = f"{value:.4f}".rstrip("0").rstrip(".") or "0"
+
+    def _edit(m: re.Match) -> str:
+        attrs, close = m.group(1), m.group(2)
+        if re.search(r'\bx="[-0-9.]+"', attrs):
+            attrs = re.sub(r'\bx="[-0-9.]+"', f'x="{text}"', attrs)
+        else:
+            attrs = f' x="{text}"' + attrs
+        if re.search(r'\brelative="[^"]*"', attrs):
+            attrs = re.sub(r'\brelative="[^"]*"', 'relative="1"', attrs)
+        else:
+            attrs = attrs.rstrip() + ' relative="1"'
+        return f"<mxGeometry{attrs}{close}>"
+
+    return _GEOM_OPEN_RE.sub(_edit, body, count=1)
+
+
+def edge_hygiene_text(text: str, skip_ids: "Optional[set[str]]" = None) -> tuple[str, List[str]]:
+    """Return ``(rewritten_xml, changed_edge_ids)`` after the three A passes.
+
+    Deterministic and idempotent: computes the marker de-collision, port
+    distribution and parallel-trunk offsets on the parsed geometry, then rewrites
+    only the affected edge cells. Running twice yields no further change (each
+    underlying geometry pass returns empty on an already-clean diagram).
+    """
+    geo = build_geometry(parse_drawio(text, path="<edge-hygiene>.drawio")[0])
+    new_labels = resolve_marker_collisions(geo)         # {eid: new_label_pos}
+    new_ports = distribute_ports(geo)                   # {eid: {side: (x, y)}}
+    new_points = offset_parallel_trunks(geo)            # {eid: [pts]}
+    # Edges carrying a hand-verified geometry override (1.10.5) are already
+    # crossing-clean and grid-aligned; the hygiene passes must not perturb their
+    # pinned contacts / waypoints (the port-distribution pass nudged an
+    # overridden OCI edge off its route and re-introduced crossings). Exempt them.
+    if skip_ids:
+        new_labels = {k: v for k, v in new_labels.items() if k not in skip_ids}
+        new_ports = {k: v for k, v in new_ports.items() if k not in skip_ids}
+        new_points = {k: v for k, v in new_points.items() if k not in skip_ids}
+    if not (new_labels or new_ports or new_points):
+        return text, []
+
+    changed: set[str] = set()
+
+    def rewrite(match: re.Match) -> str:
+        head, body = match.group(1), match.group(2)
+        m = _ID_RE.search(head)
+        eid = m.group(1) if m else ""
+        if eid not in new_labels and eid not in new_ports and eid not in new_points:
+            return match.group(0)
+
+        # Port distribution: rewrite exitX/exitY/entryX/entryY in the style.
+        if eid in new_ports:
+            sm = _STYLE_RE.search(head)
+            if sm:
+                style = sm.group(1)
+                sides = new_ports[eid]
+                if "exit" in sides:
+                    ex, ey = sides["exit"]
+                    style = _set_token(style, "exitX", ex)
+                    style = _set_token(style, "exitY", ey)
+                if "entry" in sides:
+                    nx, ny = sides["entry"]
+                    style = _set_token(style, "entryX", nx)
+                    style = _set_token(style, "entryY", ny)
+                head = head[: sm.start(1)] + style + head[sm.end(1):]
+                changed.add(eid)
+
+        # Parallel-trunk offset: replace the waypoint <Array>.
+        if eid in new_points:
+            pts = new_points[eid]
+            array = _render_points(pts) if pts else ""
+            if _ARRAY_RE.search(body):
+                body = (
+                    _ARRAY_RE.sub(lambda _m: array, body, count=1)
+                    if array
+                    else _ARRAY_RE.sub("", body, count=1)
+                )
+            elif array and _GEOM_RE.search(body):
+                body = _GEOM_RE.sub(
+                    lambda mm: f"{mm.group(1)}>\n            {array}\n          </mxGeometry>",
+                    body,
+                    count=1,
+                )
+            changed.add(eid)
+
+        # Marker de-collision: set the label's along-edge position.
+        if eid in new_labels:
+            body = _set_geom_relative_x(body, new_labels[eid])
+            changed.add(eid)
+
+        return head + body
+
+    return _EDGE_CELL_RE.sub(rewrite, text), sorted(changed)
+
+
+def report_edge_hygiene(path: Path) -> List[str]:
+    """Return a human-readable list of edge-hygiene defects in ``path``.
+
+    Reports the three Feature-A defect classes the same way :func:`report` lists
+    alignment defects: marker collisions, port bunching (>=2 edges stacked on one
+    face) and parallel-trunk coincidences.
+    """
+    geo = build_geometry(parse_drawio(path.read_text(encoding="utf-8"), path=str(path))[0])
+    out: List[str] = []
+    for a, b in check_marker_collision(geo):
+        out.append(f"marker-collision: {a} + {b} overprint")
+    for nid, face in check_port_bunching(geo):
+        out.append(f"port-bunching: node {nid} face {face} has stacked exits/entries")
+    for a, b in check_parallel_trunks(geo):
+        out.append(f"parallel-trunk: {a} + {b} run co-linear on one grid line")
+    return out
+
+
 def report(path: Path) -> List[str]:
     """Return a human-readable list of alignment defects in ``path``."""
     geo = build_geometry(parse_drawio(path.read_text(encoding="utf-8"), path=str(path))[0])
@@ -186,7 +322,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if not path.is_file():
             print(f"error: no such file: {path}", file=sys.stderr)
             return 2
-        defects = report(path)
+        defects = report(path) + report_edge_hygiene(path)
         if args.check:
             if defects:
                 failed = True
@@ -198,11 +334,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             continue
         text = path.read_text(encoding="utf-8")
         new, changed = orthogonalise_text(text)
-        if changed:
+        new, hygiene_changed = edge_hygiene_text(new)
+        all_changed = sorted(set(changed) | set(hygiene_changed))
+        if all_changed:
             path.write_text(new, encoding="utf-8")
-            print(f"{path}: re-aligned {len(changed)} edge(s): {', '.join(changed)}")
+            print(f"{path}: cleaned {len(all_changed)} edge(s): {', '.join(all_changed)}")
         else:
-            print(f"{path}: already aligned")
+            print(f"{path}: already clean")
     return 1 if failed else 0
 
 

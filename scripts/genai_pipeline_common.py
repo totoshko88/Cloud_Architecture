@@ -25,6 +25,7 @@ from rule_engine.diagram_layout import Boundary, Edge, Node, build_diagram  # no
 from rule_engine.genai_pipeline_spec import genai_spec  # noqa: E402
 from rule_engine.icon_resolver import resolve_container  # noqa: E402
 from rule_engine.layout_engine import layout  # noqa: E402
+from rule_engine.orthogonalise import edge_hygiene_text  # noqa: E402
 
 IconRenderer = Callable[[Node, str], str]
 _PAGE_MARGIN = 60
@@ -43,6 +44,13 @@ class GenaiSkin:
     title: str
     diagram_id: str
     api_global: bool = True
+    #: Optional per-edge geometry override (1.10.5), same contract as
+    #: :attr:`engine_example_common.ExampleSkin.edge_overrides`: an ``{edge_id:
+    #: {"exit":…, "entry":…, "points":…}}`` map whose entries REPLACE the
+    #: engine-routed geometry after ``layout()``, for a hand-verified
+    #: lower-crossing route the greedy scored router cannot reach. A pure
+    #: constant, so the diagram stays deterministic and --check stays fresh.
+    edge_overrides: Optional[Dict[str, dict]] = None
 
 
 def _native_net(provider: str) -> str:
@@ -71,12 +79,22 @@ def build(skin: GenaiSkin) -> str:
              render=skin.renderers[n.id])
         for n in spec.nodes
     ]
-    edges = [
-        Edge(id=pe.spec.id, source=pe.spec.source, target=pe.spec.target,
-             marker=pe.spec.marker, dashed=pe.spec.dashed, exit=pe.exit,
-             entry=pe.entry, points=tuple((int(x), int(y)) for x, y in pe.points))
-        for pe in placed.edges
-    ]
+    overrides = skin.edge_overrides or {}
+
+    def _edge(pe):
+        ov = overrides.get(pe.spec.id)
+        if ov is not None:
+            exit_pt = tuple(ov.get("exit", pe.exit))
+            entry_pt = tuple(ov.get("entry", pe.entry))
+            pts = tuple((int(x), int(y)) for x, y in ov.get("points", pe.points))
+        else:
+            exit_pt, entry_pt = pe.exit, pe.entry
+            pts = tuple((int(x), int(y)) for x, y in pe.points)
+        return Edge(id=pe.spec.id, source=pe.spec.source, target=pe.spec.target,
+                    marker=pe.spec.marker, dashed=pe.spec.dashed,
+                    exit=exit_pt, entry=entry_pt, points=pts)
+
+    edges = [_edge(pe) for pe in placed.edges]
     right = max(int(b.right) for b in placed.containers.values())
     bottom = max(int(b.bottom) for b in placed.containers.values())
     return build_diagram(
@@ -97,7 +115,14 @@ def run_cli(skin_factory: Callable[[], GenaiSkin], out: Path, prog: str,
                     help="compare with the committed file; write nothing")
     ap.add_argument("--out", default=str(out))
     args = ap.parse_args(argv)
-    xml = build(skin_factory())
+    skin = skin_factory()
+    xml = build(skin)
+    # Deterministic edge-hygiene (1.10.5 A1/A2/A3): separate overprinting flow
+    # markers, distribute bunched ports and offset parallel trunks at generation
+    # time so every emitted diagram is collision-free. Idempotent, so --check
+    # (freshness) and write see the same bytes. Edges carrying a hand-verified
+    # override are exempt (already clean; hygiene must not perturb their route).
+    xml, _ = edge_hygiene_text(xml, skip_ids=set((skin.edge_overrides or {}).keys()))
     path = Path(args.out)
     if args.stdout:
         sys.stdout.write(xml)
@@ -109,5 +134,5 @@ def run_cli(skin_factory: Callable[[], GenaiSkin], out: Path, prog: str,
         print(f"{prog}: STALE: regenerate {path}", file=sys.stderr)
         return 1
     path.write_text(xml, encoding="utf-8")
-    print(f"{prog}: wrote {path} ({len(genai_spec(api_global=skin_factory().api_global).nodes)} nodes)")
+    print(f"{prog}: wrote {path} ({len(genai_spec(api_global=skin.api_global).nodes)} nodes)")
     return 0

@@ -38,7 +38,21 @@ def genai_spec(*, api_global: bool) -> DiagramSpec:
     (provider-profiles → service scope: OCI API GW global vs GCP Apigee regional).
     """
     if api_global:
-        nodes = _NODES
+        # OCI: API Gateway is global/edge (front door in the account edge row).
+        # Raise the secrets store (Vault) to the top of the regional column,
+        # directly below the LLM hub, instead of leaving it at the bottom — a
+        # reviewer noted Vault reading nothing but sitting three rows below the
+        # hub it serves reads as an afterthought. Reordering the unanchored
+        # regional stack to ``sec, obj, queue`` puts Vault on the hub's own feed
+        # row region (hub → sec is edge e9), matching the GCP variant's regional
+        # order, and stays fully warning-clean (verified against the engine's own
+        # checks + route-quality ceiling). The api→queue feed now descends to the
+        # bottom of the column, still clear of the hub's fan-out.
+        _oci_regional = {"sec": dict(slot=2), "obj": dict(slot=3), "queue": dict(slot=4)}
+        nodes = tuple(
+            _apply(n, _oci_regional[n.id]) if n.id in _oci_regional else n
+            for n in _NODES
+        )
     else:
         # Apigee is regional: the API front door joins the regional column. That
         # shifts the clean layout, so the network sub-rows and regional slots are

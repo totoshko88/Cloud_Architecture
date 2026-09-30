@@ -36,6 +36,7 @@ Public interface::
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -149,6 +150,17 @@ class EdgeGeom:
     # Requirement 1): an edge with a non-``none`` start AND a non-``none`` end
     # arrowhead is a double-headed (bidirectional) edge.
     start_arrow: Optional[str] = None
+    # The edge's rendered label (its ``value``). A numbered flow-marker edge
+    # carries a bare integer here (``"4"``); an unlabelled edge carries ``""``.
+    # Used by the marker de-collision pass and ``marker-collision`` (1.10.5).
+    label: str = ""
+    # The label's position ALONG the edge as a signed fraction in ``[-1, 1]``:
+    # draw.io stores it as the ``x`` of an ``mxGeometry relative="1"`` on the
+    # edge, where 0 is the route midpoint, -1 the source end and +1 the target
+    # end. ``None`` means the author pinned nothing, so the label renders at the
+    # geometric midpoint (fraction 0) — the common case. Carried so the marker
+    # de-collision pass can read and rewrite it deterministically (1.10.5).
+    label_pos: Optional[float] = None
 
 
 @dataclass
@@ -262,6 +274,16 @@ def build_geometry(page: Page) -> DiagramGeometry:
             if cell.geom
             else []
         )
+        # The label's along-edge position is the ``x`` of a ``relative="1"`` edge
+        # geometry (0 == route midpoint, -1 source end, +1 target end). Absent /
+        # non-relative geometry pins nothing, so the label renders at the
+        # midpoint — recorded as ``None`` so the de-collision pass can tell an
+        # unpinned label (free to move) from one the author fixed.
+        label_pos = (
+            cell.geom.x
+            if cell.geom is not None and cell.geom.relative and cell.geom.x
+            else None
+        )
         geo.edges.append(
             EdgeGeom(
                 id=cid,
@@ -275,6 +297,8 @@ def build_geometry(page: Page) -> DiagramGeometry:
                 end_fill=(int(_style_num(st, "endFill")) if _style_num(st, "endFill") is not None else None),
                 stroke_width=_style_num(st, "strokeWidth"),
                 start_arrow=_style_token(st, "startArrow"),
+                label=cell.label or "",
+                label_pos=label_pos,
             )
         )
 
@@ -2388,3 +2412,495 @@ def check_edge_bidirectional(geo: DiagramGeometry) -> List[Tuple[str, str]]:
             continue
         out.append((e.id, f"double-head-start-{sa}-end-{ea or 'default'}"))
     return out
+
+
+# --------------------------------------------------------------------------- #
+# Edge hygiene — flow-marker de-collision, port distribution, parallel trunks
+# (1.10.5, Feature A). Pure geometry, deterministic, idempotent.
+# --------------------------------------------------------------------------- #
+
+#: Minimum on-canvas separation (px) between two edge flow-marker labels before
+#: they read as merged. A numbered marker is a ~12px glyph; two anchored closer
+#: than this overprint (the GCP ``4``/``6`` merge, OCI ``3``/``5`` and ``6``/``7``
+#: overlaps). Named so the threshold is declared once and shared by the
+#: de-collision pass and the ``marker-collision`` lint check (1.10.5 A1/B1).
+MARKER_MIN_SEP = 24.0
+
+#: The fixed step (as an along-edge fraction of the signed ``[-1, 1]`` label
+#: position) by which a colliding marker is nudged along its edge. One nudge
+#: moves a marker ~⅒ of the route toward one end; small enough not to slide the
+#: label off a short leg, large enough that one step clears a 24px overprint on
+#: any route longer than ~240px. Deterministic and bounded so the pass is
+#: idempotent (a separated pair is left untouched). (1.10.5 A1)
+MARKER_NUDGE_STEP = 0.2
+
+#: The extra grid step by which two co-linear parallel trunk runs are separated
+#: so they do not draw as one line (1.10.5 A3). One :data:`GRID` step is the
+#: minimum offset diagram-standards already mandates for parallel corridors.
+PARALLEL_TRUNK_OFFSET = GRID
+
+#: Detour coefficient: an edge whose routed (Manhattan) length exceeds the
+#: straight Manhattan distance between its contacts by more than this factor is
+#: a "detour hook" — it loops out and back instead of going where it is going
+#: (1.10.5 B3). 2.5 clears the legitimate one-stair dog-leg every orthogonal
+#: route needs while catching a genuine hook.
+DETOUR_HOOK_COEFF = 2.5
+
+
+def _edge_contacts(
+    geo: DiagramGeometry, e: EdgeGeom
+) -> Optional[Tuple[Point, Point]]:
+    """Return ``(exit_abs, entry_abs)`` for an edge, or ``None`` when unresolved."""
+    src, tgt = geo.nodes.get(e.source), geo.nodes.get(e.target)
+    if src is None or tgt is None or None in e.exit or None in e.entry:
+        return None
+    return (
+        (src.x + e.exit[0] * src.w, src.y + e.exit[1] * src.h),
+        (tgt.x + e.entry[0] * tgt.w, tgt.y + e.entry[1] * tgt.h),
+    )
+
+
+def marker_anchor(poly: Sequence[Point], label_pos: Optional[float]) -> Optional[Point]:
+    """Return the on-canvas point where an edge label renders.
+
+    draw.io places an edge label at a signed arc-length fraction ``label_pos`` of
+    the full polyline: ``0`` (or ``None``) is the geometric midpoint, ``-1`` the
+    source end, ``+1`` the target end. This walks the polyline to the point at
+    normalized arc-length ``t = (label_pos + 1) / 2`` — the same point the reader
+    sees the number at. Returns ``None`` for a degenerate (zero-length) route.
+    """
+    pts = [tuple(p) for p in poly]
+    if len(pts) < 2:
+        return None
+    seg_len = [
+        abs(b[0] - a[0]) + abs(b[1] - a[1]) for a, b in zip(pts, pts[1:])
+    ]
+    total = sum(seg_len)
+    if total <= 0:
+        return pts[0]
+    t = ((label_pos if label_pos is not None else 0.0) + 1.0) / 2.0
+    t = min(1.0, max(0.0, t))
+    target = t * total
+    run = 0.0
+    for (a, b), ln in zip(zip(pts, pts[1:]), seg_len):
+        if run + ln >= target or ln == 0:
+            frac = 0.0 if ln == 0 else (target - run) / ln
+            return (a[0] + (b[0] - a[0]) * frac, a[1] + (b[1] - a[1]) * frac)
+        run += ln
+    return pts[-1]
+
+
+def _marker_edges(geo: DiagramGeometry) -> List[EdgeGeom]:
+    """Return edges carrying a numeric flow-marker label, in stable id order."""
+    return sorted(
+        (e for e in geo.edges if e.label.strip().isdigit()),
+        key=lambda e: e.id,
+    )
+
+
+def marker_anchors(geo: DiagramGeometry) -> Dict[str, Point]:
+    """Return ``{edge_id: anchor_point}`` for every numeric-marker edge."""
+    out: Dict[str, Point] = {}
+    for e in _marker_edges(geo):
+        contacts = _edge_contacts(geo, e)
+        if contacts is None:
+            continue
+        poly = [contacts[0]] + [tuple(p) for p in e.points] + [contacts[1]]
+        anchor = marker_anchor(poly, e.label_pos)
+        if anchor is not None:
+            out[e.id] = anchor
+    return out
+
+
+def check_marker_collision(
+    geo: DiagramGeometry, min_sep: float = MARKER_MIN_SEP
+) -> List[Tuple[str, str]]:
+    """Return ``(edge_a, edge_b)`` id pairs whose flow-markers render < ``min_sep`` apart.
+
+    The anchor is each marker's rendered point (:func:`marker_anchor`); two whose
+    Euclidean distance is below :data:`MARKER_MIN_SEP` overprint and read as one
+    number (1.10.5 B1). Pairs are sorted within and across for a deterministic,
+    de-duplicated list.
+    """
+    anchors = marker_anchors(geo)
+    ids = sorted(anchors)
+    out: List[Tuple[str, str]] = []
+    for i in range(len(ids)):
+        for j in range(i + 1, len(ids)):
+            (ax, ay), (bx, by) = anchors[ids[i]], anchors[ids[j]]
+            if ((ax - bx) ** 2 + (ay - by) ** 2) ** 0.5 < min_sep - AXIS_EPS:
+                out.append((ids[i], ids[j]))
+    return sorted(set(out))
+
+
+def resolve_marker_collisions(
+    geo: DiagramGeometry,
+    min_sep: float = MARKER_MIN_SEP,
+    step: float = MARKER_NUDGE_STEP,
+) -> Dict[str, float]:
+    """Return ``{edge_id: new_label_pos}`` for markers that must move to separate.
+
+    Deterministic nudge: for each colliding pair (in sorted id order), the
+    lower-id edge's marker slides toward its **source** and the higher-id edge's
+    toward its **target**, by :data:`MARKER_NUDGE_STEP` along the signed ``[-1,
+    1]`` position, clamped to that range. The pass repeats until no pair is
+    within ``min_sep`` or a bounded iteration cap is reached, so a cluster of
+    three separates too. Only edges that actually move appear in the result;
+    re-running on an already-separated diagram returns ``{}`` (idempotent).
+    """
+    markers = _marker_edges(geo)
+    if len(markers) < 2:
+        return {}
+    pos: Dict[str, float] = {
+        e.id: (e.label_pos if e.label_pos is not None else 0.0) for e in markers
+    }
+    by_id = {e.id: e for e in markers}
+    contacts = {e.id: _edge_contacts(geo, e) for e in markers}
+
+    def anchor_of(eid: str) -> Optional[Point]:
+        c = contacts[eid]
+        if c is None:
+            return None
+        poly = [c[0]] + [tuple(p) for p in by_id[eid].points] + [c[1]]
+        return marker_anchor(poly, pos[eid])
+
+    ids = sorted(pos)
+    # Bounded: at most ``step`` fits (2 / step) times end-to-end; double it as a
+    # safety cap so a dense cluster still terminates deterministically.
+    max_iter = int(4.0 / step) + 2
+    for _ in range(max_iter):
+        moved_any = False
+        for i in range(len(ids)):
+            for j in range(i + 1, len(ids)):
+                a, b = ids[i], ids[j]
+                pa, pb = anchor_of(a), anchor_of(b)
+                if pa is None or pb is None:
+                    continue
+                dist = ((pa[0] - pb[0]) ** 2 + (pa[1] - pb[1]) ** 2) ** 0.5
+                if dist >= min_sep - AXIS_EPS:
+                    continue
+                new_a = max(-1.0, min(1.0, pos[a] - step))
+                new_b = max(-1.0, min(1.0, pos[b] + step))
+                if new_a != pos[a] or new_b != pos[b]:
+                    pos[a], pos[b] = new_a, new_b
+                    moved_any = True
+        if not moved_any:
+            break
+    return {
+        eid: round(pos[eid], 4)
+        for eid, e in by_id.items()
+        if abs(pos[eid] - (e.label_pos if e.label_pos is not None else 0.0)) > 1e-9
+    }
+
+
+def _face_of_contact(frac: Tuple[Optional[float], Optional[float]]) -> Optional[str]:
+    """Return the single face a contact sits on (``top``/``bottom``/``left``/``right``)."""
+    if None in frac:
+        return None
+    faces = contact_faces(frac[0], frac[1])
+    # A corner lies on two faces; treat it as its horizontal face for ordering.
+    for name in ("right", "left", "top", "bottom"):
+        if name in faces:
+            return name
+    return None
+
+
+def _even_fractions(n: int) -> List[float]:
+    """Return ``n`` evenly-spaced interior fractions across a face: ``k/(n+1)``."""
+    return [round((k + 1) / (n + 1), 6) for k in range(n)]
+
+
+def check_port_bunching(
+    geo: DiagramGeometry, min_sep: float = 0.15
+) -> List[Tuple[str, str]]:
+    """Return ``(node_id, face)`` where >=2 edges share a face with bunched contacts.
+
+    When ``N >= 2`` edges exit (or enter) one node face and their along-face
+    fractions are not evenly distributed — two lie closer than ``min_sep`` of the
+    face, i.e. they nearly stack — the face is reported (1.10.5 A2). Deterministic
+    node/face order. This is the *detector*; :func:`distribute_ports` computes the
+    even fractions the cleanup applies.
+    """
+    faces = _collect_face_contacts(geo)
+    out: List[Tuple[str, str]] = []
+    for (nid, face), entries in sorted(faces.items()):
+        if len(entries) < 2:
+            continue
+        fracs = sorted(f for _eid, _side, f in entries)
+        if any(b - a < min_sep - 1e-9 for a, b in zip(fracs, fracs[1:])):
+            out.append((nid, face))
+    return sorted(set(out))
+
+
+def _collect_face_contacts(
+    geo: DiagramGeometry,
+) -> Dict[Tuple[str, str], List[Tuple[str, str, float]]]:
+    """Group edge contacts by ``(node_id, face)``.
+
+    Each value is a list of ``(edge_id, side, along_frac)`` where ``side`` is
+    ``"exit"`` or ``"entry"`` and ``along_frac`` is the position along the face
+    (the x-fraction for a top/bottom face, the y-fraction for left/right).
+    """
+    faces: Dict[Tuple[str, str], List[Tuple[str, str, float]]] = {}
+    for e in geo.edges:
+        for nid, frac, side in (
+            (e.source, e.exit, "exit"),
+            (e.target, e.entry, "entry"),
+        ):
+            if nid not in geo.nodes or None in frac:
+                continue
+            face = _face_of_contact(frac)
+            if face is None:
+                continue
+            along = frac[0] if face in ("top", "bottom") else frac[1]
+            faces.setdefault((nid, face), []).append((e.id, side, float(along)))
+    return faces
+
+
+def distribute_ports(
+    geo: DiagramGeometry, min_sep: float = 0.15
+) -> Dict[str, Dict[str, Tuple[float, float]]]:
+    """Return ``{edge_id: {side: (new_x, new_y)}}`` distributing bunched face ports.
+
+    For every ``(node, face)`` the port-bunching detector flags, the edges on that
+    face are re-fractioned to :func:`_even_fractions` in a **deterministic order
+    keyed by the OTHER endpoint id** (then the edge id), so the assignment is
+    stable and independent of input order. The face coordinate (0 or 1) is
+    preserved; only the along-face fraction moves. ``side`` is ``"exit"`` or
+    ``"entry"``. Only edges whose fraction actually changes are returned, so
+    re-running on an evenly-distributed diagram yields ``{}`` (idempotent).
+    """
+    faces = _collect_face_contacts(geo)
+    bunched = set(check_port_bunching(geo, min_sep=min_sep))
+    by_id = {e.id: e for e in geo.edges}
+    out: Dict[str, Dict[str, Tuple[float, float]]] = {}
+    for (nid, face), entries in sorted(faces.items()):
+        if (nid, face) not in bunched:
+            continue
+
+        def _other(entry: Tuple[str, str, float]) -> str:
+            eid, side, _ = entry
+            e = by_id[eid]
+            return (e.target if side == "exit" else e.source) or ""
+
+        ordered = sorted(entries, key=lambda en: (_other(en), en[0]))
+        new_fracs = _even_fractions(len(ordered))
+        for (eid, side, along), nf in zip(ordered, new_fracs):
+            if abs(nf - along) <= 1e-9:
+                continue
+            e = by_id[eid]
+            frac = e.exit if side == "exit" else e.entry
+            if face == "top":
+                new = (nf, 0.0)
+            elif face == "bottom":
+                new = (nf, 1.0)
+            elif face == "left":
+                new = (0.0, nf)
+            else:  # right
+                new = (1.0, nf)
+            out.setdefault(eid, {})[side] = (round(new[0], 6), round(new[1], 6))
+    return out
+
+
+def _long_runs(
+    e: EdgeGeom, geo: DiagramGeometry, grid: int = GRID
+) -> List[Tuple[str, float, float, float]]:
+    """Return an edge's long axis-aligned runs as ``(orient, line, lo, hi)``.
+
+    ``orient`` is ``"h"`` or ``"v"``; ``line`` is the shared coordinate (y for a
+    horizontal run, x for a vertical one); ``lo``/``hi`` bound the run on its own
+    axis. A run must span more than ``2*grid`` to count as a trunk. Mirrors the
+    long-run extraction ``check_corridor_sharing`` uses.
+    """
+    contacts = _edge_contacts(geo, e)
+    pts: List[Point] = list(e.points)
+    if contacts is not None:
+        pts = [contacts[0]] + pts + [contacts[1]]
+    runs: List[Tuple[str, float, float, float]] = []
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+        if abs(y1 - y0) <= AXIS_EPS and abs(x1 - x0) > 2 * grid:
+            runs.append(("h", y0, min(x0, x1), max(x0, x1)))
+        elif abs(x1 - x0) <= AXIS_EPS and abs(y1 - y0) > 2 * grid:
+            runs.append(("v", x0, min(y0, y1), max(y0, y1)))
+    return runs
+
+
+def check_parallel_trunks(
+    geo: DiagramGeometry, grid: int = GRID
+) -> List[Tuple[str, str]]:
+    """Return ``(edge_a, edge_b)`` id pairs whose long runs coincide on one line.
+
+    Two edges whose long runs sit on the **same** grid line (same y for a
+    horizontal run, same x for a vertical one) with overlapping extent draw as a
+    single line (1.10.5 A3). This is the *detector*; :func:`offset_parallel_trunks`
+    computes the fixed-step offset the cleanup applies. Deterministic, de-duped.
+
+    Distinct from ``corridor-sharing``: this fires only on an EXACT co-linear
+    overlap (the two runs on the identical line, the merged-into-one case the
+    offset pass repairs), where ``corridor-sharing`` also flags near-parallel
+    runs and carries the shared-trunk/chain exemptions. Kept separate so the A3
+    cleanup has a precise, exemption-free target.
+    """
+    runs = {e.id: _long_runs(e, geo, grid) for e in geo.edges}
+    ids = sorted(runs)
+    out: List[Tuple[str, str]] = []
+    for i in range(len(ids)):
+        for j in range(i + 1, len(ids)):
+            a, b = ids[i], ids[j]
+            found = False
+            for oa, la, loa, hia in runs[a]:
+                for ob, lb, lob, hib in runs[b]:
+                    if oa != ob or abs(la - lb) > AXIS_EPS:
+                        continue
+                    if min(hia, hib) - max(loa, lob) > grid:
+                        found = True
+                        break
+                if found:
+                    break
+            if found:
+                out.append((a, b))
+    return sorted(set(out))
+
+
+def offset_parallel_trunks(
+    geo: DiagramGeometry, grid: int = GRID, offset: int = PARALLEL_TRUNK_OFFSET
+) -> Dict[str, List[Point]]:
+    """Return ``{edge_id: new_points}`` offsetting the higher-id edge of each pair.
+
+    For every co-linear pair :func:`check_parallel_trunks` flags, the
+    **higher-id** edge's coincident run is shifted by one ``offset`` grid step off
+    the shared line (a horizontal run moves in ``y``, a vertical run in ``x``), so
+    the two no longer overprint. The lower-id edge is left in place, making the
+    assignment deterministic. Only shifted edges are returned; a diagram with no
+    coincident trunks yields ``{}`` (idempotent). The shift is snapped to the
+    grid, and applied only to a waypoint that actually lies on the shared line.
+    """
+    pairs = check_parallel_trunks(geo, grid)
+    by_id = {e.id: e for e in geo.edges}
+    runs = {e.id: _long_runs(e, geo, grid) for e in geo.edges}
+    # Collect, per higher-id edge, the (orient, line) it must move off.
+    to_move: Dict[str, set] = {}
+    for a, b in pairs:
+        hi_id = b  # b > a by construction (sorted pair)
+        for oa, la, loa, hia in runs[a]:
+            for ob, lb, lob, hib in runs[hi_id]:
+                if oa == ob and abs(la - lb) <= AXIS_EPS and min(hia, hib) - max(loa, lob) > grid:
+                    to_move.setdefault(hi_id, set()).add((ob, round(lb)))
+    out: Dict[str, List[Point]] = {}
+    for eid, lines in to_move.items():
+        e = by_id[eid]
+        pts = [tuple(p) for p in e.points]
+        moved = False
+        new_pts: List[Point] = []
+        for (px, py) in pts:
+            npx, npy = px, py
+            for orient, line in lines:
+                if orient == "h" and abs(round(py) - line) <= AXIS_EPS:
+                    npy = snap(py + offset, grid)
+                    moved = True
+                elif orient == "v" and abs(round(px) - line) <= AXIS_EPS:
+                    npx = snap(px + offset, grid)
+                    moved = True
+            new_pts.append((npx, npy))
+        if moved:
+            out[eid] = new_pts
+    return out
+
+
+# --------------------------------------------------------------------------- #
+# Edge hygiene lint checks (1.10.5, Feature B). Pure predicates.
+# --------------------------------------------------------------------------- #
+
+
+def check_edge_crossing_excess(
+    geo: DiagramGeometry, per_edge_allowance: float = 0.25
+) -> List[Tuple[str, str]]:
+    """Return crossing edge-id pairs when the crossing count exceeds a per-diagram cap.
+
+    Some crossings are unavoidable, but their number should stay proportional to
+    the edge count. The cap is ``ceil(per_edge_allowance * E)`` where ``E`` is the
+    number of routable edges; when the measured crossing count exceeds it, every
+    crossing pair is reported as an offender (1.10.5 B2). Uses the same
+    :func:`route_cost` crossing detection the scored router minimises, so the
+    lint agrees with the router by construction. Below the cap: no findings.
+    """
+    cost = route_cost(geo)
+    n_edges = sum(1 for e in geo.edges if len(edge_polyline(geo, e)) >= 2)
+    if n_edges == 0:
+        return []
+    cap = math.ceil(per_edge_allowance * n_edges)
+    if cost.crossings <= cap:
+        return []
+    return [tuple(sorted(pair)) for pair in cost.crossing_pairs]
+
+
+def check_detour_hook(
+    geo: DiagramGeometry, coeff: float = DETOUR_HOOK_COEFF
+) -> List[Tuple[str, str]]:
+    """Return ``(edge_id, reason)`` for edges routed far longer than they need.
+
+    An edge's routed Manhattan length is compared to the straight Manhattan
+    distance between its two contact points. When ``routed > coeff * manhattan``
+    (and the manhattan distance is non-trivial) the edge loops out and back — a
+    "detour hook" (1.10.5 B3). The reason carries the measured ratio. A
+    zero-distance (self-loop-ish) or already-short edge is skipped.
+    """
+    out: List[Tuple[str, str]] = []
+    for e in geo.edges:
+        poly = edge_polyline(geo, e)
+        if len(poly) < 2:
+            continue
+        routed = sum(
+            abs(b[0] - a[0]) + abs(b[1] - a[1]) for a, b in zip(poly, poly[1:])
+        )
+        (sx, sy), (tx, ty) = poly[0], poly[-1]
+        manhattan = abs(tx - sx) + abs(ty - sy)
+        if manhattan <= 2 * geo.grid:
+            continue  # contacts nearly co-located; ratio is meaningless
+        if routed > coeff * manhattan + AXIS_EPS:
+            out.append((e.id, f"detour-ratio-{routed / manhattan:.2f}"))
+    return out
+
+
+def check_structural_integrity(geo: DiagramGeometry) -> List[Tuple[str, str]]:
+    """Return ``(offender_id, reason)`` for structural defects in the model.
+
+    Cross-checked against the ``awesome-copilot`` draw.io validator; only the
+    checks NOT already enforced elsewhere are implemented here (``edge-endpoint``
+    already covers a *missing* source/target reference via the CLI; ``parse-error``
+    covers a parent CYCLE). This adds:
+
+    * ``edge-unresolved-source:<id>`` / ``edge-unresolved-target:<id>`` — an edge
+      whose ``source``/``target`` id resolves to neither a node nor a container
+      box in the built geometry (a reference that survived parsing but points at
+      nothing placeable).
+    * ``node-no-geometry`` — a node id present in the model with a non-positive
+      width or height (``build_geometry`` already drops a width-less node, so
+      this fires only when a zero-area box slipped through; kept as the copilot
+      validator's "every node has geometry" rule made explicit).
+
+    Two copilot-validator rules are NOT re-checked here, by design:
+
+    * **Duplicate cell ids** — the single ``.drawio`` parser keys cells by id
+      into a mapping, so a duplicate id is collapsed before ``build_geometry``
+      ever sees it; there is no deterministic post-parse signal of it in
+      ``DiagramGeometry``.
+    * **Parent-chain integrity** — a parent that does not exist, or a parent
+      cycle, is already surfaced by the parser: ``absolute_origin`` raises
+      ``DrawioParseError("parent-cycle:<id>")`` (→ ``parse-error``) on a cycle,
+      and a node whose parent is neither the root layer nor a boundary container
+      is simply not placed, so it cannot reach a routing check.
+
+    Both limitations are recorded in ``diagram-lint.md`` (``structural-integrity``).
+    """
+    out: List[Tuple[str, str]] = []
+    placeable = set(geo.nodes) | set(geo.containers)
+    for e in geo.edges:
+        if e.source and e.source not in placeable:
+            out.append((e.id, f"edge-unresolved-source:{e.source}"))
+        if e.target and e.target not in placeable:
+            out.append((e.id, f"edge-unresolved-target:{e.target}"))
+    for nid, box in sorted(geo.nodes.items()):
+        if box.w <= 0 or box.h <= 0:
+            out.append((nid, "node-no-geometry"))
+    return sorted(set(out))

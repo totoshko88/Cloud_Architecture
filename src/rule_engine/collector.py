@@ -577,11 +577,15 @@ def _resource_dirname(
     def _fit(name: str) -> str:
         return name[:_RESOURCE_DIRNAME_MAX]
 
-    plain = _fit(base)
-    owner = taken.get(plain)
-    if owner == identity:
-        # Same identity, same service → a duplicate. Give it a subfolder keyed
-        # on the resource content so two identical-identity resources differ.
+    def _content_dup(anchor: str) -> str:
+        """Place a same-identity duplicate under a content-keyed subfolder off
+        ``anchor`` so it never overwrites the first resource's resource.json.
+
+        Keyed on ``sha256(identity + canonical json)`` — two resources sharing
+        an identity but differing in content get distinct folders; two truly
+        identical resources coalesce (their content is byte-equal, so no
+        information is lost). The caller lists it under manifest ``duplicates``.
+        """
         canonical = json.dumps(
             resource if resource is not None else {},
             sort_keys=True,
@@ -592,22 +596,34 @@ def _resource_dirname(
         dup_hash = hashlib.sha256(
             (identity + canonical).encode("utf-8")
         ).hexdigest()[:8]
-        suffixed = _fit(f"{base[: _RESOURCE_DIRNAME_MAX - 9]}-{dup_hash}")
-        # In the (astronomically unlikely) event the duplicate hash also
-        # collides, walk further hashes until a free name is found.
+        stem = anchor[: _RESOURCE_DIRNAME_MAX - 9]
+        candidate = _fit(f"{stem}-{dup_hash}")
         n = 2
-        candidate = suffixed
-        while candidate in taken:
-            candidate = _fit(f"{base[: _RESOURCE_DIRNAME_MAX - 9]}-{dup_hash}{n}")
+        while candidate in taken and taken[candidate] != identity:
+            candidate = _fit(f"{stem}-{dup_hash}{n}")
             n += 1
         taken[candidate] = identity
         return candidate
+
+    plain = _fit(base)
+    owner = taken.get(plain)
+    if owner == identity:
+        # Same identity, same service → a duplicate. Give it a subfolder keyed
+        # on the resource content so two identical-identity resources differ.
+        return _content_dup(base)
     if owner is None and not lossy:
         taken[plain] = identity
         return plain
     # Different identity already owns the plain name, or slugging was lossy:
     # disambiguate with the identity hash.
     suffixed = _fit(f"{base[: _RESOURCE_DIRNAME_MAX - 9]}-{id_hash}")
+    if taken.get(suffixed) == identity:
+        # The suffixed name is already held by THIS identity — a same-identity
+        # duplicate reached via the lossy/collision path. Route it to the
+        # content-keyed dedup so it never overwrites the first resource
+        # (the bug: the loop below stops on a same-identity match and returned
+        # the taken name, silently coalescing two distinct resources).
+        return _content_dup(f"{base[: _RESOURCE_DIRNAME_MAX - 9]}-{id_hash}")
     n = 2
     candidate = suffixed
     while candidate in taken and taken[candidate] != identity:

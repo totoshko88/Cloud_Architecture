@@ -260,7 +260,13 @@ def test_bottom_exit_through_own_caption_is_drawn_behind_it():
         flow_lines=["Flow", "3. down"], legend_x=600,
     )
     assert xml.index('id="down"') < xml.index('id="lb"'), "edge must be painted under the node"
+    # Every service node now carries an opaque white caption background by
+    # default (so an edge crossing the caption band never strikes through the
+    # text). ``lb`` sits on the white canvas, so its background is white.
     lb_cell = xml[xml.index('id="lb"'):].split("</mxCell>")[0]
-    assert "labelBackgroundColor=#FFFFFF" in lb_cell  # lb sits on the white canvas
+    assert "labelBackgroundColor=#FFFFFF" in lb_cell
+    # ``app`` sits inside the filled zone (#DFDCD8) and its own bottom-exit edge
+    # is not cutting its caption, so it keeps the default white background — the
+    # default applies to every node, cut or not.
     app_cell = xml[xml.index('id="app"'):].split("</mxCell>")[0]
-    assert "labelBackgroundColor" not in app_cell  # untouched node
+    assert "labelBackgroundColor=#FFFFFF" in app_cell
