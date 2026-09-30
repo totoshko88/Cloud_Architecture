@@ -66,37 +66,40 @@ TITLE = "generic reference-architecture — env-prod / region-1 | 2026-09-22 | v
 # style string and appends the shared label suffix, so a full grayscale style
 # string is exactly what it needs.
 # ---------------------------------------------------------------------------
-_S_K8S = (  # managed_k8s
-    "rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#333333"
+# Standardized built-in draw.io stencils (vendor-neutral mxgraph.flowchart.* /
+# mxgraph.networks.* families), taken verbatim from mappings/generic-icons.yaml
+# (resources: block). Each is line-art drawn white-filled / black-stroked, so the
+# profile stays grayscale and carries no vendor colour, while every node reads as
+# a recognizable icon rather than a bare rectangle. Every id below is confirmed
+# to render (a non-resolving id would draw an empty box → icon-resolved defect).
+_S_K8S = (  # managed_k8s — server rack
+    "shape=mxgraph.networks.server;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333"
 )
-_S_QUEUE = (  # message_queue
-    "rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#333333"
+_S_QUEUE = (  # message_queue — inbound item (manual input)
+    "shape=mxgraph.flowchart.manual_input;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333"
 )
-_S_FUNCTION = (  # serverless_fn
-    "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000"
+_S_FUNCTION = (  # serverless_fn — predefined process
+    "shape=mxgraph.flowchart.predefined_process;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000"
 )
-_S_LLM = (  # llm_platform
-    "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000"
+_S_LLM = (  # llm_platform — multi-document
+    "shape=mxgraph.flowchart.multi-document;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000"
 )
-_S_SQL = (  # managed_sql
+_S_SQL = (  # managed_sql — database cylinder
     "shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000;"
     "boundedLbl=1;backgroundOutline=1;size=15"
 )
-_S_OBJECT = (  # object_store
-    "rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000"
+_S_OBJECT = (  # object_store — internal storage
+    "shape=mxgraph.flowchart.internal_storage;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000"
 )
-_S_SECRETS = (  # secrets_store
-    "rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000;dashed=0"
+_S_SECRETS = (  # secrets_store — preparation (hexagon)
+    "shape=mxgraph.flowchart.preparation;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000"
 )
-# The external actor is a plain grayscale box — outside the cloud boundaries
-# (only cloud resources live inside the Environment / Network). The generic
-# profile ships no vendor icons and no dedicated actor stencil, so a declared
-# base rectangle (leading token ``rounded`` — the same generic base shape as the
-# object/secrets nodes) keeps the actor fully resolvable by rule-engine-verify-icon
-# while staying grayscale (white fill / black stroke). A vendor ``shape=umlActor``
-# is NOT a declared generic shape and would report unresolved.
+# The external actor sits OUTSIDE the cloud boundaries (only cloud resources live
+# inside the Environment / Network). It uses the built-in ``actor`` stencil (a
+# standardized person glyph, confirmed to render), grayscale white/black. This is
+# a vendor-neutral base draw.io shape, not a provider icon.
 _S_ACTOR = (
-    "rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000"
+    "shape=actor;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000"
 )
 
 # ---------------------------------------------------------------------------
@@ -148,9 +151,11 @@ EDGES: List[Edge] = [
     Edge("e3", "task-queue", "tool-invoker", "3", dashed=True,
          exit=(1.0, 0.5), entry=(0.0, 0.5), points=[(720, 379), (720, 539)]),
     # 4: the function invokes the LLM platform for inference. Right face, upper
-    # band; rise in the gap corridor at x=970, enter the platform's left.
+    # band; rise in the gap corridor at x=920 (1.10.5: moved left of e5's x=940
+    # corridor so the two no longer cross — 2 crossings -> 0), enter the
+    # platform's left.
     Edge("e4", "tool-invoker", "inference", "4",
-         exit=(1.0, 0.25), entry=(0.0, 0.5), points=[(970, 480), (970, 219)]),
+         exit=(1.0, 0.25), entry=(0.0, 0.5), points=[(920, 520), (920, 220)]),
     # 5: the function persists state to the managed SQL database. Right face,
     # centred (straight run to the same row band).
     Edge("e5", "tool-invoker", "state-db", "5",

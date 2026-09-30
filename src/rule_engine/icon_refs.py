@@ -173,7 +173,12 @@ def _load_generic_shapes(workspace_root: Path) -> FrozenSet[str]:
     the ``shape=<name>`` tokens and the leading style keyword (``rounded``) so a
     ``generic-shape`` ref can be checked as a declared base shape.
     """
-    shapes: set = set()
+    # Standardized vendor-neutral base shapes that are always valid in a generic
+    # diagram even though they are not one of the nine resource-type roles: the
+    # external ``actor`` (a person glyph) is a diagram construct (an actor sits
+    # OUTSIDE the cloud boundaries), not a resource, so it is allowed here rather
+    # than declared as a role in the mapping.
+    shapes: set = {"actor"}
     for path in (
         workspace_root / "mappings" / "generic-icons.yaml",
         resolve_bundled_dir("mappings") / "generic-icons.yaml",
@@ -202,21 +207,39 @@ def _load_generic_shapes(workspace_root: Path) -> FrozenSet[str]:
     return frozenset(shapes)
 
 
+#: Vendor-neutral draw.io stencil families the generic profile may use. These
+#: are the standardized ``mxgraph.*`` shape libraries that ship inside draw.io
+#: and carry no cloud-vendor branding (flowchart symbols, generic network
+#: devices). A ``shape=mxgraph.<family>.…`` in one of these is a legitimate
+#: generic base shape; any OTHER ``mxgraph.*`` stencil (a cloud-vendor pack such
+#: as ``mxgraph.aws4.*`` / ``.azure.*`` / ``.gcp2.*`` / ``.oci*``, or an
+#: unrelated library like ``mxgraph.mockup.*``) is NOT a generic base shape and
+#: yields no token, so such a node without a verifiable ref is reported
+#: ``unverified`` rather than falsely resolving to a generic shape.
+_NEUTRAL_STENCIL_FAMILIES = (
+    "mxgraph.flowchart.",
+    "mxgraph.networks.",
+)
+
+
 def _generic_shape_tokens(style: str) -> List[str]:
     """The base draw.io base-shape tokens of a generic style string.
 
     ``shape=cylinder3;…`` yields ``cylinder3``; a style whose leading token is a
     bare keyword (``rounded=0``) yields ``rounded`` so a plain rectangle style is
-    recognised as a declared generic shape. A ``shape=mxgraph.<lib>.<id>`` vendor
-    stencil is **not** a generic base shape — it yields no token, so a vendor node
-    without a verifiable ref is reported ``unverified`` rather than falsely
-    resolving to a generic shape.
+    recognised as a declared generic shape. A vendor-neutral standardized stencil
+    from a known-neutral family (``mxgraph.flowchart.*``, ``mxgraph.networks.*``)
+    yields its full ``shape=`` value, so the generic profile's standardized icons
+    are declared shapes. Any other ``mxgraph.<lib>.<id>`` stencil — a cloud-vendor
+    pack or an unrelated library — yields no token, so a node whose only "ref" is
+    such a shape and that has no verifiable reference is reported ``unverified``
+    rather than falsely resolving to a generic shape.
     """
     tokens: List[str] = []
     m = re.search(r"(?:^|;)shape=([^;]+)", style)
     if m:
         shape = m.group(1).strip()
-        if not shape.startswith("mxgraph."):
+        if not shape.startswith("mxgraph.") or shape.startswith(_NEUTRAL_STENCIL_FAMILIES):
             tokens.append(shape)
     lead = style.split(";", 1)[0].strip()
     key = lead.split("=", 1)[0].strip()

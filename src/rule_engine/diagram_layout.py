@@ -76,9 +76,17 @@ EDGE_STROKE_WIDTH = 1.5
 
 #: Standard node label style suffix (label sits directly under the icon). The
 #: label font is held at ``MIN_FONT_SIZE`` so node captions clear the 12px floor.
+#: Every service/resource node caption renders on an opaque white background so
+#: an edge that passes over the label band never strikes through the text
+#: (diagram-standards → Accessibility & Contrast; the caption must stay legible
+#: even where a line crosses it). This is the default; a node inside a filled
+#: container may override it with the local fill via ``node.label_bg`` (draw.io
+#: takes the LAST occurrence of a style key, and ``overlay_suffix`` appends the
+#: override after this default).
+_LABEL_BG = "#FFFFFF"
 _LABEL_STYLE = (
     "verticalLabelPosition=bottom;verticalAlign=top;align=center;"
-    f"fontSize={MIN_FONT_SIZE};fontStyle=0"
+    f"fontSize={MIN_FONT_SIZE};fontStyle=0;labelBackgroundColor={_LABEL_BG}"
 )
 
 #: Boundary stroke colors (diagram-standards Legend): dashed green stack
@@ -264,6 +272,7 @@ def image_icon(image_path: str) -> IconRenderer:
         style = (
             "image;html=1;aspect=fixed;points=[];align=center;"
             f"verticalLabelPosition=bottom;verticalAlign=top;fontSize={MIN_FONT_SIZE};"
+            f"labelBackgroundColor={_LABEL_BG};"
             f"{ref_token}image={embedded_image}{overlay_suffix(node)}"
         )
         return (

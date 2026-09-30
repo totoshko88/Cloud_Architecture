@@ -75,6 +75,24 @@ def skin() -> GenaiSkin:
         # Apigee is a REGIONAL product, so the API front door sits inside the
         # region (unlike OCI API Gateway, which is global).
         api_global=False,
+        # Hand-verified routes (1.10.5) that take this diagram from 6 crossings
+        # to 1. Three edges — e1 (api->lb), e4 (queue->ingest), e6 (train->hub) —
+        # use a bottom-exit + wide free-corridor detour the greedy scored router
+        # cannot reach without tripping an unrepairable corridor-sharing finding.
+        # Injected as a per-edge geometry override after layout(); a pure constant
+        # so the diagram stays deterministic and --check stays fresh. Node
+        # positions are the engine's, so the absolute waypoints align.
+        edge_overrides={
+            # x=80 corridor sits between region-a.left (60) and vpc-a.left (90),
+            # clear of both borders (x=100 rode the vpc-a left border —
+            # edge-on-container-border).
+            "e1": {"exit": (0.511, 0.979), "entry": (0.055, 0.499),
+                   "points": ((440, 350), (80, 350), (80, 280))},
+            "e4": {"exit": (0.493, 1.0), "entry": (0.0, 0.5128),
+                   "points": ((658, 840), (330, 840), (330, 600))},
+            "e6": {"exit": (0.508, 0.957), "entry": (0.506, 0.02),
+                   "points": ((160, 720), (80, 720), (80, 160), (660, 160))},
+        },
     )
 
 

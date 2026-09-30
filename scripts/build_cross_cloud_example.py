@@ -115,7 +115,7 @@ NODE_SPECS = [
     ("auth-lambda", "auth-lambda", "resolved", _AWS_LAMBDA, X_AWS, ROW_BOT),
     ("openai-service", "openai-service", "image", _AZ_OPENAI, X_AZ, ROW_TOP),
     ("service-bus", "service-bus", "image", _AZ_SERVICEBUS, X_AZ, ROW_BOT),
-    ("vertex-ai", "vertex-ai", "image", _GCP_VERTEX, X_GCP, ROW_TOP),
+    ("vertex-ai", "gemini-agent-platform", "image", _GCP_VERTEX, X_GCP, ROW_TOP),
     ("cloud-storage", "cloud-storage", "image", _GCP_STORAGE, X_GCP, ROW_BOT),
 ]
 
@@ -158,8 +158,8 @@ FLOW_LINES = [
     "1. edge-gateway validates the caller via auth-lambda (AWS)",
     "2. auth-lambda forwards the RAG prompt to Azure OpenAI (AWS to Azure)",
     "3. openai-service publishes a completion event to Service Bus (async)",
-    "4. service-bus streams embeddings to Vertex AI (Azure to GCP)",
-    "5. vertex-ai persists model artifacts to Cloud Storage (GCP)",
+    "4. service-bus streams embeddings to Gemini Enterprise Agent Platform (Azure to GCP)",
+    "5. gemini-agent-platform persists model artifacts to Cloud Storage (GCP)",
     "6. cloud-storage returns a signed artifact URL to edge-gateway (GCP to AWS)",
 ]
 

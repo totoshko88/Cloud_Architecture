@@ -221,6 +221,24 @@ RULE_NODE_LABEL_LENGTH = "node-label-length"
 #              private); WARNING. Only a Network_Diagram is evaluated.
 RULE_IP_RANGE = "ip-range"
 
+# edge-hygiene 1.10.5 (Feature B). Three edge-legibility rules plus a structural
+# integrity cross-check adapted from the awesome-copilot draw.io validator.
+#   marker-collision     — two edge flow-markers render closer than the merge
+#                          threshold (they overprint into one number); WARNING.
+#   edge-crossing-excess — the diagram's edge-crossing count exceeds a
+#                          per-diagram cap proportional to the edge count;
+#                          WARNING.
+#   detour-hook          — an edge's routed length far exceeds the manhattan
+#                          distance between its contacts (it loops out and
+#                          back); WARNING.
+#   structural-integrity — an edge endpoint resolves to no placeable box, or a
+#                          node carries no geometry; WARNING. (Duplicate ids and
+#                          parent cycles are caught earlier — see the check.)
+RULE_MARKER_COLLISION = "marker-collision"
+RULE_EDGE_CROSSING_EXCESS = "edge-crossing-excess"
+RULE_DETOUR_HOOK = "detour-hook"
+RULE_STRUCTURAL_INTEGRITY = "structural-integrity"
+
 # ``RULE_SEVERITIES`` and ``CLASS_ESCALATIONS`` are DERIVED from the ``RULES``
 # registry (defined near the end of this module, once every predicate exists) —
 # see ``_derive_severities``. The registry is the single source of truth for a
@@ -1738,6 +1756,69 @@ def _check_source_format(a: Artifact):
 
 
 # ---------------------------------------------------------------------------
+# Edge-hygiene checks (1.10.5, Feature B)
+# ---------------------------------------------------------------------------
+
+
+def _check_marker_collision(a: Artifact):
+    """marker-collision: two edge flow-markers render closer than the merge
+    threshold and overprint into one number (WARNING). offenders = the edge ids
+    carrying the colliding markers."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    findings = _geo.check_marker_collision(geo)
+    if not findings:
+        return False
+    return RuleHit(offenders=_offender_ids(findings), reason="markers-overprint")
+
+
+def _check_edge_crossing_excess(a: Artifact):
+    """edge-crossing-excess: the diagram's edge-crossing count exceeds a
+    per-diagram cap proportional to the edge count (WARNING). offenders = the
+    crossing edge-id pairs."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    findings = _geo.check_edge_crossing_excess(geo)
+    if not findings:
+        return False
+    return RuleHit(offenders=_offender_ids(findings), reason="crossings-over-cap")
+
+
+def _check_detour_hook(a: Artifact):
+    """detour-hook: an edge's routed length far exceeds the manhattan distance
+    between its contacts — it loops out and back (WARNING). offenders = the
+    edge id."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    findings = _geo.check_detour_hook(geo)
+    if not findings:
+        return False
+    return RuleHit(offenders=_offender_ids(findings), reason=_first_reason(findings))
+
+
+def _check_structural_integrity(a: Artifact):
+    """structural-integrity: an edge endpoint resolves to no placeable box, or a
+    node carries no geometry (WARNING). A cross-check adapted from the
+    awesome-copilot draw.io validator; duplicate ids and parent cycles are
+    caught earlier (the single parser dedupes ids; ``absolute_origin`` raises on
+    a cycle, surfaced as ``parse-error``)."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    findings = _geo.check_structural_integrity(geo)
+    if not findings:
+        return False
+    return RuleHit(offenders=_offender_ids(findings), reason=_first_reason(findings))
+
+
+# ---------------------------------------------------------------------------
 # The RULES registry (task 10.1 / R10.1) — the single source of truth
 # ---------------------------------------------------------------------------
 #
@@ -1859,6 +1940,19 @@ RULES: Tuple[Tuple[RuleSpec, Callable[[Artifact], _PredicateResult]], ...] = (
     (
         RuleSpec(RULE_EDGE_ENDPOINT, Severity.WARNING, landscape=Severity.ERROR),
         _check_edge_endpoint,
+    ),
+    # edge-hygiene 1.10.5 (Feature B). Four edge-legibility / structural rules,
+    # all WARNING on both classes (advisory — like arrow-style / node-overlap;
+    # they never block publication, matching Requirement 7's WARNING contract).
+    (RuleSpec(RULE_MARKER_COLLISION, Severity.WARNING), _check_marker_collision),
+    (
+        RuleSpec(RULE_EDGE_CROSSING_EXCESS, Severity.WARNING),
+        _check_edge_crossing_excess,
+    ),
+    (RuleSpec(RULE_DETOUR_HOOK, Severity.WARNING), _check_detour_hook),
+    (
+        RuleSpec(RULE_STRUCTURAL_INTEGRITY, Severity.WARNING),
+        _check_structural_integrity,
     ),
 )
 

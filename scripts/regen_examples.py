@@ -42,7 +42,10 @@ class Generator:
     extra_args: Tuple[str, ...] = field(default_factory=tuple)
 
 
-#: Every Example_Generator (10) and the Generated_Examples it owns (15).
+#: Every Example_Generator (11) and the Generated_Examples it owns (15). Every
+#: example — including aws/01 and azure/01, previously hand-authored — is now
+#: engine-generated (layout() + build_diagram()), so an engine change regenerates
+#: them all.
 GENERATORS: Tuple[Generator, ...] = (
     Generator("build_aws_ha_example.py",
               ("aws/02-aws-ha-multiregion-summary.drawio",
@@ -61,9 +64,9 @@ GENERATORS: Tuple[Generator, ...] = (
     Generator("build_oci_example.py", ("oci/01-oci-genai-stack.drawio",)),
     Generator("build_generic_example.py", ("generic/01-generic-reference-architecture.drawio",)),
     Generator("build_cross_cloud_example.py", ("cross-cloud/01-cross-cloud-composition.drawio",)),
-    # Hand-authored geometry; container styles + Legend wording from the mappings.
-    Generator("build_restyle_example.py", ("aws/01-aws-agent-platform.drawio",
-                                           "azure/01-azure-openai-rag.drawio")),
+    # Engine-generated flow examples (were hand-authored until this release).
+    Generator("build_aws_agent_platform_example.py", ("aws/01-aws-agent-platform.drawio",)),
+    Generator("build_azure_openai_rag_example.py", ("azure/01-azure-openai-rag.drawio",)),
 )
 
 #: The Snapshot data generator (per-domain JSON + per-resource docs); not a diagram.
