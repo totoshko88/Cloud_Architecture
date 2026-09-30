@@ -90,8 +90,10 @@ def skin() -> GenaiSkin:
                    "points": ((440, 350), (80, 350), (80, 280))},
             "e4": {"exit": (0.493, 1.0), "entry": (0.0, 0.5128),
                    "points": ((658, 840), (330, 840), (330, 600))},
+            # e6 loops in the x=70 corridor — one grid step left of e1's x=80 —
+            # so the two long verticals do not share a trunk (parallel-trunk).
             "e6": {"exit": (0.508, 0.957), "entry": (0.506, 0.02),
-                   "points": ((160, 720), (80, 720), (80, 160), (660, 160))},
+                   "points": ((160, 720), (70, 720), (70, 160), (660, 160))},
         },
     )
 

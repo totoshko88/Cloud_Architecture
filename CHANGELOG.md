@@ -2,9 +2,9 @@
 
 All notable changes to the Rule Engine are recorded here, per released version, in reverse chronological order.
 
-## [Unreleased]
+## [1.10.5] - 2026-10-01
 
-**Theme: deterministic edge hygiene — no diagram ships with overprinting flow markers, bunched ports, or parallel-trunk overlap, and a new lint gate catches all four defect classes.** A visual review of the 15 shipped renders found systemic edge defects the point-fixes in 1.10.4 did not cover (most visibly the OCI GenAI hub's `3/5` and `6/7` flow markers overprinting). This release adds a general, pure-geometry cleanup pass (applied at generation time in the shared GenAI builder, so it is idempotent and freshness-preserving) plus a lint gate that reports the defects on any diagram. Generation stays deterministic, all new findings are WARNING (never block), and every shipped diagram remains publishable.
+**Theme: cleaner edges end-to-end — deterministic edge hygiene, per-edge route overrides that cut crossings on four flow diagrams, and a shared engine builder for the single-provider examples.** A visual review of the 15 shipped renders found systemic edge defects the point-fixes in 1.10.4 did not cover (most visibly the OCI GenAI hub's `3/5` and `6/7` flow markers overprinting) and several avoidable edge crossings. This release adds a general, pure-geometry hygiene pass plus a lint gate that catches four defect classes, a builder-level `edge_overrides` escape hatch that lands hand-verified low-crossing routes the greedy scored router cannot reach (azure/01 2→0, gcp/01 6→1, oci/01 6→3, generic/01 2→0), and moves the aws/azure examples onto the shared `engine_example_common` builder. Generation stays deterministic, every override is a grid-aligned constant, all new lint findings are WARNING (never block), and every shipped diagram remains publishable.
 
 ### Added
 
