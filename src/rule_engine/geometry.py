@@ -1498,6 +1498,138 @@ def check_edge_approach(geo: DiagramGeometry) -> List[Tuple[str, str]]:
     return out
 
 
+def check_edge_crosses_container(geo: DiagramGeometry) -> List[Tuple[str, str]]:
+    """Return ``(edge_id, container_id)`` for edges whose route passes THROUGH a
+    Boundary container that neither endpoint belongs to.
+
+    An edge between two nodes that are both OUTSIDE a container (or one just
+    outside it) must route AROUND that container, not straight through its
+    interior. The canonical defect: a fan-out from a VPC-scoped node to a
+    regional node outside the VPC (GCP ``train → hub``) dipped into the VPC's
+    below-row band and ran across the VPC interior, slicing the box and its
+    inner nodes' captions. ``edge-crosses-container-label`` only guards the top
+    caption strip; this guards the whole interior.
+
+    An edge is exempt for a container it legitimately enters or leaves — i.e.
+    one whose ``source`` or ``target`` node sits inside that container's box.
+    Every OTHER container the polyline's interior segments cut is a finding.
+    Advisory (WARNING)."""
+    out: List[Tuple[str, str]] = []
+    nodes = geo.nodes
+
+    def _inside(box: Box, c: Box) -> bool:
+        return c.x <= box.x and box.x + box.w <= c.right and \
+            c.y <= box.y and box.y + box.h <= c.bottom
+
+    for e in geo.edges:
+        if e.source not in nodes or e.target not in nodes:
+            continue
+        if None in e.exit or None in e.entry:
+            continue
+        s, t = nodes[e.source], nodes[e.target]
+        poly = (
+            [(s.x + e.exit[0] * s.w, s.y + e.exit[1] * s.h)]
+            + [(x, y) for x, y in e.points]
+            + [(t.x + e.entry[0] * t.w, t.y + e.entry[1] * t.h)]
+        )
+        for cid, c in geo.containers.items():
+            # Skip a container either endpoint belongs to (a legitimate crossing
+            # of its border to enter/leave), or a nested parent of such a box.
+            if _inside(s, c) or _inside(t, c):
+                continue
+            # Also skip a container that CONTAINS another container holding an
+            # endpoint (an edge leaving an AZ legitimately crosses its VPC).
+            if any(cid != oid and (_inside(s, o) or _inside(t, o))
+                   and c.x <= o.x and o.right <= c.right
+                   and c.y <= o.y and o.bottom <= c.bottom
+                   for oid, o in geo.containers.items()):
+                continue
+            if any(segment_crosses_box(p, q, c, inset=GRID)
+                   for p, q in zip(poly, poly[1:])):
+                out.append((e.id, cid))
+    return sorted(set(out))
+
+
+#: How close (model units) a long edge leg may sit to a container border before
+#: it reads as riding ON that border. The corpus defect sat 2px off a
+#: non-grid-aligned border (a grid-aligned corridor at 730 beside a region right
+#: edge at 728); 4px catches that with headroom without flagging a leg a clean
+#: grid step (10px) away in the gap beside the box.
+_BORDER_RIDE_TOL = 4.0
+
+#: A leg shorter than this is a stub, not a "long run" that reads as a rail
+#: alongside a border. Matches the STAIR_STEP the routers use (three grid steps).
+_BORDER_RIDE_MIN_LEN = 3 * GRID
+
+
+def check_edge_on_container_border(geo: DiagramGeometry) -> List[Tuple[str, str]]:
+    """Return ``(edge_id, "<container>.<side>")`` for edges with a **long,
+    axis-aligned leg that coincides with a container border** it does not belong
+    to.
+
+    A run sitting exactly on (or a hair beside) a Boundary box edge reads as part
+    of that edge — the diagram-standards rule *"A long vertical never coincides
+    with a container border"*. The canonical defect is a grid-aligned vertical
+    corridor allocated at ``source_right + GRID`` that lands ~2px past a
+    container whose right edge is **not** grid-aligned (a region box ending at
+    728 while the corridor snaps to 730). The router's ``CorridorAllocator``
+    only avoids other *edges*, not container borders, so nothing prevented it
+    before; this check makes the defect visible and regression-proof.
+
+    A leg is judged only when it is **long** (≥ :data:`_BORDER_RIDE_MIN_LEN`) and
+    its constant coordinate lies within :data:`_BORDER_RIDE_TOL` of a container's
+    left/right (vertical leg) or top/bottom (horizontal leg) edge, and the leg's
+    extent overlaps that border's extent.
+
+    Note this is a **parallel-ride** test, not a crossing test: a long *vertical*
+    leg is compared only against *vertical* (left/right) borders, a long
+    *horizontal* leg only against *horizontal* (top/bottom) borders. A leg that
+    merely crosses a border perpendicularly (to enter or leave a container) runs
+    across it, not along it, so it is never flagged — which is why, unlike
+    ``edge-crosses-container``, there is no endpoint-inside exemption: a run
+    *parallel* to and coincident with a border reads as part of that border even
+    when one endpoint sits inside the box (the ``hub → obj`` fan-out whose drop
+    lane hugged the region's right edge while ``hub`` sat inside the region).
+    Advisory (WARNING)."""
+    nodes = geo.nodes
+    out: List[Tuple[str, str]] = []
+
+    for e in geo.edges:
+        if e.source not in nodes or e.target not in nodes:
+            continue
+        if None in e.exit or None in e.entry:
+            continue
+        s, t = nodes[e.source], nodes[e.target]
+        poly = (
+            [(s.x + e.exit[0] * s.w, s.y + e.exit[1] * s.h)]
+            + [(x, y) for x, y in e.points]
+            + [(t.x + e.entry[0] * t.w, t.y + e.entry[1] * t.h)]
+        )
+        for (x0, y0), (x1, y1) in zip(poly, poly[1:]):
+            vertical = abs(x0 - x1) < 1 and abs(y1 - y0) >= _BORDER_RIDE_MIN_LEN
+            horizontal = abs(y0 - y1) < 1 and abs(x1 - x0) >= _BORDER_RIDE_MIN_LEN
+            if not (vertical or horizontal):
+                continue
+            for cid, c in geo.containers.items():
+                if vertical:
+                    lo, hi = sorted((y0, y1))
+                    if hi < c.y or lo > c.bottom:
+                        continue
+                    if abs(x0 - c.x) <= _BORDER_RIDE_TOL:
+                        out.append((e.id, f"{cid}.left"))
+                    elif abs(x0 - c.right) <= _BORDER_RIDE_TOL:
+                        out.append((e.id, f"{cid}.right"))
+                else:
+                    lo, hi = sorted((x0, x1))
+                    if hi < c.x or lo > c.right:
+                        continue
+                    if abs(y0 - c.y) <= _BORDER_RIDE_TOL:
+                        out.append((e.id, f"{cid}.top"))
+                    elif abs(y0 - c.bottom) <= _BORDER_RIDE_TOL:
+                        out.append((e.id, f"{cid}.bottom"))
+    return sorted(set(out))
+
+
 def check_node_connectivity(geo: DiagramGeometry) -> List[str]:
     """Return ids of role-bearing nodes drawn with **no incident edge**.
 
@@ -1826,11 +1958,22 @@ def stretch_contact_approach(
     if want == "V":
         if abs(neighbour[1] - contact[1]) >= step:
             return out
-        out[ni] = (neighbour[0], snap(contact[1] + ny * step, grid))
+        moved = (neighbour[0], snap(contact[1] + ny * step, grid))
+        # Only stretch when the feeder leg (the perpendicular run into the turn)
+        # is itself at least one stair long, so moving the turn cannot create a
+        # sub-stair zig-zag near the contact (the e9 kink: a 10px feeder that the
+        # stretch then split into two 10px legs). A turn fed by a short leg is
+        # left where it is — the approach is short but clean.
+        if abs(feeder[0] - neighbour[0]) < step:
+            return out
+        out[ni] = moved
     else:
         if abs(neighbour[0] - contact[0]) >= step:
             return out
-        out[ni] = (snap(contact[0] + nx * step, grid), neighbour[1])
+        moved = (snap(contact[0] + nx * step, grid), neighbour[1])
+        if abs(feeder[1] - neighbour[1]) < step:
+            return out
+        out[ni] = moved
     return out
 
 
@@ -2076,6 +2219,41 @@ def check_corridor_sharing(geo: DiagramGeometry, grid: int = GRID) -> List[Tuple
                 lines.add((orient, line))
         return lines
 
+    def _incident_span(e_id: str, node_id: str, orient: str, line: float):
+        """Extent (lo, hi) of ``e_id``'s segment on ``(orient, line)`` that is
+        incident to its contact on ``node_id`` — the shared-stub sub-interval."""
+        e = _edge_by_id[e_id]
+        pt = None
+        if e.source == node_id and node_id in geo.nodes and None not in e.exit:
+            n = geo.nodes[node_id]
+            pt = (n.x + e.exit[0] * n.w, n.y + e.exit[1] * n.h)
+        elif e.target == node_id and node_id in geo.nodes and None not in e.entry:
+            n = geo.nodes[node_id]
+            pt = (n.x + e.entry[0] * n.w, n.y + e.entry[1] * n.h)
+        if pt is None:
+            return (float("inf"), float("-inf"))
+        px, py = pt
+        for o, ln, lo, hi in edge_segs[e_id]:
+            if o != orient or abs(ln - line) > 1:
+                continue
+            if o == "h" and abs(round(py) - ln) <= 1 and lo - 1 <= px <= hi + 1:
+                return (lo, hi)
+            if o == "v" and abs(round(px) - ln) <= 1 and lo - 1 <= py <= hi + 1:
+                return (lo, hi)
+        return (float("inf"), float("-inf"))
+
+    def _trunk_span(a: str, b: str, orient: str, line: float):
+        # The shared stub covers only where BOTH edges' incident segments overlap.
+        node = src_of[a] if src_of[a] == src_of[b] else tgt_of[a]
+        la_ = _incident_span(a, node, orient, line)
+        lb_ = _incident_span(b, node, orient, line)
+        return (max(la_[0], lb_[0]), min(la_[1], lb_[1]))
+
+    def _chain_span(a: str, b: str, node: str, orient: str, line: float):
+        la_ = _incident_span(a, node, orient, line)
+        lb_ = _incident_span(b, node, orient, line)
+        return (max(la_[0], lb_[0]), min(la_[1], lb_[1]))
+
     out: List[Tuple[str, str]] = []
     ids = list(edge_segs)
     for i in range(len(ids)):
@@ -2128,13 +2306,24 @@ def check_corridor_sharing(geo: DiagramGeometry, grid: int = GRID) -> List[Tuple
                     if overlap <= 0:
                         continue
                     # A shared-endpoint pair is exempt ONLY on the trunk line
-                    # (the stub incident to the common node); a merged run on any
-                    # other corridor line — the l1/l15 y=240 descent into one
-                    # target — is flagged like any unrelated pair.
+                    # (the stub incident to the common node), and ONLY over the
+                    # sub-interval the stub actually spans from the contact. Two
+                    # edges leaving one node on the same corridor line but running
+                    # in OPPOSITE directions (GCP ``hub→sql`` left vs ``hub→obj``
+                    # right, both on y=690) overlap PAST the shared stub — that is
+                    # a merge, not a trunk. Subtract the trunk span from the
+                    # overlap and flag whatever is left.
                     if shares_endpoint and (oa, la) in trunk_lines:
-                        continue
+                        lo_ov, hi_ov = max(loa, lob), min(hia, hib)
+                        t_lo, t_hi = _trunk_span(a, b, oa, la)
+                        # Overlap entirely within the shared stub → sanctioned.
+                        if t_lo <= lo_ov and hi_ov <= t_hi:
+                            continue
                     if chain_node is not None and (oa, la) in chain_lines:
-                        continue
+                        c_lo, c_hi = _chain_span(a, b, chain_node, oa, la)
+                        lo_ov, hi_ov = max(loa, lob), min(hia, hib)
+                        if c_lo <= lo_ov and hi_ov <= c_hi:
+                            continue
                     shared = True
                     break
                 if shared:

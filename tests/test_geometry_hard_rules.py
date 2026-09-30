@@ -1217,3 +1217,37 @@ def test_stretch_leaves_a_full_length_approach_untouched():
     out = stretch_contact_approach(pts, "V", at_end=True,
                                    faces=frozenset({"top"}), step=STAIR_STEP)
     assert out == pts
+
+
+# --------------------------------------------------------------------------- #
+# 1.10.3 (D23): an edge routing through a container that holds neither endpoint.
+# --------------------------------------------------------------------------- #
+
+
+def test_edge_through_unrelated_container_is_flagged():
+    g = DiagramGeometry(
+        nodes={
+            "a": Box("a", 100, 100, 78, 78),   # above the VPC
+            "b": Box("b", 100, 900, 78, 78),   # below the VPC, both OUTSIDE it
+        },
+        containers={"vpc": _container("vpc", 60, 400, 400, 300)},  # 400..700
+        container_labels={"vpc": "vpc-prod"},
+        edges=[EdgeGeom(id="e", source="a", target="b", orthogonal=True,
+                        exit=(0.5, 1.0), entry=(0.5, 0.0),
+                        points=[(139, 550), (139, 550)])],  # straight down through vpc
+    )
+    assert ("e", "vpc") in geo.check_edge_crosses_container(g)
+
+
+def test_edge_into_a_container_it_enters_is_exempt():
+    g = DiagramGeometry(
+        nodes={
+            "a": Box("a", 100, 100, 78, 78),        # outside
+            "b": Box("b", 150, 480, 78, 78),        # INSIDE the vpc
+        },
+        containers={"vpc": _container("vpc", 60, 400, 400, 300)},
+        container_labels={"vpc": "vpc-prod"},
+        edges=[EdgeGeom(id="e", source="a", target="b", orthogonal=True,
+                        exit=(0.5, 1.0), entry=(0.5, 0.0), points=[])],
+    )
+    assert geo.check_edge_crosses_container(g) == []

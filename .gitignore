@@ -49,6 +49,11 @@ VERSION
 # Generated asset index manifest (built from local packs)
 asset-index.json
 
+# Local Kiro tooling state (CLI settings + lock). The tracked .kiro trees
+# (steering/hooks/agents/skills/specs) are the build source of truth bundled by
+# build_backend.py; .kiro/settings/ is per-machine tooling state, never shipped.
+.kiro/settings/
+
 # Editor / OS
 .DS_Store
 # draw.io backup files (e.g. examples/aws/.$01-...drawio.bkp)

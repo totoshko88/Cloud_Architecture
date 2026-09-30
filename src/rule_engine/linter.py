@@ -190,6 +190,8 @@ RULE_EXIT_THIRDS = "exit-thirds"
 RULE_ENTRY_THIRDS = "entry-thirds"
 RULE_EDGE_CROSSES_LABEL = "edge-crosses-label"
 RULE_EDGE_CROSSES_CONTAINER_LABEL = "edge-crosses-container-label"
+RULE_EDGE_CROSSES_CONTAINER = "edge-crosses-container"
+RULE_EDGE_ON_CONTAINER_BORDER = "edge-on-container-border"
 RULE_LEGEND_PLACEMENT = "legend-placement"
 RULE_FLOW_LEGEND = "flow-legend"
 RULE_NODE_CONNECTIVITY = "node-connectivity"
@@ -1431,6 +1433,37 @@ def _check_edge_crosses_container_label(a: Artifact):
     return RuleHit(offenders=_offender_ids(findings), reason="crosses-container-caption")
 
 
+def _check_edge_crosses_container(a: Artifact):
+    """edge-crosses-container: a routed edge cuts through a Boundary container
+    that neither endpoint belongs to (WARNING). A stronger companion to
+    ``edge-crosses-container-label`` — that one guards only the top caption
+    strip, this the whole interior."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    findings = _geo.check_edge_crosses_container(geo)
+    if not findings:
+        return False
+    return RuleHit(offenders=_offender_ids(findings), reason="crosses-container-interior")
+
+
+def _check_edge_on_container_border(a: Artifact):
+    """edge-on-container-border: a long axis-aligned edge leg coincides with a
+    Boundary container border it does not belong to (WARNING). A grid-aligned
+    corridor allocated beside a non-grid-aligned container edge lands ~2px off
+    it and reads as riding the border (diagram-standards: *a long vertical never
+    coincides with a container border*)."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    findings = _geo.check_edge_on_container_border(geo)
+    if not findings:
+        return False
+    return RuleHit(offenders=_offender_ids(findings), reason="rides-container-border")
+
+
 def _check_entry_thirds(a: Artifact):
     """entry-thirds: several edges arrive on one target face at merged/duplicate points.
 
@@ -1802,6 +1835,14 @@ RULES: Tuple[Tuple[RuleSpec, Callable[[Artifact], _PredicateResult]], ...] = (
         RuleSpec(RULE_EDGE_CROSSES_CONTAINER_LABEL, Severity.WARNING),
         _check_edge_crosses_container_label,
     ),
+    (
+        RuleSpec(RULE_EDGE_CROSSES_CONTAINER, Severity.WARNING),
+        _check_edge_crosses_container,
+    ),
+    (
+        RuleSpec(RULE_EDGE_ON_CONTAINER_BORDER, Severity.WARNING),
+        _check_edge_on_container_border,
+    ),
     (RuleSpec(RULE_LEGEND_PLACEMENT, Severity.WARNING), _check_legend_placement),
     (RuleSpec(RULE_FLOW_LEGEND, Severity.WARNING), _check_flow_legend),
     (RuleSpec(RULE_NODE_CONNECTIVITY, Severity.WARNING), _check_node_connectivity),
@@ -2088,6 +2129,8 @@ __all__ = [
     "RULE_ENTRY_THIRDS",
     "RULE_EDGE_CROSSES_LABEL",
     "RULE_EDGE_CROSSES_CONTAINER_LABEL",
+    "RULE_EDGE_CROSSES_CONTAINER",
+    "RULE_EDGE_ON_CONTAINER_BORDER",
     "RULE_LEGEND_PLACEMENT",
     "RULE_FLOW_LEGEND",
     "RULE_NODE_CONNECTIVITY",

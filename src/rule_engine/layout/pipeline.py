@@ -54,6 +54,7 @@ try:  # package-relative import when used as ``rule_engine.layout.pipeline``
     from .contacts import (
         MAX_SIDE_EXITS,
         _UPPER_QUARTER,
+        _LOWER_QUARTER,
         OverConnectedError,
         _box_directly_below,
         select_contacts,
@@ -75,6 +76,7 @@ try:  # package-relative import when used as ``rule_engine.layout.pipeline``
         _assign_exit_bands,
         _has_free_left_approach,
         route_edge,
+        nudge_off_container_borders,
     )
     from .base import TITLE_BAND, _snap
     from .repair import (
@@ -94,6 +96,7 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
     from layout.contacts import (  # type: ignore[no-redef]
         MAX_SIDE_EXITS,
         _UPPER_QUARTER,
+        _LOWER_QUARTER,
         OverConnectedError,
         _box_directly_below,
         select_contacts,
@@ -115,6 +118,7 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
         _assign_exit_bands,
         _has_free_left_approach,
         route_edge,
+        nudge_off_container_borders,
     )
     from layout.base import TITLE_BAND, _snap  # type: ignore[no-redef]
     from layout.repair import (  # type: ignore[no-redef]
@@ -454,6 +458,58 @@ def _global_contacts(
             k = classify_edge(spec.edges[order_index[eid]], placed)
             straight_first = 0 if k == "straight" else 1
             return (straight_first, _mk(eid))
+        # 2a-bottom. Spatial ordering on the BOTTOM face (diagram-standards →
+        #     *Fan-out exit ordering (spatial logic)*): when a node's bottom face
+        #     carries BOTH a straight-down target (dx≈0) AND a leftward target
+        #     (dx<0), the band each takes must follow the TARGET's direction, not
+        #     the edge marker — the straight-down branch keeps the CENTRE and the
+        #     leftward branch takes the bottom-LEFT band. The marker-ordered spread
+        #     put a low-marker back-edge (``hub→sql``, target far left) on the
+        #     centre and pushed the straight-down ``hub→obj`` to the left band, so
+        #     obj's bottom-left stub crossed sql's centre-then-left run (the OCI
+        #     hub 7×8 crossing). Scoped tight — it fires ONLY on that left+down mix,
+        #     so the landscape fan-outs (a straight-down centre branch beside a
+        #     left-corridor branch, already handled by 2b3) and any all-downward or
+        #     all-rightward face keep their existing spread bands byte-for-byte.
+        if side == "bottom" and len(eids) > 1:
+            src_box = placed[src_id]
+
+            def _dx(eid: str) -> float:
+                t = placed[spec.edges[order_index[eid]].target]
+                return (t.x + t.w / 2.0) - (src_box.x + src_box.w / 2.0)
+
+            has_left = any(_dx(e) < -1.0 for e in eids)
+            has_straight = any(abs(_dx(e)) <= 1.0 for e in eids)
+            if has_left and has_straight:
+                # Assign the band by the target's DIRECTION category, not by a
+                # sorted position: a leftward target takes the bottom-LEFT band, a
+                # straight-down target the CENTRE, a rightward target the
+                # bottom-RIGHT band. This keeps the straight-down branch on the
+                # centre (a clean vertical drop) while the leftward branch diverges
+                # left — the two never cross. A same-direction tie keeps marker
+                # order and the distinct bands the spread would give it.
+                def _band(eid: str) -> float:
+                    e = spec.edges[order_index[eid]]
+                    t = placed[e.target]
+                    dx = _dx(eid)
+                    # A genuinely-clear straight drop (nothing between) keeps the
+                    # CENTRE; a same-column target BLOCKED by an intervening node
+                    # must route to a side, so it takes the RIGHT band (away from a
+                    # leftward sibling), not the centre it cannot use.
+                    others = [b for nid, b in placed.items()
+                              if nid not in (e.source, e.target)]
+                    if abs(dx) <= 1.0:
+                        return 0.5 if _box_directly_below(src_box, t, others) else _LOWER_QUARTER
+                    return _UPPER_QUARTER if dx < 0 else _LOWER_QUARTER
+                # Within one direction, keep the marker-ordered spread's distinct
+                # bands so two same-direction siblings never merge on one band.
+                buckets: Dict[float, List[str]] = {}
+                for eid in sorted(eids, key=_mk):
+                    buckets.setdefault(_band(eid), []).append(eid)
+                if all(len(v) == 1 for v in buckets.values()):
+                    for eid in eids:
+                        exits[eid] = _with_band(exits[eid], "bottom", _band(eid))
+                    continue
         if side == "right" and len(eids) > 1:
             eids_sorted = sorted(eids, key=_spread_key)
         else:
@@ -1012,6 +1068,94 @@ def _layout_scored_with_guard(spec: DiagramSpec) -> "PlacedDiagram":
     return scored
 
 
+def _clear_container_border_rides(candidate: "PlacedDiagram") -> "PlacedDiagram":
+    """Return ``candidate`` with every edge's border-riding legs nudged into the
+    gap (:func:`routers.nudge_off_container_borders`).
+
+    Shared by the legacy and scored paths (both reach it through :func:`_finish`),
+    so whichever router chose the waypoints, a long leg coincident with a
+    container border it does not belong to is stepped one grid line clear. The
+    contacts are recomputed from the placed boxes so the pinned faces are never
+    moved. Deterministic and idempotent: an edge with no border-riding leg is
+    returned with its points unchanged."""
+    for pe in candidate.edges:
+        src = candidate.nodes.get(pe.spec.source)
+        tgt = candidate.nodes.get(pe.spec.target)
+        if src is None or tgt is None:
+            continue
+        if None in pe.exit or None in pe.entry:
+            continue
+        pe.points = nudge_off_container_borders(
+            _contact_point(src, pe.exit),
+            list(pe.points),
+            _contact_point(tgt, pe.entry),
+            src, tgt, candidate.containers,
+        )
+    return candidate
+
+
+#: A near-contact leg shorter than this reads as a stub/jog rather than a real
+#: corridor turn. Matches STAIR_STEP (three grid steps), the router's own unit.
+_APPROACH_JOG_MAX = 3 * GRID
+
+
+def _straighten_top_entry_approaches(candidate: "PlacedDiagram") -> "PlacedDiagram":
+    """Rebuild a top-entry spine's approach as a single clean corner when its
+    settled route arrives via a short zig-zag, keeping it only when oracle-clean.
+
+    The OCI ``e9`` (hub → sec, sec directly below but past ``obj``) is the case:
+    the repair loop bumps its drop corridor to separate it from ``e4``, which is
+    correct, but leaves an approach that steps to a near-column, drops a short
+    stub, then steps the last grid into the target's top — three legs where the
+    clean shape is *drop in the corridor to one lane above the target, step to the
+    target's contact column, drop straight into its top*.
+
+    Scoped tight: only a **top-entry** edge (``entryY == 0``) whose current route
+    has ``>= 2`` interior waypoints and whose final approach jog is **short**
+    (< :data:`_APPROACH_JOG_MAX`) is rebuilt. The rebuild is
+    ``[corridor-drop, step-across, straight-drop]`` from the FIRST vertical
+    corridor the route already uses, so it reuses the (repair-separated) corridor
+    x and only tidies the tail. It is applied and then **reverted unless the whole
+    diagram stays oracle-clean**, so it can never introduce a new finding — at
+    worst the edge keeps its jogged (but valid) route."""
+    for pe in candidate.edges:
+        src = candidate.nodes.get(pe.spec.source)
+        tgt = candidate.nodes.get(pe.spec.target)
+        if src is None or tgt is None or None in pe.exit or None in pe.entry:
+            continue
+        if not (pe.entry[1] is not None and pe.entry[1] <= 0.0):
+            continue                              # only a TOP-face entry
+        pts = list(pe.points)
+        if len(pts) < 3:
+            continue
+        # The final approach jog: the last three interior points should form a
+        # short step-drop-step. Measure the last two legs; both short ⇒ a jog.
+        (ax, ay), (bx, by), (cx, cy) = pts[-3], pts[-2], pts[-1]
+        leg1 = abs(ax - bx) + abs(ay - by)
+        leg2 = abs(bx - cx) + abs(by - cy)
+        if not (leg1 <= _APPROACH_JOG_MAX and leg2 <= _APPROACH_JOG_MAX):
+            continue
+        entry_pt = _contact_point(tgt, pe.entry)
+        # The first vertical corridor the route uses (its drop lane): the x of the
+        # first interior waypoint. Drop there to one lane above the target, step to
+        # the contact column, then the pinned top entry drops straight in.
+        corridor_x = pts[0][0]
+        drop_y = _snap(tgt.y - _APPROACH_JOG_MAX)
+        rebuilt = [
+            (corridor_x, pts[0][1]),
+            (corridor_x, drop_y),
+            (entry_pt[0], drop_y),
+        ]
+        # Collapse a redundant first point (exit stub already at corridor_x).
+        rebuilt = [p for i, p in enumerate(rebuilt)
+                   if i == 0 or rebuilt[i - 1] != p]
+        saved = pe.points
+        pe.points = rebuilt
+        if not _run_oracle(candidate).clean:
+            pe.points = saved                     # rebuild broke a rule → revert
+    return candidate
+
+
 def _finish(spec: DiagramSpec, candidate: "PlacedDiagram") -> "PlacedDiagram":
     """Run the bounded repair loop and the final origin normalisation on a routed
     ``candidate`` (the finishing stage shared by the legacy and scored paths).
@@ -1028,9 +1172,28 @@ def _finish(spec: DiagramSpec, candidate: "PlacedDiagram") -> "PlacedDiagram":
     # overlaps the container border / its top-left badge (Req 12.4 + title cell).
     margins = (CONTAINER_PAD, CONTAINER_PAD + TITLE_BAND)
 
+    # 1.10.4: clear any long leg that rides a container border BEFORE the oracle
+    # runs, so the finished geometry (from either the scored or the legacy path)
+    # keeps the ``edge-on-container-border`` gate clean. A grid-aligned corridor
+    # allocated beside a non-grid-aligned border (region right edge at 728,
+    # corridor at 730) reads as riding it; step it one grid line into the gap,
+    # away from the box (diagram-standards: *a long vertical never coincides with
+    # a container border*). The pass is shared here because both routing paths
+    # funnel through ``_finish``, and it must precede the oracle so the repair
+    # loop validates the nudged route. A route with no border-riding leg is
+    # byte-unchanged, so only diagrams with this precise defect move.
+    candidate = _clear_container_border_rides(candidate)
+
     findings = _run_oracle(candidate)
     for _ in range(MAX_REPAIR_ITERS):
         if findings.clean:
+            # The repair loop may leave a top-entry spine with a short zig-zag at
+            # the contact (the OCI ``e9`` kink: a corridor bump separated it from
+            # ``e4`` but the approach then stepped to a near-column, dropped a
+            # stub, and stepped again into the target's top). Straighten such an
+            # approach on the SETTLED geometry — corridors are final, so the
+            # rebuilt single-corner drop is kept only when it stays oracle-clean.
+            candidate = _straighten_top_entry_approaches(candidate)
             return _normalise_origin(candidate, margins)
         # Re-align after each repair: a corridor bump moves interior waypoints but
         # not the pinned contacts, so an aligned end leg comes back diagonal
@@ -1039,6 +1202,7 @@ def _finish(spec: DiagramSpec, candidate: "PlacedDiagram") -> "PlacedDiagram":
         findings = _run_oracle(candidate)
 
     if findings.clean:
+        candidate = _straighten_top_entry_approaches(candidate)
         return _normalise_origin(candidate, margins)
     rule, payload = findings.first_unresolved  # type: ignore[misc]
     raise LayoutError(

@@ -251,6 +251,54 @@ def _gap_column_x(allocator: "CorridorAllocator", src: Box, edge_id: str) -> flo
     return _snap(_allocate_or_first(allocator, f"vcol:{gap_left}", gap_low, gap_high))
 
 
+def _straddling_container(
+    src: Box, tgt: Box, containers: Optional[Dict[str, Box]]
+) -> Optional[Box]:
+    """Return the container ``src`` is inside but ``tgt`` is NOT (or vice-versa).
+
+    That is the box a src↔tgt edge must skirt: an edge between an in-VPC node and
+    a regional node outside the VPC must not run through the VPC interior
+    (``edge-crosses-container``). Returns the smallest such straddled container,
+    or ``None`` when both endpoints share every container (an ordinary in-box
+    edge)."""
+    if not containers:
+        return None
+    def _inside(b: Box, c: Box) -> bool:
+        return c.x <= b.x and b.right <= c.right and c.y <= b.y and b.bottom <= c.bottom
+    # A container that CONTAINS an endpoint is one the edge legitimately enters
+    # or leaves (crossing its border on that node's side is correct). The box the
+    # edge must SKIRT is one that contains NEITHER endpoint yet lies between them
+    # on the axis separating them — an obstacle, not a home.
+    best: Optional[Box] = None
+    for c in containers.values():
+        if _inside(src, c) or _inside(tgt, c):
+            continue
+        lo_x, hi_x = min(src.x, tgt.x), max(src.right, tgt.right)
+        lo_y, hi_y = min(src.y, tgt.y), max(src.bottom, tgt.bottom)
+        # It is an obstacle only if it overlaps the bounding span of the two ends.
+        if c.right <= lo_x or c.x >= hi_x or c.bottom <= lo_y or c.y >= hi_y:
+            continue
+        if best is None or (c.right - c.x) < (best.right - best.x):
+            best = c
+    return best
+
+
+def _inter_container_gap_x(
+    src: Box, tgt: Box, containers: Optional[Dict[str, Box]]
+) -> Optional[float]:
+    """Return a vertical-corridor x in the gap OUTSIDE the container an edge
+    straddles, on the side facing the target — so the run turns beside the box
+    rather than through it. ``None`` when the edge straddles no container."""
+    box = _straddling_container(src, tgt, containers)
+    if box is None:
+        return None
+    # Target to the right of the box → gap just past its right edge; to the left
+    # → gap just before its left edge. Half a grid-column into the gap.
+    if tgt.x >= box.right:
+        return _snap(box.right + (COL_STEP - ICON_SIZE) // 2)
+    return _snap(box.x - (COL_STEP - ICON_SIZE) // 2)
+
+
 def _enclosing_container(box: Box, containers: Optional[Dict[str, Box]]) -> Optional[Box]:
     """Return the SMALLEST container that fully encloses ``box`` (or ``None``)."""
     if not containers:
@@ -480,6 +528,25 @@ def route_spine(
     down = tgt.y >= src.y
     first = _stair_first_waypoint(src, exit_pt, toward_down=down)
 
+    # 1.10.3: a spine straddling a container -- api -> queue, from the account
+    # edge row down into the regional column, both OUTSIDE the VPC between them
+    # -- drops in the vertical gap BESIDE the straddled box (on the target side),
+    # so the long vertical never runs through the box interior
+    # (edge-crosses-container). Scoped so an ordinary in-box spine is untouched.
+    straddle_x = _inter_container_gap_x(src, tgt, containers)
+    _tgt_box = _enclosing_container(tgt, containers)
+    if (straddle_x is not None and exit_pt[1] is not None and exit_pt[1] < 1.0
+            and not (_tgt_box is not None and _box_contains(_tgt_box, src))):
+        ey = _snap(entry[1])
+        top_entry = entry_pt[1] is not None and entry_pt[1] <= 0.0
+        approach = _snap(entry[0]) if top_entry else _snap(tgt.x - (COL_STEP - ICON_SIZE) // 2)
+        waypoints = _dedupe_axis_collapse(
+            [(straddle_x, _snap(first[1])), (straddle_x, ey), (approach, ey)], first)
+        route = [_contact_point(src, exit_pt), (_snap(first[0]), _snap(first[1]))] + waypoints + [entry]
+        route = _detour_clockwise_if_blocked(route, others)
+        return _interior_waypoints(route)
+
+
     # Side corridor x: an allocated grid line in the gap right of the source,
     # shared with every other vertical leg in that gap (see _gap_column_x).
     corridor_x = _gap_column_x(allocator, src, edge.id)
@@ -583,6 +650,7 @@ def route_fan_out_row(
     row_low, row_high = _hcorridor_band(edge, src, tgt, not above, containers)
     side = "above" if above else "below"
     lane_y = _snap(_allocate_or_first(allocator, f"hcorr-{side}:{int(src.y)}", row_low, row_high))
+
 
     # Turn back toward the row in the gap just LEFT of the target (target_x -
     # ~half a gap): UP from a below-row lane, DOWN from an above-row one.
@@ -1670,6 +1738,91 @@ def _dedupe_axis_collapse(waypoints: List[Point], first: Point) -> List[Point]:
         if not out or out[-1] != pt:
             out.append(pt)
     return out
+
+
+#: Tolerance + minimum-run length for the border-clearance nudge. Kept in step
+#: with ``geometry._BORDER_RIDE_TOL`` / ``_BORDER_RIDE_MIN_LEN`` (the lint gate
+#: this pass keeps clean): a grid-aligned corridor landing within 4px of a
+#: non-grid-aligned border is nudged, but only when the leg is a long run
+#: (>= one STAIR_STEP), not a short entry/exit stub crossing the border.
+_BORDER_CLEAR_TOL = 4.0
+_BORDER_CLEAR_MIN_LEN = STAIR_STEP
+
+
+def nudge_off_container_borders(
+    exit_pt: Point,
+    points: List[Point],
+    entry_pt: Point,
+    src: Box,
+    tgt: Box,
+    containers: Optional[Dict[str, Box]],
+) -> List[Point]:
+    """Step any long axis-aligned leg that RIDES a container border one grid line
+    deeper into the gap, away from the box. Returns the rewritten **interior**
+    waypoints (the contacts are passed in for context but never moved).
+
+    A vertical corridor is a whole-``GRID`` multiple; a Boundary container's
+    right/bottom edge is **not** grid-aligned (it wraps a 78px icon plus padding,
+    ending at e.g. 728). So a corridor allocated at ``source_right + GRID`` can
+    land ~2px past that border and read as riding it — the
+    ``edge-on-container-border`` defect. The ``CorridorAllocator`` avoids other
+    edges, not borders, so this post-pass applies the diagram-standards rule
+    *"step to the nearest grid line in the gap that clears every border it would
+    otherwise ride"* to the finished polyline, moving **both** waypoints of the
+    offending leg together so the route stays orthogonal.
+
+    The two pinned contacts (``exit_pt`` / ``entry_pt``) are never moved, so the
+    edge stays attached to both faces; only interior waypoints shift. A leg
+    parallel to and coincident with a border is nudged to the first grid line ≥
+    ``GRID`` clear of that border on the side away from the box interior.
+    Deterministic and scoped: a route with no border-riding leg is unchanged, so
+    the diagram is byte-identical unless it has this precise defect."""
+    if not containers or len(points) < 2:
+        return points
+    boxes = list(containers.values())
+    n = len(points)
+    # Full polyline with contacts pinned at the ends; interior indices 1..n.
+    poly = [list(exit_pt)] + [list(p) for p in points] + [list(entry_pt)]
+
+    def _movable(idx: int) -> bool:
+        return 1 <= idx <= n  # interior points only (0 and n+1 are contacts)
+
+    for i in range(1, n + 1):
+        # Consider the two legs incident to interior point i.
+        for j in (i - 1, i + 1):
+            x0, y0 = poly[i]
+            xj, yj = poly[j]
+            vertical = abs(xj - x0) < 1 and abs(yj - y0) >= _BORDER_CLEAR_MIN_LEN
+            horizontal = abs(yj - y0) < 1 and abs(xj - x0) >= _BORDER_CLEAR_MIN_LEN
+            if not (vertical or horizontal):
+                continue
+            lo, hi = (sorted((y0, yj)) if vertical else sorted((x0, xj)))
+            for c in boxes:
+                if vertical:
+                    if hi < c.y or lo > c.bottom:
+                        continue
+                    for edge_x, inward in ((c.x, +1), (c.right, -1)):
+                        if abs(x0 - edge_x) <= _BORDER_CLEAR_TOL:
+                            new_x = _snap(edge_x - inward * GRID)
+                            if abs(new_x - edge_x) < GRID:
+                                new_x = _snap(edge_x - inward * 2 * GRID)
+                            # Move both ends of THIS vertical leg (i and its
+                            # axis-sharing neighbour j) that are interior.
+                            for k in (i, j):
+                                if _movable(k) and abs(poly[k][0] - x0) < 1:
+                                    poly[k][0] = new_x
+                else:
+                    if hi < c.x or lo > c.right:
+                        continue
+                    for edge_y, inward in ((c.y, +1), (c.bottom, -1)):
+                        if abs(y0 - edge_y) <= _BORDER_CLEAR_TOL:
+                            new_y = _snap(edge_y - inward * GRID)
+                            if abs(new_y - edge_y) < GRID:
+                                new_y = _snap(edge_y - inward * 2 * GRID)
+                            for k in (i, j):
+                                if _movable(k) and abs(poly[k][1] - y0) < 1:
+                                    poly[k][1] = new_y
+    return [tuple(p) for p in poly[1:n + 1]]
 
 
 def _corner_detour(p: Point, q: Point, obstacles: List[Box]) -> List[Point]:
