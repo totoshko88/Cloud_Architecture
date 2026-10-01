@@ -415,7 +415,15 @@ def test_genai_examples_share_one_spec_diverging_only_on_api_scope():
     api_gcp = a.nodes["api"]
     # GCP Apigee sits inside the region but outside the VPC (a regional service).
     assert region_gcp.x <= api_gcp.x and api_gcp.x + api_gcp.w <= region_gcp.right
-    assert api_gcp.x >= vpc_gcp.right
+    assert region_gcp.y <= api_gcp.y and api_gcp.y + api_gcp.h <= region_gcp.bottom
+    # 1.10.6: Apigee only feeds the load-balancer (the VPC's first-row node), so
+    # the engine stands it directly ABOVE that anchor — in the band between the
+    # region caption and the VPC — rather than beside the VPC in the regional
+    # column, making its feed a straight drop (REVIEW.md D24, feeder-above). So
+    # "outside the VPC" is satisfied by sitting above it OR to its right.
+    assert api_gcp.bottom <= vpc_gcp.y or api_gcp.x >= vpc_gcp.right, (
+        f"Apigee must sit outside the VPC: api={api_gcp}, vpc={vpc_gcp}"
+    )
     # OCI API Gateway sits outside the region entirely (global/edge).
     region_oci = b.containers["boundary-region-a"]
     api_oci = b.nodes["api"]

@@ -252,14 +252,7 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="l17" value="17" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="api_a1" target="mon_a">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="300.00" y="800.00" />
-              <mxPoint x="300.00" y="880.00" />
-              <mxPoint x="800.00" y="880.00" />
-              <mxPoint x="800.00" y="800.00" />
-            </Array>
-          </mxGeometry>
+          <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="l19" value="19" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="app_a2" target="cache_a2">
           <mxGeometry relative="1" as="geometry" />
@@ -267,8 +260,8 @@
         <mxCell id="l20" value="20" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.7692307692307693;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.7692307692307693;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="app_a2" target="obj_a">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="320.00" y="1050.00" />
-              <mxPoint x="320.00" y="1110.00" />
+              <mxPoint x="300.00" y="1050.00" />
+              <mxPoint x="300.00" y="1110.00" />
               <mxPoint x="1040.00" y="1110.00" />
               <mxPoint x="1040.00" y="660.00" />
             </Array>

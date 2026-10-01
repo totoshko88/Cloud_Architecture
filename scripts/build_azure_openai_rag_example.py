@@ -68,12 +68,17 @@ _NODES = (
     NodeSpec(id="user", role="user", lane="actors", region="", slot=0),
     NodeSpec(id="appgw", role="lb", lane="router", region="a", slot=0, container="vnet-a"),
     NodeSpec(id="api", role="fn", lane="workers", region="a", slot=0, container="region-a"),
-    NodeSpec(id="bus", role="queue", lane="async", region="a", slot=0, container="region-a"),
+    # 1.10.6: the queue sits on its consumer's row (slot 2, the ingest
+    # function's), so the delivery is one level hop; Azure SQL DB moves up
+    # between Azure OpenAI and Blob Storage, so its two writers arrive from
+    # above and below instead of crossing. Measured: 2 crossings -> 0, every
+    # route rule-clean, with no hand-pinned edge geometry.
+    NodeSpec(id="bus", role="queue", lane="async", region="a", slot=2, container="region-a"),
     NodeSpec(id="ingest", role="fn", lane="workers", region="a", slot=2, container="region-a"),
     NodeSpec(id="openai", role="llm_platform", lane="platform", region="a", slot=0, container="region-a"),
     NodeSpec(id="vault", role="sec", lane="platform", region="a", slot=1, container="region-a"),
-    NodeSpec(id="blob", role="obj", lane="data", region="a", slot=1, container="region-a"),
-    NodeSpec(id="sql", role="sql", lane="data", region="a", slot=2, container="region-a"),
+    NodeSpec(id="blob", role="obj", lane="data", region="a", slot=2, container="region-a"),
+    NodeSpec(id="sql", role="sql", lane="data", region="a", slot=1, container="region-a"),
 )
 _EDGES = (
     EdgeSpec(id="e1", source="user", target="appgw", marker="1"),
@@ -119,31 +124,6 @@ FLOW_LINES = (
     "9. Azure OpenAI queries vectors from Azure SQL DB",
 )
 
-# Hand-verified edge routes (1.10.5) that take this diagram from 2 crossings to
-# 0. The greedy scored router cannot reach these on its own (the coordinate-free
-# spec forbids pinning waypoints, and forcing them through the solver tripped an
-# unrepairable corridor-sharing finding), so they are injected as a per-edge
-# geometry override AFTER layout(). Contract-legal (exit right/bottom, enter
-# left/top) and a pure constant, so the diagram stays a deterministic function of
-# its inputs and --check freshness holds. Node positions are the engine's, so
-# these absolute waypoints line up with the laid-out boxes.
-EDGE_OVERRIDES = {
-    "e1": {"exit": (1.0256, 0.5128), "entry": (0.0, 0.5128),
-           "points": ((140, 440), (140, 260))},
-    "e2": {"exit": (1.0256, 0.5128), "entry": (0.5128, 0.0),
-           "points": ((370, 260), (370, 180), (730, 180))},
-    "e3": {"exit": (1.0256, 0.7692), "entry": (0.512, 0.035),
-           "points": ((800, 300), (800, 360), (640, 360), (640, 200), (510, 200))},
-    "e5": {"exit": (1.0256, 0.2564), "entry": (0.0, 0.5128),
-           "points": ((880, 260), (880, 280))},
-    "e7": {"exit": (1.0256, 0.2564), "entry": (0.0, 0.5128),
-           "points": ((1060, 580), (1060, 440))},
-    "e8": {"exit": (1.0256, 0.5128), "entry": (0.0, 0.5128),
-           "points": ((950, 600),)},
-    "e9": {"exit": (1.0256, 0.5128), "entry": (0.5128, 0.0),
-           "points": ((1220, 280), (1220, 530), (1170, 530))},
-}
-
 
 def skin() -> ExampleSkin:
     styles = {
@@ -160,7 +140,6 @@ def skin() -> ExampleSkin:
         flow_lines=FLOW_LINES,
         title="azure openai-rag — sub-9f3c1a / eastus | 2026-09-30 | v2",
         diagram_id="azure-openai-rag",
-        edge_overrides=EDGE_OVERRIDES,
     )
 
 

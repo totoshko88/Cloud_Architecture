@@ -39,34 +39,17 @@ def genai_spec(*, api_global: bool) -> DiagramSpec:
     """
     if api_global:
         # OCI: API Gateway is global/edge (front door in the account edge row).
-        # Raise the secrets store (Vault) to the top of the regional column,
-        # directly below the LLM hub, instead of leaving it at the bottom — a
-        # reviewer noted Vault reading nothing but sitting three rows below the
-        # hub it serves reads as an afterthought. Reordering the unanchored
-        # regional stack to ``sec, obj, queue`` puts Vault on the hub's own feed
-        # row region (hub → sec is edge e9), matching the GCP variant's regional
-        # order, and stays fully warning-clean (verified against the engine's own
-        # checks + route-quality ceiling). The api→queue feed now descends to the
-        # bottom of the column, still clear of the hub's fan-out.
-        _oci_regional = {"sec": dict(slot=2), "obj": dict(slot=3), "queue": dict(slot=4)}
-        nodes = tuple(
-            _apply(n, _oci_regional[n.id]) if n.id in _oci_regional else n
-            for n in _NODES
-        )
+        nodes = _NODES
     else:
-        # Apigee is regional: the API front door joins the regional column. That
-        # shifts the clean layout, so the network sub-rows and regional slots are
-        # re-picked for a fully warning-clean route (searched over the engine's
-        # own checks — no corridor-sharing / container-crossing / caption
-        # findings). sql on the main VPC row, train one sub-row down; regional
-        # order sec, obj, queue; api at the top of the regional column.
-        _regional_api = {
-            "api": dict(region="a", slot=1, sub=0, container="region-a"),
-            "lb": dict(sub=0), "train": dict(sub=2), "sql": dict(sub=1),
-            "sec": dict(slot=2), "obj": dict(slot=3), "queue": dict(slot=4),
-        }  # fully warning-clean (searched over the engine's own checks, D23)
+        # GCP: Apigee is regional, so the front door is a member of the region.
+        # 1.10.6: nothing else changes. The engine places every regional service
+        # beside the nodes it links to (``layout.base._place_loose_regional``)
+        # and stands a regional front door that only feeds the load balancer
+        # directly above it — inside the region, outside the VPC — so the two
+        # providers share every network sub-row and regional slot again. The
+        # 1.10.3-1.10.5 per-provider re-pick of rows and slots is gone.
         nodes = tuple(
-            _apply(n, _regional_api[n.id]) if n.id in _regional_api else n
+            _apply(n, dict(region="a", container="region-a")) if n.id == "api" else n
             for n in _NODES
         )
     return DiagramSpec(

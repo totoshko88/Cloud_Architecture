@@ -159,6 +159,20 @@ def _stub_boundary_style(cand: "PlacedDiagram", cid: str) -> str:
     )
 
 
+def _oracle_container_id(cid: str) -> str:
+    """The id a container is serialized under when it carries a real style."""
+    return cid if cid.startswith("boundary") else f"boundary-{cid}"
+
+
+def _spec_container_id(cand: "PlacedDiagram", oid: object) -> object:
+    """Map an oracle container id back to the spec's id (identity otherwise)."""
+    if isinstance(oid, str) and oid.startswith("boundary-") and oid not in cand.containers:
+        bare = oid[len("boundary-"):]
+        if bare in cand.containers:
+            return bare
+    return oid
+
+
 def _serialize_candidate(cand: "PlacedDiagram") -> str:
     """Serialize a candidate to ``.drawio`` text via ``build_diagram`` (stub icons).
 
@@ -168,15 +182,24 @@ def _serialize_candidate(cand: "PlacedDiagram") -> str:
     returned text is exactly what the linter would parse, so re-parsing it with
     ``build_geometry`` gives the oracle the linter's own view (design.md →
     "Integration points & risks / _run_oracle adapter")."""
+    # 1.10.6: draw each container with the caption and style the skin will use
+    # when the spec carries them, so the oracle and the scored solver see the
+    # caption exactly where the linter will (``edge-crosses-container-label``).
+    captions = dict(getattr(cand.spec, "container_captions", ()) or ())
+    styles = dict(getattr(cand.spec, "container_styles", ()) or ())
     boundaries = [
         _dl.Boundary(
-            id=c.id,
-            label=c.id,
+            # A real provider style (a filled OCI region, an AWS group) is not
+            # always recognisable as a container by style alone; the
+            # ``boundary`` id prefix is (``is_boundary_container_style``). The
+            # oracle maps the prefixed id back to the spec id (_run_oracle).
+            id=_oracle_container_id(c.id) if c.id in styles else c.id,
+            label=captions.get(c.id, c.id),
             x=int(box.x),
             y=int(box.y),
             w=int(box.w),
             h=int(box.h),
-            style=_stub_boundary_style(cand, c.id),
+            style=styles.get(c.id) or _stub_boundary_style(cand, c.id),
         )
         for c in cand.spec.containers
         if (box := cand.containers.get(c.id)) is not None
@@ -270,7 +293,11 @@ def _run_oracle(candidate: "PlacedDiagram") -> "OracleFindings":
     from rule_engine.drawio_model import parse_drawio as _parse_drawio_model
 
     geo = _geo.build_geometry(_parse_drawio_model(text, path="<oracle>.drawio")[0])
-    all_findings = _collect_findings(geo)
+    all_findings = [
+        (rule, tuple(_spec_container_id(candidate, p) for p in payload)
+         if isinstance(payload, tuple) else _spec_container_id(candidate, payload))
+        for rule, payload in _collect_findings(geo)
+    ]
     blocking = [f for f in all_findings if f[0] in _BLOCKING_RULES]
     fixable = [f for f in blocking if f[0] in _FIXABLE_RULES]
     return OracleFindings(blocking=blocking, fixable=fixable)

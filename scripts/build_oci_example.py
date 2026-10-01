@@ -67,21 +67,6 @@ def skin() -> GenaiSkin:
         network_name="prod", flow_lines=FLOW_LINES,
         title="oci genai-stack — acme-prod / us-ashburn-1 | 2026-09-30 | v2",
         diagram_id="oci-genai-stack",
-        # Hand-verified route (1.10.5) that takes this diagram from 6 crossings
-        # to 3. With Vault raised directly under the hub (the regional-column
-        # reorder in genai_pipeline_spec), the async queue sits at the column
-        # bottom, so e3 (api->queue) routes along the far-right perimeter corridor
-        # (x=1010) rather than slicing the middle column. Injected as a per-edge
-        # geometry override after layout() — the greedy scored router cannot reach
-        # it without an unrepairable corridor-sharing finding. A pure constant, so
-        # deterministic and --check-fresh; node positions are the engine's so the
-        # waypoints align. (A fully hand-placed node layout reaches 2 crossings but
-        # needs node-position overrides that risk the container-sizing rules, so
-        # the engine-placed layout + this single edge override is preferred.)
-        edge_overrides={
-            "e3": {"exit": (1.03, 0.51), "entry": (0.51, 0.0),
-                   "points": ((1010, 160), (1010, 1010), (880, 1010))},
-        },
     )
 
 

@@ -783,15 +783,45 @@ def segment_crosses_box(
     validator agree by construction (design.md → Routing)."""
     dx = q[0] - p[0]
     dy = q[1] - p[1]
+    lo_x, hi_x = b.x + inset, b.right - inset
+    lo_y, hi_y = b.y + inset, b.bottom - inset
+    if lo_x > hi_x or lo_y > hi_y:
+        return False                     # the inset swallows the box: nothing inside
+    # 1.10.6: answer the SAME question the fixed-step sampling asks, but in O(1).
+    # Quick reject on bounding boxes first (the overwhelmingly common case: the
+    # segment is nowhere near the box), then compute the parameter interval
+    # [t0, t1] over which the segment lies inside the inset box and test only the
+    # few sample indices bordering it with the original inequality. Any sample
+    # farther than one step from the interval is outside by a full step, so the
+    # verdict is byte-identical to sampling every ``i / steps`` — and the
+    # geometry rules become cheap enough to score inside the layout solver.
+    if (max(p[0], q[0]) < lo_x or min(p[0], q[0]) > hi_x
+            or max(p[1], q[1]) < lo_y or min(p[1], q[1]) > hi_y):
+        return False
     length = (dx * dx + dy * dy) ** 0.5
     # At least 61 samples (the historical floor for short runs), and more for a
     # long run so spacing never exceeds _SEGMENT_SAMPLE_STEP.
     steps = max(60, int(length / _SEGMENT_SAMPLE_STEP))
-    for i in range(steps + 1):
+    t0, t1 = 0.0, 1.0
+    for d, start, lo, hi in ((dx, p[0], lo_x, hi_x), (dy, p[1], lo_y, hi_y)):
+        if d == 0:
+            if not (lo <= start <= hi):
+                return False
+            continue
+        a, c = (lo - start) / d, (hi - start) / d
+        if a > c:
+            a, c = c, a
+        t0, t1 = max(t0, a), min(t1, c)
+    n0, n1 = t0 * steps, t1 * steps
+    if n1 - n0 > 3:
+        return True                      # a sample sits a full step inside
+    first = max(0, int(math.floor(n0)) - 1)
+    last = min(steps, int(math.ceil(n1)) + 1)
+    for i in range(first, last + 1):
         t = i / steps
         px = p[0] + dx * t
         py = p[1] + dy * t
-        if b.x + inset <= px <= b.right - inset and b.y + inset <= py <= b.bottom - inset:
+        if lo_x <= px <= hi_x and lo_y <= py <= hi_y:
             return True
     return False
 
@@ -1329,21 +1359,32 @@ class RouteCost:
     ink: float = 0.0
     crossing_pairs: Tuple[Tuple[str, str], ...] = ()
     rail_pairs: Tuple[Tuple[str, str, int, float], ...] = ()
+    #: 1.10.6: declared routing rules the diagram breaks (:func:`rule_violations`)
+    #: — the linter's ERROR-class findings and its advisory routing WARNINGs.
+    rule_errors: int = 0
+    rule_warnings: int = 0
+    violations: Tuple[Tuple[str, str], ...] = ()
 
-    def as_tuple(self) -> Tuple[int, float, int, float]:
-        """Comparison key: crossings ≫ rail_penalty ≫ turns ≫ ink.
+    def as_tuple(self) -> Tuple[int, int, int, float, int, float]:
+        """Comparison key: rule errors ≫ rule warnings ≫ crossings ≫ rail_penalty
+        ≫ turns ≫ ink.
 
-        The graded ``rail_penalty`` (Σ penalty over rail runs, inversely
-        proportional to clearance) is the second component rather than the
-        binary ``rails`` count, so a run 2px from an icon ranks worse than one
-        30px away even though both are within :data:`RAIL_CLEARANCE`. The binary
-        ``rails`` field is retained for ratchet readability but is not part of
-        the ordering key.
+        1.10.6 puts the declared rules first: a candidate that breaks a rule the
+        linter reports (a run through an icon, a sliced caption, a leg leaving its
+        container) never beats one that keeps them, however few crossings it has.
+        Among rule-clean candidates the order is the 1.8.0 one. The graded
+        ``rail_penalty`` (Σ penalty over rail runs, inversely proportional to
+        clearance) ranks above turns rather than the binary ``rails`` count, so a
+        run 2px from an icon ranks worse than one 30px away even though both are
+        within :data:`RAIL_CLEARANCE`. The binary ``rails`` field is retained for
+        ratchet readability but is not part of the ordering key.
         """
-        return (self.crossings, round(self.rail_penalty, 3), self.turns, round(self.ink))
+        return (self.rule_errors, self.rule_warnings, self.crossings,
+                round(self.rail_penalty, 3), self.turns, round(self.ink))
 
     def summary(self) -> str:
         return (
+            f"rule_errors={self.rule_errors}  rule_warnings={self.rule_warnings}  "
             f"crossings={self.crossings}  rails={self.rails}  "
             f"rail_penalty={self.rail_penalty:.3f}  "
             f"turns={self.turns}  ink={self.ink / 1000:.1f}k"
@@ -1462,6 +1503,7 @@ def route_cost(geo: DiagramGeometry) -> RouteCost:
                         )
                         rail_penalty_total += rail_penalty(float(clearance))
 
+    errors, warnings = rule_violations(geo)
     return RouteCost(
         crossings=crossings,
         rails=len(rail_pairs),
@@ -1470,6 +1512,9 @@ def route_cost(geo: DiagramGeometry) -> RouteCost:
         ink=ink,
         crossing_pairs=tuple(crossing_pairs),
         rail_pairs=tuple(rail_pairs),
+        rule_errors=len(errors),
+        rule_warnings=len(warnings),
+        violations=errors + warnings,
     )
 
 
@@ -2904,3 +2949,182 @@ def check_structural_integrity(geo: DiagramGeometry) -> List[Tuple[str, str]]:
         if box.w <= 0 or box.h <= 0:
             out.append((nid, "node-no-geometry"))
     return sorted(set(out))
+
+
+# --------------------------------------------------------------------------- #
+# Rule-adherence checks (1.10.6). Three declared rules the linter did not read,
+# and the scored view of every routing rule the layout engine now minimises.
+# --------------------------------------------------------------------------- #
+
+
+def _box_inside(inner: Box, outer: Box) -> bool:
+    """True when ``inner`` lies wholly within ``outer`` (borders inclusive)."""
+    return (outer.x <= inner.x and inner.right <= outer.right
+            and outer.y <= inner.y and inner.bottom <= outer.bottom)
+
+
+def check_edge_escapes_container(geo: DiagramGeometry) -> List[Tuple[str, str]]:
+    """Return ``(edge_id, container_id)`` for routes that LEAVE the innermost
+    container holding both of their endpoints.
+
+    diagram-standards (*Route around a container, not through it*; *Reserve the
+    right margin for Flow/Legend … route edges within the diagram body*): an edge
+    between two nodes of one container is drawn inside that container. A run that
+    steps out of it — into the strip between a region and its account, or out of
+    the account into the right margin where the Flow/Legend furniture lives — reads
+    as a relationship with something outside the box, and crosses its border
+    twice for nothing. The canonical defects: OCI ``hub → model-storage`` turning
+    in the gap OUTSIDE the region it never leaves (a corridor allocated one column
+    past a region-rightmost source), and the 1.10.5 ``api → streaming`` override
+    running down the right margin along the Flow box.
+
+    The innermost common container is the smallest Boundary box enclosing both
+    endpoint boxes; a polyline is convex-hull-bounded by its points, so a route
+    stays inside a rectangle exactly when every waypoint does. An edge whose
+    endpoints share no container (an external actor, a cross-cloud hop) is not
+    judged."""
+    out: List[Tuple[str, str]] = []
+    for e in geo.edges:
+        poly = edge_polyline(geo, e)
+        if len(poly) < 3:
+            continue
+        s, t = geo.nodes[e.source], geo.nodes[e.target]
+        common = [(cid, c) for cid, c in geo.containers.items()
+                  if _box_inside(s, c) and _box_inside(t, c)]
+        if not common:
+            continue
+        cid, c = min(common, key=lambda kv: (kv[1].w * kv[1].h, kv[0]))
+        for x, y in poly[1:-1]:
+            if x < c.x - AXIS_EPS or x > c.right + AXIS_EPS or y < c.y - AXIS_EPS or y > c.bottom + AXIS_EPS:
+                out.append((e.id, cid))
+                break
+    return sorted(set(out))
+
+
+def check_edge_crosses_legend(geo: DiagramGeometry) -> List[Tuple[str, str]]:
+    """Return ``(edge_id, text_cell_id)`` for routes that run through, or along
+    within one grid step of, a ``Flow`` / ``Legend`` box.
+
+    diagram-standards (*No edge–label / edge–legend crossings*): keep every edge
+    clear of the right-side Flow and Legend cells. ``edge-routing`` has always
+    described this ("overlaps a label/legend") but never read the text boxes, so a
+    run riding the Flow box's left border (the 1.10.5 OCI ``e3`` override at
+    ``x=1010``, exactly the box's left edge) linted clean. The box is grown by one
+    grid step so a run hugging its border counts, the same halo a container
+    border gets."""
+    furniture = [
+        (cid, b) for cid, b in sorted(geo.text_boxes.items())
+        if geo.text_headings.get(cid, "").strip().lower() in LEGEND_HEADINGS
+    ]
+    if not furniture:
+        return []
+    out: List[Tuple[str, str]] = []
+    step = geo.grid or GRID
+    for e in geo.edges:
+        poly = edge_polyline(geo, e)
+        if len(poly) < 2:
+            continue
+        for cid, b in furniture:
+            halo = Box(cid, b.x - step, b.y - step, b.w + 2 * step, b.h + 2 * step)
+            if any(segment_crosses_box(p, q, halo, inset=0.0) for p, q in zip(poly, poly[1:])):
+                out.append((e.id, cid))
+    return sorted(set(out))
+
+
+def check_edge_jog(geo: DiagramGeometry) -> List[Tuple[str, str]]:
+    """Return ``(edge_id, reason)`` for an edge between two DIRECTLY FACING nodes
+    that is not drawn as one straight segment.
+
+    diagram-standards (*Distinct same-side exits — straight line keeps the
+    centre*): an edge whose target sits directly opposite — the next node on the
+    same row, or directly below in the same column, nothing between — is the most
+    readable route there is, so it keeps one straight line and the siblings spread
+    around it. The engine broke this whenever a face carried three exits: the band
+    spread handed the level edge the upper quarter while its entry stayed centred,
+    and draw.io drew a 20px jog into a neighbour two centimetres away
+    (``agent-tool-invoker → agent-bedrock-llm``).
+
+    ``level-jog``: exit on the right face, entry on the left face, the two boxes
+    share a horizontal band wider than a grid step with no node between them, yet
+    the exit and entry heights differ. ``drop-jog``: the vertical mirror (bottom
+    exit, top entry, shared column)."""
+    out: List[Tuple[str, str]] = []
+    for e in geo.edges:
+        contacts = _edge_contacts(geo, e)
+        if contacts is None:
+            continue
+        (ex, ey), (nx, ny) = contacts
+        s, t = geo.nodes[e.source], geo.nodes[e.target]
+        ef, nf = contact_faces(*e.exit), contact_faces(*e.entry)
+        others = [b for nid, b in geo.nodes.items() if nid not in (e.source, e.target)]
+        if "right" in ef and "left" in nf and t.x >= s.right:
+            lo, hi = max(s.y, t.y), min(s.bottom, t.bottom)
+            if hi - lo > GRID and abs(ey - ny) > AXIS_EPS and not any(
+                b.x < t.x and b.right > s.right and b.y < hi and b.bottom > lo for b in others
+            ):
+                out.append((e.id, "level-jog"))
+        elif "bottom" in ef and "top" in nf and t.y >= s.bottom:
+            lo, hi = max(s.x, t.x), min(s.right, t.right)
+            if hi - lo > GRID and abs(ex - nx) > AXIS_EPS and not any(
+                b.y < t.y and b.bottom > s.bottom and b.x < hi and b.right > lo for b in others
+            ):
+                out.append((e.id, "drop-jog"))
+    return sorted(set(out))
+
+
+def rule_violations(
+    geo: DiagramGeometry,
+) -> Tuple[Tuple[Tuple[str, str], ...], Tuple[Tuple[str, str], ...]]:
+    """Return ``(errors, warnings)``: every declared ROUTING rule a diagram breaks.
+
+    The layout engine used to accept a candidate on six geometry rules (its
+    repair oracle) and choose between candidates on crossings, rails, turns and
+    ink alone — so a route that cut an icon (an ``edge-routing`` ERROR), sliced a
+    caption, rode a border or left its container scored exactly like a clean one,
+    and only the linter, after the fact, could tell. This is the linter's own view
+    of the same geometry, reduced to two counts the solver and the placement loop
+    minimise BEFORE crossings (``RouteCost.as_tuple``). The engine therefore picks
+    the variant and the placement that keep the declared rules, rather than the
+    one that merely crosses least (1.10.6).
+
+    ``errors`` are the findings the engine must not ship: an ``edge-routing`` run
+    through an unrelated icon or into its own target from the wrong side, and the
+    repair oracle's own **blocking** routing rules (``edge-direction``,
+    ``edge-float``, ``corridor-sharing``). Counting the oracle's blocking rules as
+    errors keeps the scored objective CONSISTENT with the oracle: a candidate the
+    oracle will block (e.g. an unrepairable ``corridor-sharing`` fan-out) can
+    never out-score one it accepts merely because it has fewer advisory warnings
+    — the regression that let a hub fan-out pick a band assignment the repair loop
+    could not fix. ``warnings`` are the advisory routing rules the linter reports
+    but does not block on. Each entry is ``(rule, offender)``; the tuples are
+    sorted, so the counts are deterministic."""
+    errors: List[Tuple[str, str]] = []
+    warnings: List[Tuple[str, str]] = []
+    for eid, reason in check_edge_routing(geo):
+        bucket = errors if ("through-" in reason or reason.startswith("pierces-")) else warnings
+        bucket.append(("edge-routing", f"{eid}:{reason}"))
+    for eid, reason in check_edge_direction(geo):
+        errors.append(("edge-direction", f"{eid}:{reason}"))
+    for eid in check_edge_float(geo):
+        errors.append(("edge-float", str(eid)))
+    # corridor-sharing is a BLOCKING oracle rule (repair.py `_BLOCKING_RULES`), so
+    # it ranks with the errors — the solver must avoid it before it minimises
+    # crossings, or it can pick a route the oracle then refuses (1.10.6 fix).
+    for finding in check_corridor_sharing(geo):
+        errors.append(("corridor-sharing", repr(finding)))
+    advisory = (
+        ("edge-crosses-label", check_edge_crosses_label),
+        ("edge-crosses-container-label", check_edge_crosses_container_label),
+        ("edge-crosses-container", check_edge_crosses_container),
+        ("edge-on-container-border", check_edge_on_container_border),
+        ("edge-escapes-container", check_edge_escapes_container),
+        ("edge-crosses-legend", check_edge_crosses_legend),
+        ("edge-jog", check_edge_jog),
+        ("exit-thirds", check_exit_thirds),
+        ("entry-thirds", check_entry_thirds),
+        ("edge-approach", check_edge_approach),
+    )
+    for rule, fn in advisory:
+        for finding in fn(geo):
+            warnings.append((rule, repr(finding)))
+    return tuple(sorted(errors)), tuple(sorted(warnings))

@@ -123,6 +123,20 @@ def classify_edge(edge: EdgeSpec, placed: Dict[str, Box]) -> str:
     if _same_row(src, tgt) and 0 < dx <= COL_STEP + src.w:
         return "straight"
 
+    # 2b. (1.10.6) straight at ANY distance: same row, and no other icon stands
+    #     on the run between the two faces. A level hop with a clear row is one
+    #     segment however far it goes; classifying it ``fan-out-row`` only because
+    #     the target is two columns away sent it up into a lane and back down for
+    #     nothing (GCP ``api-gateway → pubsub-events``: three corners around empty
+    #     canvas). A run with an icon in the way stays a fan-out (or cross-region).
+    if _same_row(src, tgt) and dx > 0 and not any(
+        nid not in (edge.source, edge.target)
+        and b.x < tgt.x and b.right > src.right
+        and b.y < src.bottom and b.bottom > src.y
+        for nid, b in placed.items()
+    ):
+        return "straight"
+
     # 3. cross-region: a large rightward hop at roughly the same tier — but
     #    never between two nodes the spec places in ONE region (1.10.3: a zone
     #    app feeding the regional object store column is long, not cross-region).

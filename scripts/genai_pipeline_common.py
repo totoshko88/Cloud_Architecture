@@ -13,6 +13,7 @@ title). Regional services land outside the VPC/VCN by the engine's scope rule
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -44,13 +45,6 @@ class GenaiSkin:
     title: str
     diagram_id: str
     api_global: bool = True
-    #: Optional per-edge geometry override (1.10.5), same contract as
-    #: :attr:`engine_example_common.ExampleSkin.edge_overrides`: an ``{edge_id:
-    #: {"exit":…, "entry":…, "points":…}}`` map whose entries REPLACE the
-    #: engine-routed geometry after ``layout()``, for a hand-verified
-    #: lower-crossing route the greedy scored router cannot reach. A pure
-    #: constant, so the diagram stays deterministic and --check stays fresh.
-    edge_overrides: Optional[Dict[str, dict]] = None
 
 
 def _native_net(provider: str) -> str:
@@ -59,19 +53,29 @@ def _native_net(provider: str) -> str:
 
 def build(skin: GenaiSkin) -> str:
     spec = genai_spec(api_global=skin.api_global)
-    placed = layout(spec)
     labels = {
         "account": skin.account_label,
         "region": f"region {skin.region}",
         "vpc": f"{_native_net(skin.provider)}-{skin.network_name}",
     }
+    styles = {
+        c.id: resolve_container(_KIND[c.kind], skin.provider)["style_string"]
+        for c in spec.containers
+    }
+    # 1.10.6: the layout oracle scores the captions/styles this skin draws.
+    spec = dataclasses.replace(
+        spec,
+        container_captions=tuple(sorted((c.id, labels[c.label_key]) for c in spec.containers)),
+        container_styles=tuple(sorted(styles.items())),
+    )
+    placed = layout(spec)
     boundaries: List[Boundary] = []
     for c in spec.containers:
         b = placed.containers[c.id]
         boundaries.append(Boundary(
             id=f"boundary-{c.id}", label=labels[c.label_key],
             x=int(b.x), y=int(b.y), w=int(b.w), h=int(b.h),
-            style=resolve_container(_KIND[c.kind], skin.provider)["style_string"],
+            style=styles[c.id],
         ))
     nodes = [
         Node(id=n.id, label=skin.labels[n.id],
@@ -79,20 +83,13 @@ def build(skin: GenaiSkin) -> str:
              render=skin.renderers[n.id])
         for n in spec.nodes
     ]
-    overrides = skin.edge_overrides or {}
-
     def _edge(pe):
-        ov = overrides.get(pe.spec.id)
-        if ov is not None:
-            exit_pt = tuple(ov.get("exit", pe.exit))
-            entry_pt = tuple(ov.get("entry", pe.entry))
-            pts = tuple((int(x), int(y)) for x, y in ov.get("points", pe.points))
-        else:
-            exit_pt, entry_pt = pe.exit, pe.entry
-            pts = tuple((int(x), int(y)) for x, y in pe.points)
+        # 1.10.6: engine-routed geometry only (no overrides — the scored solver
+        # reaches the clean route itself; REVIEW.md D24).
+        pts = tuple((int(x), int(y)) for x, y in pe.points)
         return Edge(id=pe.spec.id, source=pe.spec.source, target=pe.spec.target,
                     marker=pe.spec.marker, dashed=pe.spec.dashed,
-                    exit=exit_pt, entry=entry_pt, points=pts)
+                    exit=pe.exit, entry=pe.entry, points=pts)
 
     edges = [_edge(pe) for pe in placed.edges]
     right = max(int(b.right) for b in placed.containers.values())
@@ -120,9 +117,8 @@ def run_cli(skin_factory: Callable[[], GenaiSkin], out: Path, prog: str,
     # Deterministic edge-hygiene (1.10.5 A1/A2/A3): separate overprinting flow
     # markers, distribute bunched ports and offset parallel trunks at generation
     # time so every emitted diagram is collision-free. Idempotent, so --check
-    # (freshness) and write see the same bytes. Edges carrying a hand-verified
-    # override are exempt (already clean; hygiene must not perturb their route).
-    xml, _ = edge_hygiene_text(xml, skip_ids=set((skin.edge_overrides or {}).keys()))
+    # (freshness) and write see the same bytes.
+    xml, _ = edge_hygiene_text(xml)
     path = Path(args.out)
     if args.stdout:
         sys.stdout.write(xml)

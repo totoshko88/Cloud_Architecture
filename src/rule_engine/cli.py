@@ -1095,6 +1095,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             # a multi-page file, else the file path (R1.13).
             label = result.get("label") or getattr(artifact, "label", None) or target
             if args.json:
+                # 1.10.6: every JSON record carries the label so a finding can be
+                # attributed to its artifact. A single-page file's ``lint()``
+                # result had no ``label`` key, so a ``--all`` run left most
+                # records anonymous — the consumer could not tell which diagram a
+                # finding belonged to.
+                if not result.get("label"):
+                    result = {**result, "label": label}
                 json_results.append(result)
             else:
                 _print_result(result, label, failed)

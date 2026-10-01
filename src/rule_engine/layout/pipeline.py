@@ -44,6 +44,7 @@ task 1.4, and the default path never references them (R1.6).
 
 from __future__ import annotations
 
+import math
 from typing import Dict, List, Tuple
 
 try:  # package-relative import when used as ``rule_engine.layout.pipeline``
@@ -624,6 +625,17 @@ def _global_contacts(
         for eid, band in _assign_exit_bands(ranked).items():
             exits[eid] = _with_band(exits[eid], "right", band)
 
+    # 2b5. A straight edge stays ONE straight line (1.10.6, diagram-standards →
+    #     *straight line keeps the centre*). The monotone spread above hands out
+    #     the right-face bands by rank, so a level edge beside two below-going
+    #     siblings gets the upper quarter while its entry stays centred, and
+    #     draw.io draws a jog into the neighbour (``lambda → bedrock``, the
+    #     ``edge-jog`` finding). Align the two ends instead: move the entry to the
+    #     exit's band when the target's left face has room for it, else the exit
+    #     to the entry's band when the source's right face does — the spread
+    #     siblings keep their bands, so no stub crosses another.
+    _align_straight_contacts(spec, placed, exits, entries)
+
     # 2c. Snap every contact FRACTION so its absolute point lands on the grid
     #     (icon centre 0.5 → x0+39 is off-grid; a grid-snapped waypoint would
     #     then meet it with a 1px kink that skews the arrowhead). After this the
@@ -634,6 +646,57 @@ def _global_contacts(
         entries[edge.id] = _grid_contact(placed[edge.target], entries[edge.id])
 
     return exits, entries, lane_sides
+
+
+def _align_straight_contacts(
+    spec: DiagramSpec,
+    placed: Dict[str, "Box"],
+    exits: Dict[str, Contact],
+    entries: Dict[str, Contact],
+) -> None:
+    """Give every ``straight`` edge equal exit and entry bands, in place (1.10.6).
+
+    A ``straight`` edge joins two same-row neighbours with nothing between, so
+    equal bands draw one horizontal segment. Preference order, each taken only
+    when it keeps every other contact on that face at least
+    :data:`~rule_engine.layout.contacts.MERGE_THRESHOLD` away:
+
+    1. move the ENTRY onto the exit's band (the exit spread was chosen by route
+       rank, so moving it could make a sibling stub cross this edge);
+    2. move the EXIT onto the entry's band;
+    3. otherwise leave both (``edge-jog`` reports it; the scored solver sees it).
+    """
+    from .contacts import MERGE_THRESHOLD
+
+    def _band(pt: Contact, axis: int) -> float:
+        return pt[axis] if pt[axis] is not None else 0.5
+
+    for edge in spec.edges:
+        if classify_edge(edge, placed) != "straight":
+            continue
+        src, tgt = placed[edge.source], placed[edge.target]
+        if abs(src.y - tgt.y) > 1e-9 or abs(src.h - tgt.h) > 1e-9:
+            continue
+        if _exit_side(exits[edge.id]) != "right" or _entry_face(entries[edge.id]) != "left":
+            continue
+        ey, ny = _band(exits[edge.id], 1), _band(entries[edge.id], 1)
+        if abs(ey - ny) < 1e-9:
+            continue
+        other_entries = [
+            _band(entries[e.id], 1) for e in spec.edges
+            if e.id != edge.id and e.target == edge.target
+            and _entry_face(entries[e.id]) == "left"
+        ]
+        if all(abs(ey - b) >= MERGE_THRESHOLD for b in other_entries):
+            entries[edge.id] = (entries[edge.id][0], ey)
+            continue
+        other_exits = [
+            _band(exits[e.id], 1) for e in spec.edges
+            if e.id != edge.id and e.source == edge.source
+            and _exit_side(exits[e.id]) == "right"
+        ]
+        if all(abs(ny - b) >= MERGE_THRESHOLD for b in other_exits):
+            exits[edge.id] = (exits[edge.id][0], ny)
 
 
 def _route_all_legacy(
@@ -1094,6 +1157,103 @@ def _clear_container_border_rides(candidate: "PlacedDiagram") -> "PlacedDiagram"
     return candidate
 
 
+def _box_from_edges(bid: str, x0: float, y0: float, x1: float, y1: float,
+                    old: "Box") -> "Box":
+    """A box spanning ``x0..x1`` × ``y0..y1``; a moved edge is snapped to the
+    grid, an unmoved one keeps its exact coordinate (a container's right/bottom
+    edge is often off-grid by construction — icon plus padding)."""
+    nx0 = old.x if x0 == old.x else _snap(math.floor(x0 / GRID) * GRID)
+    ny0 = old.y if y0 == old.y else _snap(math.floor(y0 / GRID) * GRID)
+    nx1 = old.right if x1 == old.right else _snap(math.ceil(x1 / GRID) * GRID)
+    ny1 = old.bottom if y1 == old.bottom else _snap(math.ceil(y1 / GRID) * GRID)
+    return Box(bid, nx0, ny0, nx1 - nx0, ny1 - ny0)
+
+
+def _contain_escaping_routes(candidate: "PlacedDiagram") -> "PlacedDiagram":
+    """Grow a container so a route between two of its nodes stays inside it (1.10.6).
+
+    diagram-standards: *when space is tight, widen — never narrow — the
+    corridor*, and an edge between two nodes of one container is drawn inside that
+    container (``edge-escapes-container``). A corridor allocated one column past a
+    container-rightmost source can land outside the box (the OCI / GCP hub's drop
+    to the object store turned in the strip between the region and the account).
+    The scored solver already prefers a variant that stays inside; this pass covers
+    the case where every variant escapes: the innermost container holding both
+    endpoints is grown outward until every waypoint clears its border by
+    ``CONTAINER_PAD``, then every ancestor is grown to keep wrapping it with the
+    same padding, and the right-margin legend is re-placed past the account.
+
+    Applied tentatively and kept only when the repaired diagram's oracle stays
+    clean and its ``route_cost`` does not get worse, so a growth that would
+    collide with a sibling box is simply not made. A diagram with no escaping
+    route is returned unchanged (byte-identical)."""
+    nodes, containers = candidate.nodes, dict(candidate.containers)
+
+    def _inside(inner: "Box", outer: "Box") -> bool:
+        return (outer.x <= inner.x and inner.right <= outer.right
+                and outer.y <= inner.y and inner.bottom <= outer.bottom)
+
+    grown = False
+    for pe in candidate.edges:
+        src, tgt = nodes.get(pe.spec.source), nodes.get(pe.spec.target)
+        if src is None or tgt is None or not pe.points:
+            continue
+        common = sorted(
+            (cid for cid, c in containers.items() if _inside(src, c) and _inside(tgt, c)),
+            key=lambda cid: (containers[cid].w * containers[cid].h, cid),
+        )
+        if not common:
+            continue
+        cid = common[0]
+        c = containers[cid]
+        x0, y0, x1, y1 = c.x, c.y, c.right, c.bottom
+        for px, py in pe.points:
+            if px < c.x or px > c.right or py < c.y or py > c.bottom:
+                x0 = min(x0, px - CONTAINER_PAD)
+                y0 = min(y0, py - CONTAINER_PAD)
+                x1 = max(x1, px + CONTAINER_PAD)
+                y1 = max(y1, py + CONTAINER_PAD)
+        if (x0, y0, x1, y1) == (c.x, c.y, c.right, c.bottom):
+            continue
+        containers[cid] = _box_from_edges(c.id, x0, y0, x1, y1, c)
+        grown = True
+    if not grown:
+        return candidate
+
+    # Ancestors (the spec's container tree) keep wrapping a grown child with the
+    # same padding, all the way up to the account.
+    parent_of = {c.id: c.parent for c in candidate.spec.containers}
+    for cid in sorted(containers):
+        child_id = cid
+        while parent_of.get(child_id) in containers:
+            pid = parent_of[child_id]
+            child, parent = containers[child_id], containers[pid]
+            x0 = min(parent.x, child.x - CONTAINER_PAD)
+            y0 = min(parent.y, child.y - CONTAINER_PAD)
+            x1 = max(parent.right, child.right + CONTAINER_PAD)
+            y1 = max(parent.bottom, child.bottom + CONTAINER_PAD)
+            containers[pid] = _box_from_edges(pid, x0, y0, x1, y1, parent)
+            child_id = pid
+
+    account = next(
+        (containers[c.id] for c in candidate.spec.containers
+         if c.kind == "account" and c.id in containers),
+        None,
+    )
+    legend_x, legend_w = candidate.legend_x, candidate.legend_w
+    if account is not None:
+        legend_x, legend_w = place_legend(account, candidate.spec.flow_lines)
+    trial = PlacedDiagram(
+        spec=candidate.spec, nodes=candidate.nodes, containers=containers,
+        edges=candidate.edges, legend_x=legend_x, legend_w=legend_w,
+    )
+    if not _run_oracle(trial).clean:
+        return candidate
+    if _finished_cost(trial).as_tuple() > _finished_cost(candidate).as_tuple():
+        return candidate
+    return trial
+
+
 #: A near-contact leg shorter than this reads as a stub/jog rather than a real
 #: corridor turn. Matches STAIR_STEP (three grid steps), the router's own unit.
 _APPROACH_JOG_MAX = 3 * GRID
@@ -1194,6 +1354,9 @@ def _finish(spec: DiagramSpec, candidate: "PlacedDiagram") -> "PlacedDiagram":
             # approach on the SETTLED geometry — corridors are final, so the
             # rebuilt single-corner drop is kept only when it stays oracle-clean.
             candidate = _straighten_top_entry_approaches(candidate)
+            # 1.10.6: a route still escaping the container that holds both of
+            # its endpoints grows that container instead (oracle-guarded).
+            candidate = _contain_escaping_routes(candidate)
             return _normalise_origin(candidate, margins)
         # Re-align after each repair: a corridor bump moves interior waypoints but
         # not the pinned contacts, so an aligned end leg comes back diagonal
@@ -1203,6 +1366,7 @@ def _finish(spec: DiagramSpec, candidate: "PlacedDiagram") -> "PlacedDiagram":
 
     if findings.clean:
         candidate = _straighten_top_entry_approaches(candidate)
+        candidate = _contain_escaping_routes(candidate)
         return _normalise_origin(candidate, margins)
     rule, payload = findings.first_unresolved  # type: ignore[misc]
     raise LayoutError(

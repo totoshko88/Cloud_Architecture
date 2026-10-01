@@ -517,6 +517,9 @@ class PlacementMove(str, Enum):
     WIDEN_GAP = "widen-gap"         # grow a vpc side gap (tier-skip rail)
     SHIFT_NEIGHBOUR = "shift-neighbour"  # move one hub neighbour one column
     REORDER_TIER = "reorder-tier"   # swap two peers within a row
+    #: 1.10.6: open one corridor lane below the caption strip of every container
+    #: whose first row is entered from the side (``base._top_lane_containers``).
+    CAPTION_LANE = "caption-lane"
 
 
 @dataclass(frozen=True)
@@ -790,6 +793,25 @@ def generate_placement_variants(spec: "DiagramSpec") -> List[PlacementVariant]:
             _params(node_a=a.id, node_b=b.id),
         ))
 
+    # --- caption-lane (1.10.6): one variant when any container would reserve a
+    # lane below its caption strip. Only grows boxes downward from their own top
+    # border, so nesting and padding hold by construction.
+    import dataclasses as _dc
+    try:
+        from .base import _top_lane_containers
+    except ImportError:  # pragma: no cover - flat-module fallback
+        from layout.base import _top_lane_containers  # type: ignore[no-redef]
+
+    if not getattr(spec, "caption_lanes", False) and _top_lane_containers(
+        _dc.replace(spec, caption_lanes=True)
+    ):
+        pending.append((
+            (3, "containers"),
+            PlacementMove.CAPTION_LANE,
+            "containers",
+            _params(enabled=True),
+        ))
+
     # Order by the spec-only key and assign consecutive ranks from 1 (the
     # identity holds rank 0). Sorting on the (family, target) key makes the rank
     # a deterministic function of the spec regardless of the order the guards ran.
@@ -835,16 +857,9 @@ def _replace_node(node: "NodeSpec", *, slot: int) -> "NodeSpec":
     **only** the slot (the secondary-axis position), never the lane, region, or
     container membership — which is what guarantees the node stays inside its
     declared box (R1.6)."""
-    return NodeSpec(
-        id=node.id,
-        role=node.role,
-        lane=node.lane,
-        region=node.region,
-        slot=slot,
-        sub=node.sub,
-        container=node.container,
-        overlay=node.overlay,
-    )
+    import dataclasses as _dc
+
+    return _dc.replace(node, slot=slot)
 
 
 def _rebuild_spec(spec: "DiagramSpec", new_slots: Dict[str, int]) -> "DiagramSpec":
@@ -855,21 +870,16 @@ def _rebuild_spec(spec: "DiagramSpec", new_slots: Dict[str, int]) -> "DiagramSpe
     ``nodes`` tuple is rebuilt — edges, containers, and every diagram-level field
     are shared by reference, since a placement move changes only where nodes sit
     on the secondary axis, never the topology or the container tree."""
+    import dataclasses as _dc
+
     nodes = tuple(
         _replace_node(n, slot=new_slots[n.id]) if n.id in new_slots else n
         for n in spec.nodes
     )
-    return DiagramSpec(
-        diagram_id=spec.diagram_id,
-        diagram_name=spec.diagram_name,
-        axis=spec.axis,
-        nodes=nodes,
-        edges=spec.edges,
-        containers=spec.containers,
-        flow_lines=spec.flow_lines,
-        title=spec.title,
-        compact=spec.compact,
-    )
+    # ``replace`` carries every other DiagramSpec field (1.10.6: the container
+    # captions/styles the oracle scores) — an explicit field list silently
+    # dropped any field added after it was written.
+    return _dc.replace(spec, nodes=nodes)
 
 
 def apply_placement_move(spec: "DiagramSpec", variant: "PlacementVariant") -> "DiagramSpec":
@@ -956,5 +966,10 @@ def apply_placement_move(spec: "DiagramSpec", variant: "PlacementVariant") -> "D
         if a is None or b is None:
             return spec
         return _rebuild_spec(spec, {a_id: b.slot, b_id: a.slot})
+
+    if variant.move is PlacementMove.CAPTION_LANE:
+        import dataclasses as _dc
+
+        return _dc.replace(spec, caption_lanes=True)
 
     return spec  # pragma: no cover - exhaustive over PlacementMove

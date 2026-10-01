@@ -1,15 +1,19 @@
-"""Regression tests for the OCI GenAI hub fan-out routing fixes (1.10.4).
+"""Regression tests for the OCI GenAI hub fan-out routing (1.10.4 → 1.10.6).
 
 Hub fan-out routing invariants for ``examples/oci/01-oci-genai-stack.drawio``.
 
 These began as regression guards for two 1.10.4 reviewer defects (a 7×8 bottom-
-face crossing and an extra corner before Vault). Since the 1.10.5 Vault-raise
-reorder, ``sec`` (Vault) sits directly below the hub, so the roles of the fan-out
-branches shifted: **hub→sec** is now the clean straight bottom-centre drop, and
-**hub→obj** (obj two rows lower) takes the right-face corridor. The invariants the
-tests encode are unchanged in spirit — the three branches never cross, the branch
-to the directly-below target drops straight, and the corridor branch reaches its
-target with a single clean corner — only which edge plays which role moved.
+face crossing and an extra corner before Vault). **Re-baselined at 1.10.6.** The
+1.10.4/1.10.5 ``genai_pipeline_spec`` carried a per-provider reorder that pinned
+Vault (``sec``) directly below the hub; 1.10.6 removes that hack because the
+engine now places every unanchored regional node beside its neighbours on its own
+(``layout.base._place_loose_regional``). With the hack gone the engine puts
+``sec`` directly to the **right** of the hub (a clean straight level hop,
+``hub→sec``) and the object store ``obj`` directly **below** it (a clean straight
+bottom drop, ``hub→obj``), with ``hub→sql`` the bottom-left back-edge. The
+invariants are unchanged in spirit — the three branches never cross, and the
+targets that sit directly adjacent are reached by one straight segment — only
+which edge plays which role moved again, this time to the engine's own choice.
 """
 
 from __future__ import annotations
@@ -68,24 +72,26 @@ def test_hub_fanout_branches_do_not_cross():
                 )
 
 
-def test_hub_to_sec_is_a_straight_bottom_drop():
-    """After the Vault-raise reorder, sec (Vault) sits directly below the hub, so
-    hub→sec keeps the bottom-CENTRE and drops straight with no interior waypoints
-    — the clean short vertical the reviewer asked for."""
-    geo = _geo()
-    sec = next(e for e in geo.edges if e.source == "hub" and e.target == "sec")
-    assert sec.exit[1] is not None and sec.exit[1] >= 1.0, f"not a bottom exit: {sec.exit}"
-    assert abs(sec.exit[0] - 0.5) < 0.05, f"not bottom-centre: {sec.exit}"
-    assert sec.points == [], f"straight drop should have no waypoints: {sec.points}"
-
-
-def test_hub_to_obj_leaves_the_right_face():
-    """obj now sits two rows below the hub (below Vault), so hub→obj leaves the
-    RIGHT face and routes down its own corridor rather than the bottom-centre
-    drop (which now belongs to hub→sec)."""
+def test_hub_to_obj_is_a_straight_bottom_drop():
+    """1.10.6: the engine places ``obj`` (object store) directly below the hub, so
+    hub→obj keeps the bottom-CENTRE and drops straight with no interior waypoints
+    — the clean short vertical a directly-below target should have."""
     geo = _geo()
     obj = next(e for e in geo.edges if e.source == "hub" and e.target == "obj")
-    assert obj.exit[0] is not None and obj.exit[0] >= 0.5, f"not a right/bottom exit: {obj.exit}"
+    assert obj.exit[1] is not None and obj.exit[1] >= 1.0, f"not a bottom exit: {obj.exit}"
+    assert abs(obj.exit[0] - 0.5) < 0.05, f"not bottom-centre: {obj.exit}"
+    assert obj.points == [], f"straight drop should have no waypoints: {obj.points}"
+
+
+def test_hub_to_sec_is_a_straight_level_hop():
+    """1.10.6: the engine places ``sec`` (Vault) directly to the RIGHT of the hub
+    on the same row, so hub→sec is a straight level hop — exit the right face,
+    enter the left face, no interior waypoints."""
+    geo = _geo()
+    sec = next(e for e in geo.edges if e.source == "hub" and e.target == "sec")
+    assert sec.exit[0] is not None and sec.exit[0] >= 1.0, f"not a right exit: {sec.exit}"
+    assert sec.entry[0] is not None and sec.entry[0] <= 0.0, f"not a left entry: {sec.entry}"
+    assert sec.points == [], f"straight level hop should have no waypoints: {sec.points}"
 
 
 def test_hub_to_sql_leaves_the_bottom_left_band():
@@ -95,20 +101,3 @@ def test_hub_to_sql_leaves_the_bottom_left_band():
     sql = next(e for e in geo.edges if e.source == "hub" and e.target == "sql")
     assert sql.exit[1] is not None and sql.exit[1] >= 1.0, f"not a bottom exit: {sql.exit}"
     assert sql.exit[0] is not None and sql.exit[0] < 0.5, f"not bottom-left: {sql.exit}"
-
-
-def test_hub_to_obj_approach_has_no_extra_corner():
-    """After the Vault-raise reorder, hub→obj is the edge that reaches a lower
-    row via a corridor (obj sits two rows below the hub). Its approach is a
-    single clean corner sequence — exit-right stub, corridor drop, step across,
-    straight drop into the top — not a stair of short jogs. At most three
-    interior waypoints, and the final leg drops straight into the top face."""
-    geo = _geo()
-    obj = next(e for e in geo.edges if e.source == "hub" and e.target == "obj")
-    assert len(obj.points) <= 3, f"approach has an extra corner: {obj.points}"
-    if obj.points and obj.entry[1] is not None and obj.entry[1] <= 0.0:
-        t = geo.nodes["obj"]
-        entry_x = t.x + obj.entry[0] * t.w
-        assert abs(obj.points[-1][0] - entry_x) < 1.0, (
-            f"final leg not a straight drop into the top: {obj.points[-1]} vs x={entry_x}"
-        )

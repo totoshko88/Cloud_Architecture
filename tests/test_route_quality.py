@@ -132,35 +132,35 @@ _EXAMPLES = _REPO_ROOT / "examples"
 #: the passive LB's drop (``l9``). The first two are forced by the topology
 #: (a vertical between two stacked rows vs. a horizontal leaving each row).
 _CEILING = {
-    # Engine-generated (was hand-authored): the Lambda hub's 3-way fan-out plus
-    # the eks→rds back-path force one crossing (e3 async vs e5 s3) — the minimum
-    # over the engine's slot arrangements.
-    "aws/01-aws-agent-platform.drawio": (1, 0, 0.0),
+    # 1.10.6: the scored solver minimises declared-rule violations before
+    # crossings, places unanchored regional nodes beside their neighbours and
+    # keeps straight edges straight, so the engine reaches a clean route on its
+    # own — the 1.10.5 per-edge geometry overrides are GONE (REVIEW.md D24). The
+    # aws/01 Lambda hub fan-out now routes with ZERO crossings (was 1), tightening
+    # the ratchet to the new engine-native floor.
+    "aws/01-aws-agent-platform.drawio": (0, 0, 0.0),
     "aws/02-aws-ha-multiregion-landscape.drawio": (3, 2, 0.0),
     "aws/02-aws-ha-multiregion-summary.drawio": (0, 0, 0.0),
     "aws/03-aws-hybrid-infrastructure.drawio": (0, 0, 0.0),
-    # 1.10.5: hand-verified per-edge geometry overrides (applied after layout()
-    # in the builder, hygiene-exempt) route the crossing-heavy edges along free
-    # perimeter corridors the greedy scored router cannot reach, taking this flow
-    # from 2 crossings to 0. The ratchet is tightened to the new floor.
+    # 1.10.6: the azure RAG flow reaches 0 crossings and 0 rails from layout()
+    # alone (the slot order in the spec is a legitimate author choice; the seven
+    # 1.10.5 edge overrides are gone).
     "azure/01-azure-openai-rag.drawio": (0, 0, 0.0),
     "azure/02-azure-ha-multiregion-landscape.drawio": (3, 2, 0.0),
     "azure/02-azure-ha-multiregion-summary.drawio": (0, 0, 0.0),
     "cross-cloud/01-cross-cloud-composition.drawio": (0, 0, 0.0),
-    # 1.10.5: e1/e4/e6 overrides (bottom-exit + wide free-corridor detour) take
-    # the GenAI pipeline from 6 crossings to 1 (only the e3×e7 pair remains). Two
-    # rails are the price of the two perimeter detours.
-    "gcp/01-gcp-vertex-pipeline.drawio": (1, 2, 0.0),
+    # 1.10.6: with the three overrides removed, the GenAI pipeline routes at 2
+    # crossings and NO rails (both around the hub fan-out). The 1.10.5 ceiling of
+    # 1 was only reachable via hand-pinned perimeter detours that themselves rode
+    # container borders; 2 clean crossings with no rail is the honest engine floor.
+    "gcp/01-gcp-vertex-pipeline.drawio": (2, 0, 0.0),
     "gcp/02-gcp-ha-multiregion-landscape.drawio": (3, 2, 0.0),
     "gcp/02-gcp-ha-multiregion-summary.drawio": (0, 0, 0.0),
-    # 1.10.5: e4 corridor moved left of e5 (x970 -> x920) removes their crossing,
-    # 2 -> 0.
     "generic/01-generic-reference-architecture.drawio": (0, 0, 0.0),
-    # 1.10.5: e3 far-right perimeter override takes the OCI stack from 6 to 3;
-    # the remaining 3 are the queue->ingest (e4) hops inherent to the vault-raised
-    # regional column (queue at the column bottom). A 2-crossing layout needs
-    # hand-placed node positions, deferred.
-    "oci/01-oci-genai-stack.drawio": (3, 0, 0.0),
+    # 1.10.6: the OCI stack shares gcp/01's engine-native layout (one spec), so it
+    # is also 2 crossings / 0 rails — DOWN from the 1.10.5 override floor of 3,
+    # and with no perimeter rail. The e3 far-right override is gone.
+    "oci/01-oci-genai-stack.drawio": (2, 0, 0.0),
     "oci/02-oci-ha-multiregion-landscape.drawio": (3, 2, 0.0),
     "oci/02-oci-ha-multiregion-summary.drawio": (0, 0, 0.0),
 }
@@ -353,7 +353,10 @@ def test_cost_weighs_rails_above_economy():
 
 def test_empty_diagram_costs_nothing():
     cost = route_cost(DiagramGeometry())
-    assert cost.as_tuple() == (0, 0, 0, 0)
+    # 1.10.6: the comparison key gained two leading components — the declared
+    # routing-rule violation counts (rule_errors, rule_warnings) the scored
+    # solver minimises before crossings — so the key is a 6-tuple.
+    assert cost.as_tuple() == (0, 0, 0, 0, 0, 0)
 
 
 def test_edge_polyline_includes_both_contacts():
