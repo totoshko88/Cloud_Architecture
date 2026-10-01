@@ -239,6 +239,22 @@ RULE_EDGE_CROSSING_EXCESS = "edge-crossing-excess"
 RULE_DETOUR_HOOK = "detour-hook"
 RULE_STRUCTURAL_INTEGRITY = "structural-integrity"
 
+# deterministic-engine 1.10.6. Three routing rules the engine now minimises as
+# part of its scored objective, published as advisory WARNINGs so a HAND-authored
+# diagram is held to the same standard the engine already meets:
+#   edge-escapes-container — a route between two nodes of one container leaves
+#                            that container (into the region/account gap or the
+#                            right margin); WARNING.
+#   edge-crosses-legend    — a route runs through, or along within one grid step
+#                            of, a Flow / Legend box; WARNING. (edge-routing
+#                            always described this but never read the text boxes.)
+#   edge-jog               — an edge between two DIRECTLY FACING nodes (next on
+#                            the row, or directly below) is drawn with a jog
+#                            instead of one straight segment; WARNING.
+RULE_EDGE_ESCAPES_CONTAINER = "edge-escapes-container"
+RULE_EDGE_CROSSES_LEGEND = "edge-crosses-legend"
+RULE_EDGE_JOG = "edge-jog"
+
 # ``RULE_SEVERITIES`` and ``CLASS_ESCALATIONS`` are DERIVED from the ``RULES``
 # registry (defined near the end of this module, once every predicate exists) —
 # see ``_derive_severities``. The registry is the single source of truth for a
@@ -1482,6 +1498,55 @@ def _check_edge_on_container_border(a: Artifact):
     return RuleHit(offenders=_offender_ids(findings), reason="rides-container-border")
 
 
+def _check_edge_escapes_container(a: Artifact):
+    """edge-escapes-container: a route between two nodes of ONE container leaves
+    that container's interior (1.10.6, WARNING). An edge whose endpoints share a
+    Boundary box is drawn inside that box; a run that steps out of it — into the
+    strip between a region and its account, or out of the account into the right
+    margin — reads as a relationship with something outside the box and crosses
+    its border twice for nothing."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    findings = _geo.check_edge_escapes_container(geo)
+    if not findings:
+        return False
+    return RuleHit(offenders=_offender_ids(findings), reason="leaves-common-container")
+
+
+def _check_edge_crosses_legend(a: Artifact):
+    """edge-crosses-legend: a route runs through, or along within one grid step
+    of, a Flow / Legend box (1.10.6, WARNING). ``edge-routing`` always described
+    keeping edges clear of the right-side furniture but never read the text
+    boxes, so a run riding the Flow box's left border linted clean."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    findings = _geo.check_edge_crosses_legend(geo)
+    if not findings:
+        return False
+    return RuleHit(offenders=_offender_ids(findings), reason="crosses-flow-legend-box")
+
+
+def _check_edge_jog(a: Artifact):
+    """edge-jog: an edge between two DIRECTLY FACING nodes (the next node on the
+    same row, or directly below in the same column, nothing between) is drawn
+    with a jog instead of one straight segment (1.10.6, WARNING). A straight line
+    is the most readable route there is, so a directly-opposite target keeps it
+    and the siblings spread around it (diagram-standards → *straight line keeps
+    the centre*)."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    findings = _geo.check_edge_jog(geo)
+    if not findings:
+        return False
+    return RuleHit(offenders=_offender_ids(findings), reason=findings[0][1])
+
+
 def _check_entry_thirds(a: Artifact):
     """entry-thirds: several edges arrive on one target face at merged/duplicate points.
 
@@ -1924,6 +1989,13 @@ RULES: Tuple[Tuple[RuleSpec, Callable[[Artifact], _PredicateResult]], ...] = (
         RuleSpec(RULE_EDGE_ON_CONTAINER_BORDER, Severity.WARNING),
         _check_edge_on_container_border,
     ),
+    # deterministic-engine 1.10.6: three advisory routing rules (both classes).
+    (
+        RuleSpec(RULE_EDGE_ESCAPES_CONTAINER, Severity.WARNING),
+        _check_edge_escapes_container,
+    ),
+    (RuleSpec(RULE_EDGE_CROSSES_LEGEND, Severity.WARNING), _check_edge_crosses_legend),
+    (RuleSpec(RULE_EDGE_JOG, Severity.WARNING), _check_edge_jog),
     (RuleSpec(RULE_LEGEND_PLACEMENT, Severity.WARNING), _check_legend_placement),
     (RuleSpec(RULE_FLOW_LEGEND, Severity.WARNING), _check_flow_legend),
     (RuleSpec(RULE_NODE_CONNECTIVITY, Severity.WARNING), _check_node_connectivity),
@@ -2225,6 +2297,9 @@ __all__ = [
     "RULE_EDGE_CROSSES_CONTAINER_LABEL",
     "RULE_EDGE_CROSSES_CONTAINER",
     "RULE_EDGE_ON_CONTAINER_BORDER",
+    "RULE_EDGE_ESCAPES_CONTAINER",
+    "RULE_EDGE_CROSSES_LEGEND",
+    "RULE_EDGE_JOG",
     "RULE_LEGEND_PLACEMENT",
     "RULE_FLOW_LEGEND",
     "RULE_NODE_CONNECTIVITY",

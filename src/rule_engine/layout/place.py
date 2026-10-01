@@ -32,6 +32,8 @@ try:  # package-relative import when used as ``rule_engine.layout.place``
     from .model import DiagramSpec
     from .base import (
         SpecError,
+        TOP_LANE,
+        _top_lane_containers,
         _ORIGIN,
         _snap,
         _validate_spec,
@@ -54,6 +56,8 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
     from layout.model import DiagramSpec  # type: ignore[no-redef]
     from layout.base import (  # type: ignore[no-redef]
         SpecError,
+        TOP_LANE,
+        _top_lane_containers,
         _ORIGIN,
         _snap,
         _validate_spec,
@@ -176,6 +180,9 @@ def size_containers(
     leaf_nodes = _assign_nodes_to_leaves(spec, placed)
     child_containers = _children_of(spec)
     kind_of = {c.id: c.kind for c in spec.containers}
+    # 1.10.6: containers whose first row is entered from the side reserve one
+    # corridor lane below their caption strip (``_top_lane_containers``).
+    lane_containers = _top_lane_containers(spec)
 
     boxes: Dict[str, Box] = {}
 
@@ -193,6 +200,8 @@ def size_containers(
             )
         x0, y0, x1, y1 = _bbox(child_boxes)
         top = pad + CONTAINER_LABEL_BAND  # reserve the caption strip (see below)
+        if cid in lane_containers:
+            top += TOP_LANE
         box = Box(cid, x0 - pad, y0 - top, (x1 - x0) + 2 * pad, (y1 - y0) + top + pad)
         boxes[cid] = box
         return box

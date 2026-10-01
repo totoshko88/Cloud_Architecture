@@ -359,34 +359,31 @@ def test_legacy_generator_reproduces_pre_placement_loop_geometry(provider, kind,
     )
 
     committed = committed_path.read_text(encoding="utf-8")
-    if kind == "summary":
-        # The placement loop does not improve the <=12-node flow summary, so its
-        # committed bytes are still the ten-pass geometry: legacy == committed.
-        assert legacy == committed, (
-            f"{provider} summary: --legacy output diverged from the committed "
-            f"file; the placement loop does not touch the summary, so the "
-            f"ten-pass path must still reproduce it exactly (R1.5)."
-        )
-    else:
-        # The placement loop improves the landscape (a widen-gap move, R1.7), so
-        # the committed bytes are the IMPROVED default, which legally differs from
-        # the unimproved legacy geometry. Assert the divergence is exactly that
-        # improvement rather than silently accepting any difference: the default
-        # (scored) path must reproduce the committed file (proven in Part 1), and
-        # the legacy path must differ from it here.
-        default = _build_ha(provider, kind, legacy=False)
-        assert default == committed, (
-            f"{provider} landscape: the scored default diverged from the "
-            f"committed file — the committed landscape must be the improved "
-            f"default placement (Property 3 / R1.7)."
-        )
-        assert legacy != committed, (
-            f"{provider} landscape: the --legacy path unexpectedly matches the "
-            f"committed file; the committed landscape is the improved default "
-            f"placement, which the ten-pass legacy path does not produce (R1.7). "
-            f"If the placement loop no longer improves this landscape, this "
-            f"expectation must be revisited."
-        )
+    # 1.10.6: the scored placement loop now improves BOTH the summary and the
+    # landscape. The summary gains the ``caption-lane`` move — reserving one
+    # corridor lane below a region's caption strip removes two
+    # ``edge-crosses-container-label`` warnings (the DNS loop into each region's
+    # first row) that the ten-pass legacy path cannot avoid. So the committed
+    # bytes are the IMPROVED default for every HA diagram, and ``legacy ==
+    # committed`` no longer holds for the summary any more than for the
+    # landscape. The honest R1.5 guarantee is that the legacy path reproduces its
+    # own (unimproved) geometry deterministically — asserted above (``legacy ==
+    # legacy_again``). Here we additionally pin the divergence to exactly the
+    # improvement: the scored default reproduces the committed file, and the
+    # legacy path differs from it.
+    default = _build_ha(provider, kind, legacy=False)
+    assert default == committed, (
+        f"{provider} {kind}: the scored default diverged from the committed "
+        f"file — the committed HA diagram must be the improved default "
+        f"placement (Property 3 / R1.7)."
+    )
+    assert legacy != committed, (
+        f"{provider} {kind}: the --legacy path unexpectedly matches the "
+        f"committed file; the committed HA diagram is the improved default "
+        f"placement, which the ten-pass legacy path does not produce (R1.7). "
+        f"If the placement loop no longer improves this diagram, this "
+        f"expectation must be revisited."
+    )
 
 
 # =========================================================================== #

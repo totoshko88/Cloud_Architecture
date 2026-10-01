@@ -17,6 +17,7 @@ hand-authored — are produced the same way as every other example.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -50,31 +51,19 @@ class ExampleSkin:
     flow_lines: Sequence[str]
     title: str
     diagram_id: str
-    #: Optional per-edge geometry override (1.10.5). Maps an edge id to a dict
-    #: with ``exit`` / ``entry`` unit-square contacts and absolute ``points``
-    #: waypoints that REPLACE the engine-routed geometry for that edge after
-    #: ``layout()``. This is the sanctioned escape hatch for a hand-verified,
-    #: lower-crossing route the greedy scored router cannot reach on its own (the
-    #: coordinate-free spec forbids pinning waypoints, and forcing the route
-    #: through the solver tripped an unrepairable corridor-sharing finding). An
-    #: override is a pure constant, so the generated diagram stays a deterministic
-    #: function of its inputs and ``--check`` freshness holds. Absent → the edge
-    #: keeps its engine geometry (every pre-1.10.5 example is byte-unchanged).
-    edge_overrides: Optional[Dict[str, dict]] = None
 
 
-def _edge_from_placed(pe, override: Optional[dict]) -> Edge:
-    """Build a presentation :class:`Edge` from a placed edge, applying an optional
-    geometry override (1.10.5). When ``override`` is given it replaces the
-    engine-routed ``exit`` / ``entry`` / ``points`` with the hand-verified route;
-    otherwise the engine geometry is used verbatim (byte-unchanged)."""
-    if override is not None:
-        exit_pt = tuple(override.get("exit", pe.exit))
-        entry_pt = tuple(override.get("entry", pe.entry))
-        pts = tuple((int(x), int(y)) for x, y in override.get("points", pe.points))
-    else:
-        exit_pt, entry_pt = pe.exit, pe.entry
-        pts = tuple((int(x), int(y)) for x, y in pe.points)
+def _edge_from_placed(pe) -> Edge:
+    """Build a presentation :class:`Edge` from the engine-routed placed edge.
+
+    1.10.6: there is no override path. The scored solver now minimises the
+    declared routing-rule violations before crossings, places unanchored
+    regional nodes beside their neighbours, keeps straight edges straight and
+    grows a container so a route stays inside it — so every example reaches a
+    clean, low-crossing route from ``layout()`` alone, with no hand-pinned
+    waypoints (REVIEW.md D24; the 1.10.5 ``edge_overrides`` are gone)."""
+    exit_pt, entry_pt = pe.exit, pe.entry
+    pts = tuple((int(x), int(y)) for x, y in pe.points)
     return Edge(
         id=pe.spec.id, source=pe.spec.source, target=pe.spec.target,
         marker=pe.spec.marker, dashed=pe.spec.dashed,
@@ -82,9 +71,19 @@ def _edge_from_placed(pe, override: Optional[dict]) -> Edge:
     )
 
 
+def presented_spec(skin: ExampleSkin) -> DiagramSpec:
+    """The skin's spec carrying its real container captions and styles (1.10.6),
+    so the layout oracle scores the captions the linter will see."""
+    return dataclasses.replace(
+        skin.spec,
+        container_captions=tuple(sorted(skin.container_labels.items())),
+        container_styles=tuple(sorted(skin.container_styles.items())),
+    )
+
+
 def build(skin: ExampleSkin) -> str:
     """Lay out ``skin.spec`` and serialize the full ``.drawio`` XML."""
-    placed = layout(skin.spec)
+    placed = layout(presented_spec(skin))
     boundaries: List[Boundary] = []
     for c in skin.spec.containers:
         b = placed.containers[c.id]
@@ -99,11 +98,7 @@ def build(skin: ExampleSkin) -> str:
              render=skin.renderers[n.id])
         for n in skin.spec.nodes
     ]
-    overrides = skin.edge_overrides or {}
-    edges = [
-        _edge_from_placed(pe, overrides.get(pe.spec.id))
-        for pe in placed.edges
-    ]
+    edges = [_edge_from_placed(pe) for pe in placed.edges]
     right = max(int(b.right) for b in placed.containers.values())
     bottom = max(int(b.bottom) for b in placed.containers.values())
     return build_diagram(
@@ -127,9 +122,8 @@ def run_cli(skin_factory: Callable[[], ExampleSkin], out: Path, prog: str,
     skin = skin_factory()
     xml = build(skin)
     # Deterministic edge-hygiene (1.10.5 A1/A2/A3): idempotent, so --check and
-    # write see the same bytes. Edges carrying a hand-verified override are
-    # exempt (already crossing-clean; hygiene must not perturb their route).
-    xml, _ = edge_hygiene_text(xml, skip_ids=set((skin.edge_overrides or {}).keys()))
+    # write see the same bytes.
+    xml, _ = edge_hygiene_text(xml)
     path = Path(args.out)
     if args.stdout:
         sys.stdout.write(xml)

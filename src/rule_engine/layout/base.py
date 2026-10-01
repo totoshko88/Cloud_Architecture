@@ -394,6 +394,103 @@ def _band_within(spec: DiagramSpec) -> Dict[str, Tuple[int, int]]:
     return within
 
 
+#: One corridor lane reserved below a container's caption strip (1.10.6), two
+#: grid steps — the allocator's lane stride.
+TOP_LANE = 2 * GRID
+
+
+def _top_lane_containers(spec: DiagramSpec) -> set:
+    """Return the ids of containers whose first row needs a lane below the caption.
+
+    A container's top padding is its caption strip plus one pad (60px), and a
+    route entering a first-row node from ABOVE needs a full stair (30px) over the
+    node — so a loop that reaches the node from the side (a back-edge from a node
+    on the same row, or from the regional column beside the box) has exactly one
+    line left for its horizontal run: the caption strip's bottom edge. That run
+    slices the caption (``edge-crosses-container-label`` on ``eks → alb`` and
+    ``api-gateway → load-balancer``), and no route variant avoids it, because the
+    strip and the stair together use the whole band.
+
+    diagram-standards' tie-breaker settles it: *widen, never narrow, the
+    corridor*. Such a container reserves :data:`TOP_LANE` between its caption
+    strip and its first row (``size_containers``), and its band starts that much
+    lower (``_band_packing``), so the container's top border does not move and
+    nothing above it is disturbed.
+
+    A container qualifies when an edge TARGETS a node on its first row from a
+    source in the SAME region that does not arrive from above: a banded node on
+    the same band to the target's right or below it, or a regional node (the
+    regional column stands beside the network block). An account-level source
+    sits above the region and drops in through the band above it, so it does not
+    qualify. Empty unless the spec enables ``caption_lanes`` — the scored
+    placement loop's ``caption-lane`` move, kept only when the finished diagram
+    scores better. A pure function of the spec."""
+    if not getattr(spec, "caption_lanes", False):
+        return set()
+    kind_of = {c.id: c.kind for c in spec.containers}
+    band_of = _node_az_band(spec)
+    within = _band_within(spec)
+    nodes = {n.id: n for n in spec.nodes}
+    top_sub: Dict[Tuple[str, int], int] = {}
+    for n in spec.nodes:
+        if n.id in within and n.container is not None:
+            key = (n.container, band_of[n.id])
+            top_sub[key] = min(top_sub.get(key, within[n.id][1]), within[n.id][1])
+    out: set = set()
+    # A spec whose region nodes declare no container (the compact HA summary) is
+    # judged by lane: a region's first row is its lowest lane, and its box is the
+    # region's single leaf container.
+    leaves = _leaf_region_containers(spec)
+    free_first: Dict[str, int] = {}
+    for n in spec.nodes:
+        if n.region and n.container is None and n.id not in within:
+            free_first[n.region] = min(free_first.get(n.region, LANE_INDEX[n.lane]),
+                                       LANE_INDEX[n.lane])
+    if spec.axis == "north-south":
+        for e in spec.edges:
+            s, t = nodes.get(e.source), nodes.get(e.target)
+            if s is None or t is None or t.id in within or t.container is not None:
+                continue
+            leaf = leaves.get(t.region) or []
+            if len(leaf) != 1 or LANE_INDEX[t.lane] != free_first.get(t.region):
+                continue
+            if not s.region:
+                if s.lane not in ("actors", "on-premises"):
+                    out.add(leaf[0].id)
+            elif s.region == t.region and s.container is None and (
+                LANE_INDEX[s.lane] > LANE_INDEX[t.lane]
+                or (s.lane == t.lane and s.slot > t.slot)
+            ):
+                out.add(leaf[0].id)
+    for e in spec.edges:
+        s, t = nodes.get(e.source), nodes.get(e.target)
+        if s is None or t is None or t.id not in within or t.container is None:
+            continue
+        if within[t.id][1] != top_sub.get((t.container, band_of[t.id])):
+            continue                                   # not the container's first row
+        if not s.region:
+            # An account-level source (the edge row above the regions) reaches the
+            # row from above; when it sits to the side it loops into the target's
+            # top through the band the caption occupies (the HA summary's DNS).
+            if s.lane in ("actors", "on-premises"):
+                continue
+            out.add(t.container)
+            continue
+        if s.region != t.region:
+            continue                                   # another region: cross-region
+        if s.id in within:
+            if band_of[s.id] != band_of[t.id]:
+                continue
+            s_col, s_sub = within[s.id]
+            t_col, t_sub = within[t.id]
+            if s_sub == t_sub and s_col <= t_col:
+                continue                               # a forward hop along the row
+        elif kind_of.get(s.container) != "region":
+            continue
+        out.add(t.container)
+    return out
+
+
 def _band_packing(spec: DiagramSpec) -> Tuple[Dict[int, int], Dict[int, int]]:
     """Return ``(band_start, band_min_lane)`` for per-band primary-axis packing.
 
@@ -465,6 +562,14 @@ def _band_packing(spec: DiagramSpec) -> Tuple[Dict[int, int], Dict[int, int]]:
         # Container-free synthetic spec: a single band 0, no packing offset, and
         # a zero min-lane so relative == absolute lane index (byte-unchanged).
         return {0: 0}, {0: 0}
+    # 1.10.6: a band whose container reserves a lane below its caption strip
+    # (``_top_lane_containers``) starts that lane lower, so the container's top
+    # border stays where it was and the lane opens INSIDE it.
+    lane_containers = _top_lane_containers(spec)
+    band_lane: Dict[int, int] = {}
+    for n in spec.nodes:
+        if n.container in lane_containers:
+            band_lane[band_of[n.id]] = TOP_LANE
 
     prev_end = 0
     prev_has_box = False
@@ -497,6 +602,7 @@ def _band_packing(spec: DiagramSpec) -> Tuple[Dict[int, int], Dict[int, int]]:
             start = _snap(lo * ROW_STEP + CONTAINER_LABEL_BAND + CONTAINER_PAD)
             if any(c.kind == "region" for c in spec.containers):
                 start += CONTAINER_LABEL_BAND + CONTAINER_PAD
+            start += band_lane.get(band, 0)
         else:
             # The gap between the previous band's content bottom and this band's
             # content top clears the previous band's own bottom box-padding (only
@@ -515,6 +621,7 @@ def _band_packing(spec: DiagramSpec) -> Tuple[Dict[int, int], Dict[int, int]]:
                 # strip) rather than a bare pad — so the next box's caption cannot
                 # eat into the previous band's footprint.
                 gap += CONTAINER_PAD + CONTAINER_LABEL_BAND
+            gap += band_lane.get(band, 0)
             start = _snap(prev_end + gap)
         band_start[band] = start
         # A horizontal band is (max_sub_row + 1) rows tall (main row + any
@@ -524,6 +631,208 @@ def _band_packing(spec: DiagramSpec) -> Tuple[Dict[int, int], Dict[int, int]]:
         prev_end = start + content_height
         prev_has_box = has_box
     return band_start, band_min_lane
+
+
+#: Prices for placing an UNANCHORED regional node next to its placed neighbours
+#: (1.10.6, REVIEW.md D24). A candidate cell is priced by the route every incident
+#: edge would need: the Manhattan distance between the two node origins plus a
+#: penalty per shape the router would have to draw for it. A straight, forward,
+#: unobstructed run costs only its length, so a node lands where its edges are
+#: straight drops or level hops — the shape a reviewer drags it to by hand (the
+#: ``agent-task-queue`` dragged under its Lambda, the OCI ``streaming-events``
+#: dragged from the column bottom up to the row its feeds arrive on).
+CELL_TURN = 80        # one corner the route must make
+CELL_BLOCKED = 400    # aligned, but another node stands on the straight line
+CELL_BACK = 250       # target left of its source → a back-edge loop
+CELL_UP = 400         # target above its source → against the North–South flow
+CELL_ABOVE = 40       # a row above the region's first banded row (grows it up)
+CELL_EXTRA_COL = 300  # a third regional column (widens the region)
+CELL_SPLIT = 400      # the cell sits on another placed pair's straight line
+
+#: Regional column offsets past the widest banded column: inner, outer, extra.
+_REGIONAL_COLS = (1, 2, 3)
+
+#: How far above the region's first banded row a regional entry point stands
+#: when it is placed directly over its network-boundary anchor (1.10.6): its
+#: footprint (icon + caption) plus one pad must clear the network boundary's own
+#: top band (caption strip + pad), on the grid — 78 + 30 + 30 + 30 + 30 → 200.
+FEEDER_RISE = 200
+
+
+def _link_cost(
+    s: Tuple[int, int], t: Tuple[int, int], occupied: List[Tuple[int, int]]
+) -> int:
+    """Price one edge ``s → t`` between two node origins (see :data:`CELL_TURN`).
+
+    The corner count is the route the router must draw under the directional
+    contract (exit right/bottom, enter left/top): a forward level hop or a
+    straight drop needs none, a hop down-right (or up-right into the left face)
+    one, a back-edge two, and a target straight above three — a hook over its
+    own top."""
+    dx, dy = t[0] - s[0], t[1] - s[1]
+    cost = abs(dx) + abs(dy)
+    if (dx > 0 and dy == 0) or (dx == 0 and dy > 0):
+        turns = 0
+    elif dx > 0:
+        turns = 1
+    elif dx == 0:
+        turns = 3
+    else:
+        turns = 2
+    cost += turns * CELL_TURN
+    if dx == 0 or dy == 0:
+        lo_x, hi_x = sorted((s[0], t[0]))
+        lo_y, hi_y = sorted((s[1], t[1]))
+        for ox, oy in occupied:
+            if (ox, oy) in (s, t):
+                continue
+            if dx == 0 and ox == s[0] and lo_y < oy < hi_y:
+                cost += CELL_BLOCKED
+                break
+            if dy == 0 and oy == s[1] and lo_x < ox < hi_x:
+                cost += CELL_BLOCKED
+                break
+    if dx < 0:
+        cost += CELL_BACK
+    if dy < 0:
+        cost += CELL_UP
+    return cost
+
+
+def _place_loose_regional(
+    loose: list,
+    edges: tuple,
+    known: Dict[str, Tuple[int, int]],
+    col_x: Dict[int, int],
+    rows: List[int],
+    above_row: Optional[int],
+    default_col: int,
+    fallback_y: int,
+) -> Dict[str, Tuple[int, int]]:
+    """Place unanchored regional nodes beside their placed neighbours (1.10.6).
+
+    ``loose`` are the region's regional nodes with no banded anchor, in ``slot``
+    order; ``known`` maps every already-placed node id (the region's banded and
+    anchored regional nodes plus account-level nodes) to its origin. Returns
+    ``{node_id: (column_offset, y)}``.
+
+    **Order (depth-first).** The first edge in declared order that links a placed
+    node to a loose one picks the next node to place; after each placement its own
+    first loose neighbour (edge order) is placed next, so a node's chain stays
+    together (``bedrock → secrets`` is placed right after ``bedrock``, before the
+    hub's next branch). A loose node with no placed neighbour at all (an isolated
+    ``queue → worker → secrets`` chain) falls back to the pre-1.10.6 stacking: the
+    next free row of ``default_col`` below everything, one ``ROW_STEP`` apart.
+
+    **Cell.** Every free cell of the three regional columns on the candidate
+    ``rows`` (plus ``above_row``, the row above the region's first banded row,
+    when the caller allows it) is priced by :func:`_link_cost` over the node's
+    edges to placed neighbours, plus :data:`CELL_SPLIT` when the cell would sit on
+    the straight line of an already-placed pair, :data:`CELL_EXTRA_COL` for the
+    third column and :data:`CELL_ABOVE` for the row above. The cheapest cell wins;
+    ties prefer the inner column, then the higher row. A pure, deterministic
+    function of its inputs: every iteration is over declared or sorted order.
+    """
+    pos: Dict[str, Tuple[int, int]] = dict(known)
+    out: Dict[str, Tuple[int, int]] = {}
+    loose_ids = [m.id for m in loose]
+    remaining = list(loose_ids)
+    placed_stack: List[str] = []
+
+    def _neighbours(nid: str) -> List[Tuple[int, "object"]]:
+        return [
+            (i, e) for i, e in enumerate(edges) if nid in (e.source, e.target)
+        ]
+
+    def _other(e, nid: str) -> str:
+        return e.target if e.source == nid else e.source
+
+    def _free(x: int, y: int) -> bool:
+        return all(not (ox == x and abs(oy - y) < ROW_STEP) for ox, oy in pos.values())
+
+    base_rows = set(rows) | ({above_row} if above_row is not None else set())
+    min_row = min(base_rows) if base_rows else fallback_y
+    regional_xs = set(col_x.values())
+
+    def _candidate_rows() -> List[int]:
+        # The lattice rows, plus one ROW_STEP either side of every node already in
+        # a regional column — so a chain grows in straight drops from a node the
+        # fallback stacked off the lattice (an AZ band row is not on it).
+        extra = {
+            y + d * ROW_STEP
+            for (x, y) in pos.values() if x in regional_xs
+            for d in (-1, 1)
+        }
+        return sorted(r for r in base_rows | extra if r >= min_row)
+
+    def _cell_cost(nid: str, x: int, y: int) -> int:
+        occupied = list(pos.values()) + [(x, y)]
+        cost = 0
+        for _i, e in _neighbours(nid):
+            other = _other(e, nid)
+            if other not in pos:
+                continue
+            s, t = ((x, y), pos[other]) if e.source == nid else (pos[other], (x, y))
+            cost += _link_cost(s, t, occupied)
+        for e in edges:
+            if nid in (e.source, e.target):
+                continue
+            a, b = pos.get(e.source), pos.get(e.target)
+            if a is None or b is None:
+                continue
+            if a[0] == b[0] == x and min(a[1], b[1]) < y < max(a[1], b[1]):
+                cost += CELL_SPLIT
+            elif a[1] == b[1] == y and min(a[0], b[0]) < x < max(a[0], b[0]):
+                cost += CELL_SPLIT
+        return cost
+
+    while remaining:
+        pick: Optional[str] = None
+        for anchor in reversed(placed_stack):          # depth-first: keep a chain together
+            for _i, e in _neighbours(anchor):
+                other = _other(e, anchor)
+                if other in remaining:
+                    pick = other
+                    break
+            if pick is not None:
+                break
+        if pick is None:                                # next edge from the placed set
+            for e in edges:
+                for a, b in ((e.source, e.target), (e.target, e.source)):
+                    if a in pos and b in remaining:
+                        pick = b
+                        break
+                if pick is not None:
+                    break
+        if pick is None:                                # isolated chain: stack below
+            pick = remaining[0]
+            x = col_x[default_col]
+            y = fallback_y
+            while not _free(x, y):
+                y += ROW_STEP
+            out[pick] = (default_col, y)
+        else:
+            best: Optional[Tuple[int, int, int]] = None
+            candidate_rows = _candidate_rows()
+            for col in _REGIONAL_COLS:
+                x = col_x[col]
+                for y in candidate_rows:
+                    if not _free(x, y):
+                        continue
+                    cost = _cell_cost(pick, x, y)
+                    if col == _REGIONAL_COLS[-1]:
+                        cost += CELL_EXTRA_COL
+                    if above_row is not None and y == above_row:
+                        cost += CELL_ABOVE
+                    key = (cost, col, y)
+                    if best is None or key < best:
+                        best = key
+            assert best is not None  # rows always extend below every placed node
+            out[pick] = (best[1], best[2])
+        pos[pick] = (col_x[out[pick][0]], out[pick][1])
+        remaining.remove(pick)
+        placed_stack.append(pick)
+    return out
 
 
 def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
@@ -582,9 +891,14 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
     #     zone) sits in the OUTER column, on its topmost linked row — its feeds
     #     rise and fall in the gap beyond the inner column, so they never cut the
     #     single-row feeds that end at the inner column;
-    #   * unlinked nodes (a queue → worker → secrets chain) stack in the outer
-    #     column below the multi-linked ones, one ROW_STEP apart, so the chain is
-    #     a run of straight drops that passes no anchored node.
+    #   * an unanchored node (no banded neighbour) is placed next to the nodes it
+    #     IS linked to — a regional hub, or an account-level front door above the
+    #     region — on the cheapest free cell of the regional columns
+    #     (:func:`_place_loose_regional`, 1.10.6): directly below its source when
+    #     that drop is clear, level beside it otherwise, a row above the region's
+    #     first banded row when its feed arrives from above. Only a node with no
+    #     placed neighbour at all (an isolated queue → worker → secrets chain)
+    #     still stacks below everything, one ROW_STEP apart, as straight drops.
     # When one of the two columns is empty the other takes the inner position.
     region_direct = {
         n.id for n in spec.nodes
@@ -592,15 +906,38 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
     }
     regional_col_x: Dict[str, int] = {}
     regional_y: Dict[str, int] = {}
-    regional_outer: Dict[str, bool] = {}
+    #: Regional column offset past the widest banded column (1 inner, 2 outer,
+    #: 3 extra), per regional node; 0 for a node placed at an absolute x.
+    regional_col: Dict[str, int] = {}
+    #: 1.10.6: regional nodes placed directly above a banded anchor (absolute x).
+    regional_abs_x: Dict[str, int] = {}
+
+    def _free_origin(node) -> Tuple[int, int]:
+        """The non-banded (lane → primary, slot → secondary) origin of ``node``."""
+        lane_i = LANE_INDEX[node.lane]
+        eff_lane = compact_rank.get(lane_i, lane_i) if spec.compact else lane_i
+        if spec.axis == "north-south":
+            return (base_x + node.slot * COL_STEP + node.sub * SUB_STEP,
+                    base_y + eff_lane * primary_step)
+        return (base_x + eff_lane * primary_step,
+                base_y + node.slot * ROW_STEP + node.sub * SUB_STEP)
+
     if region_direct and spec.axis == "north-south":
         banded_y: Dict[str, int] = {}
+        banded_x: Dict[str, int] = {}
         for n in spec.nodes:
             if n.id in band_within and n.container is not None:
                 regional_col_x[n.region] = max(
                     regional_col_x.get(n.region, 0), band_within[n.id][0]
                 )
                 banded_y[n.id] = base_y + band_start[az_band[n.id]] + band_within[n.id][1] * ROW_STEP
+                banded_x[n.id] = base_x + band_within[n.id][0] * COL_STEP
+        # Account-level / external nodes keep their lane-grid origin; they are
+        # known positions a regional node may be placed next to.
+        free_xy = {
+            n.id: _free_origin(n) for n in spec.nodes
+            if n.region == "" and n.id not in band_within and n.id not in region_direct
+        }
         region_of = {n.id: n.region for n in spec.nodes}
         by_region: Dict[str, list] = {}
         for n in spec.nodes:
@@ -625,6 +962,49 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
                 (m for m in members if not anchors[m.id]),
                 key=lambda m: (m.slot, LANE_INDEX[m.lane], m.sub, m.id),
             )
+            # 1.10.6: a single-anchored regional node that only FEEDS its anchor
+            # on the region's first banded row (an API front door in front of
+            # the load balancer) stands directly ABOVE that anchor — in the
+            # band between the region's caption and the network boundary, which
+            # is inside the region and outside the VPC, as its scope requires.
+            # Its feed is then a straight drop instead of a back-edge looping in
+            # from the regional column. Free cell and room above required.
+            region_rows_all = sorted(
+                {banded_y[n.id] for n in spec.nodes if n.id in banded_y and n.region == region}
+            )
+            first_banded = region_rows_all[0] if region_rows_all else None
+            # Directly above a banded node the feeder must also clear the network
+            # boundary's own top band (caption strip + pad) with its footprint.
+            feeder_y = None if first_banded is None else first_banded - FEEDER_RISE
+            above_ok = feeder_y is not None and all(
+                feeder_y - (CONTAINER_PAD + CONTAINER_LABEL_BAND)
+                >= y + ICON_SIZE + LABEL_BAND + 2 * CONTAINER_PAD
+                for (_x, y) in free_xy.values() if y < first_banded
+            )
+            feeder: List = []
+            for m in list(single):
+                if any(e.target == m.id for e in spec.edges):
+                    continue                    # not an entry point of the flow
+                partners = [
+                    (e.source, e.target) for e in spec.edges
+                    if m.id in (e.source, e.target)
+                    and (e.target if e.source == m.id else e.source) in banded_y
+                    and region_of.get(e.target if e.source == m.id else e.source) == region
+                ]
+                anchor_ids = {t for s, t in partners if s == m.id}
+                if (above_ok and partners and all(s == m.id for s, _t in partners)
+                        and len(anchor_ids) == 1
+                        and banded_y[next(iter(anchor_ids))] == first_banded):
+                    feeder.append((m, next(iter(anchor_ids))))
+            taken_above: set = set()
+            for m, anchor in feeder:
+                if banded_x[anchor] in taken_above:
+                    continue
+                taken_above.add(banded_x[anchor])
+                regional_y[m.id] = feeder_y
+                regional_abs_x[m.id] = banded_x[anchor]
+                regional_col[m.id] = 0
+                single.remove(m)
             two_cols = bool(single) and bool(multi or loose)
             inner_used: set = set()
             for m in single:
@@ -635,7 +1015,7 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
                     y += ROW_STEP
                 inner_used.add(y)
                 regional_y[m.id] = y
-                regional_outer[m.id] = False
+                regional_col[m.id] = 1
             used: set = set()
             for m in multi:
                 y = min(anchors[m.id])
@@ -643,15 +1023,60 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
                     y += ROW_STEP
                 regional_y[m.id] = y
                 used.add(y)
-                regional_outer[m.id] = two_cols
+                regional_col[m.id] = 2 if two_cols else 1
             if not two_cols:
                 used |= {regional_y[m.id] for m in single}
             nxt = (max(used) + ROW_STEP) if used else (
                 base_y + (min(band_start.values()) if band_start else 0))
-            for m in loose:
-                regional_y[m.id] = nxt
-                regional_outer[m.id] = two_cols
-                nxt += ROW_STEP
+            if loose:
+                # 1.10.6: place the unanchored nodes beside their placed
+                # neighbours instead of stacking them all under the column.
+                col_x = {
+                    off: base_x + (regional_col_x.get(region, 0) + off) * COL_STEP
+                    + 2 * CONTAINER_PAD
+                    for off in _REGIONAL_COLS
+                }
+                known: Dict[str, Tuple[int, int]] = dict(free_xy)
+                for n in spec.nodes:
+                    if n.id in banded_x and n.region == region:
+                        known[n.id] = (banded_x[n.id], banded_y[n.id])
+                for m in single + multi:
+                    known[m.id] = (col_x[regional_col[m.id]], regional_y[m.id])
+                for m, _anchor in feeder:
+                    if m.id in regional_abs_x:
+                        known[m.id] = (regional_abs_x[m.id], regional_y[m.id])
+                region_rows = sorted(
+                    {banded_y[n.id] for n in spec.nodes
+                     if n.id in banded_y and n.region == region}
+                    | {regional_y[m.id] for m in single + multi}
+                )
+                feeder_rows = {regional_y[m.id] for m, _a in feeder if m.id in regional_abs_x}
+                first_row = region_rows[0] if region_rows else nxt
+                last_row = max(region_rows + [nxt])
+                rows = sorted(
+                    set(region_rows) | feeder_rows
+                    | {first_row + k * ROW_STEP
+                       for k in range(0, (last_row - first_row) // ROW_STEP + len(loose) + 2)}
+                )
+                # The row above the first banded row is usable only when the
+                # region can grow up into it and still clear every account-level
+                # node above it (its footprint) by two pads — the region's caption
+                # strip and one free corridor lane.
+                above = first_row - ROW_STEP
+                above_top = above - (CONTAINER_PAD + CONTAINER_LABEL_BAND)
+                ceiling = max(
+                    (y + ICON_SIZE + LABEL_BAND for (_x, y) in free_xy.values() if y < first_row),
+                    default=None,
+                )
+                above_row = above if (
+                    region_rows and (ceiling is None or above_top >= ceiling + 2 * CONTAINER_PAD)
+                ) else None
+                cells = _place_loose_regional(
+                    loose, spec.edges, known, col_x, rows, above_row,
+                    default_col=2 if two_cols else 1, fallback_y=nxt,
+                )
+                for m in loose:
+                    regional_col[m.id], regional_y[m.id] = cells[m.id]
             anchored_count[region] = sum(1 for m in members if anchors[m.id])
 
         # Peer regions are mirror images (Req 3.3): a passive region whose
@@ -661,22 +1086,38 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
         if anchored_count:
             ref = max(sorted(anchored_count), key=lambda r: anchored_count[r])
             ref_pos = {
-                (m.role, m.lane, m.slot, m.sub): (regional_y[m.id], regional_outer[m.id])
+                (m.role, m.lane, m.slot, m.sub): (
+                    regional_y[m.id], regional_col[m.id], regional_abs_x.get(m.id))
                 for m in by_region[ref]
             }
             for region, members in by_region.items():
                 for m in members:
                     key = (m.role, m.lane, m.slot, m.sub)
                     if key in ref_pos:
-                        regional_y[m.id], regional_outer[m.id] = ref_pos[key]
+                        regional_y[m.id], regional_col[m.id], abs_x = ref_pos[key]
+                        if abs_x is None:
+                            regional_abs_x.pop(m.id, None)
+                        else:
+                            regional_abs_x[m.id] = abs_x
+
+    # 1.10.6: a region of container-free nodes whose box reserves a caption lane
+    # (``_top_lane_containers``) starts its rows one lane lower, so the box's top
+    # border stays put and the lane opens inside it.
+    lane_ids = _top_lane_containers(spec)
+    free_lane_shift: Dict[str, int] = {
+        region: TOP_LANE
+        for region, leaf in _leaf_region_containers(spec).items()
+        if len(leaf) == 1 and leaf[0].id in lane_ids
+        and any(n.region == region and n.container is None for n in spec.nodes)
+    }
 
     placed: Dict[str, Box] = {}
     for node in spec.nodes:
         lane_i = LANE_INDEX[node.lane]
         banded = node.container is not None and kind_of.get(node.container) in banded_kinds
         if node.id in regional_y:
-            col = regional_col_x.get(node.region, 0) + (2 if regional_outer[node.id] else 1)
-            x = base_x + col * COL_STEP + 2 * CONTAINER_PAD
+            col = regional_col_x.get(node.region, 0) + regional_col[node.id]
+            x = regional_abs_x.get(node.id, base_x + col * COL_STEP + 2 * CONTAINER_PAD)
             y = regional_y[node.id]
         elif banded and spec.axis == "north-south":
             # Horizontal band: column across (x), tier band + sub-row down (y).
@@ -692,7 +1133,7 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
             primary_offset = eff_lane * primary_step
             if spec.axis == "north-south":
                 x = base_x + node.slot * COL_STEP + node.sub * SUB_STEP
-                y = base_y + primary_offset
+                y = base_y + primary_offset + free_lane_shift.get(node.region, 0)
             elif spec.axis == "left-right":
                 x = base_x + primary_offset
                 y = base_y + node.slot * ROW_STEP + node.sub * SUB_STEP

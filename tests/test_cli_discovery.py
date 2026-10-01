@@ -248,3 +248,28 @@ def test_discover_artifacts_excludes_the_tests_tree(tmp_path):
     assert good in found
     assert fixture not in found
     assert not any(os.sep + "tests" + os.sep in p for p in found)
+
+
+# --- lint --json carries a label on every record (1.10.6) ------------------ #
+
+
+def test_lint_json_record_carries_a_label(tmp_path, capsys):
+    """Every ``--json`` record names the artifact it evaluated, so a finding can
+    be attributed back to its file. Before 1.10.6 a single-page file's ``lint()``
+    result had no ``label`` key, so a ``--all`` / ``--file`` run left the record
+    anonymous — a consumer could not tell which diagram a finding belonged to.
+    """
+    import json
+
+    from rule_engine.cli import main
+
+    comp = tmp_path / "01-topic.diagram.md"
+    _write(str(comp), "# No frontmatter -> a KB finding, but the record is named\n")
+    rc = main(["--file", str(comp), "--json"])
+    out = capsys.readouterr().out
+    records = json.loads(out)
+    assert records, "expected at least one JSON record"
+    for rec in records:
+        assert rec.get("label"), f"a --json record carries no label: {rec}"
+        assert str(comp) in rec["label"] or rec["label"].endswith("01-topic.diagram.md")
+    assert rc is not None

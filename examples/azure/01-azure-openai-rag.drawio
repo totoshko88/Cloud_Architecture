@@ -19,17 +19,26 @@
           <mxGeometry x="220" y="180" width="138" height="198" as="geometry" />
         </mxCell>
 
+        <mxCell id="e3" value="3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=0.5128205128205128;exitY=1.0256410256410255;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5128205128205128;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="api" target="bus">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="730.00" y="400.00" />
+              <mxPoint x="510.00" y="400.00" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
         <mxCell id="user" value="User" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/identity/Users.svg" vertex="1" parent="1">
           <mxGeometry x="30" y="400" width="78" height="78" as="geometry" />
         </mxCell>
         <mxCell id="appgw" value="AppGateway" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/networking/Application_Gateways.svg" vertex="1" parent="1">
           <mxGeometry x="250" y="220" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="api" value="ApiFunction" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/compute/Function_Apps.svg" vertex="1" parent="1">
+        <mxCell id="api" value="ApiFunction" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/compute/Function_Apps.svg;labelBackgroundColor=#FFFFFF" vertex="1" parent="1">
           <mxGeometry x="690" y="240" width="78" height="78" as="geometry" />
         </mxCell>
         <mxCell id="bus" value="ServiceBus" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/general/Service_Bus.svg" vertex="1" parent="1">
-          <mxGeometry x="470" y="240" width="78" height="78" as="geometry" />
+          <mxGeometry x="470" y="560" width="78" height="78" as="geometry" />
         </mxCell>
         <mxCell id="ingest" value="IngestFunction" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/compute/Function_Apps.svg" vertex="1" parent="1">
           <mxGeometry x="690" y="560" width="78" height="78" as="geometry" />
@@ -41,83 +50,65 @@
           <mxGeometry x="910" y="400" width="78" height="78" as="geometry" />
         </mxCell>
         <mxCell id="blob" value="BlobStorage" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/storage/Storage_Accounts.svg" vertex="1" parent="1">
-          <mxGeometry x="1130" y="400" width="78" height="78" as="geometry" />
-        </mxCell>
-        <mxCell id="sql" value="AzureSqlDB" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/databases/SQL_Database.svg" vertex="1" parent="1">
           <mxGeometry x="1130" y="560" width="78" height="78" as="geometry" />
         </mxCell>
+        <mxCell id="sql" value="AzureSqlDB" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/databases/SQL_Database.svg" vertex="1" parent="1">
+          <mxGeometry x="1130" y="400" width="78" height="78" as="geometry" />
+        </mxCell>
 
-        <mxCell id="e1" value="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="user" target="appgw">
+        <mxCell id="e1" value="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="user" target="appgw">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="140.00" y="440.00" />
-              <mxPoint x="140.00" y="260.00" />
+              <mxPoint x="140.00" y="360.00" />
+              <mxPoint x="180.00" y="360.00" />
+              <mxPoint x="180.00" y="260.00" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="e2" value="2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5128205128205128;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="appgw" target="api">
+        <mxCell id="e2" value="2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5128205128205128;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="appgw" target="api">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="370.00" y="260.00" />
-              <mxPoint x="370.00" y="180.00" />
-              <mxPoint x="730.00" y="180.00" />
+              <mxPoint x="370.00" y="210.00" />
+              <mxPoint x="730.00" y="210.00" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="e3" value="3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=1.0256;exitY=0.7692307692307693;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5128205128205128;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="api" target="bus">
+        <mxCell id="e5" value="5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="api" target="openai">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" value="6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.7692307692307693;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5128205128205128;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="api" target="vault">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="800.00" y="300.00" />
               <mxPoint x="800.00" y="360.00" />
-              <mxPoint x="640.00" y="360.00" />
-              <mxPoint x="640.00" y="200.00" />
-              <mxPoint x="510.00" y="200.00" />
-            </Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="e5" value="5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256;exitY=0.2564102564102564;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="api" target="openai">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="880.00" y="260.00" />
-              <mxPoint x="880.00" y="280.00" />
-            </Array>
-          </mxGeometry>
-        </mxCell>
-        <mxCell id="e6" value="6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5128205128205128;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="api" target="vault">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="820.00" y="280.00" />
-              <mxPoint x="820.00" y="360.00" />
               <mxPoint x="950.00" y="360.00" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="e4" value="4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5128205128205128;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="bus" target="ingest">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="580.00" y="280.00" />
-              <mxPoint x="580.00" y="520.00" />
-              <mxPoint x="730.00" y="520.00" />
-            </Array>
-          </mxGeometry>
+        <mxCell id="e4" value="4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="bus" target="ingest">
+          <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e7" value="7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256;exitY=0.2564102564102564;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="ingest" target="blob">
+        <mxCell id="e7" value="7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="ingest" target="blob">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" value="8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.2564102564102564;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="ingest" target="sql">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="1060.00" y="580.00" />
+              <mxPoint x="820.00" y="580.00" />
+              <mxPoint x="820.00" y="520.00" />
+              <mxPoint x="1060.00" y="520.00" />
               <mxPoint x="1060.00" y="440.00" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="e8" value="8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="ingest" target="sql">
-          <mxGeometry relative="1" as="geometry" />
-        </mxCell>
-        <mxCell id="e9" value="9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5128205128205128;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="openai" target="sql">
+        <mxCell id="e9" value="9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5128205128205128;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="openai" target="sql">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="1220.00" y="280.00" />
-              <mxPoint x="1220.00" y="530.00" />
-              <mxPoint x="1170.00" y="530.00" />
+              <mxPoint x="1020.00" y="280.00" />
+              <mxPoint x="1020.00" y="370.00" />
+              <mxPoint x="1170.00" y="370.00" />
             </Array>
           </mxGeometry>
         </mxCell>

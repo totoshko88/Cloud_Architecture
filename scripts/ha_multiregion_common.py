@@ -291,6 +291,38 @@ def _page_size(placed: PlacedDiagram) -> "tuple[int, int]":
     return page_w, page_h
 
 
+#: 1.10.6: the presentation the HA layout is SCORED against. The four providers
+#: must share one geometry (``tests/test_ha_generator_parity.py``), so the layout
+#: cannot see each provider's own captions; it sees one conservative
+#: representative instead — the AWS container styles (left-aligned captions
+#: after a group icon, the widest caption extent of the four) and the longest
+#: caption any provider draws for each box. A route that clears these clears
+#: every provider's real caption.
+_REPRESENTATIVE_CAPTIONS = {
+    "boundary-account": "Account 111122223333",
+    "boundary-region-a": "region-primary (us-ashburn-1)",
+    "boundary-region-b": "region-passive (us-phoenix-1)",
+    "boundary-vpc-a": "vnet-primary",
+    "boundary-vpc-b": "vnet-passive",
+    "boundary-az-a1": "zone-a1", "boundary-az-a2": "zone-a2",
+    "boundary-az-b1": "zone-b1", "boundary-az-b2": "zone-b2",
+}
+
+
+def _presented(spec, style_kind: Optional[Dict[str, str]] = None):
+    """``spec`` carrying the representative presentation (see above)."""
+    import dataclasses
+
+    styles = mapping_container_styles("aws")
+    return dataclasses.replace(
+        spec,
+        container_captions=tuple(sorted(
+            (c.id, _REPRESENTATIVE_CAPTIONS.get(c.id, c.id)) for c in spec.containers)),
+        container_styles=tuple(sorted(
+            (c.id, styles[(style_kind or {}).get(c.kind, c.kind)]) for c in spec.containers)),
+    )
+
+
 def build_summary(skin: ProviderSkin, legacy: bool = False) -> str:
     """Build the <=12-node flow summary .drawio for ``skin``.
 
@@ -299,7 +331,7 @@ def build_summary(skin: ProviderSkin, legacy: bool = False) -> str:
     title. ``legacy`` threads the ``--legacy`` flag to the layout pipeline so the
     retained ten-pass ``Legacy_Path`` can be selected; with the scored solver
     absent (Phase A) both routes produce byte-identical output."""
-    placed = layout(SUMMARY_SPEC, legacy=legacy)
+    placed = layout(_presented(SUMMARY_SPEC, {"vpc": "region"}), legacy=legacy)
     region_labels = {
         "boundary-region-a": f"region-primary ({skin.region_primary})",
         "boundary-region-b": f"region-passive ({skin.region_passive})",
@@ -329,7 +361,7 @@ def build_landscape(skin: ProviderSkin, legacy: bool = False) -> str:
     provider skin (icons, account/vpc/az labels, container styles) and title.
     ``legacy`` threads the ``--legacy`` flag to the layout pipeline (see
     :func:`build_summary`)."""
-    placed = layout(LANDSCAPE_SPEC, legacy=legacy)
+    placed = layout(_presented(LANDSCAPE_SPEC), legacy=legacy)
     net, zone = native_terms(skin.provider)
     labels = {
         "boundary-account": skin.account_label,

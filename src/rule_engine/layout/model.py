@@ -137,6 +137,23 @@ class DiagramSpec:
     #: placement byte-unchanged. Only affects **non-banded** nodes (a compact
     #: flow declares no az/vpc container membership).
     compact: bool = False
+    #: Optional presentation of each container — ``(container_id, caption)`` and
+    #: ``(container_id, draw.io style)`` pairs the skin will draw (1.10.6). Not
+    #: geometry: the engine never reads a coordinate from them. They let the
+    #: layout oracle and the scored solver judge the diagram the linter will see —
+    #: a caption is sized from its real text and drawn where its real style puts
+    #: it, so ``edge-crosses-container-label`` is scored during layout instead of
+    #: discovered afterwards. Absent → the oracle's stub caption (the id) and
+    #: stub style, exactly as before.
+    container_captions: Tuple[Tuple[str, str], ...] = ()
+    container_styles: Tuple[Tuple[str, str], ...] = ()
+    #: Reserve a corridor lane below the caption strip of every container whose
+    #: first row is entered from the side (``layout.base._top_lane_containers``,
+    #: 1.10.6). Off in a declaration; the scored placement loop tries it as the
+    #: ``caption-lane`` move and keeps it only when the finished diagram scores
+    #: better — it removes a caption crossing on one diagram and adds crossings on
+    #: another, so it is a measured choice, not a rule. Not a coordinate.
+    caption_lanes: bool = False
 
 
 # ---------------------------------------------------------------------------

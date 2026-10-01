@@ -1166,16 +1166,45 @@ def test_classify_spine_tier_hop_within_region():
     assert classify_edge(_spec_edge("s", "t"), placed) == "spine"
 
 
-def test_classify_fan_out_row_same_row_non_adjacent():
-    # Same row, to the right, nearer than a region block → fan-out-row.
+def test_classify_fan_out_row_clear_run_is_straight():
+    # 1.10.6: a same-row target with NO icon on the run between the two faces is
+    # one straight segment however far it is — classifying it ``fan-out-row``
+    # only because it was two columns away sent it up into a lane and back down
+    # for nothing (GCP ``api-gateway → pubsub-events``). With only s and t placed
+    # the run is clear, so the far same-row hop is now ``straight``.
     placed = _placed(Box("s", 100, 100, _S, _S), Box("t", 100 + 2 * _C, 100, _S, _S))
+    assert classify_edge(_spec_edge("s", "t"), placed) == "straight"
+
+
+def test_classify_fan_out_row_with_icon_between():
+    # An icon standing on the run keeps the far same-row hop a fan-out (it must
+    # route around the obstacle, not straight through it).
+    placed = _placed(
+        Box("s", 100, 100, _S, _S),
+        Box("mid", 100 + _C, 100, _S, _S),
+        Box("t", 100 + 2 * _C, 100, _S, _S),
+    )
     assert classify_edge(_spec_edge("s", "t"), placed) == "fan-out-row"
 
 
-def test_classify_cross_region_far_same_tier():
-    # A whole region block to the right at the same tier → cross-region.
+def test_classify_cross_region_far_same_tier_clear_run_is_straight():
+    # 1.10.6: with only s and t placed, a region-span same-row hop has a clear
+    # run, so it is one straight segment. A genuine cross-region hop in a real
+    # diagram has the passive region's nodes on its row, which keeps it
+    # ``cross-region`` (see the next test) — the HA landscape still routes its
+    # replication edges in dedicated corridors.
     placed = _placed(
         Box("s", 100, 400, _S, _S),
+        Box("t", 100 + CROSS_REGION_SPAN, 400, _S, _S),
+    )
+    assert classify_edge(_spec_edge("s", "t"), placed) == "straight"
+
+
+def test_classify_cross_region_far_same_tier_with_icon_between():
+    # A node on the row between the two region blocks keeps the hop cross-region.
+    placed = _placed(
+        Box("s", 100, 400, _S, _S),
+        Box("mid", 100 + CROSS_REGION_SPAN // 2, 400, _S, _S),
         Box("t", 100 + CROSS_REGION_SPAN, 400, _S, _S),
     )
     assert classify_edge(_spec_edge("s", "t"), placed) == "cross-region"
