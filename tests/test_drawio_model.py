@@ -54,6 +54,19 @@ def test_dtd_and_entity_documents_are_rejected(fixture: str) -> None:
     assert excinfo.value.cause == "dtd-or-entity-declaration"
 
 
+def test_parse_drawio_rejects_non_bytes_or_str_with_typed_error() -> None:
+    """A non-``bytes``/non-``str`` argument raises ``DrawioParseError``.
+
+    The parser's contract is that anything it cannot parse becomes a
+    ``DrawioParseError`` — never a bare ``TypeError`` escaping from ``expat``.
+    A caller handing the wrong type (e.g. a tuple) must get the typed engine
+    error with a machine-readable cause, not a cosmetic stacktrace.
+    """
+    with pytest.raises(DrawioParseError) as excinfo:
+        parse_drawio(("not", "bytes"), path="x.drawio")  # type: ignore[arg-type]
+    assert excinfo.value.cause == "not-bytes-or-str:tuple"
+
+
 # --------------------------------------------------------------------------- #
 # Multi-page real draw.io export (R1.3, R1.4)
 # --------------------------------------------------------------------------- #
