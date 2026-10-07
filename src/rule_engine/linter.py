@@ -224,7 +224,10 @@ RULE_IP_RANGE = "ip-range"
 # edge-hygiene 1.10.5 (Feature B). Three edge-legibility rules plus a structural
 # integrity cross-check adapted from the awesome-copilot draw.io validator.
 #   marker-collision     — two edge flow-markers render closer than the merge
-#                          threshold (they overprint into one number); WARNING.
+#                          threshold (they overprint into one number), or
+#                          (1.10.7 D37) a marker sits within one grid step of a
+#                          different edge's line (reason marker-on-edge-<id>);
+#                          WARNING.
 #   edge-crossing-excess — the diagram's edge-crossing count exceeds a
 #                          per-diagram cap proportional to the edge count;
 #                          WARNING.
@@ -254,6 +257,15 @@ RULE_STRUCTURAL_INTEGRITY = "structural-integrity"
 RULE_EDGE_ESCAPES_CONTAINER = "edge-escapes-container"
 RULE_EDGE_CROSSES_LEGEND = "edge-crosses-legend"
 RULE_EDGE_JOG = "edge-jog"
+
+# hotfix 1.10.7. Gates for the defects the 1.10.0 quick run shipped:
+#   container-style        — a Boundary / Network Boundary drawn off the colour
+#                            its provider declares in containers.*.style (the
+#                            black AWS account); ERROR, both classes.
+#   marker-label-collision — a numbered flow-marker drawn on a node caption;
+#                            WARNING, both classes.
+RULE_CONTAINER_STYLE = "container-style"
+RULE_MARKER_LABEL_COLLISION = "marker-label-collision"
 
 # ``RULE_SEVERITIES`` and ``CLASS_ESCALATIONS`` are DERIVED from the ``RULES``
 # registry (defined near the end of this module, once every predicate exists) —
@@ -1159,7 +1171,56 @@ def _check_container_dead_space(a: Artifact):
     findings = _geo.check_container_dead_space(geo)
     if not findings:
         return False
-    return RuleHit(offenders=_offender_ids(findings), reason="dead-space")
+    # 1.10.7: an OUTER Boundary is judged at the tighter
+    # ``geometry.OUTER_DEAD_SPACE_RATIO`` (2.5); name that in the reason.
+    outer = any(_geo.is_outer_container(geo, cid) for cid, _ratio in findings)
+    return RuleHit(
+        offenders=_offender_ids(findings),
+        reason="outer-dead-space" if outer else "dead-space",
+    )
+
+
+def _container_style_providers(a: Artifact) -> List[str]:
+    """The provider profile(s) a diagram's containers are judged against.
+
+    The first whitespace token of the title cell names the provider
+    (``aws Quick Partner Data — …``); a title naming none (``multicloud …``, or
+    no title) is judged against all five profiles."""
+    from rule_engine.constants import PROVIDERS
+
+    token = ((a.title_cell or "").split() or [""])[0].lower()
+    return [token] if token in PROVIDERS else list(PROVIDERS)
+
+
+def _check_container_style(a: Artifact):
+    """container-style: a container drawn off its provider's declared colour (ERROR).
+
+    Each drawn Boundary container is recognised against the
+    ``containers.*.style`` entries of ``mappings/<provider>-icons.yaml`` (by its
+    AWS ``grIcon``, else its shape signature); a recognised container whose
+    ``strokeColor`` / ``fontColor`` differ from the declared style is a finding.
+    An unrecognised container is skipped (``geometry.check_container_style``).
+    """
+    geo = _geometry_of(a)
+    if geo is None or not getattr(geo, "container_styles", None):
+        return False
+    from rule_engine import geometry as _geo
+    from rule_engine import icon_resolver
+
+    providers = _container_style_providers(a)
+    mappings: Dict[str, Mapping[str, Any]] = {}
+    for provider in providers:
+        try:
+            mappings[provider] = icon_resolver.load_mapping(provider).get("containers") or {}
+        except icon_resolver.IconResolverError:
+            continue
+    findings = _geo.check_container_style(geo, providers, mappings)
+    if not findings:
+        return False
+    return RuleHit(
+        offenders=tuple(cid for cid, _reason in findings),
+        reason="; ".join(reason for _cid, reason in findings),
+    )
 
 
 def _check_edge_routing(a: Artifact):
@@ -1449,7 +1510,9 @@ def _check_edge_crosses_label(a: Artifact):
     if geo is None:
         return False
     from rule_engine import geometry as _geo
-    findings = _geo.check_edge_crosses_label(geo)
+    # 1.10.7: the linter measures each caption at its real text width (the
+    # engine's scored objective keeps the icon-width band, so goldens hold).
+    findings = _geo.check_edge_crosses_label(geo, caption_width=True)
     if not findings:
         return False
     return RuleHit(offenders=_offender_ids(findings), reason="crosses-label-band")
@@ -1673,14 +1736,23 @@ def _check_node_connectivity(a: Artifact):
 
 
 def _check_legend_placement(a: Artifact):
-    """legend-placement: a Flow/Legend box is not in the right margin (WARNING).
+    """legend-placement: a Flow/Legend box is not in the right margin (WARNING;
+    ERROR on both classes when the box overlaps a node).
 
     The furniture must sit at least one grid step past the outermost container's
     right edge, clear of the cloud boundaries (diagram-standards → *Reserve the
     right margin for Flow/Legend*). Unenforced before v1.6.0: a clean-room
     install produced an otherwise-clean diagram with both blocks parked in the
     LEFT margin under the external user, while every shipped golden puts them on
-    the right."""
+    the right.
+
+    1.10.7: a box drawn over any node's icon or caption (``overlaps-node-<id>``)
+    is reported as a separate hit with an explicit **ERROR** on both classes —
+    a hidden node is a correctness failure, not a placement nit (the quick
+    summary's Flow box covered an external consumer right of the account). The
+    rule default stays WARNING for the two container conditions. The severity is
+    set on the hit rather than via ``reason_escalations``, whose substring match
+    would also catch a container whose id merely starts with ``node-``."""
     geo = _geometry_of(a)
     if geo is None:
         return False
@@ -1688,7 +1760,24 @@ def _check_legend_placement(a: Artifact):
     findings = _geo.check_legend_placement(geo)
     if not findings:
         return False
-    return RuleHit(offenders=_offender_ids(findings), reason=_first_reason(findings))
+    node = [f for f in findings if f[1].startswith("overlaps-node-")]
+    other = [f for f in findings if not f[1].startswith("overlaps-node-")]
+    hits: List[RuleHit] = []
+    if node:
+        offenders: List[str] = []
+        for box_id, reason in node:
+            for value in (box_id, reason[len("overlaps-node-"):]):
+                if value not in offenders:
+                    offenders.append(value)
+        # Boxes first, then the hidden nodes, each once, in order of appearance.
+        boxes = [o for o in offenders if o in {b for b, _ in node}]
+        hidden = [o for o in offenders if o not in boxes]
+        hits.append(RuleHit(
+            offenders=tuple(boxes + hidden), reason=node[0][1], severity=Severity.ERROR,
+        ))
+    if other:
+        hits.append(RuleHit(offenders=_offender_ids(other), reason=_first_reason(other)))
+    return hits
 
 
 def _stem_of(path_or_stem):
@@ -1827,16 +1916,32 @@ def _check_source_format(a: Artifact):
 
 def _check_marker_collision(a: Artifact):
     """marker-collision: two edge flow-markers render closer than the merge
-    threshold and overprint into one number (WARNING). offenders = the edge ids
-    carrying the colliding markers."""
+    threshold and overprint into one number (reason ``markers-overprint``), or a
+    marker sits within one grid step of a DIFFERENT edge's line, which strikes
+    the number (reason ``marker-on-edge-<id>``, 1.10.7 D37). WARNING on both
+    classes. offenders = the marker edges, then the foreign edges, each once.
+    Returns a single hit when only one kind is present, a two-element list
+    ``[overprint, on_edge]`` when both are."""
     geo = _geometry_of(a)
     if geo is None:
         return False
     from rule_engine import geometry as _geo
+    hits: List[RuleHit] = []
     findings = _geo.check_marker_collision(geo)
-    if not findings:
+    if findings:
+        hits.append(RuleHit(offenders=_offender_ids(findings), reason="markers-overprint"))
+    on_edge = _geo.check_marker_on_edge(geo)
+    if on_edge:
+        ordered: List[str] = []
+        for eid in [m for m, _ in on_edge] + [f for _, f in on_edge]:
+            if eid not in ordered:
+                ordered.append(eid)
+        hits.append(
+            RuleHit(offenders=tuple(ordered), reason=f"marker-on-edge-{on_edge[0][1]}")
+        )
+    if not hits:
         return False
-    return RuleHit(offenders=_offender_ids(findings), reason="markers-overprint")
+    return hits[0] if len(hits) == 1 else hits
 
 
 def _check_edge_crossing_excess(a: Artifact):
@@ -1847,10 +1952,43 @@ def _check_edge_crossing_excess(a: Artifact):
     if geo is None:
         return False
     from rule_engine import geometry as _geo
-    findings = _geo.check_edge_crossing_excess(geo)
+    import math as _math
+
+    crossings, n_edges, pairs = _geo.edge_crossing_stats(geo)
+    if n_edges == 0:
+        return False
+    # 1.10.7 hard cap: a LANDSCAPE whose crossings exceed half its routable
+    # edges is an ERROR (``geometry.HARD_CROSSING_RATIO``) — its routing has
+    # collapsed (the quick landscape: 28 crossings on 28 edges).
+    if (
+        (a.diagram_class or DIAGRAM_CLASS_FLOW).lower() == DIAGRAM_CLASS_LANDSCAPE
+        and crossings > _geo.HARD_CROSSING_RATIO * n_edges
+    ):
+        return RuleHit(
+            offenders=_offender_ids(pairs),
+            reason=f"crossings-over-hard-cap:{crossings}/{n_edges}",
+            severity=Severity.ERROR,
+        )
+    if crossings > _math.ceil(0.25 * n_edges):
+        return RuleHit(
+            offenders=_offender_ids(pairs),
+            reason=f"crossings-over-cap:{crossings}/{n_edges}",
+        )
+    return False
+
+
+def _check_marker_label_collision(a: Artifact):
+    """marker-label-collision: a numbered flow-marker renders on a node caption
+    and overprints the service name (WARNING, both classes). offenders = the
+    marker edge and the node whose caption it sits on."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    findings = _geo.check_marker_label_collision(geo)
     if not findings:
         return False
-    return RuleHit(offenders=_offender_ids(findings), reason="crossings-over-cap")
+    return RuleHit(offenders=_offender_ids(findings), reason="marker-on-caption")
 
 
 def _check_detour_hook(a: Artifact):
@@ -1902,6 +2040,9 @@ RULES: Tuple[Tuple[RuleSpec, Callable[[Artifact], _PredicateResult]], ...] = (
     (RuleSpec(RULE_COMPANION_DOC, Severity.ERROR), _check_companion_doc),
     (RuleSpec(RULE_FRONTMATTER, Severity.CRITICAL), _check_frontmatter),
     (RuleSpec(RULE_ICON_RESOLVED, Severity.ERROR), _check_icon_resolved),
+    # container-style (1.10.7): a Boundary drawn off its provider's declared
+    # container colour is an ERROR on both classes (the black AWS account).
+    (RuleSpec(RULE_CONTAINER_STYLE, Severity.ERROR), _check_container_style),
     (RuleSpec(RULE_SECRET_SAFETY, Severity.CRITICAL), _check_secret_safety),
     (RuleSpec(RULE_TITLE_VERSIONED, Severity.WARNING), _check_title_versioned),
     (RuleSpec(RULE_MERMAID_TYPE, Severity.WARNING), _check_mermaid_type),
@@ -2017,6 +2158,14 @@ RULES: Tuple[Tuple[RuleSpec, Callable[[Artifact], _PredicateResult]], ...] = (
     # all WARNING on both classes (advisory — like arrow-style / node-overlap;
     # they never block publication, matching Requirement 7's WARNING contract).
     (RuleSpec(RULE_MARKER_COLLISION, Severity.WARNING), _check_marker_collision),
+    # marker-label-collision (1.10.7): a flow-marker on a node caption (WARNING).
+    (
+        RuleSpec(RULE_MARKER_LABEL_COLLISION, Severity.WARNING),
+        _check_marker_label_collision,
+    ),
+    # edge-crossing-excess: WARNING above ceil(0.25 x E) on both classes; the
+    # 1.10.7 landscape hard cap (> 0.5 x E) is an ERROR carried by the hit's own
+    # severity, since it depends on the measured ratio, not the class alone.
     (
         RuleSpec(RULE_EDGE_CROSSING_EXCESS, Severity.WARNING),
         _check_edge_crossing_excess,

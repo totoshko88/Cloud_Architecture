@@ -57,11 +57,12 @@ def place_legend(account_box: Box, flow_lines: Tuple[str, ...]) -> Tuple[int, in
     """Return ``(legend_x, legend_w)`` for the right-margin Flow/Legend blocks (Req 8).
 
     * ``legend_x = account_box.right + CONTAINER_PAD`` — the blocks start at
-      least one container-pad step past the outermost container's right edge, so
-      they sit in the clear right margin and never overlap the cloud (Req 8.1,
-      8.3). Because the account box wraps every region band, any node or nested
-      container box is fully left of ``account_box.right`` and therefore left of
-      ``legend_x``.
+      least one container-pad step past ``account_box.right``, so they sit in the
+      clear right margin and never overlap the cloud (Req 8.1, 8.3). The account
+      box wraps every region band, but NOT a node drawn outside it — an external
+      consumer right of the account is right of ``account_box.right``. The
+      pipeline therefore calls :func:`place_legend_for`, which passes the
+      rightmost container **or node footprint** edge as the box (1.10.7).
     * ``legend_w = LEGEND_W`` — a fixed narrow width (Req 8.2). ``build_diagram``
       is passed this as its ``legend_w`` parameter and uses its existing
       wrap-aware ``_text_h`` to grow the boxes *taller* (wrapped line count)
@@ -80,6 +81,48 @@ def place_legend(account_box: Box, flow_lines: Tuple[str, ...]) -> Tuple[int, in
     """
     legend_x = _snap(account_box.right + CONTAINER_PAD)
     return legend_x, LEGEND_W
+
+
+def legend_clear_right(spec, nodes, containers) -> float:
+    """Return the x the right-margin Flow/Legend blocks must clear (1.10.7).
+
+    The max of: the account container's right edge (or, with no account, every
+    container's right edge, default ``CONTAINER_PAD``); every placed node's icon
+    right edge; and every node's caption right edge, sized from
+    ``spec.node_labels`` by :func:`rule_engine.geometry.node_caption_box` (the
+    same 7.0px/char estimator the linter uses — an absent label is icon-wide).
+
+    Before 1.10.7 only the account box was cleared, so an external consumer
+    drawn right of the account (an ``on-premises`` lane node) landed under the
+    Flow box. When every node and caption sits inside the account box this
+    returns ``account.right`` and the legend does not move."""
+    account = next(
+        (containers[c.id] for c in spec.containers
+         if c.kind == "account" and c.id in containers),
+        None,
+    )
+    if account is not None:
+        rights = [account.right]
+    else:
+        rights = [b.right for b in containers.values()] or [float(CONTAINER_PAD)]
+    labels = dict(getattr(spec, "node_labels", ()) or ())
+    for n in spec.nodes:
+        box = nodes.get(n.id)
+        if box is None:
+            continue
+        rights.append(box.right)
+        rights.append(_geo.node_caption_box(box, labels.get(n.id, "")).right)
+    return max(rights)
+
+
+def place_legend_for(spec, nodes, containers) -> Tuple[int, int]:
+    """Return ``(legend_x, legend_w)`` clear of every container and node footprint.
+
+    ``legend_x = snap(legend_clear_right(...) + CONTAINER_PAD)`` — the
+    :func:`place_legend` rule applied to the rightmost container **or node
+    footprint** edge rather than the account box alone (1.10.7)."""
+    right = legend_clear_right(spec, nodes, containers)
+    return place_legend(Box("_envelope", 0, 0, right, 0), spec.flow_lines)
 
 
 

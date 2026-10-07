@@ -218,6 +218,71 @@ def _with_entry_band(entry_pt: Contact, face: str, coord: float) -> Contact:
     return (coord, fy) if face == "top" else (fx, coord)
 
 
+#: The adjacent contract-legal face an over-connected face spills onto (1.10.7):
+#: exits move between the right and bottom faces, entries between left and top.
+_EXIT_SPILL = {"right": "bottom", "bottom": "right"}
+_ENTRY_SPILL = {"left": "top", "top": "left"}
+#: The centre contact of each face; the spread then distributes the band.
+_FACE_CENTRE: Dict[str, Contact] = {
+    "right": (1.0, 0.5), "bottom": (0.5, 1.0), "left": (0.0, 0.5), "top": (0.5, 0.0),
+}
+
+
+def spill_over_connected_faces(
+    edges: "list",
+    placed: Dict[str, Box],
+    exits: Dict[str, Contact],
+    entries: Dict[str, Contact],
+) -> None:
+    """Move the surplus of an over-connected face onto its adjacent legal face.
+
+    In place, on ``exits`` / ``entries`` (1.10.7, M3). A face carrying more than
+    :data:`MAX_SIDE_EXITS` contacts would make :func:`spread_contacts` /
+    :func:`spread_entries` raise :class:`OverConnectedError`. Instead, the
+    surplus moves to the adjacent contract-legal face when it has room — exits
+    right ↔ bottom, entries left ↔ top — and lands on that face's centre, so the
+    spread then distributes it. The edges whose OTHER endpoint is farthest
+    (Manhattan distance between box centres, edge id tiebreak) move first: a
+    long run tolerates the extra turn a second face costs, a short hop does not.
+
+    Only a face that would have raised is touched, so every layout that
+    succeeded before is unchanged. When the adjacent face cannot take the
+    surplus either, :class:`OverConnectedError` is raised naming both faces.
+    """
+    by_id = {e.id: e for e in edges}
+
+    def _distance(eid: str) -> float:
+        e = by_id[eid]
+        s, t = placed[e.source], placed[e.target]
+        return (abs((s.x + s.w / 2.0) - (t.x + t.w / 2.0))
+                + abs((s.y + s.h / 2.0) - (t.y + t.h / 2.0)))
+
+    for contacts, face_of, spill_to, end in (
+        (exits, _exit_side, _EXIT_SPILL, "source"),
+        (entries, _entry_face, _ENTRY_SPILL, "target"),
+    ):
+        groups: Dict[Tuple[str, str], list] = {}
+        for e in edges:
+            groups.setdefault((getattr(e, end), face_of(contacts[e.id])), []).append(e.id)
+        for (node_id, face), eids in sorted(groups.items()):
+            surplus = len(eids) - MAX_SIDE_EXITS
+            if surplus <= 0 or face not in spill_to:
+                continue
+            other = spill_to[face]
+            room = MAX_SIDE_EXITS - len(groups.get((node_id, other), []))
+            if room < surplus:
+                raise OverConnectedError(
+                    f"node {node_id!r} has {len(eids)} edges on its {face!r} face "
+                    f"and its adjacent {other!r} face has room for {max(room, 0)} "
+                    f"(max {MAX_SIDE_EXITS} each); split or re-lane the diagram"
+                )
+            moved = sorted(eids, key=lambda eid: (-_distance(eid), eid))[:surplus]
+            for eid in moved:
+                contacts[eid] = _FACE_CENTRE[other]
+                eids.remove(eid)
+            groups.setdefault((node_id, other), []).extend(moved)
+
+
 def spread_entries(edges_on_face: list) -> list:
     """Spread several arrivals on ONE target face to distinct band coordinates.
 

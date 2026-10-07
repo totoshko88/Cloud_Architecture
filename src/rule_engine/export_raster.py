@@ -220,13 +220,30 @@ def inline_local_images(text: str, repo_root: Path = ASSET_ROOT) -> str:
 
 
 def _canvas_width(source: Path) -> float:
-    """Return the natural canvas width ``W`` of ``source`` — the union of every
-    vertex box's absolute right edge on the widest page.
+    """Return the natural canvas width ``W`` of ``source``: the rightmost
+    rendered extent, plus any extent that overflows LEFT of ``x = 0``.
 
+    draw.io crops the export to the bounding box of everything it draws, and a
+    node's caption is part of that box. Each vertex's horizontal extent is
+    therefore estimated from what it renders (1.10.7, M5):
+
+    * a cell with ``verticalLabelPosition=bottom`` and a non-empty label spans
+      its centre ± ``max(w, longest_line × 7.0) / 2`` — the caption may be wider
+      than the icon (``geometry.node_caption_box``'s estimator);
+    * a ``text;`` cell without ``whiteSpace=wrap`` spans
+      ``x .. max(x + w, x + longest_line × 7.0 × fontSize / 12)`` — unwrapped text
+      runs past its box;
+    * any other vertex spans ``x .. x + w``.
+
+    ``W = max_right − min(0, min_left)``. Before 1.10.7 only the vertex boxes'
+    right edge was measured, so a wide caption on a node at the left margin
+    (the quick summary: caption from x = −22) grew the real export past the
+    computed width and the PNG came out 1610px — over the 1600px flow budget.
     Parsed with :mod:`rule_engine.drawio_model` so this matches the geometry the
     linter and layout engine use. A page with no vertices yields 0.0.
     """
     from rule_engine.drawio_model import DrawioParseError, absolute_origin, parse_drawio
+    from rule_engine.geometry import _CAPTION_TEXT_CHAR_W, caption_lines
 
     try:
         pages = parse_drawio(source.read_bytes(), path=str(source))
@@ -236,15 +253,28 @@ def _canvas_width(source: Path) -> float:
         # golden always parses; this only spares degenerate/placeholder inputs.
         return 0.0
     max_right = 0.0
+    min_left = 0.0
     for page in pages:
         for cell in page.cells.values():
             if not cell.vertex or cell.geom is None:
                 continue
             x, _y = absolute_origin(page, cell.id)
-            right = x + (cell.geom.w or 0.0)
-            if right > max_right:
-                max_right = right
-    return max_right
+            w = cell.geom.w or 0.0
+            left, right = x, x + w
+            style = cell.style_map
+            longest = max((len(ln) for ln in caption_lines(cell.label)), default=0)
+            if longest and style.get("verticalLabelPosition") == "bottom":
+                half = max(w, longest * _CAPTION_TEXT_CHAR_W) / 2.0
+                left, right = x + w / 2.0 - half, x + w / 2.0 + half
+            elif longest and "text" in style and style.get("whiteSpace") != "wrap":
+                try:
+                    font = float(style.get("fontSize") or 12)
+                except ValueError:
+                    font = 12.0
+                right = max(right, x + longest * _CAPTION_TEXT_CHAR_W * font / 12.0)
+            max_right = max(max_right, right)
+            min_left = min(min_left, left)
+    return max_right - min(0.0, min_left)
 
 
 def compute_scale(source: Path, diagram_class: Optional[str] = None) -> Tuple[float, float]:

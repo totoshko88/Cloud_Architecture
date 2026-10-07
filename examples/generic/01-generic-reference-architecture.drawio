@@ -9,10 +9,10 @@
           <mxGeometry x="40" y="20" width="900" height="30" as="geometry" />
         </mxCell>
 
-        <mxCell id="boundary-environment" value="Environment env-prod" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#00A000;fillColor=none;verticalAlign=top;fontColor=#00A000;fontSize=12" vertex="1" parent="1">
+        <mxCell id="boundary-environment" value="Environment env-prod" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#333333;dashed=1;verticalAlign=top;fontColor=#333333;fontSize=12" vertex="1" parent="1">
           <mxGeometry x="260" y="60" width="918" height="948" as="geometry" />
         </mxCell>
-        <mxCell id="boundary-network" value="Network region-1" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#0062AD;fillColor=none;verticalAlign=top;fontColor=#0062AD;fontSize=12" vertex="1" parent="1">
+        <mxCell id="boundary-network" value="Network region-1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#666666;dashed=1;verticalAlign=top;fontColor=#666666;fontSize=12" vertex="1" parent="1">
           <mxGeometry x="290" y="120" width="858" height="858" as="geometry" />
         </mxCell>
 

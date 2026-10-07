@@ -358,6 +358,46 @@ def test_session_start_hook_is_quiet_on_a_bootstrapped_workspace(sandbox):
     assert result.stdout.strip() == ""
 
 
+def _version_aware_init_stub(bin_dir: Path, version: str, check_out: str, check_rc: int) -> None:
+    """A ``rule-engine-init`` that answers ``--version`` and ``--check``."""
+    script = bin_dir / "rule-engine-init"
+    script.write_text(
+        "#!/bin/sh\n"
+        f'if [ "$1" = "--version" ]; then echo "{version}"; exit 0; fi\n'
+        f'if [ "$1" = "--check" ]; then printf \'%s\\n\' "{check_out}"; exit {check_rc}; fi\n'
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
+
+
+def test_session_start_hook_prints_version_and_warnings(sandbox):
+    """1.10.7 (M1): the hook names the engine version and surfaces every
+    ``WARNING`` line from ``--check`` (a workspace bootstrapped by an older
+    engine), while staying quiet about the rest of the report."""
+    bin_dir, work, _calls = sandbox
+    warning = "WARNING: this workspace was bootstrapped by rule-engine 1.10.0; the installed engine is 1.10.7."
+    _version_aware_init_stub(bin_dir, "1.10.7", f"OK: 3 current\n{warning}", 0)
+    result = _run_hook(_hook_command("check-workspace-init"), bin_dir, work)
+    assert result.returncode == 0
+    assert "Rule Engine: engine 1.10.7" in result.stdout
+    assert warning in result.stdout
+    assert "OK: 3 current" not in result.stdout
+    assert "bootstrap.sh" not in result.stdout
+
+
+def test_session_start_hook_points_a_failed_check_at_bootstrap_sh(sandbox):
+    """A failing ``--check`` (missing / stale files, or an engine older than the
+    power pin) points at the power's ``bootstrap.sh``, which also upgrades a
+    stale engine, rather than at a bare ``rule-engine-init``."""
+    bin_dir, work, _calls = sandbox
+    _version_aware_init_stub(bin_dir, "1.10.7", "  MISSING: 2", 1)
+    result = _run_hook(_hook_command("check-workspace-init"), bin_dir, work)
+    assert result.returncode == 0
+    assert "Rule Engine: engine 1.10.7" in result.stdout
+    assert "bash scripts/bootstrap.sh" in result.stdout
+
+
 def test_no_hook_swallows_a_gate_failure():
     for path in sorted(_HOOKS.glob("*.json")):
         command = json.loads(path.read_text(encoding="utf-8"))["hooks"][0]["action"]["command"]

@@ -270,3 +270,62 @@ def test_bottom_exit_through_own_caption_is_drawn_behind_it():
     # default applies to every node, cut or not.
     app_cell = xml[xml.index('id="app"'):].split("</mxCell>")[0]
     assert "labelBackgroundColor=#FFFFFF" in app_cell
+
+
+# ---------------------------------------------------------------------------
+# 1.10.7 (S3): the Legend names only the boundaries that are drawn
+# ---------------------------------------------------------------------------
+
+_OUTER = "Outer boundary = stack Boundary (captioned; provider style)"
+_INNER = "Inner boundary = Network Boundary (captioned; provider style)"
+
+
+def _box(kind: str):
+    from rule_engine.diagram_layout import Boundary
+
+    return Boundary(id=f"b-{kind or 'x'}", label=kind, x=0, y=0, w=100, h=100, kind=kind)
+
+
+def test_legend_lines_for_account_and_vpc_keeps_both_lines():
+    from rule_engine.diagram_layout import STANDARD_LEGEND_LINES, legend_lines_for
+
+    lines = legend_lines_for([_box("account"), _box("region"), _box("vpc")])
+    assert lines == STANDARD_LEGEND_LINES
+    assert _OUTER in lines and _INNER in lines
+
+
+def test_legend_lines_for_account_only_drops_the_inner_line():
+    from rule_engine.diagram_layout import legend_lines_for
+
+    lines = legend_lines_for([_box("account")])
+    assert _OUTER in lines and _INNER not in lines
+
+
+def test_legend_lines_for_regions_only_drops_both_lines():
+    from rule_engine.diagram_layout import legend_lines_for
+
+    lines = legend_lines_for([_box("region"), _box("region")])
+    assert _OUTER not in lines and _INNER not in lines
+    assert lines[0] == "Legend"
+
+
+def test_legend_lines_for_undeclared_kinds_is_the_standard_legend():
+    from rule_engine.diagram_layout import STANDARD_LEGEND_LINES, legend_lines_for
+
+    assert legend_lines_for([_box(""), _box("")]) == STANDARD_LEGEND_LINES
+
+
+def test_standard_legend_names_both_boundary_lines():
+    from rule_engine.diagram_layout import STANDARD_LEGEND_LINES
+
+    assert _OUTER in STANDARD_LEGEND_LINES and _INNER in STANDARD_LEGEND_LINES
+
+
+def test_build_diagram_uses_the_conditional_legend_by_default():
+    from rule_engine.diagram_layout import build_diagram
+
+    xml = build_diagram(
+        diagram_id="d", diagram_name="d", title="t", boundaries=[_box("account")],
+        nodes=[], edges=[], flow_lines=("Flow",), legend_x=200,
+    )
+    assert "Outer boundary" in xml and "Inner boundary" not in xml

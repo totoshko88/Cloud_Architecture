@@ -15,10 +15,12 @@ It is a **flow-class** diagram (``diagram_class: flow``) of the vendor-neutral
 ``generic`` Provider Profile: grayscale shapes only — white fill (``#FFFFFF``),
 black stroke (``#000000``) — and **no** vendor icons, exactly as
 ``mappings/generic-icons.yaml`` prescribes. Node styles are taken verbatim from
-that mapping's ``resources:`` block (never a hand-written ``fillColor``); the
-Environment (stack Boundary) renders as a dashed **green** rectangle and the
-Network Boundary as a dashed **blue** rectangle, per the generic profile in
-``provider-profiles.md`` and the diagram-standards Legend convention.
+that mapping's ``resources:`` block (never a hand-written ``fillColor``), and so
+are the two container styles (its ``containers:`` block): the Environment (stack
+Boundary) is a dashed grayscale ``#333333`` rectangle and the Network Boundary a
+dashed grayscale ``#666666`` rectangle, per the generic profile in
+``provider-profiles.md``. (Before 1.10.7 this example drew them green / blue,
+which the ``container-style`` lint rule now rejects.)
 
 Architecture (unchanged from the retired PlantUML source): an external end user
 reaches a managed Kubernetes cluster that fronts the API and enqueues work on a
@@ -52,6 +54,7 @@ from rule_engine.diagram_layout import (  # noqa: E402
     build_diagram,
     builtin_icon,
 )
+from rule_engine.icon_resolver import resolve_container  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 OUT = REPO_ROOT / "examples" / "generic" / "01-generic-reference-architecture.drawio"
@@ -185,11 +188,11 @@ FLOW_LINES = [
 ]
 
 # ---------------------------------------------------------------------------
-# Boundaries. The generic profile draws the Environment (stack Boundary) as a
-# dashed GREEN rectangle and the Network Boundary as a dashed BLUE rectangle
-# (provider-profiles.md generic row / diagram-standards Legend convention). The
-# shared Boundary default strokes are exactly those two colors, so no vendor
-# color is introduced.
+# Boundaries. The generic profile's two container styles are taken verbatim
+# from mappings/generic-icons.yaml (containers: block) — a dashed grayscale
+# #333333 Environment (stack Boundary) and a dashed grayscale #666666 Network
+# Boundary (provider-profiles.md generic row). No builder hardcodes a container
+# style; `container-style` (1.10.7) checks the drawn colours against the mapping.
 #
 #   nodes span: left K8s x=320 ; right data icons right edge 1118 ;
 #   top inference y=180 ; bottom app-secrets footprint 840+78+30(label)=948.
@@ -201,16 +204,16 @@ FLOW_LINES = [
 # The external actor (end-user, right edge 118) sits left of the Environment
 # (left 260), so it is OUTSIDE both boundaries as required.
 # ---------------------------------------------------------------------------
-STACK_STROKE = "#00A000"   # dashed green Environment boundary
-NETWORK_STROKE = "#0062AD"  # dashed blue Network boundary
+STACK_STYLE = resolve_container("boundary", "generic")["style_string"]
+NETWORK_STYLE = resolve_container("network_boundary", "generic")["style_string"]
 
 
 def build() -> str:
     boundaries = [
         Boundary("boundary-environment", "Environment env-prod",
-                 x=260, y=60, w=918, h=948, stroke=STACK_STROKE),
+                 x=260, y=60, w=918, h=948, style=STACK_STYLE),
         Boundary("boundary-network", "Network region-1",
-                 x=290, y=120, w=858, h=858, stroke=NETWORK_STROKE),
+                 x=290, y=120, w=858, h=858, style=NETWORK_STYLE),
     ]
     nodes: List[Node] = [
         Node(id=nid, label=label, x=x, y=y, render=builtin_icon(style))

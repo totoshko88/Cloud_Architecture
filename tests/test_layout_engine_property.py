@@ -172,6 +172,10 @@ def test_layout_output_passes_every_geometry_check(spec: DiagramSpec) -> None:
         assume(False)
         return
 
+    # 1.10.7: a layout the repair loop could not clear is returned degraded (its
+    # residual findings in ``layout_warnings``) instead of raising; exclude it
+    # exactly like a refused spec.
+    assume(not placed.layout_warnings)
     findings = _run_oracle(placed)
     assert findings.clean, (
         "layout output has blocking geometry findings: "

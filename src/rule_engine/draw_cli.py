@@ -39,6 +39,7 @@ paired summary basename) so the sanctioned pair cross-links both ways.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import sys
 from pathlib import Path
@@ -50,7 +51,6 @@ from rule_engine.diagram_layout import (
     Edge,
     ICON_SIZE,
     Node,
-    STANDARD_LEGEND_LINES,
     CONTAINER_PAD,
     _LABEL_STYLE,
     build_diagram,
@@ -240,6 +240,7 @@ def _boundaries_from(
                 w=int(box.w),
                 h=int(box.h),
                 style=_container_style(kind_of[c.id], provider),
+                kind=kind_of[c.id],
             )
         )
     return out
@@ -297,7 +298,17 @@ def build_drawio(
     the translator (an over-budget landscape emits no diagram).
     """
     spec = spec_from_snapshot(snapshot_dir, provider, diagram_type, relationships)
+    # 1.10.7: hand the engine the labels this skin will draw, so the Flow/Legend
+    # clears a long slug caption that overhangs the rightmost icon.
+    spec = dataclasses.replace(
+        spec, node_labels=tuple((n.id, _label_of(n)) for n in spec.nodes)
+    )
     placed = layout(spec)
+    # 1.10.7: a layout the repair loop could not make oracle-clean is returned
+    # degraded rather than raised; say so (the exit code is unchanged — the
+    # linter is the publication gate and reports the same defects).
+    for warning in placed.layout_warnings:
+        print(f"rule-engine-draw: layout WARNING: {warning}", file=sys.stderr)
 
     renderers = _skin_renderers(provider, [n.role for n in spec.nodes])
     nodes = _nodes_from(placed, renderers)
@@ -321,7 +332,9 @@ def build_drawio(
         flow_lines=spec.flow_lines,
         legend_x=placed.legend_x,
         legend_w=placed.legend_w,
-        legend_lines=STANDARD_LEGEND_LINES,
+        # No explicit legend_lines: build_diagram names only the boundary kinds
+        # actually drawn (legend_lines_for, 1.10.7) — an account-only diagram
+        # carries no inner-boundary line.
         page_w=page_w,
         page_h=page_h,
     )

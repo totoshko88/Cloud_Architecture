@@ -54,6 +54,9 @@ asset-index.json
 # build_backend.py; .kiro/settings/ is per-machine tooling state, never shipped.
 .kiro/settings/
 
+# Agent workflow scratch (plans, reviews, investigation reports) — local only
+.agents/
+
 # Editor / OS
 .DS_Store
 # draw.io backup files (e.g. examples/aws/.$01-...drawio.bkp)

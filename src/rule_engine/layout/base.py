@@ -39,6 +39,7 @@ try:  # package-relative import when used as ``rule_engine.layout.base``
         Box,
         LABEL_BAND,
         CONTAINER_LABEL_BAND,
+        _SPILL_REACH,
     )
     from .model import DiagramSpec
 except ImportError:  # pragma: no cover - fallback for flat-module execution
@@ -53,6 +54,7 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
         Box,
         LABEL_BAND,
         CONTAINER_LABEL_BAND,
+        _SPILL_REACH,
     )
     from layout.model import DiagramSpec  # type: ignore[no-redef]
 
@@ -252,6 +254,31 @@ _ORIGIN = (CONTAINER_PAD, CONTAINER_PAD)  # (30, 30), both GRID multiples
 #: (the AWS ``group_account`` glyph) — matching the reference, whose account box
 #: starts at y=60. A whole GRID multiple.
 TITLE_BAND = 30
+
+#: The lanes drawn OUTSIDE every cloud boundary (diagram-standards → external
+#: actors and on-premises sit outside the cloud boundaries).
+EXTERNAL_LANES = frozenset({"actors", "on-premises"})
+
+
+def _grid_ceil(value: float) -> int:
+    """Round ``value`` UP to a whole ``GRID`` multiple."""
+    return int(-(-value // GRID) * GRID)
+
+
+#: Account-only compaction (1.10.7, M4), North–South: the primary-axis distance
+#: from an external row to the in-account row beside it. Two consecutive rank
+#: steps (160) would put the external node's caption on the account border (a
+#: straddle), and anything closer than ``_SPILL_REACH`` past the border reads as
+#: a tier that spilled out of the account (``container-padding``). So the
+#: external row keeps its footprint (icon + caption) plus the spill reach plus
+#: one grid step clear of the account's border — the top border carries the
+#: caption strip (pad + label band), the bottom border one pad.
+_EXTERNAL_TOP_STEP = _grid_ceil(
+    ICON_SIZE + LABEL_BAND + _SPILL_REACH + CONTAINER_PAD + CONTAINER_LABEL_BAND + GRID
+)
+_EXTERNAL_BOTTOM_STEP = _grid_ceil(
+    ICON_SIZE + LABEL_BAND + _SPILL_REACH + CONTAINER_PAD + GRID
+)
 
 
 def _snap(value: float, grid: int = GRID) -> int:
@@ -873,10 +900,42 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
     # the flow's tiers sit on adjacent rows with no empty lane bands between them
     # (e.g. router/workers/data → ranks 0/1/2). Shared across regions so peers
     # stay mirror-symmetric. Absolute lane index otherwise (byte-unchanged).
-    compact_rank: Dict[int, int] = {}
-    if spec.compact:
+    #
+    # 1.10.7 (M4): an ACCOUNT-ONLY spec (an account container and no other — a
+    # serverless account, or anything ``rule-engine-draw`` emits) compacts the
+    # same way, and also closes the gaps in each lane's slots: the occupied
+    # slots of a lane's non-banded nodes take consecutive ranks 0..k-1 in their
+    # declared order. An author's slot gap (6 → 9) or an empty lane then no
+    # longer leaves an empty column or row band in the account box. Every spec
+    # that declares a region container keeps absolute placement byte-unchanged.
+    # "Account-only" means the account is the ONLY container kind: a spec with
+    # vpc / az boxes but no region container (the pre-1.10.3 nesting) sizes its
+    # zone boxes around tier bands, and compacting those bands would stack the
+    # zone boxes on top of each other.
+    account_only = (
+        any(c.kind == "account" for c in spec.containers)
+        and all(c.kind == "account" for c in spec.containers)
+    )
+    compact = spec.compact or account_only
+    #: Primary-axis offset of each occupied lane when compacting: its rank times
+    #: the primary step, except that on an account-only North–South diagram an
+    #: external lane (actors / on-premises) next to an in-account lane is held
+    #: ``_EXTERNAL_TOP_STEP`` / ``_EXTERNAL_BOTTOM_STEP`` away, so the external
+    #: row stays clear of the account border (no straddle, no spill). A spec that
+    #: is not account-only gets exactly ``rank * primary_step``.
+    lane_offset: Dict[int, int] = {}
+    if compact:
         occupied = sorted({LANE_INDEX[n.lane] for n in spec.nodes})
-        compact_rank = {li: r for r, li in enumerate(occupied)}
+        offset, prev = 0, None
+        for li in occupied:
+            if prev is not None:
+                step = primary_step
+                prev_ext, cur_ext = LANES[prev] in EXTERNAL_LANES, LANES[li] in EXTERNAL_LANES
+                if account_only and spec.axis == "north-south" and prev_ext != cur_ext:
+                    step = max(step, _EXTERNAL_TOP_STEP if prev_ext else _EXTERNAL_BOTTOM_STEP)
+                offset += step
+            lane_offset[li] = offset
+            prev = li
     # 1.10.3: REGIONAL services (declared members of a ``region`` container)
     # stand in their own column right of the region's network block — inside
     # the region, outside the VPC (provider-profiles → Service Scope). The
@@ -912,15 +971,35 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
     #: 1.10.6: regional nodes placed directly above a banded anchor (absolute x).
     regional_abs_x: Dict[str, int] = {}
 
+    # 1.10.7 (M4): per-lane slot ranks for an account-only spec (see above).
+    # Only non-banded, non-region-direct nodes are ranked; every other node keeps
+    # its declared slot.
+    slot_rank: Dict[str, int] = {}
+    if account_only:
+        lane_slots: Dict[Tuple[str, str], List[int]] = {}
+        free_nodes = [
+            n for n in spec.nodes
+            if n.id not in region_direct
+            and not (n.container is not None and kind_of.get(n.container) in banded_kinds)
+        ]
+        for n in free_nodes:
+            lane_slots.setdefault((n.lane, n.region), []).append(n.slot)
+        rank_of = {
+            key: {s: r for r, s in enumerate(sorted(set(slots)))}
+            for key, slots in lane_slots.items()
+        }
+        slot_rank = {n.id: rank_of[(n.lane, n.region)][n.slot] for n in free_nodes}
+
     def _free_origin(node) -> Tuple[int, int]:
         """The non-banded (lane → primary, slot → secondary) origin of ``node``."""
         lane_i = LANE_INDEX[node.lane]
-        eff_lane = compact_rank.get(lane_i, lane_i) if spec.compact else lane_i
+        primary = lane_offset[lane_i] if compact else lane_i * primary_step
+        slot = slot_rank.get(node.id, node.slot)
         if spec.axis == "north-south":
-            return (base_x + node.slot * COL_STEP + node.sub * SUB_STEP,
-                    base_y + eff_lane * primary_step)
-        return (base_x + eff_lane * primary_step,
-                base_y + node.slot * ROW_STEP + node.sub * SUB_STEP)
+            return (base_x + slot * COL_STEP + node.sub * SUB_STEP,
+                    base_y + primary)
+        return (base_x + primary,
+                base_y + slot * ROW_STEP + node.sub * SUB_STEP)
 
     if region_direct and spec.axis == "north-south":
         banded_y: Dict[str, int] = {}
@@ -1129,14 +1208,14 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
             # Non-banded, or the left→right axis: lane → primary, slot →
             # secondary, sub nudges secondary. In compact mode the lane's
             # consecutive rank replaces its absolute index on the primary axis.
-            eff_lane = compact_rank.get(lane_i, lane_i) if spec.compact else lane_i
-            primary_offset = eff_lane * primary_step
+            primary_offset = lane_offset[lane_i] if compact else lane_i * primary_step
+            slot = slot_rank.get(node.id, node.slot)
             if spec.axis == "north-south":
-                x = base_x + node.slot * COL_STEP + node.sub * SUB_STEP
+                x = base_x + slot * COL_STEP + node.sub * SUB_STEP
                 y = base_y + primary_offset + free_lane_shift.get(node.region, 0)
             elif spec.axis == "left-right":
                 x = base_x + primary_offset
-                y = base_y + node.slot * ROW_STEP + node.sub * SUB_STEP
+                y = base_y + slot * ROW_STEP + node.sub * SUB_STEP
             else:
                 raise SpecError(
                     f"diagram {spec.diagram_id!r} declares unknown axis "

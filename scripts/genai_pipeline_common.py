@@ -68,14 +68,14 @@ def build(skin: GenaiSkin) -> str:
         container_captions=tuple(sorted((c.id, labels[c.label_key]) for c in spec.containers)),
         container_styles=tuple(sorted(styles.items())),
     )
-    placed = layout(spec)
+    placed = layout(spec, strict=True)
     boundaries: List[Boundary] = []
     for c in spec.containers:
         b = placed.containers[c.id]
         boundaries.append(Boundary(
             id=f"boundary-{c.id}", label=labels[c.label_key],
             x=int(b.x), y=int(b.y), w=int(b.w), h=int(b.h),
-            style=styles[c.id],
+            style=styles[c.id], kind=c.kind,
         ))
     nodes = [
         Node(id=n.id, label=skin.labels[n.id],

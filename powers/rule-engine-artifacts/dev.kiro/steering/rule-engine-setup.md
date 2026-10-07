@@ -18,23 +18,23 @@ or the `rule-engine-*` CLIs (installing a power does not run pip). So in a fresh
 workspace the linter cannot run, icons do not resolve, and the CLI the workflow
 depends on is not yet on PATH.
 
-At the start of working in a workspace, bootstrap it. The one-step helper
-shipped with the skill installs the `rule-engine` package if its CLI is missing,
-then copies the rules/mappings/schema/hooks into the current workspace:
+At the start of working in a workspace, bootstrap it. **Always** run the
+one-step helper shipped with the skill first, even when `rule-engine-init` is
+already on PATH: it compares the installed engine with the power pin, installs
+it when missing and upgrades a stale one, then copies the
+rules/mappings/schema/hooks into the current workspace and verifies them:
 
 ```bash
 # from the skill directory (skills/rule-engine-artifacts/):
-bash scripts/bootstrap.sh               # install CLI (if needed) + bootstrap CWD
+bash scripts/bootstrap.sh               # install/upgrade the CLI + bootstrap CWD
 bash scripts/bootstrap.sh --with-assets # ALSO download the GCP/OCI icon packs
 ```
 
-If `rule-engine-init` is already on PATH, you can run it directly instead:
-
-```bash
-rule-engine-init --check          # exit 1 if the rules/mappings are missing
-rule-engine-init                  # copy steering + hooks + mappings + schema in
-rule-engine-init --with-assets    # AND download the official GCP/OCI icon packs
-```
+Do not call an on-PATH `rule-engine-init` directly instead — an older install
+keeps serving the rules it shipped with. `rule-engine-init --version` prints the
+installed engine, and `rule-engine-init --check` prints a `WARNING:` when the
+workspace lock is older than the engine (or the engine is older than the power
+pin); re-run the bootstrap when you see one.
 
 - Always bootstrap **before** producing any artifact. Do not rely on a
   SessionStart hook to do it — a Power cannot ship Kiro hooks, so a

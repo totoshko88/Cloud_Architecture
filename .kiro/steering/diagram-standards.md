@@ -76,6 +76,12 @@ Arrange diagram lanes in this fixed order. For a **left → right** (flow/applic
 
 (read this sequence left→right for a flow diagram, or top→bottom for a North–South infrastructure diagram).
 
+**Lane semantics (1.10.7).** A lane says *where a node sits relative to the cloud*, not what kind of service it is. **External sources and AWS-/SaaS-operated APIs** (a partner feed, a marketplace catalogue API, Slack, a webhook sender) go in `actors`. **Consumers and notification recipients** (report readers, an e-mail/Slack alert target) **should** sit on the external edge **adjacent to the node that serves them**. When that node is in the last occupied cloud lane (the right-most column of a left→right diagram, the bottom row of a North–South one), that is the far external column, declared in the `on-premises` lane, which the engine draws as that column; the delivery edge is then a short forward run instead of a back-edge across the whole boundary. An account-only spec ranks slots per lane, so a lone consumer lands on the first row; set its `sub` (half a row per step) to put it on its producer's row, so the delivery edge is one straight level run (automatic alignment is deferred to 1.11, REVIEW.md G19). Otherwise the consumer shares the `actors` edge with the sources. A **source** API is never put in `on-premises`; apart from that consumer case the lane is reserved for a real data centre or corporate network, and a consumer drawn there gets no On-premise group. (Distilled from the quick-run landscape, 1.10.0, where consumers were spread across `actors` and `on-premises` and the account box grew around them; and from the quick summary, 1.10.7, where a consumer on the source edge forced `Amazon Quick → Quick users` back across the whole account through the `Athena → Quick` spine, while the adjacent placement draws 0/10 crossings at the same outer dead-space 2.43, because the M4 compaction holds external columns outside the account.)
+
+**Slots are contiguous (1.10.7).** Within each lane the `slot` values are **0..k-1 with no gaps**. Never give every node a unique slot across lanes (lane 1 slot 0, lane 2 slot 1, lane 3 slot 2 …): that builds a **staircase** in which each lane starts one column further right, so the canvas grows diagonally and every edge between lanes becomes a long dog-leg. Number slots per lane, from 0, in the order the nodes should read.
+
+**IAM roles and CloudFormation stacks are not data-flow nodes (1.10.7).** An execution role, a service-linked role, or the stack that deployed the workload does not carry data; drawing it as a node adds edges that cross the real flow. Show it as an **attribute** in the node caption or the companion document, as a `callout`, or in a separate `identity` view (see the `diagram_type` taxonomy).
+
 ## Node Limit and Split Rule
 
 - Limit each diagram to a maximum of **12 nodes**. More than 12 nodes is a lint ERROR (`node-count`).
@@ -267,6 +273,19 @@ inside its parent with padding, siblings are disjoint) and the fixed lane order.
 This item is **guidance only** — no new lint rule; the enforced companions are
 *Container Nesting*, *Container Padding*, and *Lane Order*.
 
+**Serverless / no-VPC accounts (1.10.7).** An account with no VPC still declares
+a **region** container (Account ⊃ Region), so the regional services are placed in
+the region column and the account box is not a flat list of icons. Within it,
+**functional grouping** — for a data platform, `Ingest` / `Lake` / `Query` / `BI`
+/ `Ops` — is the recommended way to keep a dense serverless landscape legible.
+This is guidance: the engine has no functional group containers yet (deferred to
+1.11, REVIEW.md D2 / G14), so today express the grouping through lanes and
+contiguous slots. **Org-level services** (IAM Identity Center, AWS Organizations
+and their equivalents) are not account resources: draw them in a separate
+**"AWS Organization / management account"** boundary, or keep them in the
+account with a marker/`callout` that names their real scope — never silently
+outside every boundary.
+
 ## Inventory completeness → diagram (draw what was enumerated)
 
 When a diagram is generated **from an inventory snapshot**, it MUST represent
@@ -388,6 +407,8 @@ When a diagram uses numbered flow markers, it includes a **Flow** legend cell pl
 - Lists one line per marker in the form `N. <description of the step>`, in ascending numeric order, covering every numeric marker used on an edge.
 - Is a text cell (`style` contains `text;`), so the Linter does not count it as a node.
 
+A numeric marker must not render on a node caption: when an edge's label anchor falls inside a service name, the number overprints it — slide the marker along its edge (`label_pos`) clear of every caption (`marker-label-collision`, WARNING). Nor may a marker render on another edge's line: when a different edge's segment passes within one grid step of the anchor, that line strikes the number. `build_diagram` slides such a marker along its own edge to a clear spot; anything left over is `marker-collision` `marker-on-edge-<id>` (WARNING).
+
 The standard Legend block additionally documents the marker convention with the line `Numbered markers (1..N) = ordered data flow steps; see Flow list`.
 
 **Flow and Legend share one width. No-wrap is the default; a narrow pin is the sanctioned exception.** The two right-margin cells (`Flow` and `Legend`) always use the **same width**, so the pair reads as one aligned block with a consistent left/right silhouette (widths equal; heights may differ per content). The width is chosen one of two ways, and only these two:
@@ -400,6 +421,8 @@ So wrapping is **not** a defect in itself — wrapping *at the default width* is
 ## Edge Routing
 
 Route edges so that no edge crosses through a node icon and no two edges overlap where it can be avoided. Use orthogonal routing (`edgeStyle=orthogonalEdgeStyle`) for `.drawio` sources. Fix connection points explicitly with `exitX/exitY` and `entryX/entryY` rather than relying on floating connections.
+
+**Vertical spine vs straight bottom drop (resolved 1.10.7, Variant A).** Up to 1.10.6 three statements in this section pulled in different directions: *a target directly below takes the bottom-centre exit — a straight vertical drop*; *the right side is the default because a bottom/top stub crosses the node's own caption*; and *spine edges route via a side corridor, not down the node column*. The target rule that reconciles them is: **a vertical spine whose SOURCE carries a caption below its icon (`verticalLabelPosition=bottom`, i.e. every service node) routes via the side corridor** — exit right, drop in the gap beside the column, enter the target's left/top. **The straight bottom drop is allowed only when no caption is in the way** (a source with no caption under its icon, or a caption placed elsewhere). The paragraphs below that describe a bottom drop to a directly-below target (*A source that fans out downward may leave from TWO faces*, *Fan-out exit ordering*, *Bottom-exit is a last resort*) describe the **current engine behaviour, pending 1.11**. **Engine implementation is deferred to 1.11 (REVIEW.md D3 / G15).** Until then the engine may still emit the bottom drop; that case is mitigated by `diagram_layout._own_caption_cuts`, which draws such an edge behind an opaque caption background so the line does not strike through the name, and the `edge-crosses-label` lint rule continues to **exempt an edge's own source/target captions** (it judges only unrelated captions). A hand-authored diagram should follow the target rule now.
 
 **Every leg is explicitly axis-aligned — never leave a corner to draw.io.** An `orthogonalEdgeStyle` edge never draws a diagonal. When two consecutive points of a route are not axis-aligned, draw.io **inserts its own corner and chooses which way it turns** — so an unaligned waypoint is not a diagonal on screen, it is a corner the author did not specify. Its two possible shapes (horizontal-first or vertical-first) can differ by a whole icon: one clears a glyph and the other cuts straight through it. That is how an edge ends up grazing an icon or sliding along a container border while every waypoint in the source looked deliberate, and it is invisible to every other geometry rule, all of which read the points as given.
 
@@ -443,9 +466,9 @@ Corollary: the **overflow valve** below now stands down when a face has an above
 
 **A left-corridor fan-out branch exits bottom-LEFT, the straight branch bottom-centre.** When a fan-out source sends one branch down the **left** corridor and another straight down the column, the left branch must leave from the **bottom-left** band and the straight branch keep the **bottom-centre** — otherwise the left branch's immediate leftward step crosses the centre branch's drop at the glyph (edge 4 crossing edge 3). Biasing the left-corridor branch to the left band makes the two bottom stubs diverge from the start with no crossing.
 
-**A source that fans out downward may leave from TWO faces (right + bottom).** When a node is the *start* of several downward flows — a load balancer or DNS branching to two app tiers / two AZs — it reads more naturally leaving from **two contract-legal faces** than cramming every branch onto the right and looping the straight-down one. The rule (v1.5.1, generator-applied): for a source with **≥ 2 downward edges**, the branch whose target is **directly below in the same column** exits the **bottom** (a clean vertical drop into the target's top, exactly like the compact summary's `lb → app` chain); the sibling branches keep the **right** face. This needs no change to `edge-direction` — bottom (`exitY==1`) and right (`exitX>=0.5`) are both legal exits — it only widens which allowed face the engine picks for the straight-down branch. It triggers only when exactly one branch is the clean directly-below drop, so a single-edge source or a fan-out with no vertical branch is unchanged.
+**A source that fans out downward may leave from TWO faces (right + bottom).** When a node is the *start* of several downward flows — a load balancer or DNS branching to two app tiers / two AZs — it reads more naturally leaving from **two contract-legal faces** than cramming every branch onto the right and looping the straight-down one. The rule (v1.5.1, generator-applied): for a source with **≥ 2 downward edges**, the branch whose target is **directly below in the same column** exits the **bottom** (a clean vertical drop into the target's top, exactly like the compact summary's `lb → app` chain); the sibling branches keep the **right** face. This needs no change to `edge-direction` — bottom (`exitY==1`) and right (`exitX>=0.5`) are both legal exits — it only widens which allowed face the engine picks for the straight-down branch. It triggers only when exactly one branch is the clean directly-below drop, so a single-edge source or a fan-out with no vertical branch is unchanged. *Current engine behaviour, pending 1.11:* under the Variant A target rule above, a source whose caption sits below its icon takes the side corridor instead; the bottom drop stays only where no caption is in the way (D3).
 
-**Spine edges route via a side corridor, not down the node column.** A vertical "spine" hop between tiers in the same column (edge → router → app, app → data) should **not** drop straight down through the column even when source and target share an x — a straight in-column vertical visually collides with the icons and their labels stacked in that column. Instead **exit the source's right, drop in the gap corridor one grid column beside the column, and enter the target's left/top.** (The exception is the fan-out-source bottom branch above: a *directly-below* target with a clear column is reached by a straight bottom drop, since there is no intervening icon to collide with.) For the canonical HA layout that gap sits between the node column and the next (e.g. a load-balancer at column x routes down the corridor at `x + ½·COL_STEP` — the empty lane between the LB column and the cache column — then into the app node). This keeps the spine legible and leaves the node column clear for labels. (Distilled from a reviewer's hand-edit of the AWS landscape, 2026-09-23.)
+**Spine edges route via a side corridor, not down the node column.** A vertical "spine" hop between tiers in the same column (edge → router → app, app → data) should **not** drop straight down through the column even when source and target share an x — a straight in-column vertical visually collides with the icons and their labels stacked in that column. Instead **exit the source's right, drop in the gap corridor one grid column beside the column, and enter the target's left/top.** (The engine currently still makes an exception for the fan-out-source bottom branch above — a *directly-below* target with a clear column is reached by a straight bottom drop — pending the 1.11 implementation of the Variant A rule, under which that drop is kept only when the source has no caption below its icon.) For the canonical HA layout that gap sits between the node column and the next (e.g. a load-balancer at column x routes down the corridor at `x + ½·COL_STEP` — the empty lane between the LB column and the cache column — then into the app node). This keeps the spine legible and leaves the node column clear for labels. (Distilled from a reviewer's hand-edit of the AWS landscape, 2026-09-23.)
 
 **Fan-out along a row: turn up into the target in the gap BEFORE it, not right after the source.** When one node fans out to several targets to its right on the same row (e.g. `app → cache`, `app → db`, `app → object-store`, where cache/db/obj sit two-plus columns away past intervening icons), each edge exits the source's right/bottom, runs along its **own** below-row lane, and makes its **vertical up-turn in the inter-column gap immediately to the LEFT of its target** — then enters the target's left face. Do **not** drop all the fan-out verticals right beside the source: that stacks them a few pixels apart so they read as one merged line, and forces every edge to run the full width under the row. Placing the up-turn in the gap just before each target (`target_x − ~½ gap`) instead spreads the verticals across the row (one per target, well separated) and keeps each horizontal run only as long as it must be. Pair this with **distinct below-row lanes** (each edge its own y, ≥ 1 grid step apart) so the horizontals never merge either. Net shape: a set of stepped "exit-right → own lane → up-turn just before the target → enter-left" edges that fan across the row cleanly, rather than a bundle of near-parallel lines hugging the source. (Distilled from the reviewer's `app→db` / `app→obj` routing on the AWS landscape, 2026-09-23.)
 
@@ -483,11 +506,11 @@ Directional convention (matches the lane order and provider reference diagrams):
 - **No edge–node crossings.** An edge must not pass through any node it does not connect; route around it (clockwise, per above) with waypoints, or move the node out of the corridor. A line overlapping an unrelated icon is a defect.
 - **Route around a container, not through it.** An edge whose two endpoints are both *outside* a Boundary container must not run its route through that container's interior — a fan-out from a VPC-scoped node to a regional service outside the VPC turns in the gap *beside* the VPC, never dipping into its band. An edge that legitimately enters or leaves a container (one endpoint inside it) crosses its border on that node's side, which is correct. This is the `edge-crosses-container` lint rule (WARNING): the stronger companion to `edge-crosses-container-label`, which guards only the top caption strip. The router realises it by turning the vertical leg in the inter-container gap (`_inter_container_gap_x`).
 - **Corridors clear the label band (no line through a caption).** A horizontal corridor placed one grid step under an icon still runs through the **service caption** drawn beneath it (the label band, ~one line ≈ 30px below the icon). Every horizontal run therefore starts **below the source row's label band** (a below-row lane insets past `icon_bottom + LABEL_BAND`), and an over-row corridor insets past the **upper** row's label band. This keeps a fan-out or cross-region run off the names of the row it passes. Enforced by the `edge-crosses-label` lint rule (WARNING): a routed polyline that crosses an unrelated node's label band is flagged, so the icon-box geometry rules (which measure the bare icon) do not let a caption-crossing slip through.
-- **Bottom-exit is a last resort, only to remove a crossing.** The default is a right exit (a bottom stub crosses the node's own caption). A tier-skip to a target **strictly below in the same column** MAY exit the bottom **only when** doing so removes a crossing the right-exit route would make and introduces none — verified against the geometry oracle, never applied speculatively.
+- **Bottom-exit is a last resort, only to remove a crossing.** The default is a right exit (a bottom stub crosses the node's own caption). A tier-skip to a target **strictly below in the same column** MAY exit the bottom **only when** doing so removes a crossing the right-exit route would make and introduces none — verified against the geometry oracle, never applied speculatively. (Consistent with the Variant A spine rule at the top of this section; the engine-side enforcement of that rule is deferred to 1.11, D3.)
 - **No edge–label / edge–legend crossings.** Keep every edge clear of the right-side `Flow` and `Legend` cells; reserve the right margin for those blocks and route edges within the diagram body.
 - **Shared trunk, opposite branches (fan-out from one node).** When a single source fans out to targets stacked on the same side, route the edges into **one shared trunk** just outside the source (one clear grid column/row beyond its edge), then branch off it in **opposite directions** — up to the upper targets, down to the lower ones. The branches never overlap, ink and corner count stay low, and the picture reads as a clean tree. This is the one place edges may share a stub (the `corridor-sharing` exemption for a common source/target); prefer it over giving every fan-out edge its own long detour corridor.
 - **Fan-out exit ordering (spatial logic).** When a node fans out multiple edges, assign exit points by the **spatial direction of each target** to avoid crossings:
-  - A target **directly below** (same column) takes the **bottom-centre** exit — a straight vertical drop.
+  - A target **directly below** (same column) takes the **bottom-centre** exit — a straight vertical drop. *(Current engine behaviour, pending 1.11: under the Variant A spine rule at the top of this section the drop is kept only when the source has no caption below its icon; otherwise the branch takes the side corridor — D3.)*
   - A target **to the right** takes a **right-face** exit — the default direction.
   - A target **to the left** (a back-edge) takes the **bottom-left** exit band (e.g. `exitX=0.25;exitY=1`) if the back-edge must loop under, OR preferably the **right-face** exit with a clockwise loop over/under. Never share the exact same exit point as another edge.
   - Order exits left-to-right across the bottom face: **leftward targets get left-band exits**, **downward targets get centre**, **rightward-then-down targets get right-band exits**. This prevents the "cross your own sibling" defect where a leftward loop crosses a rightward run.
@@ -563,7 +586,7 @@ Practically: give each region/VPC its own horizontal band with a clear gap betwe
 
 **Sibling region bands are equal size, and their nodes sit centred on the grid.** Peer region containers (the primary and passive VPC, and their matching AZ boxes) must be the **same width** — a passive region is not drawn narrower than the active one. Widen both bands toward the shared centre so their outer edges stay put and their widths match. Within each band, the block of service nodes is **centred** in its VPC with equal left/right padding, and every node origin stays on the grid (a whole grid multiple). Centre the block as a whole (all nodes plus their edge waypoints move together) so routing is preserved; do not centre by eye. This keeps the two regions mirror-symmetric and readable. (Reviewer goal 2026-09-23.)
 
-**Reserve the right margin for Flow/Legend, clear of the cloud.** The `Flow` and `Legend` text blocks live in the right margin, their left edge at least one grid step **past the outermost container's right edge** — never overlapping the account/VPC boxes, and never parked in the left margin under the actor column. Enforced by the `legend-placement` lint rule (WARNING), which reports `left-of-diagram-body` when a block does not clear the outermost container and `overlaps-<container-id>` when it is drawn on top of one. When the diagram is wide, pin the blocks **narrow and let them wrap taller** rather than run wide into (or past) the diagram body — the sanctioned exception described under *Numbered Flow Legend* above; a narrow-and-tall Flow/Legend never collides with a node or a container border.
+**Reserve the right margin for Flow/Legend, clear of the cloud.** The `Flow` and `Legend` text blocks live in the right margin, their left edge at least one grid step **past the outermost container's right edge and past every node's footprint (icon + caption), including an external consumer drawn right of the account** — never overlapping the account/VPC boxes or a node, and never parked in the left margin under the actor column. Enforced by the `legend-placement` lint rule (WARNING), which reports `left-of-diagram-body` when a block does not clear the outermost container and `overlaps-<container-id>` when it is drawn on top of one; a block drawn over a node's icon or caption is `overlaps-node-<id>`, an **ERROR** on both classes (1.10.7). The layout engine computes this clearance itself (`layout.repair.place_legend_for`, which `layout()` and `rule-engine-draw` use; it sizes each caption from `DiagramSpec.node_labels`, which a hand-built spec must pass — see *Live Agent Generation → Agent discipline*); a hand-authoring agent must apply the same rule. When the diagram is wide, pin the blocks **narrow and let them wrap taller** rather than run wide into (or past) the diagram body — the sanctioned exception described under *Numbered Flow Legend* above; a narrow-and-tall Flow/Legend never collides with a node or a container border.
 
 **Size a parent's envelope from its deepest child's FOOTPRINT, not its top.** A parent container's bottom (and right) must clear its deepest/rightmost child by ≥ 1 grid step measured against that child's **footprint** (icon + label band), and the child container must clear ITS deepest node the same way. Grow the parent's height/width to satisfy this — never shrink a child box until its own node's label touches its border. Concretely: if the lowest node's footprint bottom is `B`, the enclosing AZ box bottom is ≥ `B + 30`, the VPC box bottom is ≥ `AZ_bottom + 30`, and the Account box bottom is ≥ `VPC_bottom + 30`; the page height follows the Account box. A nested box whose bottom coincides with its parent's bottom (flush) is a `container-padding` finding.
 
@@ -585,11 +608,15 @@ purpose — typically 2-3 icon widths — rather than spanning the entire canvas
 This rule prevents diagrams where the Account boundary spans 1800px vertically
 but all content sits in the top 800px, leaving 1000px of empty space below that
 suggests missing content. Calculate container bounds **after** placing all nodes,
-not before.
+not before. The `container-dead-space` lint rule measures it: an **outer** Boundary
+(the Account / Subscription / Project box no other container encloses) warns above a
+dead-space ratio of **2.5** (`outer-dead-space`), a nested container above 5.0.
 
 ## External actors and on-premises sit OUTSIDE the cloud boundaries
 
 An actor (lane `actors`) or an on-premises / external-datacenter node (lane `on-premises`) is **not** an account/region resource and must be placed **outside** the stack Boundary and Network Boundary containers. Only cloud resources live inside them. On-premises resources get their **own** boundary container (an On-premise group) drawn outside and separate from the cloud Account/Region boundary — never inside it, and never as a bare floating icon. The cross-boundary edge (a cloud tool → an on-prem server) then visibly crosses from the cloud boundary into the on-prem boundary, which is the point.
+
+Which lane an external node takes follows the *Lane semantics* under **Lane Order**: external sources and AWS-/SaaS-operated APIs are `actors`, each consumer or notification recipient sits on the external edge adjacent to the node that serves it (the far external column, declared in `on-premises`, when that node is in the last occupied cloud lane), and apart from that consumer case `on-premises` is reserved for a real data centre. **Sources share one external edge**, and each consumer sits on the edge next to its producer; never scatter sources across several sides of the account, which forces its box to grow around them (the quick-run 1.10.0 defect, outer dead-space 3.71).
 
 ## Service Scope Placement (VPC-scoped vs Regional vs Global)
 
@@ -634,6 +661,15 @@ the function itself outside, or note "VPC-attached" in the label.
 
 ² Azure SQL DB can use VNet service endpoints or private endpoints. When using private
 endpoint, draw the endpoint inside VNet and the service outside.
+
+**No VPC at all (serverless account).** When the account has no Network Boundary,
+the Regional rule still applies: declare the **region** container and place the
+regional services inside it (Account ⊃ Region), rather than listing them flat in
+the account box. **Organization-scoped services** (IAM Identity Center, AWS
+Organizations; Entra ID on Azure; OCI IAM Identity Domains at tenancy level) sit
+in a separate organization / management-account boundary or carry a
+marker/`callout` stating their scope — see *Grouping strategies* and the extended
+per-provider Service Scope tables in `provider-profiles.md`.
 
 ### Visual Layout
 
@@ -836,7 +872,9 @@ Every diagram includes a Legend that defines all of the following:
 - **🆕** = new in version N
 - **🔄** = changed in version N
 - **outer boundary** (captioned, provider container style) = the stack Boundary (Account / Subscription / Project / Tenancy / Environment)
-- **inner boundary** (captioned, provider container style) = the Network Boundary (VPC / VNet / VCN / Network). Boundary **stroke color follows the Provider Profile brand palette** (e.g. AWS Account `#CD2264` / VPC `#8C4FFF`; GCP Project `#4285F4` / VPC `#34A853`; the `generic` profile uses green for the stack boundary and blue for the Network Boundary). Distinguish the two boundaries by their **outer-vs-inner nesting and their captions** (the line style is the provider's: AWS groups are solid, Azure's VNet dotted, OCI's Region filled), never by color alone (see Accessibility & Contrast — double-encode). The legend entry names each boundary in words so it is correct for every provider.
+- **inner boundary** (captioned, provider container style) = the Network Boundary (VPC / VNet / VCN / Network). Boundary **stroke color follows the Provider Profile brand palette** (e.g. AWS Account `#CD2264` / VPC `#8C4FFF`; GCP Project `#4285F4` / VPC `#34A853`; the `generic` profile uses grayscale — `#333333` for the stack boundary and `#666666` for the Network Boundary; the exact style is `containers.*.style` in `mappings/<provider>-icons.yaml`, enforced by `container-style`). Distinguish the two boundaries by their **outer-vs-inner nesting and their captions** (the line style is the provider's: AWS groups are solid, Azure's VNet dotted, OCI's Region filled), never by color alone (see Accessibility & Contrast — double-encode). The legend entry names each boundary in words so it is correct for every provider.
+
+The **outer boundary** and **inner boundary** entries are required only when that boundary is actually drawn (1.10.7): a serverless account with no VPC omits the inner-boundary line, and a diagram that draws only region boxes (the HA summaries) omits both. A legend line for a boundary that is not on the canvas describes something the reader cannot find. The shared builder applies this automatically (`diagram_layout.legend_lines_for`, from each `Boundary.kind`); a builder that declares no kinds keeps the full standard legend.
 
 A diagram with no Legend is a lint ERROR (`legend-present`). Example PlantUML legend:
 
@@ -866,6 +904,49 @@ endlegend
 When generating a `.drawio` diagram **without** using the layout engine (`layout()` +
 `build_diagram()` pipeline), follow these exact formulas and rules to avoid the
 defects that occur when values are guessed.
+
+### Agent discipline (1.10.7, applies with or without the engine)
+
+Distilled from the 1.10.0 quick run, where an agent post-edited the engine
+output and published a diagram the gates had not cleared:
+
+- **Never mutate geometry after `layout()`.** Do not resize a container frame,
+  move nodes, or recompute `legend_x` on a placed diagram. If the frame is
+  wrong, fix the **spec** (lanes, slots, containers) or report an engine
+  defect. Check `placed.layout_warnings` (and `placed.degraded`): a non-empty
+  tuple means the engine laid the spec out with residual findings, which the
+  linter will report.
+- **Pass `node_labels` whenever you build a `DiagramSpec` yourself** (by hand,
+  or through private builder APIs such as `_boundaries_from` / `_edges_from`).
+  `layout()` places the right-margin Flow/Legend past every node's caption, and
+  it sizes each caption from `DiagramSpec.node_labels`; without them every
+  caption counts as icon-wide, so a wide caption on a node right of the account
+  can end up under the Flow box (`legend-placement` `overlaps-node-<id>`,
+  ERROR). `rule-engine-draw` sets it for you. Pass the same text you give
+  `Node(label=…)`:
+
+  ```python
+  labels = {"quick": "Amazon Quick", "users": "Quick users"}
+  spec = DiagramSpec(..., nodes=nodes, edges=edges, containers=containers,
+                     flow_lines=flow, title=title,
+                     node_labels=tuple(labels.items()))
+  placed = layout(spec)   # placed.legend_x now clears the widest caption
+  ```
+- **The final step runs every gate, and only zero BLOCKING findings publish.**
+  Run `rule-engine-lint --all --fail-on error,critical`,
+  `rule-engine-verify-icon --strict`, `rule-engine-check-rasters`,
+  `rule-engine-check-snapshot` and `rule-engine-reconcile`. A red raster gate
+  is blocking, exactly like a lint ERROR.
+- **Lanes and slots follow *Lane Order*.** External sources and AWS-/SaaS-
+  operated APIs are `actors`; a consumer or notification recipient sits on the
+  external edge adjacent to the node that serves it (the far external column,
+  declared in `on-premises`, when that node is in the last occupied cloud lane;
+  otherwise the `actors` edge); a source API is never `on-premises`, and apart
+  from that consumer case the lane is only for real data centres. Slots are
+  contiguous per lane (0..k-1, no gaps) — never a staircase of unique slots
+  across lanes.
+- **IAM roles and CloudFormation stacks are not data-flow nodes.** Show them as
+  a caption/companion attribute, a `callout`, or a separate identity view.
 
 ### Flow/Legend Box Sizing (mandatory formulas)
 
@@ -966,7 +1047,7 @@ edge crossings, or marking the crossing edge as an error.
 - [ ] Bottom fan-out exits DOWN first, then steps sideways (stair from the bottom)
 - [ ] Parent container bottom/right clears the deepest child footprint by ≥ 1 grid step (grow the parent, don't shrink the child); no flush borders
 - [ ] Flow and Legend boxes share one width: sized tight to the longest line (no wrap) by default, or deliberately pinned narrower so they wrap taller on a wide diagram; heights fit each box's real line count
-- [ ] Flow and Legend sit in the right margin, past the outermost container and clear of every boundary (`legend-placement`)
+- [ ] Flow and Legend sit in the right margin, past the outermost container and every node footprint, clear of every boundary and node (`legend-placement`)
 - [ ] Diagram class declared in companion frontmatter (`flow` default, or `landscape`)
 - [ ] `landscape` cross-links a ≤12-node `flow` summary via `summary_of`
 - [ ] Any overlay marker (findings/state) is documented in the Legend (shape+color+label)

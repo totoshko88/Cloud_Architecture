@@ -567,3 +567,75 @@ def test_compute_scale_partitions_scale_up_and_split_signal(
         # The scaled canvas plus both borders fits the class budget (allow a
         # sub-pixel rounding slack on the clamp).
         assert measured * scale + border <= max_width + 0.5
+
+
+# --- caption-aware canvas width (1.10.7, M5) --------------------------------
+#
+# draw.io crops the export to everything it draws, captions included. A wide
+# caption on a node at the left margin overflowed x < 0, so the real PNG came
+# out wider than the computed width (the quick summary exported at 1610px,
+# past the 1600px flow budget). _canvas_width now measures caption extents.
+
+_QUICK_SUMMARY = (
+    _REPO_ROOT / "tests" / "fixtures" / "drawio" / "quick-1.10.0"
+    / "01-quick-partner-data-summary.drawio"
+)
+
+
+def _plain_vertex_right(path: Path) -> float:
+    """The pre-1.10.7 width: the vertex boxes' rightmost absolute edge."""
+    from rule_engine.drawio_model import absolute_origin, parse_drawio
+
+    right = 0.0
+    for page in parse_drawio(path.read_bytes(), path=str(path)):
+        for cell in page.cells.values():
+            if cell.vertex and cell.geom is not None:
+                x, _y = absolute_origin(page, cell.id)
+                right = max(right, x + (cell.geom.w or 0.0))
+    return right
+
+
+def test_quick_summary_scaled_width_fits_the_flow_budget() -> None:
+    scale, width = er.compute_scale(_QUICK_SUMMARY, "flow")
+    assert width > _plain_vertex_right(_QUICK_SUMMARY)  # the caption overflow counts
+    assert scale * width + 2 * int(er.EXPORT_BORDER) <= er.FLOW_MAX_WIDTH + 0.5
+
+
+def test_left_caption_overflow_grows_the_width(tmp_path: Path) -> None:
+    # A 78px icon at x=0 with a 30-char caption (210px) centred under it: the
+    # caption starts at 39 - 105 = -66, so the canvas grows by 66px.
+    label = "x" * 30
+    src = tmp_path / "01.drawio"
+    _write(src, (
+        "<mxfile><diagram><mxGraphModel><root>"
+        '<mxCell id="0"/><mxCell id="1" parent="0"/>'
+        f'<mxCell id="n1" vertex="1" parent="1" value="{label}" '
+        'style="shape=cylinder3;verticalLabelPosition=bottom;verticalAlign=top;">'
+        '<mxGeometry x="0" y="0" width="78" height="78" as="geometry"/></mxCell>'
+        '<mxCell id="n2" vertex="1" parent="1" value="b" style="rounded=0;">'
+        '<mxGeometry x="900" y="0" width="100" height="78" as="geometry"/></mxCell>'
+        "</root></mxGraphModel></diagram></mxfile>"
+    ))
+    assert er._canvas_width(src) == pytest.approx(1000 + 66)
+
+
+def test_unwrapped_text_cell_runs_past_its_box(tmp_path: Path) -> None:
+    src = tmp_path / "01.drawio"
+    _write(src, (
+        "<mxfile><diagram><mxGraphModel><root>"
+        '<mxCell id="0"/><mxCell id="1" parent="0"/>'
+        f'<mxCell id="t" vertex="1" parent="1" value="{"y" * 100}" style="text;fontSize=24;">'
+        '<mxGeometry x="10" y="0" width="100" height="30" as="geometry"/></mxCell>'
+        "</root></mxGraphModel></diagram></mxfile>"
+    ))
+    assert er._canvas_width(src) == pytest.approx(10 + 100 * 7.0 * 24 / 12)
+
+
+_CORPUS_DRAWIOS = sorted((_REPO_ROOT / "examples").rglob("*.drawio"))
+
+
+@pytest.mark.parametrize("path", _CORPUS_DRAWIOS, ids=lambda p: str(p.relative_to(_REPO_ROOT)))
+def test_corpus_width_is_unchanged_by_caption_measurement(path: Path) -> None:
+    """Every shipped example's width (hence its export scale and raster) is the
+    plain vertex max-right, exactly as before 1.10.7."""
+    assert er._canvas_width(path) == _plain_vertex_right(path)

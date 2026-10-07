@@ -68,12 +68,16 @@ Boundary or Network Boundary is a profile-convention error.
 | azure | Subscription boundary — dashed rectangle (`#0078D4`) | VNet boundary — dashed rectangle (`#0062AD`) | Azure icon library (custom, unpacked) |
 | gcp | Project boundary — dashed rectangle (`#4285F4`) | VPC boundary — dashed rectangle (`#34A853`) | GCP icon library (custom/built-in) |
 | oci | Compartment/Tenancy boundary — dashed rectangle, terracotta `#AE562C` stroke, `#312D2A` caption | VCN boundary — dashed rectangle, terracotta `#AE562C` | OCI Style Guide for draw.io v24.2 (custom, unpacked) |
-| generic | Dashed green boundary rectangle | Dashed blue boundary rectangle | grayscale, no vendor icons |
+| generic | Environment boundary — dashed grayscale rectangle (`#333333`) | Network boundary — dashed grayscale rectangle (`#666666`) | grayscale, no vendor icons |
 
-Diagram convention (see `diagram-standards.md`): the stack Boundary renders as a **dashed
-green boundary** and the Network Boundary renders as a **dashed blue boundary** in the
-Legend, regardless of provider. The container styles above are the provider-specific
-group shapes that carry those boundaries in the `.drawio` source.
+Diagram convention (see `diagram-standards.md`): every provider draws its stack Boundary
+and its Network Boundary with the container style its own profile declares — there is no
+cross-provider "green outer / blue inner" colour code. The two boundaries are told apart
+by **nesting** (the Network Boundary sits inside the Boundary) and by their **captions**,
+which the Legend names in words. The container styles above are the provider-specific
+shapes that carry those boundaries in the `.drawio` source; the exact style string is
+authoritative in `containers.*.style` of `mappings/<provider>-icons.yaml` and is enforced
+by the `container-style` lint rule (ERROR).
 
 Only **AWS** ships a dedicated vendor **group shape** (`mxgraph.aws4.group` with `grIcon=group_account` / `group_vpc2`). Azure, GCP, and OCI have no built-in group stencil, so their Boundary / Network Boundary render as **dashed rectangles** in the profile brand color (the exact `containers.*.style` is authoritative in `mappings/<provider>-icons.yaml`); `generic` uses a grayscale dashed rectangle. All are valid container styles — the requirement is that each profile declares exactly one Boundary and one Network Boundary style, not that it be a vendor group shape.
 
@@ -151,7 +155,16 @@ profile. The primary brand color per provider:
 
 Individual service icons may carry their own service-family hex (for example AWS S3 uses
 `#7AA116`) as declared in `mappings/<provider>-icons.yaml`; the values above are the
-per-provider brand anchors. The `generic` profile never emits a vendor color: nodes use a
+per-provider brand anchors.
+
+**The brand anchor is not the container colour.** The hex above is the node /
+General-icon anchor — the `brand_hex` that `icon_resolver.resolve_icon` returns. It is
+**never** a Boundary or Network Boundary colour. Container colours come from the
+`containers.*.style` string in `mappings/<provider>-icons.yaml` (its `strokeColor` and
+`fontColor`): for AWS the Account group is pink `#CD2264`, the VPC group purple
+`#8C4FFF`, the Region group teal `#00A4A6` — not Squid Ink `#232F3E`. Painting an AWS
+Account box in `#232F3E` (the 1.10.0 defect: a black account border) is caught by the
+`container-style` lint rule, an ERROR on both classes. The `generic` profile never emits a vendor color: nodes use a
 white fill with a black stroke (`fillColor=#FFFFFF;strokeColor=#000000`) only.
 
 ## Read-Only Inventory Verb List
@@ -194,6 +207,9 @@ network-level isolation it does not have.
 | **VPC-scoped** | Requires a subnet; instances/endpoints run inside the network | Inside the Network Boundary container |
 | **Regional** | Managed service; accessed via regional endpoints or private endpoints | Inside the Boundary (Account/Subscription/Project) but OUTSIDE the Network Boundary |
 | **Global** | Service spans regions or is region-agnostic | Inside the Boundary or at the edge (outside all boundaries for CDN/DNS) |
+| **Organization / Tenant / Subscription** | Lives above (or across) the workload Boundary: org management account, identity tenant, deployment scope | In a separate organization / management-account boundary, or in the Boundary with a marker/`callout` naming the scope — never silently outside every boundary |
+
+Rows whose `resource_type` is `—` (EventBridge, Glue, CloudWatch, IAM, …) are not inventory types in `schemas/inventory.schema.json`; the scope column still governs where they are drawn. Deployment mechanisms (CloudFormation, ARM/Bicep, Resource Manager) and identity roles are not data-flow nodes — show them as an attribute, a `callout`, or an identity view (`diagram-standards.md` → *Lane Order*).
 
 ### Service Scope by Provider
 
@@ -216,6 +232,14 @@ network-level isolation it does not have.
 | Route 53 | `dns` | **Global** | Global DNS |
 | WAF | `waf` | **Global/Regional** | Attached to CloudFront or ALB |
 | ALB/NLB | `lb` | **VPC** | Requires subnets |
+| EventBridge | — | **Regional** | Event bus; accessed via endpoints |
+| Glue | — | **Regional** | Catalog/ETL; VPC connection optional |
+| Athena | — | **Regional** | Serverless query; accessed via endpoints |
+| QuickSight | — | **Regional** | BI service; VPC connection optional |
+| CloudWatch | — | **Regional** | Metrics, logs, alarms |
+| CloudFormation | — | **Regional** | Deployment mechanism; a stack is not a data-flow node |
+| IAM | — | **Global** | Identity; roles are attributes, not data-flow nodes |
+| IAM Identity Center / Organizations | — | **Organization** | Management account; draw in an organization boundary or mark it |
 
 #### Azure Service Scope
 
@@ -232,6 +256,10 @@ network-level isolation it does not have.
 | Azure OpenAI | `llm_platform` | **Regional** | Managed AI service |
 | Azure Front Door | `cdn` | **Global** | Edge service |
 | Azure DNS | `dns` | **Global** | Global DNS |
+| Event Grid | — | **Regional** | Event routing; private endpoint optional |
+| Azure Monitor | — | **Regional** | Metrics, logs, alerts |
+| ARM / Bicep deployments | — | **Subscription** | Deployment mechanism; not a data-flow node |
+| Entra ID | — | **Tenant (Global)** | Identity; draw in a tenant boundary or mark it |
 
 #### GCP Service Scope
 
@@ -248,6 +276,10 @@ network-level isolation it does not have.
 | Cloud CDN | `cdn` | **Global** | Edge service |
 | Cloud DNS | `dns` | **Global** | Global DNS |
 | Cloud Load Balancing | `lb` | **Global/Regional** | Global or regional |
+| Eventarc | — | **Regional** | Event routing |
+| Cloud Monitoring | — | **Global** | Metrics, logs, alerting |
+| BigQuery | — | **Regional/Multi-region** | Dataset location chosen per dataset |
+| IAM | — | **Global** | Identity; roles are attributes, not data-flow nodes |
 
 #### OCI Service Scope
 
@@ -262,6 +294,10 @@ network-level isolation it does not have.
 | Vault | `secrets_store` | **Regional** | Accessed via endpoints |
 | OCI Generative AI | `llm_platform` | **Regional** | Managed AI service |
 | Load Balancer | `lb` | **VCN** | Requires subnets |
+| Events | — | **Regional** | Event rules; accessed via endpoints |
+| Monitoring | — | **Regional** | Metrics and alarms |
+| Resource Manager | — | **Regional** | Terraform stacks; not a data-flow node |
+| IAM Identity Domains | — | **Tenancy** | Identity; draw at tenancy level or mark it |
 
 ### Diagram Layout Rules for Scope
 

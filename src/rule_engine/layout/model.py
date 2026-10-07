@@ -154,6 +154,20 @@ class DiagramSpec:
     #: better — it removes a caption crossing on one diagram and adds crossings on
     #: another, so it is a measured choice, not a rule. Not a coordinate.
     caption_lanes: bool = False
+    #: Optional ``(node_id, display label)`` pairs (1.10.7). Presentation only,
+    #: like ``container_captions``: the engine reads nothing from them but the
+    #: caption WIDTH, so the right-margin Flow/Legend clears a wide caption
+    #: (``layout.repair.place_legend_for``). Not a coordinate.
+    #:
+    #: Who must set it: any caller that builds a ``DiagramSpec`` itself — by
+    #: hand, or through private builder APIs such as ``_boundaries_from`` /
+    #: ``_edges_from``. ``rule-engine-draw`` (``draw_cli.build_drawio``) already
+    #: does. Absent → each caption is taken as icon-wide, so ``placed.legend_x``
+    #: can land over a wide caption on a node right of the account and lint
+    #: reports ``legend-placement`` ``overlaps-node-<id>`` (ERROR). Pass the same
+    #: text given to ``diagram_layout.Node(label=…)``, e.g.
+    #: ``node_labels=tuple({"users": "Quick users"}.items())``.
+    node_labels: Tuple[Tuple[str, str], ...] = ()
 
 
 # ---------------------------------------------------------------------------
@@ -192,3 +206,13 @@ class PlacedDiagram:
     edges: List[PlacedEdge]
     legend_x: int
     legend_w: int
+    #: Blocking oracle findings the bounded repair loop could not clear
+    #: (``"<rule>: <payload>"``, deterministic order), 1.10.7. Empty for an
+    #: oracle-clean layout. A non-strict :func:`~rule_engine.layout.layout`
+    #: returns its best candidate with these surfaced instead of raising.
+    layout_warnings: Tuple[str, ...] = ()
+    #: ``True`` when the scored or the legacy finish of this candidate ended with
+    #: residual findings — the case in which a strict layout would have raised
+    #: (1.10.7). A golden builder lays out with ``strict=True`` so it never ships
+    #: a degraded diagram.
+    degraded: bool = False

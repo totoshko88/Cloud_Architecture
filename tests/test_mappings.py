@@ -447,3 +447,13 @@ def test_azure_network_boxes_carry_their_corner_icon(kind: str, icon: str) -> No
     assert _style_token(style, "image") == f"img/lib/azure2/networking/{icon}"
     assert _style_token(style, "imageAlign") == "left"
     assert _style_token(style, "imageVerticalAlign") == "top"
+def test_brand_palette_names_the_aws_account_container_colour() -> None:
+    # 1.10.7: the AWS brand anchor #232F3E is the node/General-icon colour, not
+    # the Account container colour. The Brand Palette section must say so and
+    # name the real Account stroke #CD2264, or an author reading it paints the
+    # account box Squid Ink (the 1.10.0 "black account" defect).
+    text = (REPO_ROOT / ".kiro" / "steering" / "provider-profiles.md").read_text(encoding="utf-8")
+    section = text.split("## Brand Palette", 1)[1].split("\n## ", 1)[0]
+    assert "#CD2264" in section
+    assert "container-style" in section
+    assert _style_token(_load("aws")["containers"]["boundary"]["style"], "strokeColor") == "#CD2264"

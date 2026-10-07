@@ -46,14 +46,16 @@ bundled one-step helper before generating anything:
 
 ```bash
 # from the skill dir: skills/rule-engine-artifacts/
-bash scripts/bootstrap.sh               # install the rule-engine CLI (if missing) + bootstrap CWD
+bash scripts/bootstrap.sh               # install/upgrade the rule-engine CLI + bootstrap CWD
 bash scripts/bootstrap.sh --with-assets # ALSO download the official GCP/OCI icon packs
 ```
 
-`scripts/bootstrap.sh`:
+Always run it first, even when `rule-engine-init` is already on `PATH` — an
+older install keeps serving the rules it shipped with. `scripts/bootstrap.sh`:
 
-1. installs the `rule-engine` package if `rule-engine-init` is not already on
-   `PATH` — the **release the Power ships with** (the matching `vX.Y.Z` git tag),
+1. installs the `rule-engine` package when `rule-engine-init` is not on `PATH`,
+   and **upgrades** it when the installed engine is older than the pin — the
+   **release the Power ships with** (the matching `vX.Y.Z` git tag),
    never the moving default branch. With `uv` available it uses
    `uv tool install` (an isolated environment with a supported Python, fetched if
    needed); otherwise `python3 -m pip install`. Override the release with
@@ -63,7 +65,10 @@ bash scripts/bootstrap.sh --with-assets # ALSO download the official GCP/OCI ico
    and `schemas/` into the current workspace — resolved from the payload
    **bundled inside the installed package**, so no repo checkout is required;
 3. with `--with-assets`, also fetches the official GCP/OCI icon packs (AWS/Azure
-   icons are built into draw.io and need no download).
+   icons are built into draw.io and need no download);
+4. finishes with `rule-engine-init --check`, given the pin via `RULE_ENGINE_PIN`,
+   which prints a `WARNING:` (and fails) when the engine on `PATH` is still older
+   than the pin, and warns when the workspace lock predates the installed engine.
 
 After this one step the always-on rules apply, the linter runs, and every node
 resolves to the correct provider icon. The bootstrap is idempotent — re-running

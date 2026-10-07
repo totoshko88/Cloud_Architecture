@@ -59,6 +59,17 @@ def test_bootstrap_installs_the_release_it_ships_with():
     assert "@v${RULE_ENGINE_VERSION}" in text
 
 
+def test_bootstrap_check_passes_the_pin_to_rule_engine_init():
+    """1.10.7 (M1): the final verification hands the power pin to
+    ``rule-engine-init --check`` through ``RULE_ENGINE_PIN`` (an env var, so an
+    older CLI ignores it), letting --check warn/fail on a stale engine."""
+    lines = [ln.strip() for ln in _BOOTSTRAP.read_text(encoding="utf-8").splitlines()]
+    assert (
+        'RULE_ENGINE_PIN="${RULE_ENGINE_VERSION}" rule-engine-init --check "${TARGET}"'
+        in lines
+    )
+
+
 def test_session_start_hint_names_the_current_release():
     hook = json.loads((_REPO / ".kiro" / "hooks" / "check-workspace-init.json").read_text(encoding="utf-8"))
     command = hook["hooks"][0]["action"]["command"]

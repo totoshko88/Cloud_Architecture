@@ -83,14 +83,14 @@ def presented_spec(skin: ExampleSkin) -> DiagramSpec:
 
 def build(skin: ExampleSkin) -> str:
     """Lay out ``skin.spec`` and serialize the full ``.drawio`` XML."""
-    placed = layout(presented_spec(skin))
+    placed = layout(presented_spec(skin), strict=True)
     boundaries: List[Boundary] = []
     for c in skin.spec.containers:
         b = placed.containers[c.id]
         boundaries.append(Boundary(
             id=f"boundary-{c.id}", label=skin.container_labels[c.id],
             x=int(b.x), y=int(b.y), w=int(b.w), h=int(b.h),
-            style=skin.container_styles[c.id],
+            style=skin.container_styles[c.id], kind=c.kind,
         ))
     nodes = [
         Node(id=n.id, label=skin.labels[n.id],

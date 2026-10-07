@@ -53,7 +53,10 @@ resources:
     style: "shape=mxgraph.flowchart.multi-document;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000"
 
 containers:
+  # fontSize=12 keeps the container caption at the 12px accessibility floor
+  # (draw.io's default is 11px); added in 1.10.7 when generic/01 switched from
+  # hand-written green/blue boxes to these mapping styles.
   boundary:
-    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#333333;dashed=1;verticalAlign=top;fontColor=#333333"
+    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#333333;dashed=1;verticalAlign=top;fontColor=#333333;fontSize=12"
   network_boundary:
-    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#666666;dashed=1;verticalAlign=top;fontColor=#666666"
+    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#666666;dashed=1;verticalAlign=top;fontColor=#666666;fontSize=12"

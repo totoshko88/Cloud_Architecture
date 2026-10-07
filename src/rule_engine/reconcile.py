@@ -519,6 +519,14 @@ class ReconcileReport:
     expected_roles: FrozenSet[str] = field(default_factory=frozenset)
     drawn_roles: FrozenSet[str] = field(default_factory=frozenset)
     omissions: List[Dict[str, str]] = field(default_factory=list)
+    #: Every resource enumerated in the Snapshot's domain files, role or not
+    #: (1.10.7, S2). With ``roleless`` it shows how much of the inventory this
+    #: gate can actually see.
+    enumerated_count: int = 0
+    #: Identifiers of enumerated resources that resolve to NO role. They are
+    #: invisible to the coverage check (never an omission), so the report names
+    #: them instead of passing silently; eligibility is unaffected.
+    roleless: List[str] = field(default_factory=list)
 
     @property
     def eligible(self) -> bool:
@@ -536,6 +544,9 @@ class ReconcileReport:
             "drawn_roles": sorted(self.drawn_roles),
             "omissions": self.omissions,
             "eligible": self.eligible,
+            "enumerated_count": self.enumerated_count,
+            "roleless_count": len(self.roleless),
+            "roleless": list(self.roleless),
         }
 
 
@@ -716,12 +727,26 @@ def reconcile(
     # Expected: (role -> [resource identifier, ...]) from the committed Snapshot.
     # iter_snapshot_roles propagates SnapshotReadError for an unparsable domain
     # file; surface it as a ReconcileError (a gate error, never a silent empty).
+    # Same traversal as iter_snapshot_roles, but every enumerated resource is
+    # counted and the role-less ones are collected (1.10.7, S2): a resource with
+    # no role is still never an omission, yet the report must say the gate could
+    # not see it rather than pass silently.
     expected_by_role: Dict[str, List[str]] = {}
+    enumerated = 0
+    roleless: List[str] = []
     try:
-        for resource, role in iter_snapshot_roles(snap, provider):
-            expected_by_role.setdefault(role, []).append(
-                _resource_identifier(resource)
-            )
+        for domain_file in sorted(snap.glob("*.json")):
+            if domain_file.name == "failures.json":
+                continue
+            for resource in iter_domain_resources(domain_file):
+                enumerated += 1
+                role = role_of(resource, provider)
+                if role is None:
+                    roleless.append(_resource_identifier(resource))
+                    continue
+                expected_by_role.setdefault(role, []).append(
+                    _resource_identifier(resource)
+                )
     except SnapshotReadError as exc:
         raise ReconcileError(str(exc)) from exc
 
@@ -773,6 +798,8 @@ def reconcile(
         expected_roles=expected_roles,
         drawn_roles=frozenset(drawn),
         omissions=omissions,
+        enumerated_count=enumerated,
+        roleless=roleless,
     )
 
 
@@ -785,21 +812,33 @@ EXIT_OK = 0
 EXIT_BLOCKED = 1
 EXIT_USAGE = 3
 
+#: How many role-less resource identifiers the human report lists (1.10.7, S2).
+_ROLELESS_SHOWN = 10
+
 
 def _print_report(report: ReconcileReport) -> None:
-    """Human-readable one-artifact report ([OK] / [BLOCKED] + named omissions)."""
+    """Human-readable one-artifact report ([OK] / [BLOCKED] + named omissions,
+    plus a WARNING naming role-less resources the check could not see)."""
     if report.eligible:
         print(
             f"[OK] {report.diagram_path} ({report.coverage_class}): "
             f"{len(report.expected_roles)} expected role(s), all covered."
         )
-        return
-    print(
-        f"[BLOCKED] {report.diagram_path} ({report.coverage_class}): "
-        f"{len(report.omissions)} omitted resource(s):"
-    )
-    for om in report.omissions:
-        print(f"    - role {om['role']}: {om['resource']}")
+    else:
+        print(
+            f"[BLOCKED] {report.diagram_path} ({report.coverage_class}): "
+            f"{len(report.omissions)} omitted resource(s):"
+        )
+        for om in report.omissions:
+            print(f"    - role {om['role']}: {om['resource']}")
+    if report.roleless:
+        shown = ", ".join(report.roleless[:_ROLELESS_SHOWN])
+        more = "…" if len(report.roleless) > _ROLELESS_SHOWN else ""
+        print(
+            f"[WARNING] {len(report.roleless)} of {report.enumerated_count} "
+            "enumerated resource(s) have no role and are invisible to this check: "
+            f"{shown}{more} — add a role in mappings/roles.yaml"
+        )
 
 
 def main(argv: Optional[List[str]] = None) -> int:

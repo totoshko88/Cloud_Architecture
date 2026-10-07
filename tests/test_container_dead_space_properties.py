@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import List
 
 import pytest
-from hypothesis import given
+from hypothesis import assume, given
 from hypothesis import strategies as st
 
 from rule_engine import cli
@@ -147,7 +147,8 @@ def test_calibrated_threshold_has_headroom_over_sparsest_corpus_tier():
             continue
         # Re-measure every container's ratio at an effectively infinite threshold
         # so check_container_dead_space returns the raw ratio for all of them.
-        raw = geo.check_container_dead_space(g, threshold=-1.0)
+        # (outer_threshold too, or top-level boxes under 2.5 would drop out).
+        raw = geo.check_container_dead_space(g, threshold=-1.0, outer_threshold=-1.0)
         for _cid, ratio in raw:
             saw_container = True
             max_ratio = max(max_ratio, ratio)
@@ -237,9 +238,39 @@ def test_single_child_container_fires_iff_above_threshold(scale):
         nodes={"n": Box("n", side / 2 - 39, side / 2 - 39, 78, 78)},
         containers={"c": Box("c", 0, 0, side, side)},
     )
-    findings = geo.check_container_dead_space(g)
+    # outer_threshold=None judges this (top-level) box at the inner threshold;
+    # the 1.10.7 outer threshold has its own property below.
+    findings = geo.check_container_dead_space(g, outer_threshold=None)
     fired = any(cid == "c" for cid, _ in findings)
     assert fired == (scale > DEAD_SPACE_RATIO), (scale, findings)
+
+
+@given(
+    scale=st.floats(min_value=1.05, max_value=8.0, allow_nan=False, allow_infinity=False),
+)
+def test_single_child_outer_container_fires_iff_above_outer_threshold(scale):
+    """1.10.7: a top-level container (no enclosing box) fires iff its ratio
+    exceeds :data:`OUTER_DEAD_SPACE_RATIO`, while the same box nested inside a
+    generous parent is judged at :data:`DEAD_SPACE_RATIO`."""
+    # The ratio is rebuilt from a float side length; skip the rounding knife-edge.
+    assume(abs(scale - geo.OUTER_DEAD_SPACE_RATIO) > 1e-6)
+    assume(abs(scale - DEAD_SPACE_RATIO) > 1e-6)
+    pad = geo.CONTAINER_PAD
+    demand = (78 + 2 * pad) * (78 + geo.LABEL_BAND + 2 * pad)
+    side = (scale * demand) ** 0.5
+    node = Box("n", 1000 + side / 2 - 39, 1000 + side / 2 - 39, 78, 78)
+    top = DiagramGeometry(nodes={"n": node}, containers={"c": Box("c", 1000, 1000, side, side)})
+    fired = any(cid == "c" for cid, _ in geo.check_container_dead_space(top))
+    assert fired == (scale > geo.OUTER_DEAD_SPACE_RATIO), scale
+    nested = DiagramGeometry(
+        nodes={"n": node},
+        containers={
+            "c": Box("c", 1000, 1000, side, side),
+            "parent": Box("parent", 970, 970, side + 60, side + 60),
+        },
+    )
+    fired_inner = any(cid == "c" for cid, _ in geo.check_container_dead_space(nested))
+    assert fired_inner == (scale > DEAD_SPACE_RATIO), scale
 
 
 # =========================================================================== #
