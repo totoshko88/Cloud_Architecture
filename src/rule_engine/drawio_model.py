@@ -553,8 +553,12 @@ def parse_drawio(data: "bytes | str", *, path: str) -> List[Page]:
             text = data.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise DrawioParseError(f"unicode:{exc}", path=path) from exc
-    else:
+    elif isinstance(data, str):
         text = data
+    else:
+        raise DrawioParseError(
+            f"not-bytes-or-str:{type(data).__name__}", path=path
+        )
 
     root = _parse_xml(text, path=path, page=None)
     stem = Path(path).stem or "diagram"
