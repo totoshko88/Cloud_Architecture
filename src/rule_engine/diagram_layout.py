@@ -191,6 +191,10 @@ class Boundary:
     stroke: str = STACK_BOUNDARY_STROKE
     parent: str = "1"
     style: Optional[str] = None  # full style override (e.g. AWS group shape)
+    #: The structural kind this box presents (``account`` / ``region`` / ``vpc``
+    #: / ``az``), 1.10.7. Drives the conditional Legend (:func:`legend_lines_for`);
+    #: ``""`` (the default, every hand-authored builder) keeps the full legend.
+    kind: str = ""
 
 
 # An icon renderer produces the node's mxCell XML. Signature: (node, parent_id).
@@ -705,7 +709,7 @@ def _clear_container_captions(
         spacing = 2  # draw.io default label spacing, added to spacingLeft
         new = _set_style_token(style, "align", "left")
         new = _set_style_token(new, "spacingLeft", str(int(round(x0 - b.x - spacing))))
-        out.append(Boundary(b.id, b.label, b.x, b.y, b.w, b.h, b.stroke, b.parent, new))
+        out.append(Boundary(b.id, b.label, b.x, b.y, b.w, b.h, b.stroke, b.parent, new, b.kind))
     return out
 
 
@@ -883,6 +887,31 @@ STANDARD_LEGEND_LINES = (
     "Numbered markers (1..N) = ordered data flow steps; see Flow list",
 )
 
+#: The Legend lines that name a boundary, and the boundary kind each requires.
+_OUTER_BOUNDARY_LINE = "Outer boundary = stack Boundary (captioned; provider style)"
+_INNER_BOUNDARY_LINE = "Inner boundary = Network Boundary (captioned; provider style)"
+
+
+def legend_lines_for(boundaries: Sequence[Boundary]) -> Tuple[str, ...]:
+    """Return the standard Legend lines for the boundaries actually drawn (1.10.7).
+
+    The outer/inner boundary lines are required only when that boundary is on the
+    canvas (diagram-standards → Mandatory Legend Block): ``Outer boundary = …``
+    needs an ``account`` box and ``Inner boundary = …`` a ``vpc`` box. When no
+    boundary declares a ``kind`` (a hand-authored builder that never set one) the
+    legend is :data:`STANDARD_LEGEND_LINES` unchanged; with no boundaries at all,
+    or with kinds declared, a line whose boundary is absent is dropped.
+    """
+    kinds = {b.kind for b in boundaries}
+    if boundaries and kinds == {""}:
+        return STANDARD_LEGEND_LINES
+    drop = set()
+    if "account" not in kinds:
+        drop.add(_OUTER_BOUNDARY_LINE)
+    if "vpc" not in kinds:
+        drop.add(_INNER_BOUNDARY_LINE)
+    return tuple(line for line in STANDARD_LEGEND_LINES if line not in drop)
+
 
 def build_diagram(
     *,
@@ -901,7 +930,13 @@ def build_diagram(
     page_w: int = 1850,
     page_h: int = 950,
 ) -> str:
-    """Assemble a full ``.drawio`` document from the standard building blocks."""
+    """Assemble a full ``.drawio`` document from the standard building blocks.
+
+    Numbered flow markers are de-collided from each other and slid along their
+    own edge off any foreign edge's line (``orthogonalise.marker_hygiene_text``,
+    1.10.7). The pass is idempotent and leaves the document byte-identical when
+    no marker collides.
+    """
     parts: List[str] = []
     parts.append(
         f'<mxfile host="app.diagrams.net" agent="rule-engine golden-example" version="24.0.0">\n'
@@ -973,7 +1008,9 @@ def build_diagram(
 
     # A caller may extend the standard Legend (e.g. a diagram that uses an
     # overlay marker must document it — ``overlay-legend-coverage``).
-    legend_body = STANDARD_LEGEND_LINES if legend_lines is None else tuple(legend_lines)
+    # Without an explicit list the Legend names only the boundaries drawn
+    # (:func:`legend_lines_for`, 1.10.7).
+    legend_body = legend_lines_for(boundaries) if legend_lines is None else tuple(legend_lines)
     # A caller may pin a narrower ``legend_w`` (the Flow/Legend blocks then wrap
     # and grow taller instead of running wide into the diagram body); otherwise
     # size to the longest line with no wrap.
@@ -990,7 +1027,14 @@ def build_diagram(
     parts.append(
         "      </root>\n    </mxGraphModel>\n  </diagram>\n</mxfile>\n"
     )
-    return "".join(parts)
+    # Flow-marker hygiene (1.10.7 D37): markers are de-collided from each other
+    # and slid along their own edge off any foreign edge's line, so every
+    # builder (rule-engine-draw, the HA builders, hand-written layout() +
+    # build_diagram scripts) gets it. Idempotent; a no-op when nothing collides.
+    # Function-local import: geometry imports this module at load time.
+    from rule_engine.orthogonalise import marker_hygiene_text
+
+    return marker_hygiene_text("".join(parts))[0]
 
 
 __all__ = [
@@ -999,5 +1043,5 @@ __all__ = [
     "Node", "Edge", "Boundary", "IconRenderer",
     "builtin_icon", "embed_oci_stencil", "OciStencilIcon", "OciStencilError",
     "title_cell", "boundary_cell", "edge_cell", "text_cell",
-    "STANDARD_LEGEND_LINES", "build_diagram",
+    "STANDARD_LEGEND_LINES", "legend_lines_for", "build_diagram",
 ]

@@ -185,6 +185,15 @@ def test_drawio_and_companion_are_byte_identical_across_runs(diagram_type):
     assert ca == cb
 
 
+@pytest.mark.parametrize("diagram_type", ["simple", "summary", "landscape"])
+def test_account_only_legend_names_no_network_boundary(diagram_type):
+    # rule-engine-draw emits a single account box and no VPC, so the conditional
+    # Legend (1.10.7, S3) keeps the outer-boundary line and drops the inner one.
+    text = build_drawio(_AWS_SNAPSHOT, "aws", diagram_type, f"10-{diagram_type}")
+    assert "Outer boundary = " in text
+    assert "Inner boundary = " not in text
+
+
 # --------------------------------------------------------------------------- #
 # Relationships become edges (Requirement 10.5)
 # --------------------------------------------------------------------------- #

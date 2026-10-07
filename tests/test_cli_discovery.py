@@ -250,6 +250,25 @@ def test_discover_artifacts_excludes_the_tests_tree(tmp_path):
     assert not any(os.sep + "tests" + os.sep in p for p in found)
 
 
+def test_discover_artifacts_excludes_the_agents_tree(tmp_path):
+    """``.agents/`` holds agent working notes and plans (``.agents/tasks/*.md``),
+    not workspace artifacts. Walked, every note is a Markdown file outside the
+    excluded basenames and so reads as a generated KB document with no
+    frontmatter — a CRITICAL per note that blocks ``--all`` (1.10.7). The walk
+    prunes it, while a sibling generated KB document is still discovered."""
+    root = str(tmp_path)
+
+    plan = os.path.join(root, ".agents", "tasks", "plan.md")
+    _write(plan, "# Hotfix plan\n\nNo frontmatter: agent notes, not a KB doc.\n")
+    companion = os.path.join(root, "examples", "aws", "01-topic.diagram.md")
+    _write(companion, "---\nid: x\n---\n# c\n")
+
+    found = set(discover_artifacts(root))
+    assert companion in found
+    assert plan not in found
+    assert not any(os.sep + ".agents" + os.sep in p for p in found)
+
+
 # --- lint --json carries a label on every record (1.10.6) ------------------ #
 
 

@@ -1471,6 +1471,82 @@ def test_place_legend_is_deterministic():
     assert place_legend(acct, ("Flow",)) == place_legend(acct, ("Flow",))
 
 
+def _consumer_right_of_account_spec(labels=()) -> DiagramSpec:
+    """Account-only flow whose last node (a recipient) sits right of the account.
+
+    The ``on-premises`` lane is drawn outside the account box, so on a
+    left → right axis the recipient lands right of ``account.right`` — the quick
+    summary shape the 1.10.7 follow-up fixed (the Flow box was drawn over it)."""
+    return DiagramSpec(
+        diagram_id="consumer-right",
+        diagram_name="consumer-right",
+        axis="left-right",
+        nodes=(
+            NodeSpec(id="user", role="actor", lane="actors", region="", slot=0),
+            NodeSpec(id="fn", role="serverless_fn", lane="workers", region="", slot=0),
+            NodeSpec(id="obj", role="object_store", lane="data", region="", slot=0),
+            NodeSpec(id="recipient", role="actor", lane="on-premises", region="", slot=0),
+        ),
+        edges=(
+            EdgeSpec(id="e1", source="user", target="fn", marker="1"),
+            EdgeSpec(id="e2", source="fn", target="obj", marker="2"),
+            EdgeSpec(id="e3", source="obj", target="recipient", marker="3"),
+        ),
+        containers=(
+            ContainerSpec(id="acct", kind="account", region="", parent=None,
+                          label_key="account"),
+        ),
+        flow_lines=("Flow", "1. a", "2. b", "3. c"),
+        title="consumer-right | 2025-01-15 | v1",
+        compact=True,
+        node_labels=tuple(labels),
+    )
+
+
+def test_legend_clears_a_node_right_of_the_account():
+    # 1.10.7: a node drawn right of the account box is cleared too, so the Flow
+    # box is never drawn over an external consumer.
+    from rule_engine.layout import layout
+
+    placed = layout(_consumer_right_of_account_spec())
+    acct = placed.containers["acct"]
+    recipient = placed.nodes["recipient"]
+    assert recipient.x > acct.right  # the shape under test: outside, to the right
+    assert placed.legend_x >= recipient.right + le.CONTAINER_PAD - le.GRID / 2
+    assert placed.legend_x % le.GRID == 0
+    for lb in _legend_boxes(placed.legend_x, placed.legend_w, placed.spec.flow_lines):
+        for nid, nb in placed.nodes.items():
+            assert not _boxes_overlap(lb, nb), (lb.id, nid)
+
+
+def test_legend_clear_right_uses_the_caption_width():
+    # A caption wider than its icon overhangs it; the clearance is the caption's
+    # right edge (geometry.node_caption_box), not the icon's.
+    from rule_engine.geometry import node_caption_box
+    from rule_engine.layout_engine import legend_clear_right
+
+    label = "a-very-long-recipient-caption-slug"
+    spec = _consumer_right_of_account_spec(labels=(("recipient", label),))
+    placed, containers = _sized(spec)
+    box = placed["recipient"]
+    caption = node_caption_box(box, label)
+    assert caption.right > box.right
+    assert legend_clear_right(spec, placed, containers) == caption.right
+
+
+def test_place_legend_for_equals_place_legend_when_nodes_are_inside():
+    # Every node inside the account → identical to the pre-1.10.7 account-only
+    # placement (this is why the goldens stay byte-identical).
+    from rule_engine.layout_engine import place_legend_for
+
+    for extra in (False, True):
+        spec = _landscape_spec(extra_b_slot=extra)
+        placed, containers = _sized(spec)
+        assert place_legend_for(spec, placed, containers) == place_legend(
+            containers["acct"], spec.flow_lines
+        )
+
+
 # ---------------------------------------------------------------------------
 # Task 8: oracle adapter and repair loop (Req 9.1, 9.2, 9.3, 9.4, 11.1, 11.4)
 # ---------------------------------------------------------------------------
@@ -1852,3 +1928,111 @@ def test_in_region_long_hop_is_never_cross_region():
         if e.same_region:
             assert classify_edge(e, boxes) != "cross-region", e.id
     assert {e.id for e in spec.edges if e.same_region is False} == {"l10", "l11"}
+
+
+# ---------------------------------------------------------------------------
+# 1.10.7 (M3): face spill + degrade instead of raise
+# ---------------------------------------------------------------------------
+
+
+def _four_below_left_spec():
+    """A hub whose four targets all sit below-LEFT of it: every edge is a
+    back-edge that leaves the BOTTOM face (Rule K), so the bottom face carries
+    four exits — the shape that raised OverConnectedError before 1.10.7."""
+    from rule_engine.layout.model import DiagramSpec, NodeSpec
+
+    nodes = (NodeSpec("hub", "fn", "workers", "", 4),) + tuple(
+        NodeSpec(f"t{i}", "obj", "data", "", i) for i in range(4)
+    )
+    edges = tuple(EdgeSpec(f"e{i + 1}", "hub", f"t{i}", str(i + 1)) for i in range(4))
+    flow = ("Flow",) + tuple(f"{i + 1}. step" for i in range(4))
+    return DiagramSpec("spill", "spill", "north-south", nodes, edges, (), flow, "spill")
+
+
+def _oracle_geometry(placed):
+    from rule_engine.drawio_model import parse_drawio
+    from rule_engine.geometry import build_geometry
+    from rule_engine.layout.repair import _serialize_candidate
+
+    return build_geometry(parse_drawio(_serialize_candidate(placed), path="<t>.drawio")[0])
+
+
+def test_over_connected_face_spills_to_the_adjacent_face():
+    """Four exits on one face no longer raise: the surplus moves to the adjacent
+    legal face and no face carries more than MAX_SIDE_EXITS contacts."""
+    from rule_engine.layout.contacts import MAX_SIDE_EXITS
+
+    placed = le.layout(_four_below_left_spec(), strict=True)
+    geo = _oracle_geometry(placed)
+    assert [r for _n, r in check_exit_thirds(geo) if "over-connected" in r] == []
+    faces = {}
+    for pe in placed.edges:
+        face = "bottom" if pe.exit[1] >= 1.0 else "right"
+        faces[face] = faces.get(face, 0) + 1
+    assert max(faces.values()) <= MAX_SIDE_EXITS
+    # The farthest target (t0) is the one that moved off the crowded face.
+    by_id = {pe.spec.id: pe for pe in placed.edges}
+    assert by_id["e1"].exit[0] >= 1.0 and by_id["e1"].exit[1] < 1.0
+
+
+def test_spill_moves_the_farthest_edges_first():
+    from rule_engine.layout.contacts import spill_over_connected_faces
+
+    placed = {"s": Box("s", 1000, 100, le.ICON_SIZE, le.ICON_SIZE)}
+    edges = []
+    for i in range(5):
+        placed[f"t{i}"] = Box(f"t{i}", 100 + 200 * i, 400, le.ICON_SIZE, le.ICON_SIZE)
+        edges.append(_edge("s", f"t{i}", f"e{i}"))
+    exits = {e.id: (0.5, 1.0) for e in edges}
+    entries = {e.id: (0.5, 0.0) for e in edges}
+    spill_over_connected_faces(edges, placed, exits, entries)
+    moved = sorted(eid for eid, pt in exits.items() if pt == (1.0, 0.5))
+    assert moved == ["e0", "e1"]        # the two farthest targets
+    assert sum(1 for pt in exits.values() if pt == (0.5, 1.0)) == 3
+
+
+def test_spill_raises_only_when_both_faces_are_full():
+    from rule_engine.layout.contacts import spill_over_connected_faces
+
+    placed = {"s": Box("s", 100, 100, le.ICON_SIZE, le.ICON_SIZE)}
+    edges = []
+    for i in range(7):
+        placed[f"t{i}"] = Box(f"t{i}", 400, 100 + 200 * i, le.ICON_SIZE, le.ICON_SIZE)
+        edges.append(_edge("s", f"t{i}", f"e{i}"))
+    exits = {e.id: (1.0, 0.5) for e in edges[:4]}
+    exits.update({e.id: (0.5, 1.0) for e in edges[4:]})
+    entries = {e.id: (0.0, 0.5) for e in edges}
+    with pytest.raises(OverConnectedError) as ei:
+        spill_over_connected_faces(edges, placed, exits, entries)
+    assert "'right'" in str(ei.value) and "'bottom'" in str(ei.value)
+
+
+def test_layout_degrades_instead_of_raising(monkeypatch):
+    """When the repair loop cannot clear a blocking finding, a non-strict layout
+    returns the candidate with the residual findings as layout_warnings and
+    ``degraded`` set; ``strict=True`` raises LayoutError exactly as before."""
+    from rule_engine.layout import pipeline
+    from rule_engine.layout.repair import LayoutError, OracleFindings
+
+    spec = _four_below_left_spec()
+    stuck = OracleFindings(blocking=[("node-overlap", ("hub", "t0"))], fixable=[])
+    monkeypatch.setattr(pipeline, "_run_oracle", lambda cand: stuck)
+    with pytest.raises(LayoutError):
+        le.layout(spec, strict=True)
+    with pytest.raises(LayoutError):
+        le.layout(spec, legacy=True)
+    placed = le.layout(spec)
+    assert placed.degraded is True
+    assert placed.layout_warnings == ("node-overlap: ('hub', 't0')",)
+    # Deterministic, and still normalised to the origin margin.
+    again = le.layout(spec)
+    assert [(pe.spec.id, pe.points) for pe in again.edges] == [
+        (pe.spec.id, pe.points) for pe in placed.edges
+    ]
+    assert min(b.x for b in placed.nodes.values()) >= le.CONTAINER_PAD
+
+
+def test_clean_layout_is_not_degraded():
+    placed = le.layout(_four_below_left_spec())
+    assert placed.layout_warnings == ()
+    assert placed.degraded is False

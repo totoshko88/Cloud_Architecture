@@ -277,6 +277,13 @@ resources:
 
 # Container styles for boundaries (using mxgraph.aws4.group for proper draw.io
 # group behavior — these are structural elements, not service icons)
+# `brand_hex` on a container entry is the PROVIDER ANCHOR (AWS Squid Ink
+# #232F3E) consumed by icon_resolver.resolve_icon / contract.py, which appends
+# `fillColor=<brand_hex>` to the contract boundary node. It is NOT the container
+# colour: the colour a Boundary / Network Boundary is drawn in is the style's
+# own `strokeColor` / `fontColor` (Account #CD2264, VPC #8C4FFF, Region
+# #00A4A6), checked by the `container-style` lint rule (ERROR, 1.10.7). Painting
+# a container in brand_hex is exactly the 1.10.0 "black account" defect.
 containers:
   # Every AWS container is the draw.io "AWS / Groups" (AWS Architecture Icons
   # 2019+) entry, copied from the draw.io app bundle (Sidebar AWS4 groups),

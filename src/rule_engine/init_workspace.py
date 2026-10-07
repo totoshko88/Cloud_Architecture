@@ -19,6 +19,13 @@ Usage::
     rule-engine-init /path/to/ws     # bootstrap an explicit workspace
     rule-engine-init --force         # back up edited files, then overwrite
     rule-engine-init --check         # report state per file, write nothing
+    rule-engine-init --version       # print the installed engine version
+
+Stale-install guard (1.10.7). Both a bare run and ``--check`` print a
+``WARNING:`` line when the workspace lock was written by an older engine than
+the installed one, or when the installed engine is older than the power pin
+(``--expect-version`` / ``$RULE_ENGINE_PIN``); the latter makes ``--check``
+exit non-zero.
 
 Lock file (R7). A normal run records ``.kiro/rule-engine-init.lock.json`` — the
 engine version, which source tree was used, and the sha256 of every copied file.
@@ -53,6 +60,7 @@ import argparse
 import datetime as _dt
 import hashlib
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -142,6 +150,63 @@ def _engine_version() -> str:
             if stripped.startswith("version") and "=" in stripped:
                 return stripped.split("=", 1)[1].strip().strip('"').strip("'")
     return "0.0.0"
+
+
+def _version_tuple(v: str) -> tuple[int, ...]:
+    """Parse ``X.Y.Z`` into a comparable integer tuple.
+
+    Only the leading numeric dot-separated components count (``1.10.7rc1`` ->
+    ``(1, 10, 7)``); an empty or non-numeric version is ``(0,)`` so it compares
+    below every real release.
+    """
+    parts: list[int] = []
+    for piece in str(v or "").strip().split("."):
+        digits = ""
+        for ch in piece:
+            if not ch.isdigit():
+                break
+            digits += ch
+        if not digits:
+            break
+        parts.append(int(digits))
+        if len(digits) != len(piece):
+            break
+    return tuple(parts) if parts else (0,)
+
+
+def _installed_below_pin(installed: str, expected: Optional[str]) -> bool:
+    """True when a power pin is set and the installed engine is older than it."""
+    return bool(expected) and _version_tuple(installed) < _version_tuple(expected)
+
+
+def version_warnings(
+    lock: dict, installed: str, expected: Optional[str]
+) -> list[str]:
+    """Return human-readable stale-install warnings (M1, 1.10.7).
+
+    Two independent conditions are reported, each as one ``WARNING:`` line:
+
+    (a) the workspace lock was written by an engine older than the installed
+        one — the copied rules/mappings predate the engine now running;
+    (b) the installed engine is older than the power pin ``expected`` — a stale
+        pip install is serving old rules and mappings to the power.
+    """
+    out: list[str] = []
+    locked = lock.get("engine_version") if isinstance(lock, dict) else None
+    if locked and _version_tuple(str(locked)) < _version_tuple(installed):
+        out.append(
+            f"WARNING: this workspace was bootstrapped by rule-engine {locked}; "
+            f"the installed engine is {installed}. Run the power bootstrap "
+            "(bash scripts/bootstrap.sh) or `rule-engine-init` to refresh the "
+            "rules; edited files are kept — review them or use --force."
+        )
+    if _installed_below_pin(installed, expected):
+        out.append(
+            f"WARNING: the installed rule-engine {installed} is older than the "
+            f"power pin {expected}; run bash scripts/bootstrap.sh to upgrade "
+            "(stale rules and mappings otherwise)."
+        )
+    return out
 
 
 def _sha256_file(path: Path) -> str:
@@ -497,6 +562,13 @@ def main(argv: Optional[list[str]] = None) -> int:
         "bootstrap compare the installed engine against its pinned release "
         "and upgrade a stale install rather than reusing old rules.",
     )
+    parser.add_argument(
+        "--expect-version", default=os.environ.get("RULE_ENGINE_PIN") or None,
+        metavar="X.Y.Z",
+        help="The engine version the caller expects (the power pin; default: "
+        "$RULE_ENGINE_PIN). When the installed engine is older, a WARNING is "
+        "printed and --check exits non-zero.",
+    )
     args = parser.parse_args(argv)
 
     # --version is answerable with no source tree (a bare install), so it is
@@ -524,11 +596,23 @@ def main(argv: Optional[list[str]] = None) -> int:
 
     # --check must NOT create the target directory (R7.5). A non-existent target
     # reports every source file as missing.
+    installed = _engine_version()
     if args.check:
         lock = load_lock(target) if target.is_dir() else {}
+        warnings = version_warnings(lock, installed, args.expect_version)
         groups = classify(source, target, lock)
-        return _report_check(source, target, groups)
+        rc = _report_check(source, target, groups)
+        for line in warnings:
+            print(line)
+        if _installed_below_pin(installed, args.expect_version):
+            return EXIT_FAIL
+        return rc
 
+    # Warnings come from the PRIOR lock: bootstrap() rewrites it with the
+    # installed version, after which the stale-lock condition is gone.
+    prior_warnings = version_warnings(
+        load_lock(target) if target.is_dir() else {}, installed, args.expect_version
+    )
     target.mkdir(parents=True, exist_ok=True)
     result = bootstrap(source, target, force=args.force, explicit=args.source)
     copied = result.get("_copied", [])
@@ -549,6 +633,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         for rel in result["edited"][:12]:
             print(f"  ~ edited (kept): {rel}")
     print(f"  lock: {target / LOCK_REL}")
+    for line in prior_warnings:
+        print(line)
     print("Done. The .kiro/steering rules are now always-on in this workspace.")
 
     if args.with_assets:

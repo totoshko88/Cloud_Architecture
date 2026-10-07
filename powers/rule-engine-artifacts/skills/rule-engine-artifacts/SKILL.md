@@ -28,25 +28,27 @@ the linter cannot run, and any diagram you produce will guess icon colors and
 boundary placement (the exact defects that ship when the rules are missing —
 orange EFS, actors drawn inside the VPC).
 
-Before generating or editing ANY artifact, run the bundled bootstrap helper. It
-does everything in one idempotent step — installs the `rule-engine` package if
-its CLI is missing, then copies the rules, agents, mappings, schema, and hooks
-into the current workspace:
+Before generating or editing ANY artifact, **always** run the bundled bootstrap
+helper first — even when `rule-engine-init` is already on PATH. It does
+everything in one idempotent step: it compares the installed engine with the
+release this power pins, installs it when missing and **upgrades a stale one**,
+then copies the rules, agents, mappings, schema, and hooks into the current
+workspace and verifies the result:
 
 ```bash
 # from this skill's directory (scripts/ ships with the power):
-bash scripts/bootstrap.sh               # install CLI (if needed) + bootstrap CWD
+bash scripts/bootstrap.sh               # install/upgrade the CLI + bootstrap CWD
 bash scripts/bootstrap.sh --with-assets # ALSO download the GCP/OCI icon packs
 ```
 
-If `rule-engine-init` is **already** on PATH (e.g. the user did `pip install -e .`
-from the engine repo), you can call it directly instead:
-
-```bash
-rule-engine-init --check            # reports missing rule files (exit 1 if any)
-rule-engine-init                    # copies steering + agents + hooks + mappings + schema
-rule-engine-init --with-assets      # AND download the GCP/OCI icon packs (below)
-```
+Do not shortcut this by calling a `rule-engine-init` that is already on PATH:
+an older install keeps serving the rules and mappings it shipped with, which is
+exactly how a workspace ends up generating with a stale engine.
+`rule-engine-init --version` prints the installed engine version, and
+`rule-engine-init --check` reports missing / stale rule files and prints a
+`WARNING:` when the workspace lock was written by an older engine than the one
+installed (or the engine is older than the power pin) — re-run the bootstrap
+when you see one.
 
 `rule-engine-init` copies `.kiro/steering/`, `.kiro/agents/`, `.kiro/hooks/`,
 `mappings/`, `schemas/`, and `profiles/` into the target workspace, idempotently.
@@ -128,6 +130,55 @@ Do not restate rule values from memory. The binding sources are always-on:
    enforced by `rule-engine-check-rasters` (`flow` ≤ 1600px wide / < 500KB;
    `landscape` ≤ 3600px / < 2MB). To re-align a hand-authored/hand-dragged
    `.drawio`, run `rule-engine-orthogonalise <file>.drawio`.
+6. **Run every gate last, and publish only with zero BLOCKING findings:**
+   `rule-engine-lint --all --fail-on error,critical`,
+   `rule-engine-verify-icon --strict`, `rule-engine-check-rasters`,
+   `rule-engine-check-snapshot` and `rule-engine-reconcile`. A red raster gate
+   is blocking, exactly like a lint ERROR — never hand the user a diagram a
+   gate has not cleared.
+
+### Agent discipline (1.10.7)
+
+Lessons from the 1.10.0 quick run (`diagram-standards.md` → *Lane Order* and
+*Live Agent Generation → Agent discipline* carry the binding text):
+
+- **Never mutate geometry after `layout()`.** Do not resize a container frame,
+  move nodes, or recompute `legend_x` on the placed diagram. If the frame is
+  wrong, fix the spec (lanes, slots, containers) or report an engine defect.
+  Check `placed.layout_warnings`: a non-empty tuple means the layout carries
+  residual findings the linter will report.
+- **Pass `node_labels` whenever you build a `DiagramSpec` yourself** (by hand,
+  or through private builder APIs such as `_boundaries_from` / `_edges_from`).
+  `layout()` places the right-margin Flow/Legend past every node's caption, and
+  it sizes each caption from `DiagramSpec.node_labels`; without them every
+  caption counts as icon-wide, so a wide caption on a node right of the account
+  can end up under the Flow box (`legend-placement` `overlaps-node-<id>`,
+  ERROR). `rule-engine-draw` sets it for you. Pass the same text you give
+  `Node(label=…)`:
+
+  ```python
+  labels = {"quick": "Amazon Quick", "users": "Quick users"}
+  spec = DiagramSpec(..., nodes=nodes, edges=edges, containers=containers,
+                     flow_lines=flow, title=title,
+                     node_labels=tuple(labels.items()))
+  placed = layout(spec)   # placed.legend_x now clears the widest caption
+  ```
+- **Lane semantics.** External sources and AWS-/SaaS-operated APIs go in
+  `actors`. A consumer or notification recipient should sit on the external
+  edge adjacent to the node that serves it. When that node is in the last
+  occupied cloud lane, that is the far external column, declared in the
+  `on-premises` lane (the engine draws it as that column), so the delivery edge
+  is a short forward run, not a back-edge across the whole account. A lone
+  external lane is ranked to the first row, so set the consumer's `sub` (half
+  a row per step) to put it on its producer's row. Otherwise the consumer
+  shares the `actors` edge with the sources. A source API is never
+  put in `on-premises`; apart from this consumer case the lane is only for real
+  data centres.
+- **Slots are contiguous** — 0..k-1 per lane with no gaps. Never give each node
+  a unique slot across lanes; that builds a staircase that stretches the canvas.
+- **IAM roles and CloudFormation stacks are not data-flow nodes.** Show them as
+  an attribute in the caption or companion, a `callout`, or a separate
+  identity view.
 
 ## Companion / KB document workflow
 

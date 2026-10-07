@@ -223,10 +223,14 @@ def _assert_variants_legal_and_identity_rank_zero(spec) -> None:
     # meaningful (every variant is a move ON the base); a base the engine refuses
     # is not a counterexample.
     try:
-        layout(spec)
+        base_placed = layout(spec)
     except (LayoutError, OverConnectedError):
         assume(False)
         return
+    # 1.10.7: a layout the repair loop could not clear is returned degraded (its
+    # residual findings in ``layout_warnings``) instead of raising; exclude it
+    # exactly like a refused spec.
+    assume(not base_placed.layout_warnings)
 
     variants = generate_placement_variants(spec)
 
@@ -280,6 +284,7 @@ def _assert_variants_legal_and_identity_rank_zero(spec) -> None:
             assume(False)
             return
 
+        assume(not placed.layout_warnings)
         _assert_grid_aligned_and_clean(placed)
 
 

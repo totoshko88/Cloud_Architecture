@@ -445,8 +445,17 @@ def test_split_is_behavior_preserving(spec: DiagramSpec) -> None:
         # place/size/centre stages and the bounded repair loop).
         with pytest.raises(type(exc)):
             _serialise(spec, legacy=True)
-        with pytest.raises((LayoutError, OverConnectedError)):
-            _serialise(spec, legacy=False)
+        # 1.10.7: the scored default no longer raises when the repair loop is
+        # exhausted — it either still refuses (over-connected beyond a face
+        # spill) or returns a DEGRADED result, never a silently clean one.
+        try:
+            scored = layout(spec, legacy=False)
+        except (LayoutError, OverConnectedError):
+            return
+        assert scored.degraded, (
+            "the legacy path refused this spec but the scored default returned a "
+            "non-degraded layout; a fallback must be marked degraded"
+        )
         return
 
     legacy_b = _serialise(spec, legacy=True)

@@ -187,6 +187,8 @@ try:  # package-relative import when used as ``rule_engine.layout_engine``
     from .layout.repair import (  # noqa: F401
         LEGEND_W,
         place_legend,
+        place_legend_for,
+        legend_clear_right,
         MAX_REPAIR_ITERS,
         LayoutError,
         OracleFindings,
@@ -338,6 +340,8 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
     from layout.repair import (  # type: ignore[no-redef]  # noqa: F401
         LEGEND_W,
         place_legend,
+        place_legend_for,
+        legend_clear_right,
         MAX_REPAIR_ITERS,
         LayoutError,
         OracleFindings,
@@ -401,6 +405,8 @@ __all__ = [
     "CorridorExhaustedError",
     "classify_edge",
     "place_legend",
+    "place_legend_for",
+    "legend_clear_right",
     "route_straight",
     "route_spine",
     "route_fan_out_row",

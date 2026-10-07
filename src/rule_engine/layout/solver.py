@@ -71,7 +71,7 @@ try:  # package-relative import when used as ``rule_engine.layout.solver``
     from .model import Contact, DiagramSpec, EdgeSpec, PlacedDiagram, PlacedEdge
     from .corridors import CorridorAllocator, CorridorExhaustedError
     from .routers import classify_edge, route_edge, _contact_point
-    from .repair import _serialize_candidate, place_legend
+    from .repair import _serialize_candidate, place_legend, place_legend_for
     from . import variants as _variants
 except ImportError:  # pragma: no cover - fallback for flat-module execution
     from geometry import (  # type: ignore[no-redef]
@@ -85,7 +85,7 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
     from layout.model import Contact, DiagramSpec, EdgeSpec, PlacedDiagram, PlacedEdge  # type: ignore[no-redef]
     from layout.corridors import CorridorAllocator, CorridorExhaustedError  # type: ignore[no-redef]
     from layout.routers import classify_edge, route_edge, _contact_point  # type: ignore[no-redef]
-    from layout.repair import _serialize_candidate, place_legend  # type: ignore[no-redef]
+    from layout.repair import _serialize_candidate, place_legend, place_legend_for  # type: ignore[no-redef]
     from layout import variants as _variants  # type: ignore[no-redef]
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -322,21 +322,7 @@ def _legend_for_scoring(
     there is no account container). The legend position is stable for a given
     placement, so every trial of every edge scores against the same legend and
     the argmin compares like with like."""
-    from ..geometry import LABEL_BAND  # local import: avoid a package cycle at load
-
-    account = next(
-        (containers[c.id] for c in spec.containers
-         if c.kind == "account" and c.id in containers),
-        None,
-    )
-    if account is None:
-        right = max(
-            [b.right for b in containers.values()]
-            + [placed[n.id].footprint(LABEL_BAND).right for n in spec.nodes],
-            default=0.0,
-        )
-        account = Box("_envelope", 0, 0, right, 0)
-    return place_legend(account, spec.flow_lines)
+    return place_legend_for(spec, placed, containers)
 
 
 # ---------------------------------------------------------------------------
@@ -543,7 +529,7 @@ def _placement_cost(placed: "PlacedDiagram") -> "RouteCost":
     )
 
 
-def solve_placement(spec: "DiagramSpec") -> "PlacedDiagram":
+def solve_placement(spec: "DiagramSpec", *, strict: bool = False) -> "PlacedDiagram":
     """Deterministic scored PLACEMENT loop (design.md §Component A2, R1.3/R1.4).
 
     The outer order-score-commit loop layered over the 1.8.0 routing machinery.
@@ -590,6 +576,15 @@ def solve_placement(spec: "DiagramSpec") -> "PlacedDiagram":
     win if it sorts before the base, which it cannot (rank 0 is minimal), so an
     equal-cost move never displaces the base.
 
+    **Degraded candidates (1.10.7, M3).** With ``strict=False`` (the default) an
+    inner layout that cannot reach an oracle-clean result no longer raises; it
+    returns a ``degraded`` candidate carrying ``layout_warnings``. The argmin key
+    is therefore ``(degraded, len(layout_warnings), RouteCost.as_tuple(),
+    placement_rank, placement_id)``: every variant that finished before 1.10.7 is
+    non-degraded with no warnings, so it still beats any degraded one and the
+    winner on every diagram that laid out before is unchanged. ``strict=True``
+    keeps the old behaviour — a :class:`LayoutError` drops the variant.
+
     Returns the finished :class:`PlacedDiagram` of the winning placement, ready
     for :func:`rule_engine.diagram_layout.build_diagram`.
     """
@@ -617,7 +612,7 @@ def solve_placement(spec: "DiagramSpec") -> "PlacedDiagram":
             # selects the INNER route-only path so this call does NOT re-enter the
             # placement loop — the switch that breaks the layout ⇄ solve_placement
             # recursion (R1.3).
-            candidate = _layout(moved, legacy=False, _placement=False)
+            candidate = _layout(moved, legacy=False, strict=strict, _placement=False)
         except LayoutError:
             # Infeasible placement (the moved layout could not be routed / repaired
             # within bounds, or is over-connected). Drop it from the argmin; the
@@ -629,8 +624,10 @@ def solve_placement(spec: "DiagramSpec") -> "PlacedDiagram":
         # argmin over the TOTAL key (RouteCost.as_tuple(), rank, id): the rank and
         # id break every route_cost tie, so the winner is a pure, reproducible
         # function of the spec, and the rank-0 identity wins every tie it is part
-        # of (R1.4, Property 2, Decision D4).
-        key = (cost.as_tuple(), variant.rank, variant.id)
+        # of (R1.4, Property 2, Decision D4). Degraded / warning-carrying
+        # candidates sort after every clean one (1.10.7).
+        key = (candidate.degraded, len(candidate.layout_warnings), cost.as_tuple(),
+               variant.rank, variant.id)
         if best_key is None or key < best_key:
             best_key = key
             best_placed = candidate
@@ -641,6 +638,6 @@ def solve_placement(spec: "DiagramSpec") -> "PlacedDiagram":
         # unreachable in practice. Fall back to the base layout so the loop never
         # returns ``None`` — again via the inner route-only path (``_placement=
         # False``) so the fallback cannot re-enter the placement loop.
-        best_placed = _layout(spec, legacy=False, _placement=False)
+        best_placed = _layout(spec, legacy=False, strict=strict, _placement=False)
 
     return best_placed

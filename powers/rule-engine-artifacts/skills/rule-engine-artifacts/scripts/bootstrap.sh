@@ -48,7 +48,7 @@ done
 # the repository's default branch, so a Power installed today could pull
 # tomorrow's unreleased code. tests/test_version_pins.py keeps this in step with
 # pyproject.toml.
-RULE_ENGINE_VERSION="${RULE_ENGINE_VERSION:-1.10.6}"
+RULE_ENGINE_VERSION="${RULE_ENGINE_VERSION:-1.10.7}"
 RULE_ENGINE_SPEC="${RULE_ENGINE_SPEC:-git+https://github.com/totoshko88/Cloud_Architecture.git@v${RULE_ENGINE_VERSION}}"
 
 # Decide whether to install/upgrade. A Power is installed once but the engine
@@ -124,4 +124,8 @@ if [ "${WITH_ASSETS}" -eq 1 ]; then
 fi
 
 echo "bootstrap: done. Verifying..."
-rule-engine-init --check "${TARGET}"
+# 1.10.7: pass the pin through the environment (an older CLI simply ignores
+# it) so --check warns — and fails — when the engine on PATH is still older
+# than the release this script pins, and warns when the workspace lock was
+# written by an older engine.
+RULE_ENGINE_PIN="${RULE_ENGINE_VERSION}" rule-engine-init --check "${TARGET}"

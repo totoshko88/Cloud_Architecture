@@ -180,6 +180,12 @@ draw.io installed; when the app is absent the existing manifests are kept. OCI e
 stencils carry no `image=`/`resIcon=` token, so the build-time `OciStencilIcon` slug lookup
 against `stencils.json` (a `KeyError` on a missing slug) is their verification point.
 
+### Workspace-local roles overlay (planned, 1.11)
+
+**Not implemented in 1.10.7 — this subsection records the design only.** Today a workspace that needs a role the bundled `roles.yaml` lacks has to edit the bundled `mappings/roles.yaml` / `mappings/<provider>-icons.yaml` in place. `rule-engine-init` then sees an edited file on the next engine upgrade and keeps it, so the workspace silently stays on the old mapping: the quick workspace kept a **1.10.0 `aws-icons.yaml` plus 14 local roles**, which is part of how a 1.10.6 engine drew a 1.10.0-styled diagram.
+
+The planned 1.11 fix is an overlay directory, `mappings/local/*.yaml`, holding workspace-local roles and styles. At resolve time it is **merged over the bundled mappings, and the local file wins only for the keys it defines**; every other key keeps the bundled value, so a new engine's corrected styles still arrive. `rule-engine-init` **never copies or overwrites** `mappings/local/`, so an engine upgrade no longer conflicts with local edits. Until 1.11 ships it, keep local edits minimal, review them after every bootstrap (`rule-engine-init --check` warns when the lock is older than the engine), and prefer upstreaming a missing role. Tracked as REVIEW.md G17.
+
 ### Anti-patterns
 
 - Do **not** hand-write a `shape=mxgraph.<lib>.<guess>` id and hope it resolves; an unknown stencil renders as an empty box (`icon-resolved` ERROR). Verify the id exists, or fall back to an official asset.

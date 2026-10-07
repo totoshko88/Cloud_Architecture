@@ -182,3 +182,48 @@ def test_edge_routing_icon_crossing_escalation_reflected_in_doc(doc_rules):
     # the ERROR crossing escalation captured among the tokens).
     assert row.default == Severity.WARNING.value
     assert Severity.ERROR.value in row.severities
+def test_edge_crossing_excess_hard_cap_reflected_in_doc(doc_rules):
+    """``edge-crossing-excess`` (1.10.7): WARNING by default, and a landscape
+    whose crossings exceed ``HARD_CROSSING_RATIO x E`` is an ERROR carried by the
+    hit's own severity (it depends on the measured ratio, not the class alone),
+    so it is NOT a ``RuleSpec.landscape`` escalation. The doc must still record
+    the ERROR hard cap in its Diagram Class landscape cell and the 0.5 ratio."""
+    from rule_engine.geometry import HARD_CROSSING_RATIO
+    from rule_engine.linter import RULE_EDGE_CROSSING_EXCESS
+    from rule_engine.ruleset import _iter_section_rows, _rule_name
+
+    assert HARD_CROSSING_RATIO == 0.5
+    assert RULE_EDGE_CROSSING_EXCESS not in CLASS_ESCALATIONS
+    row = doc_rules[RULE_EDGE_CROSSING_EXCESS]
+    assert row.default == Severity.WARNING.value
+    assert Severity.ERROR.value in row.severities
+    with open(require_ruleset(), "r", encoding="utf-8") as fh:
+        text = fh.read()
+    cells = next(
+        c for c in _iter_section_rows(text, "Diagram Class")
+        if _rule_name(c[0]) == RULE_EDGE_CROSSING_EXCESS
+    )
+    assert "ERROR" in cells[2] and "0.5" in cells[2]
+
+
+def test_legend_placement_node_overlap_error_reflected_in_doc(doc_rules):
+    """``legend-placement`` (1.10.7): WARNING by default; a box drawn over a node
+    (``overlaps-node-<id>``) is an ERROR on BOTH classes, carried by the hit's own
+    severity rather than ``RuleSpec.landscape`` or ``reason_escalations``. The
+    doc must record the ERROR in its Lint Rules severity and in both Diagram
+    Class cells."""
+    from rule_engine.linter import RULE_LEGEND_PLACEMENT
+    from rule_engine.ruleset import _iter_section_rows, _rule_name
+
+    assert RULE_LEGEND_PLACEMENT not in CLASS_ESCALATIONS
+    row = doc_rules[RULE_LEGEND_PLACEMENT]
+    assert row.default == Severity.WARNING.value
+    assert Severity.ERROR.value in row.severities
+    with open(require_ruleset(), "r", encoding="utf-8") as fh:
+        text = fh.read()
+    cells = next(
+        c for c in _iter_section_rows(text, "Diagram Class")
+        if _rule_name(c[0]) == RULE_LEGEND_PLACEMENT
+    )
+    for cell in (cells[1], cells[2]):
+        assert "ERROR" in cell and "overlaps-node" in cell

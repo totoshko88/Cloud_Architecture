@@ -423,5 +423,113 @@ def test_explicit_source_wins_over_repo_and_bundle(tmp_path: Path, monkeypatch) 
     assert iw.source_kind(resolved, str(explicit)) == "explicit"
 
 
+# ---------------------------------------------------------------------------
+# M1 (1.10.7) — stale-install guard: old lock / old engine vs the power pin
+# ---------------------------------------------------------------------------
+def _write_lock(target: Path, engine_version: str) -> None:
+    lock = {
+        "lock_version": iw.LOCK_VERSION,
+        "engine_version": engine_version,
+        "source": "explicit",
+        "files": {},
+    }
+    _write(target, iw.LOCK_REL, json.dumps(lock, indent=2) + "\n")
+
+
+def _bootstrapped(tmp_path: Path) -> tuple[Path, Path]:
+    """A source + a target bootstrapped from it (every file current)."""
+    source = _make_source(tmp_path)
+    target = tmp_path / "target"
+    iw.bootstrap(source, target, explicit=str(source))
+    return source, target
+
+
+def test_version_tuple_orders_releases_numerically() -> None:
+    assert iw._version_tuple("1.10.7") > iw._version_tuple("1.9.9")
+    assert iw._version_tuple("1.10.0") < iw._version_tuple("1.10.7")
+    assert iw._version_tuple("") == (0,)
+    assert iw._version_tuple("test") == (0,)
+
+
+def test_check_warns_when_lock_older_than_installed(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """A workspace bootstrapped by 1.10.0 checked by a 1.10.7 engine prints a
+    stale WARNING naming both versions (the quick/ regression: an old lock
+    silently served pre-1.10.6 rules)."""
+    monkeypatch.delenv("RULE_ENGINE_PIN", raising=False)
+    monkeypatch.setattr(iw, "_engine_version", lambda: "1.10.7")
+    source, target = _bootstrapped(tmp_path)
+    _write_lock(target, "1.10.0")
+
+    rc = iw.main(["--check", str(target), "--source", str(source)])
+    out = capsys.readouterr().out
+    assert "WARNING" in out
+    assert "1.10.0" in out and "1.10.7" in out
+    # The lock warning alone keeps the existing exit code (files are current).
+    assert rc == iw.EXIT_OK
+
+
+def test_check_fails_when_installed_older_than_pin(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """``RULE_ENGINE_PIN`` newer than the installed engine -> WARNING + exit 1."""
+    monkeypatch.setenv("RULE_ENGINE_PIN", "1.10.8")
+    monkeypatch.setattr(iw, "_engine_version", lambda: "1.10.7")
+    source, target = _bootstrapped(tmp_path)
+
+    rc = iw.main(["--check", str(target), "--source", str(source)])
+    out = capsys.readouterr().out
+    assert rc == iw.EXIT_FAIL
+    assert "WARNING" in out
+    assert "1.10.7" in out and "1.10.8" in out
+
+
+def test_expect_version_flag_overrides_env(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """An explicit ``--expect-version`` wins over ``$RULE_ENGINE_PIN``."""
+    monkeypatch.setenv("RULE_ENGINE_PIN", "1.10.8")
+    monkeypatch.setattr(iw, "_engine_version", lambda: "1.10.7")
+    source, target = _bootstrapped(tmp_path)
+
+    rc = iw.main([
+        "--check", str(target), "--source", str(source),
+        "--expect-version", "1.10.7",
+    ])
+    out = capsys.readouterr().out
+    assert rc == iw.EXIT_OK
+    assert "WARNING" not in out
+
+    rc = iw.main([
+        "--check", str(target), "--source", str(source),
+        "--expect-version", "1.11.0",
+    ])
+    out = capsys.readouterr().out
+    assert rc == iw.EXIT_FAIL
+    assert "1.11.0" in out and "1.10.8" not in out
+
+
+def test_bare_run_reports_prior_lock_version(
+    tmp_path: Path, monkeypatch, capsys
+) -> None:
+    """A bare run warns from the PRIOR lock (before it is rewritten) and then
+    records the installed version, so a second run is quiet."""
+    monkeypatch.delenv("RULE_ENGINE_PIN", raising=False)
+    monkeypatch.setattr(iw, "_engine_version", lambda: "1.10.7")
+    source, target = _bootstrapped(tmp_path)
+    _write_lock(target, "1.10.0")
+    capsys.readouterr()
+
+    rc = iw.main([str(target), "--source", str(source)])
+    out = capsys.readouterr().out
+    assert rc == iw.EXIT_OK
+    assert "WARNING" in out and "1.10.0" in out and "1.10.7" in out
+    assert iw.load_lock(target)["engine_version"] == "1.10.7"
+
+    iw.main([str(target), "--source", str(source)])
+    assert "WARNING" not in capsys.readouterr().out
+
+
 if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(pytest.main([__file__, "-v"]))

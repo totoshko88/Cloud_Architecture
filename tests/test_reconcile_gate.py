@@ -595,3 +595,52 @@ def test_property_landscape_blocks_iff_enumerated_role_undrawn(
 
     # Eligibility is exactly "no enumerated role is undrawn".
     assert report.eligible == (not expected_omitted)
+
+
+# --------------------------------------------------------------------------- #
+# S2 (1.10.7): role-less resources are reported, never silently invisible
+# --------------------------------------------------------------------------- #
+
+
+def test_roleless_resources_are_counted_and_warned(tmp_path: Path, capsys) -> None:
+    """One role-bearing and two unknown-type resources: the report stays
+    eligible (role-less resources are never omissions) but counts and names the
+    two the check could not see, and the CLI prints a WARNING line."""
+    from rule_engine.reconcile import main as reconcile_main
+
+    snapshot = _write_snapshot(
+        tmp_path,
+        {
+            "storage": [
+                _resource("aws::s3::bucket", "my-bucket"),
+                _resource("AWS::Glacier::Vault", "cold-archive"),
+            ],
+            "analytics": [_resource("AWS::QuickSight::Dashboard", "partner-dash")],
+        },
+    )
+    diagram = _write_diagram(tmp_path, ["object_store"], diagram_class="landscape")
+    report = reconcile(snapshot, diagram, "aws")
+    assert report.eligible
+    assert report.enumerated_count == 3
+    assert sorted(report.roleless) == ["cold-archive", "partner-dash"]
+    data = report.to_dict()
+    assert data["roleless_count"] == 2 and data["enumerated_count"] == 3
+    assert sorted(data["roleless"]) == ["cold-archive", "partner-dash"]
+
+    rc = reconcile_main(["--provider", "aws", "--snapshot", str(snapshot),
+                         "--diagram", str(diagram)])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "[OK]" in out
+    assert "[WARNING] 2 of 3" in out
+    assert "mappings/roles.yaml" in out
+
+
+def test_no_roleless_warning_when_every_resource_has_a_role(tmp_path: Path, capsys) -> None:
+    from rule_engine.reconcile import main as reconcile_main
+
+    snapshot = _write_snapshot(tmp_path, {"storage": [_resource("aws::s3::bucket", "b")]})
+    diagram = _write_diagram(tmp_path, ["object_store"], diagram_class="landscape")
+    assert reconcile_main(["--provider", "aws", "--snapshot", str(snapshot),
+                           "--diagram", str(diagram)]) == 0
+    assert "[WARNING]" not in capsys.readouterr().out

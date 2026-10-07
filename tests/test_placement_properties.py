@@ -96,7 +96,13 @@ def _base_cost(spec):
     so this is the same finished candidate the loop scores as the base. Scored
     through the shared :func:`_placement_cost` so the base and the winner are
     measured with the one objective the argmin keys on (Decision D3 / R5.6)."""
-    return _placement_cost(layout(spec, legacy=False))
+    placed = layout(spec, legacy=False)
+    # 1.10.7: a layout the repair loop could not clear is returned degraded (its
+    # residual findings in ``layout_warnings``) instead of raising; exclude it
+    # exactly like a refused spec.
+    if placed.layout_warnings:  # a corpus spec is never degraded; only hypothesis hits this
+        assume(False)
+    return _placement_cost(placed)
 
 
 def _assert_placement_not_worse_than_base(spec) -> None:
@@ -210,13 +216,19 @@ def _assert_placement_deterministic(spec) -> None:
     only meaningful for a spec that produces a diagram at all, so a refused spec
     is not a counterexample."""
     try:
-        first = _serialize_candidate(solve_placement(spec))
+        first_placed = solve_placement(spec)
     except (LayoutError, OverConnectedError):
         # The engine refuses this spec (fail-honest); Property 2 is conditional on
         # a placement existing, so this is not a counterexample.
         assume(False)
         return
 
+    # 1.10.7: a layout the repair loop could not clear is returned degraded (its
+    # residual findings in ``layout_warnings``) instead of raising; exclude it
+    # exactly like a refused spec.
+    if first_placed.layout_warnings:  # a corpus spec is never degraded; only hypothesis hits this
+        assume(False)
+    first = _serialize_candidate(first_placed)
     # The spec laid out once, so it must lay out again identically — a second
     # failure here would itself be a determinism defect, so it is NOT swallowed.
     second = _serialize_candidate(solve_placement(spec))

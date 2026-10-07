@@ -30,8 +30,8 @@ the source is now authored in draw.io â€” the only publishable diagram source â€
 replacing the retired PlantUML sketch. The diagram uses grayscale shapes only:
 white fill with black or gray stroke, and no vendor icons, exactly as
 `mappings/generic-icons.yaml` prescribes. The workload runs inside the `env-prod`
-Environment (the stack Boundary, drawn as a dashed green rectangle) with every
-runtime resource placed inside the `region-1` Network Boundary (dashed blue). An
+Environment (the stack Boundary, drawn as a dashed `#333333` rectangle) with every
+runtime resource placed inside the `region-1` Network Boundary (dashed `#666666`). An
 external end user reaches a managed Kubernetes cluster that fronts the API, which
 enqueues work on a message queue; a serverless function then consumes queued
 messages and calls the LLM platform and data stores. The diagram exercises seven
@@ -99,8 +99,8 @@ decision D1 (draw.io is the only publishable source), and the edge-routing rules
 this diagram follows. `diagram-lint.md` supplies the rule names and severities
 referenced in the Troubleshooting section, including `source-format`.
 `provider-profiles.md` supplies the `generic` profile: the terminology
-normalization for the nine neutral types, the container conventions (dashed green
-Environment, dashed blue Network), the grayscale palette, and the manual-entry
+normalization for the nine neutral types, the container conventions (dashed `#333333`
+Environment, dashed `#666666` Network), the grayscale palette, and the manual-entry
 verbs. `mappings/generic-icons.yaml` supplies the concrete grayscale style
 strings this diagram resolves for each node, and `kb-frontmatter.md` defines the
 twelve required frontmatter keys and section-length bounds this document conforms

@@ -252,6 +252,8 @@ def _boundaries_from(
                 style=skin.container_styles[
                     (style_kind or {}).get(kind_of[c.id], kind_of[c.id])
                 ],
+                # The PRESENTED kind: the summary draws its vpc boxes as regions.
+                kind=(style_kind or {}).get(kind_of[c.id], kind_of[c.id]),
             )
         )
     return out
@@ -331,7 +333,7 @@ def build_summary(skin: ProviderSkin, legacy: bool = False) -> str:
     title. ``legacy`` threads the ``--legacy`` flag to the layout pipeline so the
     retained ten-pass ``Legacy_Path`` can be selected; with the scored solver
     absent (Phase A) both routes produce byte-identical output."""
-    placed = layout(_presented(SUMMARY_SPEC, {"vpc": "region"}), legacy=legacy)
+    placed = layout(_presented(SUMMARY_SPEC, {"vpc": "region"}), legacy=legacy, strict=True)
     region_labels = {
         "boundary-region-a": f"region-primary ({skin.region_primary})",
         "boundary-region-b": f"region-passive ({skin.region_passive})",
@@ -361,7 +363,7 @@ def build_landscape(skin: ProviderSkin, legacy: bool = False) -> str:
     provider skin (icons, account/vpc/az labels, container styles) and title.
     ``legacy`` threads the ``--legacy`` flag to the layout pipeline (see
     :func:`build_summary`)."""
-    placed = layout(_presented(LANDSCAPE_SPEC), legacy=legacy)
+    placed = layout(_presented(LANDSCAPE_SPEC), legacy=legacy, strict=True)
     net, zone = native_terms(skin.provider)
     labels = {
         "boundary-account": skin.account_label,

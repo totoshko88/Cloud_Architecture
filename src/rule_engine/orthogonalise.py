@@ -189,11 +189,16 @@ def edge_hygiene_text(text: str, skip_ids: "Optional[set[str]]" = None) -> tuple
 
     Deterministic and idempotent: computes the marker de-collision, port
     distribution and parallel-trunk offsets on the parsed geometry, then rewrites
-    only the affected edge cells. Running twice yields no further change (each
-    underlying geometry pass returns empty on an already-clean diagram).
+    only the affected edge cells, then runs :func:`marker_hygiene_text` on the
+    result so a marker left on another edge's final line slides clear (1.10.7).
+    Running twice yields no further change (each underlying geometry pass
+    returns empty on an already-clean diagram).
     """
     geo = build_geometry(parse_drawio(text, path="<edge-hygiene>.drawio")[0])
-    new_labels = resolve_marker_collisions(geo)         # {eid: new_label_pos}
+    # Marker vs marker only here (clearance 0 disables phase 2): the marker vs
+    # foreign-edge slide must judge the FINAL lines, after ports and trunk
+    # offsets moved them, so it runs on the rewritten text below (1.10.7 D37).
+    new_labels = resolve_marker_collisions(geo, clearance=0.0)  # {eid: new_label_pos}
     new_ports = distribute_ports(geo)                   # {eid: {side: (x, y)}}
     new_points = offset_parallel_trunks(geo)            # {eid: [pts]}
     # Edges carrying a hand-verified geometry override (1.10.5) are already
@@ -205,7 +210,7 @@ def edge_hygiene_text(text: str, skip_ids: "Optional[set[str]]" = None) -> tuple
         new_ports = {k: v for k, v in new_ports.items() if k not in skip_ids}
         new_points = {k: v for k, v in new_points.items() if k not in skip_ids}
     if not (new_labels or new_ports or new_points):
-        return text, []
+        return marker_hygiene_text(text, skip_ids=skip_ids)
 
     changed: set[str] = set()
 
@@ -258,7 +263,40 @@ def edge_hygiene_text(text: str, skip_ids: "Optional[set[str]]" = None) -> tuple
 
         return head + body
 
-    return _EDGE_CELL_RE.sub(rewrite, text), sorted(changed)
+    out, slid = marker_hygiene_text(_EDGE_CELL_RE.sub(rewrite, text), skip_ids=skip_ids)
+    return out, sorted(changed | set(slid))
+
+
+def marker_hygiene_text(
+    text: str, skip_ids: "Optional[set[str]]" = None
+) -> tuple[str, List[str]]:
+    """Return ``(rewritten_xml, changed_edge_ids)`` after the marker pass alone.
+
+    Applies only :func:`~rule_engine.geometry.resolve_marker_collisions` (marker
+    vs marker, and marker vs a foreign edge's line, 1.10.7 D37) — never port
+    distribution or trunk offsets, which would move routed geometry. Used by
+    :func:`rule_engine.diagram_layout.build_diagram`, so every builder gets it.
+    Also the last step of :func:`edge_hygiene_text`, so the foreign-edge slide
+    judges the final lines. Edges in ``skip_ids`` are never moved.
+    Deterministic and idempotent; returns ``text`` unchanged when no marker
+    needs to move.
+    """
+    geo = build_geometry(parse_drawio(text, path="<marker-hygiene>.drawio")[0])
+    new_labels = resolve_marker_collisions(geo)
+    if skip_ids:
+        new_labels = {k: v for k, v in new_labels.items() if k not in skip_ids}
+    if not new_labels:
+        return text, []
+
+    def rewrite(match: re.Match) -> str:
+        head, body = match.group(1), match.group(2)
+        m = _ID_RE.search(head)
+        eid = m.group(1) if m else ""
+        if eid not in new_labels:
+            return match.group(0)
+        return head + _set_geom_relative_x(body, new_labels[eid])
+
+    return _EDGE_CELL_RE.sub(rewrite, text), sorted(new_labels)
 
 
 def report_edge_hygiene(path: Path) -> List[str]:

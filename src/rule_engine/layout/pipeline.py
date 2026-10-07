@@ -45,6 +45,7 @@ task 1.4, and the default path never references them (R1.6).
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 from typing import Dict, List, Tuple
 
 try:  # package-relative import when used as ``rule_engine.layout.pipeline``
@@ -64,6 +65,7 @@ try:  # package-relative import when used as ``rule_engine.layout.pipeline``
         _entry_face,
         spread_entries,
         spread_contacts,
+        spill_over_connected_faces,
     )
     from .place import place_nodes, size_containers, centre_block_in_vpc
     from .routers import (
@@ -84,6 +86,7 @@ try:  # package-relative import when used as ``rule_engine.layout.pipeline``
         MAX_REPAIR_ITERS,
         LayoutError,
         place_legend,
+        place_legend_for,
         _run_oracle,
         _repair,
         orthogonalise_candidate,
@@ -106,6 +109,7 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
         _entry_face,
         spread_entries,
         spread_contacts,
+        spill_over_connected_faces,
     )
     from layout.place import place_nodes, size_containers, centre_block_in_vpc  # type: ignore[no-redef]
     from layout.routers import (  # type: ignore[no-redef]
@@ -126,6 +130,7 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
         MAX_REPAIR_ITERS,
         LayoutError,
         place_legend,
+        place_legend_for,
         _run_oracle,
         _repair,
         orthogonalise_candidate,
@@ -431,6 +436,15 @@ def _global_contacts(
         for eid in spillable[:keep]:
             exits[eid] = (0.5, 1.0)              # bottom face → own fan-out corridor
             entries[eid] = (0.0, 0.5)            # enter the target's LEFT face
+
+    # 1e. Face spill (1.10.7, M3). A face still carrying more than
+    #     MAX_SIDE_EXITS contacts would make the spread below raise
+    #     OverConnectedError and the whole layout fail. Move the surplus onto
+    #     the adjacent contract-legal face instead (exits right <-> bottom,
+    #     entries left <-> top), farthest other endpoint first. Only a face that
+    #     would have raised is touched, so every layout that succeeded before is
+    #     byte-unchanged; the error survives only when both faces are full.
+    spill_over_connected_faces(list(spec.edges), placed, exits, entries)
 
     # 2. Spread same-side exits per source in EDGE-MARKER order: the first edge
     #    (lowest marker) keeps the face centre, the 2nd/3rd shift to the quarters
@@ -781,21 +795,10 @@ def _place_and_route(spec: DiagramSpec) -> "PlacedDiagram":
     #    geometry to seed each edge's rule-based variant — byte-identical here).
     placed_edges = _route_all_legacy(spec, placed, containers, exits, entries, lane_sides)
 
-    # 4. Place the right-margin Flow/Legend past the account box (Req 8).
-    account = next(
-        (containers[c.id] for c in spec.containers if c.kind == "account" and c.id in containers),
-        None,
-    )
-    if account is None:
-        # No account container: fall back to the bounding box of all containers /
-        # nodes so the legend still sits clear to the right.
-        right = max(
-            [b.right for b in containers.values()]
-            + [placed[n.id].footprint(LABEL_BAND).right for n in spec.nodes],
-            default=CONTAINER_PAD,
-        )
-        account = Box("_envelope", 0, 0, right, 0)
-    legend_x, legend_w = place_legend(account, spec.flow_lines)
+    # 4. Place the right-margin Flow/Legend past the account box and every node
+    #    footprint (icon + caption), so an external node drawn right of the
+    #    account is never under the Flow box (Req 8; 1.10.7).
+    legend_x, legend_w = place_legend_for(spec, placed, containers)
 
     return PlacedDiagram(
         spec=spec,
@@ -861,18 +864,7 @@ def _place_and_route_scored(spec: DiagramSpec) -> "PlacedDiagram":
     # Place the right-margin Flow/Legend past the account box — identical to
     # :func:`_place_and_route` step 4, so the only difference between the two
     # paths is the routed edge geometry, never the legend or the artifact format.
-    account = next(
-        (containers[c.id] for c in spec.containers if c.kind == "account" and c.id in containers),
-        None,
-    )
-    if account is None:
-        right = max(
-            [b.right for b in containers.values()]
-            + [placed[n.id].footprint(LABEL_BAND).right for n in spec.nodes],
-            default=CONTAINER_PAD,
-        )
-        account = Box("_envelope", 0, 0, right, 0)
-    legend_x, legend_w = place_legend(account, spec.flow_lines)
+    legend_x, legend_w = place_legend_for(spec, placed, containers)
 
     return PlacedDiagram(
         spec=spec,
@@ -969,6 +961,8 @@ def _normalise_origin(
         edges=edges,
         legend_x=_snap(placed.legend_x + dx),
         legend_w=placed.legend_w,
+        layout_warnings=placed.layout_warnings,
+        degraded=placed.degraded,
     )
 
 
@@ -978,6 +972,7 @@ def layout(
     spec: DiagramSpec,
     legacy: bool = False,
     *,
+    strict: bool = False,
     _placement: bool = True,
 ) -> "PlacedDiagram":
     """Turn a coordinate-free ``spec`` into a placed, repaired diagram (Req 9).
@@ -1025,9 +1020,22 @@ def layout(
     After the contacts+route stage produces an initial candidate, the bounded
     repair loop runs: on each pass, run the oracle (:func:`_run_oracle`); if it
     is clean (zero blocking findings), return the candidate; otherwise apply one
-    deterministic repair per fixable finding (:func:`_repair`) and retry. After
-    :data:`MAX_REPAIR_ITERS` passes with a blocking finding still present, raise
-    :class:`LayoutError` naming the first unresolved finding (Req 9.3).
+    deterministic repair per fixable finding (:func:`_repair`) and retry.
+
+    **Degrade, don't raise (1.10.7).** By default (``strict=False``) a
+    structurally valid spec within its class limits no longer raises when the
+    repair loop cannot reach an oracle-clean result: ``layout()`` returns the best
+    candidate it found — a clean placement variant when there is one, else the
+    one with the fewest residual findings, then the lowest ``route_cost`` — with
+    those findings in ``placed.layout_warnings`` and ``placed.degraded`` set.
+    **Check ``placed.layout_warnings``** before publishing; the linter reports the
+    same defects. An over-connected face first spills onto its adjacent legal
+    face (:func:`~rule_engine.layout.contacts.spill_over_connected_faces`); only
+    when both faces are full is that still a :class:`LayoutError`. With
+    ``strict=True`` (what the golden builders use) and on the ``legacy=True``
+    path, the pre-1.10.7 contract holds: after :data:`MAX_REPAIR_ITERS` passes
+    with a blocking finding still present, raise :class:`LayoutError` naming the
+    first unresolved finding (Req 9.3).
 
     Once the repair loop accepts a candidate, a final :func:`_normalise_origin`
     pass translates the whole layout by one grid-aligned delta so
@@ -1072,11 +1080,11 @@ def layout(
                 from .solver import solve_placement as _solve_placement
             except ImportError:  # pragma: no cover - flat-module fallback
                 from layout.solver import solve_placement as _solve_placement  # type: ignore[no-redef]
-            return _solve_placement(spec)
+            return _solve_placement(spec, strict=strict)
         # Inner scored route path (the placement loop's per-variant step, and the
         # 1.8.0 route-only path): no placement search, just place → size → centre
         # → scored solve → repair.
-        return _layout_scored_with_guard(spec)
+        return _layout_scored_with_guard(spec, strict=strict)
     except OverConnectedError as exc:
         raise LayoutError(
             f"layout({spec.diagram_id!r}) has an over-connected node — the "
@@ -1105,7 +1113,9 @@ def _annotate_edge_regions(spec: DiagramSpec) -> DiagramSpec:
     return _replace(spec, edges=tuple(edges)) if changed else spec
 
 
-def _layout_scored_with_guard(spec: DiagramSpec) -> "PlacedDiagram":
+def _layout_scored_with_guard(
+    spec: DiagramSpec, *, strict: bool = False
+) -> "PlacedDiagram":
     """The default scored path with the whole-diagram Property 4 guarantee (R3.10).
 
     The scored solver picks each edge's variant greedily against the edges
@@ -1123,12 +1133,30 @@ def _layout_scored_with_guard(spec: DiagramSpec) -> "PlacedDiagram":
     ``route_cost(scored) <= route_cost(legacy)`` hold on every diagram while
     staying byte-identical run to run (R4.1). The extra legacy finish is the cost
     of the hard guarantee; the design retains the rule-based route precisely so it
-    can be fallen back to."""
-    scored = _finish(spec, _place_and_route_scored(spec))
-    legacy_finished = _finish(spec, _place_and_route(spec))
-    if _finished_cost(legacy_finished).as_tuple() < _finished_cost(scored).as_tuple():
-        return legacy_finished
-    return scored
+    can be fallen back to.
+
+    ``strict`` (1.10.7, M3): with ``strict=True`` either finish raises
+    :class:`LayoutError` exactly as before. Otherwise both finish without
+    raising; when both are oracle-clean the comparison above is unchanged, byte
+    for byte. When either carries ``layout_warnings`` the clean one wins (scored
+    first), else the one with fewer warnings, then the cheaper ``route_cost``,
+    scored on a tie — and the result is marked ``degraded``, the case in which a
+    strict layout would have raised."""
+    scored = _finish(spec, _place_and_route_scored(spec), strict=strict)
+    legacy_finished = _finish(spec, _place_and_route(spec), strict=strict)
+    if not scored.layout_warnings and not legacy_finished.layout_warnings:
+        if _finished_cost(legacy_finished).as_tuple() < _finished_cost(scored).as_tuple():
+            return legacy_finished
+        return scored
+    clean = [c for c in (scored, legacy_finished) if not c.layout_warnings]
+    if clean:
+        winner = clean[0]
+    else:
+        winner = min(
+            (scored, legacy_finished),
+            key=lambda c: (len(c.layout_warnings), _finished_cost(c).as_tuple()),
+        )
+    return replace(winner, degraded=True)
 
 
 def _clear_container_border_rides(candidate: "PlacedDiagram") -> "PlacedDiagram":
@@ -1242,7 +1270,9 @@ def _contain_escaping_routes(candidate: "PlacedDiagram") -> "PlacedDiagram":
     )
     legend_x, legend_w = candidate.legend_x, candidate.legend_w
     if account is not None:
-        legend_x, legend_w = place_legend(account, candidate.spec.flow_lines)
+        legend_x, legend_w = place_legend_for(
+            candidate.spec, candidate.nodes, containers
+        )
     trial = PlacedDiagram(
         spec=candidate.spec, nodes=candidate.nodes, containers=containers,
         edges=candidate.edges, legend_x=legend_x, legend_w=legend_w,
@@ -1316,7 +1346,23 @@ def _straighten_top_entry_approaches(candidate: "PlacedDiagram") -> "PlacedDiagr
     return candidate
 
 
-def _finish(spec: DiagramSpec, candidate: "PlacedDiagram") -> "PlacedDiagram":
+def _degraded_finish(
+    candidate: "PlacedDiagram", findings, margins: Tuple[int, int]
+) -> "PlacedDiagram":
+    """Normalise a candidate the repair loop could not clear and record why.
+
+    The residual blocking findings of the last oracle run become
+    ``layout_warnings`` (``"<rule>: <payload>"``, in the oracle's stable order),
+    so the caller can surface them (1.10.7, M3). The oracle-guarded finishing
+    passes are skipped: each keeps its change only on an oracle-clean diagram,
+    which this one is not."""
+    warnings = tuple(f"{rule}: {payload!r}" for rule, payload in findings.blocking)
+    return replace(_normalise_origin(candidate, margins), layout_warnings=warnings)
+
+
+def _finish(
+    spec: DiagramSpec, candidate: "PlacedDiagram", *, strict: bool = True
+) -> "PlacedDiagram":
     """Run the bounded repair loop and the final origin normalisation on a routed
     ``candidate`` (the finishing stage shared by the legacy and scored paths).
 
@@ -1327,7 +1373,13 @@ def _finish(spec: DiagramSpec, candidate: "PlacedDiagram") -> "PlacedDiagram":
     present, raise :class:`LayoutError` naming the first unresolved finding
     (Req 9.3). Deterministic: the oracle's finding order is stable and each
     repair is a fixed transform, so the same candidate finishes identically every
-    time (Req 11.1, 11.4)."""
+    time (Req 11.1, 11.4).
+
+    ``strict=False`` (1.10.7, M3) degrades instead of raising: when the loop is
+    exhausted, or :func:`_repair` meets a finding it cannot fix, the current
+    candidate is normalised and returned with its residual findings in
+    ``layout_warnings`` (:func:`_degraded_finish`). An oracle-clean candidate is
+    finished identically in both modes."""
     # Reserve a title band above the top container so the diagram title never
     # overlaps the container border / its top-left badge (Req 12.4 + title cell).
     margins = (CONTAINER_PAD, CONTAINER_PAD + TITLE_BAND)
@@ -1361,13 +1413,21 @@ def _finish(spec: DiagramSpec, candidate: "PlacedDiagram") -> "PlacedDiagram":
         # Re-align after each repair: a corridor bump moves interior waypoints but
         # not the pinned contacts, so an aligned end leg comes back diagonal
         # (see orthogonalise_candidate).
-        candidate = orthogonalise_candidate(_repair(candidate, findings))
+        try:
+            repaired = _repair(candidate, findings)
+        except LayoutError:
+            if strict:
+                raise
+            return _degraded_finish(candidate, findings, margins)
+        candidate = orthogonalise_candidate(repaired)
         findings = _run_oracle(candidate)
 
     if findings.clean:
         candidate = _straighten_top_entry_approaches(candidate)
         candidate = _contain_escaping_routes(candidate)
         return _normalise_origin(candidate, margins)
+    if not strict:
+        return _degraded_finish(candidate, findings, margins)
     rule, payload = findings.first_unresolved  # type: ignore[misc]
     raise LayoutError(
         f"layout({spec.diagram_id!r}) still has blocking finding {rule!r} on "

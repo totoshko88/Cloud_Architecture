@@ -359,6 +359,10 @@ def test_scored_route_cost_never_exceeds_rule_based(spec) -> None:
         assume(False)
         return
 
+    # 1.10.7: a layout the repair loop could not clear is returned degraded (its
+    # residual findings in ``layout_warnings``) instead of raising; exclude it
+    # exactly like a refused spec.
+    assume(not placed.layout_warnings)
     assume(len(placed.edges) >= 1)
 
     for edge in placed.edges:
@@ -462,6 +466,10 @@ def test_every_variant_is_contract_legal(spec) -> None:
         assume(False)
         return
 
+    # 1.10.7: a layout the repair loop could not clear is returned degraded (its
+    # residual findings in ``layout_warnings``) instead of raising; exclude it
+    # exactly like a refused spec.
+    assume(not placed.layout_warnings)
     assume(len(placed.edges) >= 1)
 
     for edge in placed.edges:
@@ -599,6 +607,10 @@ def test_scored_router_is_deterministic(spec) -> None:
         assume(False)
         return
 
+    # 1.10.7: a layout the repair loop could not clear is returned degraded (its
+    # residual findings in ``layout_warnings``) instead of raising; exclude it
+    # exactly like a refused spec.
+    assume(not placed.layout_warnings)
     assume(len(placed.edges) >= 1)
 
     # Place ONCE through the real place -> size -> centre stages; both solver runs
