@@ -105,6 +105,11 @@ def main(argv: list[str] | None = None) -> int:
     ``VERSION``, ``pyproject.toml`` and the newest ``CHANGELOG.md`` section all
     name the same version. Exits ``1`` naming each source's value when they
     disagree.
+
+    ``--aws-asset-date`` checks that every date-stamped AWS asset path in the
+    committed mappings matches the pinned AWS pack date (REVIEW.md audit H1), so
+    a pin bump that was not propagated to the generated style paths fails here
+    instead of shipping silently-broken icons.
     """
     args = list(sys.argv[1:] if argv is None else argv)
     if args and args[0] == "--dates":
@@ -166,12 +171,54 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         print("OK: every doc's stated Python floor agrees with requires-python.")
         return 0
+    if args and args[0] == "--aws-asset-date":
+        if len(args) > 2:
+            print(
+                "usage: python -m rule_engine.version_guard --aws-asset-date [<repo_root>]",
+                file=sys.stderr,
+            )
+            return 2
+        repo_root = args[1] if len(args) == 2 else "."
+        problems = aws_asset_date_problems(repo_root)
+        if problems:
+            print(
+                "BLOCKING: committed AWS asset paths disagree with the pinned "
+                "pack date:",
+                file=sys.stderr,
+            )
+            for problem in problems:
+                print(f"    - {problem}", file=sys.stderr)
+            return 1
+        print("OK: every dated AWS asset path matches the pinned pack date.")
+        return 0
+    if args and args[0] == "--security-doc":
+        if len(args) > 2:
+            print(
+                "usage: python -m rule_engine.version_guard --security-doc [<repo_root>]",
+                file=sys.stderr,
+            )
+            return 2
+        repo_root = args[1] if len(args) == 2 else "."
+        problems = security_doc_problems(repo_root)
+        if problems:
+            print(
+                "BLOCKING: SECURITY.md supported-version matrix disagrees with "
+                "pyproject:",
+                file=sys.stderr,
+            )
+            for problem in problems:
+                print(f"    - {problem}", file=sys.stderr)
+            return 1
+        print("OK: SECURITY.md supported row names the current minor.")
+        return 0
     if len(args) != 2:
         print(
             "usage: python -m rule_engine.version_guard <changelog_path> <version>\n"
             "   or: python -m rule_engine.version_guard --triple [<repo_root>]\n"
             "   or: python -m rule_engine.version_guard --dates [<changelog_path>]\n"
-            "   or: python -m rule_engine.version_guard --python-docs [<repo_root>]",
+            "   or: python -m rule_engine.version_guard --python-docs [<repo_root>]\n"
+            "   or: python -m rule_engine.version_guard --aws-asset-date [<repo_root>]\n"
+            "   or: python -m rule_engine.version_guard --security-doc [<repo_root>]",
             file=sys.stderr,
         )
         return 2
@@ -438,6 +485,165 @@ def python_floor_doc_problems(repo_root: str | Path) -> list[str]:
                         f"(\"{m.group(0)}\") but pyproject requires-python is "
                         f">={floor}"
                     )
+    return problems
+
+
+# ---------------------------------------------------------------------------
+# AWS dated-asset-path coupling (process fix after 1.10.6, REVIEW.md audit H1)
+# ---------------------------------------------------------------------------
+#
+# The AWS official icon pack unpacks into DATE-STAMPED directories
+# (``Architecture-Service-Icons_07312026/…``). The Asset Index globs the date
+# (``Architecture-Service-Icons_*``) so indexing is date-agnostic, but the
+# COMMITTED, generated style strings in ``mappings/aws-icons.yaml`` and
+# ``mappings/icon-index.json`` bake the literal date into every ``image=…`` path
+# (70 occurrences at 1.10.6). That date is only correct because the pinned pack
+# in ``asset-sources.yaml`` happens to carry the same ``Icon-package_<date>``.
+#
+# When AWS ships the next quarterly pack and the pin is bumped, the unpack dir
+# becomes ``…_<newdate>`` while every committed path still points at the old
+# dir — a well-formed path to a file that no longer exists. The linter's
+# ``icon-resolved`` rule CANNOT catch this (a syntactically valid path that is
+# simply absent renders as an empty icon), so broken AWS glyphs would ship
+# silently. This guard makes the coupling a checked contract: the date segment
+# in every committed AWS mapping path must equal the date in the pinned pack
+# URL. A pin bump that does not propagate to the generated style paths fails
+# here instead of shipping broken icons.
+
+#: The AWS pack URL carries the authoritative date token, e.g.
+#: ``Icon-package_07312026.<hash>.zip`` -> ``07312026``.
+_AWS_PACK_DATE_RE = re.compile(r"Icon-package_(\d+)")
+
+#: Any dated AWS asset directory in a committed mapping path, e.g.
+#: ``Architecture-Service-Icons_07312026`` / ``Resource-Icons_07312026`` /
+#: ``Architecture-Group-Icons_07312026`` -> capture the date.
+_AWS_DATED_DIR_RE = re.compile(
+    r"(?:Architecture-Service-Icons|Architecture-Group-Icons|Resource-Icons)_(\d+)"
+)
+
+#: Files whose committed AWS asset paths must match the pinned pack date.
+AWS_DATED_PATH_FILES = ("mappings/aws-icons.yaml", "mappings/icon-index.json")
+
+#: Where the pinned AWS pack URL lives.
+ASSET_SOURCES_FILE = "mappings/asset-sources.yaml"
+
+
+def read_aws_pack_date(repo_root: str | Path) -> str | None:
+    """Return the date token of the pinned AWS pack, or ``None`` if absent.
+
+    Reads the ``Icon-package_<date>`` token from the AWS ``url:`` in
+    ``mappings/asset-sources.yaml``. Deliberately a text match (not a YAML load)
+    so the guard has no import-time dependency and cannot be defeated by a
+    reformatted-but-equivalent URL.
+    """
+    path = Path(repo_root) / ASSET_SOURCES_FILE
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    m = _AWS_PACK_DATE_RE.search(text)
+    return m.group(1) if m else None
+
+
+def aws_asset_date_problems(repo_root: str | Path) -> list[str]:
+    """Return committed AWS mapping paths whose date differs from the pinned pack.
+
+    Empty list = every dated AWS asset path matches the pinned pack date (or no
+    AWS pack is pinned and no dated path exists). Each problem names the file,
+    the stale date it carries, and the authoritative pinned date — so a pin bump
+    that was not propagated to the generated style paths is a blocking,
+    self-describing failure instead of silently-broken icons.
+    """
+    pinned = read_aws_pack_date(repo_root)
+    root = Path(repo_root)
+    # Collect the distinct dates actually present in the committed mappings.
+    present: dict[str, set[str]] = {}
+    for rel in AWS_DATED_PATH_FILES:
+        try:
+            text = (root / rel).read_text(encoding="utf-8")
+        except OSError:
+            continue  # a missing mapping file is not this guard's concern
+        dates = {m.group(1) for m in _AWS_DATED_DIR_RE.finditer(text)}
+        if dates:
+            present[rel] = dates
+    if pinned is None:
+        if present:
+            return [
+                f"{ASSET_SOURCES_FILE}: no 'Icon-package_<date>' AWS pack pin found, "
+                f"but {rel} carries dated AWS paths {sorted(dates)!r} "
+                "(cannot verify they match the pack)"
+                for rel, dates in sorted(present.items())
+            ]
+        return []
+    problems: list[str] = []
+    for rel, dates in sorted(present.items()):
+        for stale in sorted(dates - {pinned}):
+            problems.append(
+                f"{rel}: AWS asset paths carry date {stale!r} but the pinned "
+                f"pack in {ASSET_SOURCES_FILE} is {pinned!r}; regenerate the "
+                "mappings from the pinned pack (the dated dir must match)"
+            )
+    return problems
+
+
+# ---------------------------------------------------------------------------
+# SECURITY.md supported-version matrix (process fix after 1.10.6, audit MED)
+# ---------------------------------------------------------------------------
+#
+# SECURITY.md states "Security fixes are applied to the latest released minor
+# version" and then lists a supported row (``| 1.10.x | ✅ |``). That row is a
+# hand-maintained copy of the current minor and rotted to ``1.4.x`` while the
+# project shipped 1.10.x — the same single-source-of-truth drift G5/G9 fixed for
+# the release version and the Python floor, but the support matrix was never
+# gated. This guard reads the active ``major.minor`` from ``pyproject.toml`` and
+# blocks a supported row that names a different minor.
+
+SECURITY_FILE = "SECURITY.md"
+
+#: A supported-version row: ``| 1.10.x | :white_check_mark: |`` -> ``1.10``.
+#: Matches a ``X.Y.x`` (or ``X.Y.*``) cell marked supported (check-mark emoji or
+#: ``:white_check_mark:``). The ``< X.Y`` unsupported row is ignored.
+_SECURITY_SUPPORTED_RE = re.compile(
+    r"^\|\s*v?(\d+)\.(\d+)\.(?:x|\*)\s*\|\s*(?::white_check_mark:|\u2705)",
+    re.MULTILINE,
+)
+
+
+def read_pyproject_minor(repo_root: str | Path) -> str | None:
+    """Return the active ``major.minor`` from ``pyproject.toml`` (``1.10``)."""
+    full = read_pyproject_version(repo_root)
+    if full is None:
+        return None
+    parts = full.split(".")
+    return ".".join(parts[:2]) if len(parts) >= 2 else None
+
+
+def security_doc_problems(repo_root: str | Path) -> list[str]:
+    """Return problems with the SECURITY.md supported-version matrix.
+
+    Empty list = the supported row names the active ``major.minor`` (or the doc
+    is absent/has no matrix). A supported row naming any other minor is a
+    blocking problem, named against the authoritative pyproject minor.
+    """
+    minor = read_pyproject_minor(repo_root)
+    if minor is None:
+        return [f"{PYPROJECT_FILE}: no [project] version found (cannot verify {SECURITY_FILE})"]
+    path = Path(repo_root) / SECURITY_FILE
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return []  # a missing SECURITY.md is not this guard's concern
+    supported = [f"{m.group(1)}.{m.group(2)}" for m in _SECURITY_SUPPORTED_RE.finditer(text)]
+    if not supported:
+        return []  # no machine-readable supported row to check
+    problems: list[str] = []
+    for found in supported:
+        if found != minor:
+            problems.append(
+                f"{SECURITY_FILE}: supported row names minor {found!r}.x but "
+                f"pyproject.toml is on {minor!r}.x; the latest-minor support "
+                "policy means the row must name the current minor"
+            )
     return problems
 
 

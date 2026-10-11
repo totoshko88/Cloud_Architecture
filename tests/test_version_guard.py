@@ -320,3 +320,96 @@ def test_python_floor_matrix_mention_is_not_flagged(tmp_path: Path) -> None:
 def test_python_docs_cli_mode(capsys: pytest.CaptureFixture) -> None:
     """``--python-docs`` exits 0 on the consistent repo tree."""
     assert main(["--python-docs", str(REPO_ROOT)]) == 0
+
+
+# ---------------------------------------------------------------------------
+# AWS dated-asset-path coupling (REVIEW.md audit H1)
+# ---------------------------------------------------------------------------
+
+
+def test_aws_asset_dates_agree_in_repo() -> None:
+    """Every committed AWS asset path matches the pinned pack date.
+
+    Guards against a pin bump (next quarterly AWS pack) that is not propagated
+    to the generated ``image=…`` style paths in the mappings — a well-formed
+    path to a file that no longer exists, which the linter's ``icon-resolved``
+    rule cannot catch (an absent-but-valid path renders as an empty icon).
+    """
+    from rule_engine.version_guard import aws_asset_date_problems
+
+    assert aws_asset_date_problems(REPO_ROOT) == []
+
+
+def test_aws_asset_date_drift_is_flagged(tmp_path: Path) -> None:
+    """A mapping path whose date differs from the pinned pack is a problem."""
+    from rule_engine.version_guard import aws_asset_date_problems
+
+    (tmp_path / "mappings").mkdir()
+    (tmp_path / "mappings" / "asset-sources.yaml").write_text(
+        'providers:\n  aws:\n    url: "https://x/Icon-package_07312026.deadbeef.zip"\n',
+        encoding="utf-8",
+    )
+    # The mapping still points at a stale (next-quarter) dated directory.
+    (tmp_path / "mappings" / "aws-icons.yaml").write_text(
+        "llm_platform:\n  style: \"image=assets/vendor/aws-icons/"
+        "Architecture-Service-Icons_01302027/Arch_AI/48/Arch_Bedrock_48.svg\"\n",
+        encoding="utf-8",
+    )
+    problems = aws_asset_date_problems(tmp_path)
+    assert problems, "expected the stale 01302027 path to be flagged"
+    assert any("01302027" in p and "07312026" in p for p in problems)
+
+
+def test_aws_asset_date_missing_pin_is_flagged(tmp_path: Path) -> None:
+    """Dated AWS paths with no pack pin to verify against is a problem."""
+    from rule_engine.version_guard import aws_asset_date_problems
+
+    (tmp_path / "mappings").mkdir()
+    (tmp_path / "mappings" / "asset-sources.yaml").write_text(
+        "providers:\n  aws:\n    url: \"https://x/no-date-token.zip\"\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "mappings" / "icon-index.json").write_text(
+        '{"p":"Resource-Icons_07312026/Res_X/Res_Y_48.svg"}', encoding="utf-8"
+    )
+    problems = aws_asset_date_problems(tmp_path)
+    assert problems, "expected a missing-pin problem when dated paths exist"
+    assert any("no 'Icon-package_<date>'" in p for p in problems)
+
+
+def test_aws_asset_date_cli_mode(capsys: pytest.CaptureFixture) -> None:
+    """``--aws-asset-date`` exits 0 on the consistent repo tree."""
+    assert main(["--aws-asset-date", str(REPO_ROOT)]) == 0
+
+
+# ---------------------------------------------------------------------------
+# SECURITY.md supported-version matrix (REVIEW.md audit MED)
+# ---------------------------------------------------------------------------
+
+
+def test_security_doc_matrix_agrees_in_repo() -> None:
+    """SECURITY.md's supported row names the current minor."""
+    from rule_engine.version_guard import security_doc_problems
+
+    assert security_doc_problems(REPO_ROOT) == []
+
+
+def test_security_doc_stale_matrix_is_flagged(tmp_path: Path) -> None:
+    """A supported row naming an old minor (the 1.4.x rot) is a problem."""
+    from rule_engine.version_guard import security_doc_problems
+
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nversion = "1.10.7"\n', encoding="utf-8"
+    )
+    (tmp_path / "SECURITY.md").write_text(
+        "| Version | Supported |\n| 1.4.x | :white_check_mark: |\n| < 1.4 | :x: |\n",
+        encoding="utf-8",
+    )
+    problems = security_doc_problems(tmp_path)
+    assert problems, "expected the stale 1.4.x supported row to be flagged"
+    assert any("1.4" in p and "1.10" in p for p in problems)
+
+
+def test_security_doc_cli_mode(capsys: pytest.CaptureFixture) -> None:
+    """``--security-doc`` exits 0 on the consistent repo tree."""
+    assert main(["--security-doc", str(REPO_ROOT)]) == 0

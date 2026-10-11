@@ -101,6 +101,13 @@ validate:
     # it as prose and drifted (CONTRIBUTING said "Python 3.14+" after the floor
     # moved to 3.11). Runs on every pipeline, not just releases.
     - python -m rule_engine.version_guard --python-docs .
+    # AWS asset paths bake a date-stamped dir; a pin bump not propagated to the
+    # committed mappings ships valid-but-absent paths (empty icons the linter
+    # cannot catch). Checked contract — REVIEW.md audit H1.
+    - python -m rule_engine.version_guard --aws-asset-date .
+    # SECURITY.md supported row must name the current minor (latest-minor policy);
+    # it rotted to 1.4.x while shipping 1.10.x. Checked contract — audit MED.
+    - python -m rule_engine.version_guard --security-doc .
     - echo "Confirming the Inventory Schema is a valid JSON Schema"
     - |
       python -c "

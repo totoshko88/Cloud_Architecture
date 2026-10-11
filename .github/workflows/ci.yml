@@ -165,6 +165,20 @@ jobs:
         # floor moved to 3.11. This guard makes the docs floor a checked contract
         # (the single-source-of-truth fix G5 did for the release version).
         run: python -m rule_engine.version_guard --python-docs .
+      - name: Verify committed AWS asset paths match the pinned pack date
+        # The AWS pack unpacks into DATE-STAMPED dirs (Architecture-Service-
+        # Icons_<date>). The index globs the date, but the committed style
+        # strings in mappings/aws-icons.yaml + icon-index.json bake the literal
+        # date in (70 paths). A pin bump that is not propagated leaves every
+        # path pointing at a dir that no longer exists — a valid-but-absent
+        # path the linter's icon-resolved rule cannot catch (empty icon). This
+        # guard makes the coupling a checked contract (REVIEW.md audit H1).
+        run: python -m rule_engine.version_guard --aws-asset-date .
+      - name: Verify SECURITY.md supported-version matrix matches pyproject
+        # SECURITY.md says fixes land on the latest minor, then lists a supported
+        # row (| 1.10.x | ✅ |). That row rotted to 1.4.x while shipping 1.10.x —
+        # the same single-source-of-truth drift G5/G9 fixed, now gated.
+        run: python -m rule_engine.version_guard --security-doc .
       - name: Verify every Generated_Example is fresh (generator --check, all fifteen)
         # R8.1: every Example_Generator has a --check mode that regenerates in
         # memory and compares with the committed file. The generator table lives
