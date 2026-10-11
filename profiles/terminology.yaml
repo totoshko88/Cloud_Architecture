@@ -219,7 +219,12 @@ resources:
       icon: { id: mxgraph.aws4.bedrock, name: Amazon Bedrock, hex: "#01A88D" }
     azure:
       label: Azure OpenAI
-      aliases: [azure_openai, cognitive_services, openai, azurerm_cognitive_account]
+      # Microsoft is consolidating the Azure AI stack under Microsoft Foundry
+      # (formerly Azure AI Studio); Azure OpenAI remains a real service name and
+      # the shipped icon/label, so these are additive input aliases only — a
+      # snapshot naming Foundry resolves to this node without a geometry change.
+      aliases: [azure_openai, cognitive_services, openai, azurerm_cognitive_account,
+                azure_ai_foundry, ai_foundry, foundry, foundry_agent_service]
       icon: { id: azure.cognitive_services, name: Azure OpenAI Service, hex: "#0078D4" }
     gcp:
       label: Vertex AI

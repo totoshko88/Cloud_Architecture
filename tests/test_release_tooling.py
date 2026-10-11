@@ -211,3 +211,54 @@ def test_dry_run_runner_executes_nothing(capsys, tmp_path):
 def test_theme_is_taken_from_the_changelog_section():
     assert release._theme("**Theme: faster gates.** More text.") == "faster gates"
     assert release._theme("no theme line") == "release"
+
+
+# --------------------------------------------------------------------------- #
+# preflight ⊇ CI gate drift guard (REVIEW.md audit H3)
+# --------------------------------------------------------------------------- #
+
+
+def _preflight_gate_tokens() -> set[str]:
+    """The gate 'verbs' preflight runs, as a set of identifying tokens.
+
+    A step command is reduced to the gate module / script it invokes plus any
+    ``--mode`` flag, so the comparison is robust to arg ordering.
+    """
+    tokens: set[str] = set()
+    for _name, cmd in release._gate_steps(fast=False):
+        parts = [c for c in cmd if not c.endswith("python") and "/python" not in c]
+        for p in parts:
+            if p.startswith("rule_engine.") or p.endswith(".py") or p.startswith("--"):
+                tokens.add(p.replace("rule_engine.", "").replace("scripts/", ""))
+    return tokens
+
+
+def test_preflight_covers_the_ci_validate_gates():
+    """preflight must run every gate the CI validate stage runs (H3).
+
+    The three gate runners (local preflight, GitHub CI, GitLab CI) had drifted:
+    preflight was the weakest, missing the asset fetch and ~11 gates, so a green
+    `make preflight` did not mean a green CI. This pins preflight as a superset
+    of the CI gate verbs so they cannot silently diverge again.
+    """
+    tokens = _preflight_gate_tokens()
+    required = {
+        "fetch_assets.py",            # packs fetched before icon/raster gates
+        "asset_paths_guard",          # rule-engine-check-asset-paths
+        "build_icon_sets_cli",        # rule-engine-build-icon-sets --check
+        "validate_schema_cli",        # rule-engine-validate-schema
+        "regen_examples.py",          # example freshness
+        "cli",                        # rule-engine-lint
+        "verify_icon",                # rule-engine-verify-icon --strict
+        "raster_gate",                # rule-engine-check-rasters
+        "snapshot_gate",              # rule-engine-check-snapshot --strict
+        "build_example_snapshots.py", # snapshot data freshness
+        "reconcile",                  # rule-engine-reconcile
+        "orthogonalise_drawio.py",    # edge alignment
+        "version_guard",              # dates / python-docs / aws-asset-date
+        "--python-docs",
+        "--aws-asset-date",
+        "--security-doc",
+    }
+    missing = required - tokens
+    assert not missing, f"preflight is missing CI gate(s): {sorted(missing)}"

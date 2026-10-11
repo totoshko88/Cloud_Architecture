@@ -178,13 +178,40 @@ def pin_problems(root: Path = REPO) -> List[str]:
 
 
 def _gate_steps(fast: bool) -> List[Tuple[str, List[str]]]:
+    """The local gate suite, mirroring the CI ``validate`` + ``test`` stages.
+
+    This must stay a SUPERSET of the gate commands the CI pipelines run, so a
+    green ``preflight`` means a green CI (REVIEW.md audit H3). The icon packs
+    are fetched FIRST, fail-closed exactly as CI does, because the icon/raster/
+    layout-split gates verify committed data-URI examples against the fetched
+    pack bytes — without the fetch, ``verify-icon --strict`` passes on near-zero
+    verification. ``tests/test_release_tooling.py`` asserts this set covers the
+    CI gate commands so the two cannot drift.
+    """
     py = sys.executable
     steps: List[Tuple[str, List[str]]] = [
+        # Single-source-of-truth / docs guards (CI "always-run" stage). CHANGELOG
+        # dates are already checked in-process by cmd_preflight, so they are not
+        # repeated here.
+        ("python docs floor", [py, "-m", "rule_engine.version_guard", "--python-docs", "."]),
+        ("aws asset date", [py, "-m", "rule_engine.version_guard", "--aws-asset-date", "."]),
+        ("security doc matrix", [py, "-m", "rule_engine.version_guard", "--security-doc", "."]),
+        # Fetch the official packs so the icon/raster/split gates verify against
+        # real bytes, not an empty asset root. Fail-closed, as CI is.
+        ("fetch icon packs", [py, "scripts/fetch_assets.py", "--only",
+                              "gcp_category", "gcp_core", "azure", "aws", "oci"]),
+        ("asset paths", [py, "-m", "rule_engine.asset_paths_guard"]),
+        ("icon index freshness", [py, "-m", "rule_engine.build_icon_sets_cli",
+                                  "--check", "--no-fetch", "--allow-missing"]),
+        ("schema", [py, "-m", "rule_engine.validate_schema_cli",
+                    "--schema", "schemas/inventory.schema.json",
+                    "--targets", "examples/**/*.json"]),
         ("example freshness", [py, "scripts/regen_examples.py", "--check"]),
         ("lint", [py, "-m", "rule_engine.cli", "--all", "--fail-on", "error,critical"]),
         ("icon references", [py, "-m", "rule_engine.verify_icon", "--all", "--strict"]),
         ("raster budget", [py, "-m", "rule_engine.raster_gate"]),
         ("snapshot shape", [py, "-m", "rule_engine.snapshot_gate", "--root", "examples", "--strict"]),
+        ("snapshot data freshness", [py, "scripts/build_example_snapshots.py", "--check"]),
     ]
     for provider, snap, diagram in RECONCILE_PAIRS:
         steps.append((f"reconcile {provider}", [py, "-m", "rule_engine.reconcile",
