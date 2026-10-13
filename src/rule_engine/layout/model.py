@@ -77,6 +77,15 @@ class NodeSpec:
     #: an active peer with its edges omitted for clarity. Coordinate-free: it
     #: names a vocabulary term, never geometry.
     overlay: Optional[str] = None
+    #: Optional **per-node scope override** (Theme 14). Normally a node's
+    #: network/regional/global scope comes from its role (:data:`ROLE_SCOPE`),
+    #: and a ``regional`` role (e.g. ``serverless_fn``) may not sit inside a
+    #: VPC/AZ. A genuinely VPC-attached function (subnet ENIs) is the honest
+    #: exception: set ``scope="network"`` on that one node and it may be declared
+    #: inside the Network Boundary, without changing the role's default for every
+    #: other diagram. One of ``"network"`` / ``"regional"`` / ``"global"``;
+    #: ``None`` means "use the role default". Coordinate-free.
+    scope: Optional[str] = None
 
 
 @dataclass(frozen=True)

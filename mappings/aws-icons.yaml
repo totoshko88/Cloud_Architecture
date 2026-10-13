@@ -337,6 +337,13 @@ resources:
     brand_hex: "#13AA52"
     style: "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#13AA52;fontColor=#13AA52;verticalAlign=middle;fontSize=12"
 
+  # Fleet of N (Theme 22) — stacked-box glyph for a count of like resources.
+  fleet:
+    icon_id: fleet.stack
+    icon_provenance: neutral
+    brand_hex: "#333333"
+    style: "shape=mxgraph.flowchart.multiple_documents;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12"
+
 # Container styles for boundaries (using mxgraph.aws4.group for proper draw.io
 # group behavior — these are structural elements, not service icons)
 # `brand_hex` on a container entry is the PROVIDER ANCHOR (AWS Squid Ink

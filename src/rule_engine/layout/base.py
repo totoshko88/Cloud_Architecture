@@ -128,6 +128,17 @@ def role_scope(role: str) -> Optional[str]:
     return ROLE_SCOPE.get(role)
 
 
+def effective_scope(node) -> Optional[str]:
+    """Scope of ``node``: its per-node override if set, else its role default.
+
+    Theme 14: a VPC-attached ``serverless_fn`` sets ``scope="network"`` on that
+    one node so it may be drawn inside the Network Boundary, without changing the
+    role's regional default for every other diagram.
+    """
+    override = getattr(node, "scope", None)
+    return override if override else role_scope(node.role)
+
+
 def _validate_spec(spec: DiagramSpec) -> None:
     """Validate a declaration on entry; raise :class:`SpecError` naming the fault.
 
@@ -172,6 +183,15 @@ def _validate_spec(spec: DiagramSpec) -> None:
         seen_slots[key] = node.id
         node_ids.add(node.id)
 
+        # Per-node scope override must be a recognized scope (Theme 14).
+        if getattr(node, "scope", None) is not None and node.scope not in (
+            "network", "regional", "global",
+        ):
+            raise SpecError(
+                f"node {node.id!r} declares unknown scope {node.scope!r}; "
+                "scope override must be one of 'network', 'regional', 'global'"
+            )
+
         # Declared container membership must name a real, leaf, region-matching
         # container (fail-honest — coordinate-free membership, Req 1.3).
         if node.container is not None:
@@ -194,15 +214,16 @@ def _validate_spec(spec: DiagramSpec) -> None:
             # synthetic layout spec) keeps its pre-1.10.3 behaviour.
             if (
                 target.kind in ("vpc", "az")
-                and role_scope(node.role) in ("regional", "global")
+                and effective_scope(node) in ("regional", "global")
                 and any(c.kind == "region" and c.region == node.region for c in spec.containers)
             ):
                 raise SpecError(
                     f"node {node.id!r} (role {node.role!r}, scope "
-                    f"{role_scope(node.role)!r}) declares network-boundary container "
-                    f"{node.container!r}; a {role_scope(node.role)} service is not "
+                    f"{effective_scope(node)!r}) declares network-boundary container "
+                    f"{node.container!r}; a {effective_scope(node)} service is not "
                     "deployed in a subnet — declare the region container instead "
-                    "(provider-profiles → Service Scope Classification)"
+                    "(provider-profiles → Service Scope Classification). A genuinely "
+                    "VPC-attached function may set scope=\"network\" on that node."
                 )
             if target.region != node.region:
                 raise SpecError(

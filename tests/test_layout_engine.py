@@ -1908,6 +1908,43 @@ def test_regional_service_is_placed_inside_region_outside_vpc():
     assert pd.nodes["obj"].y == pd.nodes["app"].y
 
 
+def _vpc_attached_fn_spec(scope):
+    """A serverless_fn declared INSIDE the VPC, carrying a scope override."""
+    return _DS(
+        diagram_id="s14", diagram_name="s14", axis="north-south",
+        nodes=(
+            _NS(id="lb", role="lb", lane="router", region="a", slot=0, container="vpc-a"),
+            _NS(id="fn", role="serverless_fn", lane="workers", region="a", slot=0,
+                container="az-a1", scope=scope),
+        ),
+        edges=(_ES(id="e1", source="lb", target="fn", marker="1"),),
+        containers=(
+            _CS(id="acct", kind="account", region="", parent=None, label_key="acct"),
+            _CS(id="region-a", kind="region", region="a", parent="acct", label_key="r"),
+            _CS(id="vpc-a", kind="vpc", region="a", parent="region-a", label_key="v"),
+            _CS(id="az-a1", kind="az", region="a", parent="vpc-a", label_key="z"),
+        ),
+        flow_lines=("Flow", "1. a"), title="t | 2026-10-13 | v1",
+    )
+
+
+def test_vpc_attached_fn_default_scope_is_rejected_in_vpc():
+    """Theme 14: without an override a serverless_fn (regional) in a VPC still raises."""
+    with pytest.raises(le.SpecError, match="regional"):
+        le.layout(_vpc_attached_fn_spec(None))
+
+
+def test_vpc_attached_fn_scope_override_allows_in_vpc():
+    """Theme 14: scope='network' lets a genuinely VPC-attached fn sit in the VPC."""
+    pd = le.layout(_vpc_attached_fn_spec("network"))
+    assert pd.nodes["fn"] is not None  # laid out without raising
+
+
+def test_invalid_scope_override_is_rejected():
+    with pytest.raises(le.SpecError, match="unknown scope"):
+        le.layout(_vpc_attached_fn_spec("subnet"))
+
+
 def test_role_scope_table_covers_the_nine_neutral_types():
     from rule_engine.constants import NEUTRAL_RESOURCE_TYPES
     from rule_engine.layout.base import role_scope
