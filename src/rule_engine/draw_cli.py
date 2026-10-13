@@ -176,6 +176,12 @@ def _container_style(kind: str, provider: str) -> str:
         preferred = ("availability_domain", "network_boundary")
     elif kind == "region":
         preferred = ("region", "network_boundary")
+    elif kind in ("peer_account", "external_cloud"):
+        # Theme 20: a disjoint sibling peer boundary reads like an account-level
+        # boundary (not a VPC). Prefer a profile-declared peer style if present,
+        # else the profile's `boundary` style so a peer AWS account / peer cloud
+        # gets a captioned account-like box.
+        preferred = (kind, "boundary")
     else:  # vpc / anything else structural
         preferred = ("network_boundary",)
 

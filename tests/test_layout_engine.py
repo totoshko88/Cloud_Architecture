@@ -1945,6 +1945,44 @@ def test_invalid_scope_override_is_rejected():
         le.layout(_vpc_attached_fn_spec("subnet"))
 
 
+def _peer_boundary_spec(peer_kind):
+    """Primary account (region/az) + a peer leaf boundary holding one node,
+    placed via the on-premises external lane (Theme 20)."""
+    return _DS(
+        diagram_id="s20", diagram_name="s20", axis="north-south",
+        nodes=(
+            _NS(id="app", role="k8s", lane="workers", region="a", slot=0, container="az-a1"),
+            _NS(id="peerdb", role="sql", lane="on-premises", region="", slot=0,
+                container="peer"),
+        ),
+        edges=(_ES(id="e1", source="app", target="peerdb", marker="1"),),
+        containers=(
+            _CS(id="acct", kind="account", region="", parent=None, label_key="m"),
+            _CS(id="region-a", kind="region", region="a", parent="acct", label_key="r"),
+            _CS(id="vpc-a", kind="vpc", region="a", parent="region-a", label_key="v"),
+            _CS(id="az-a1", kind="az", region="a", parent="vpc-a", label_key="z"),
+            _CS(id="peer", kind=peer_kind, region="", parent=None, label_key="p"),
+        ),
+        flow_lines=("Flow", "1. x"), title="t | 2026-10-13 | v1",
+    )
+
+
+@pytest.mark.parametrize("peer_kind", ["peer_account", "external_cloud"])
+def test_peer_boundary_is_a_disjoint_sibling_outside_the_account(peer_kind):
+    """Theme 20: a peer_account / external_cloud leaf boundary holds its own node
+    and sits DISJOINT from the primary account (no overlap)."""
+    pd = le.layout(_peer_boundary_spec(peer_kind))
+    acct, peer = pd.containers["acct"], pd.containers["peer"]
+    # The peer boundary wraps its member node.
+    assert le._box_contains(peer, pd.nodes["peerdb"].footprint(le.LABEL_BAND))
+    # Disjoint from the account (sibling boundaries must not overlap).
+    disjoint = (
+        acct.right <= peer.x or peer.right <= acct.x
+        or acct.bottom <= peer.y or peer.bottom <= acct.y
+    )
+    assert disjoint, f"peer boundary overlaps the account: acct={acct} peer={peer}"
+
+
 def test_role_scope_table_covers_the_nine_neutral_types():
     from rule_engine.constants import NEUTRAL_RESOURCE_TYPES
     from rule_engine.layout.base import role_scope
