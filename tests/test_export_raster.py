@@ -555,9 +555,21 @@ def test_compute_scale_partitions_scale_up_and_split_signal(
     over_budget = width + border > max_width
 
     if over_budget:
-        # Fails exactly when the canvas plus its borders cannot fit at scale 1.
-        with pytest.raises(er.CanvasTooWideError):
-            er.compute_scale(src, diagram_class)
+        if diagram_class == "landscape":
+            # Theme 23: a landscape over budget DOWNSCALES to fit (to a floor),
+            # or raises only when even the floor cannot fit.
+            fit = (max_width - border) / width
+            if fit < er.LANDSCAPE_MIN_SCALE:
+                with pytest.raises(er.CanvasTooWideError):
+                    er.compute_scale(src, diagram_class)
+            else:
+                scale, measured = er.compute_scale(src, diagram_class)
+                assert scale < 1.0
+                assert measured * scale + border <= max_width + 0.5
+        else:
+            # A flow still raises the split signal.
+            with pytest.raises(er.CanvasTooWideError):
+                er.compute_scale(src, diagram_class)
     else:
         scale, measured = er.compute_scale(src, diagram_class)
         # The measured width is exactly the vertex box width W.
@@ -635,10 +647,21 @@ _CORPUS_DRAWIOS = sorted((_REPO_ROOT / "examples").rglob("*.drawio"))
 
 
 @pytest.mark.parametrize("path", _CORPUS_DRAWIOS, ids=lambda p: str(p.relative_to(_REPO_ROOT)))
-def test_corpus_width_is_unchanged_by_caption_measurement(path: Path) -> None:
-    """Every shipped example's width (hence its export scale and raster) is the
-    plain vertex max-right, exactly as before 1.10.7."""
-    assert er._canvas_width(path) == _plain_vertex_right(path)
+def test_corpus_width_includes_wrapped_legend_overshoot(path: Path) -> None:
+    """Every shipped example's width is the plain vertex max-right PLUS the
+    draw.io wrapped-text render overshoot when the right-most element is a
+    wrapped Flow/Legend box (Theme 13 opt1).
+
+    Before 1.10.10 ``_canvas_width`` measured a wrapped box at its box width, so
+    the exporter's upscale magnified draw.io's ~15px render overshoot into a flow
+    budget overshoot it could not see. The width is now the true render: the
+    plain vertex right, or that right + 15 when a wrapped box reaches it. The
+    delta is therefore 0 or exactly ``_WRAPPED_TEXT_RENDER_OVERSHOOT`` — and the
+    Flow/Legend box is the right-most element in every shipped golden, so each is
+    +15. No flow golden crosses 1600 and no landscape crosses 3600 as a result."""
+    plain = _plain_vertex_right(path)
+    measured = er._canvas_width(path)
+    assert measured in (plain, plain + er._WRAPPED_TEXT_RENDER_OVERSHOOT)
 
 
 # --- Theme 12: --file CLI consistency --------------------------------------

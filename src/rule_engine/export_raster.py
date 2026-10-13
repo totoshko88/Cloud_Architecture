@@ -98,6 +98,21 @@ LANDSCAPE_MAX_WIDTH = 3600
 EXPORT_BORDER = "8"
 EXPORT_THEME = "light"
 
+#: The draw.io CLI renders a WRAPPED text box (``whiteSpace=wrap`` — the Flow /
+#: Legend furniture) ~15px past its box border. ``_canvas_width`` adds this to a
+#: wrapped box's right edge so the natural width reflects the real render, not
+#: the box width (Theme 13 opt1). Measured from the 06-flow legend-bounded
+#: overshoot; applied uniformly, it adds 15px to every corpus width (the
+#: Flow/Legend box is the right-most element in all 15), which is the intentional
+#: corpus re-render accompanying this fix.
+_WRAPPED_TEXT_RENDER_OVERSHOOT = 15.0
+
+#: Legibility floor for the Theme 23 landscape auto-downscale: a landscape wider
+#: than its 3600px budget is scaled down to fit, but never below this factor —
+#: below it the icons are too small to read, and the right answer is to split or
+#: page the landscape rather than export an illegible postage stamp.
+LANDSCAPE_MIN_SCALE = 0.5
+
 #: Seconds before a hung draw.io CLI export is killed (R8.5).
 EXPORT_TIMEOUT = 180
 
@@ -272,6 +287,17 @@ def _canvas_width(source: Path) -> float:
                 except ValueError:
                     font = 12.0
                 right = max(right, x + longest * _CAPTION_TEXT_CHAR_W * font / 12.0)
+            elif "text" in style and style.get("whiteSpace") == "wrap":
+                # A WRAPPED text box (the Flow / Legend furniture) is rendered by
+                # the draw.io CLI ~15px PAST its box border, so its true right
+                # edge exceeds the box width (Theme 13 opt1, feedback-diagnosed
+                # with hard numbers). When the Flow/Legend block is the right-most
+                # element — which it always is under right-margin placement — the
+                # mandatory upscale magnified that ~15px into a 12-14px flow-budget
+                # overshoot the exporter could not see. Measuring the real render
+                # here means the scale is computed against the true width and a
+                # legend-bounded flow is correctly downscaled under budget.
+                right = max(right, x + w + _WRAPPED_TEXT_RENDER_OVERSHOOT)
             max_right = max(max_right, right)
             min_left = min(min_left, left)
     return max_right - min(0.0, min_left)
@@ -322,6 +348,21 @@ def compute_scale(
         return (scale, width)
 
     if width + border > max_width:
+        # Theme 23: a LANDSCAPE "everything" view that genuinely needs more than
+        # its 3600px budget is downscaled to fit (to a legibility floor) rather
+        # than hard-failing, so an as-built does not have to be artificially
+        # grouped to export. A FLOW still raises — its 12-node cap means an
+        # over-budget flow is holding too much, and "split the diagram" is the
+        # right signal.
+        if is_landscape:
+            if width <= 0:
+                return (1.0, width)
+            fit = (max_width - border) / width
+            if fit < LANDSCAPE_MIN_SCALE:
+                # Even at the floor it will not fit — refuse rather than export an
+                # illegible postage stamp (split or page the landscape instead).
+                raise CanvasTooWideError(source, width, dclass, max_width)
+            return (fit, width)
         raise CanvasTooWideError(source, width, dclass, max_width)
 
     if width <= 0:
