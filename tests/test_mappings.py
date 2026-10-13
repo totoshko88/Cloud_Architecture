@@ -207,6 +207,11 @@ def test_aws_resource_styles_use_aws4_resource_icon_prefix() -> None:
     resources = data.get("resources") or {}
     assert resources, "aws mapping must declare resources"
     for key, entry in resources.items():
+        # External/third-party neutral nodes (Theme 1: external_system,
+        # mongodb_atlas) deliberately carry NO vendor icon — they are not AWS
+        # services — so they are a styled neutral box, not an aws-icons SVG path.
+        if entry.get("icon_provenance") == "neutral":
+            continue
         style = entry.get("style", "")
         assert AWS_RESOURCE_STYLE_PREFIX in style, (
             f"aws.resources.{key}: style must contain "
@@ -351,6 +356,10 @@ def test_oci_resource_captions_are_oracle_sans_neutral_black() -> None:
     resources = data.get("resources") or {}
     assert resources, "oci mapping must declare resources"
     for key, entry in resources.items():
+        # Vendor-neutral external nodes (Theme 1) are not OCI service icons —
+        # they carry no OCI-red fill and no Oracle Sans caption by design.
+        if entry.get("icon_provenance") == "neutral":
+            continue
         style = entry.get("style", "")
         _assert_oracle_sans(_style_token(style, "fontFamily"), f"oci.resources.{key}")
         assert _style_token(style, "fontColor") == "#312D2A", (

@@ -30,10 +30,19 @@ _AWS_IMAGE_PREFIX = "image=assets/vendor/aws-icons/"
 
 
 def _aws_resource_types() -> list[str]:
-    """The AWS service resource types declared under ``resources``."""
+    """The AWS service resource types declared under ``resources``.
+
+    Excludes ``icon_provenance: neutral`` entries (Theme 1: external_system,
+    mongodb_atlas) — these are deliberately vendor-neutral external nodes, not
+    AWS service icons, so they carry a styled neutral box, not an official SVG
+    path.
+    """
     data = load_mapping("aws")
     resources = data.get("resources") or {}
-    return sorted(resources.keys())
+    return sorted(
+        k for k, e in resources.items()
+        if not (isinstance(e, dict) and e.get("icon_provenance") == "neutral")
+    )
 
 
 # Sampled from the actual AWS `resources` service-type keys.

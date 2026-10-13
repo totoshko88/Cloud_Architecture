@@ -108,12 +108,16 @@ ROLE_SCOPE: Dict[str, str] = {
     "managed_k8s": "network", "k8s": "network",
     "compute_instance": "network", "lb": "network",
     "cache": "network", "file_system": "network",
+    # network plumbing (Theme 15) — all live inside the Network Boundary
+    "vpc": "network", "nat_gateway": "network",
+    "internet_gateway": "network", "vpc_endpoint": "network",
+    "vpc_peering": "network", "batch": "network",
     # regional managed services
     "object_store": "regional", "obj": "regional",
     "message_queue": "regional", "queue": "regional",
     "serverless_fn": "regional", "fn": "regional",
     "secrets_store": "regional", "sec": "regional",
-    "llm_platform": "regional",
+    "llm_platform": "regional", "ecr": "regional",
     # global / edge
     "cdn": "global", "dns": "global", "waf": "global",
 }

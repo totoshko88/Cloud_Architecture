@@ -41,6 +41,29 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 # Canonical layout geometry (AWS reference). Do not fork these per provider.
 # ---------------------------------------------------------------------------
 
+
+def _xml_escape(text: str) -> str:
+    """Escape text for safe interpolation into an XML attribute value.
+
+    Theme 4 (REVIEW.md): every ``value="…"`` the builder emits is free-form
+    display text (a node/boundary label, the title, an edge marker, a Flow/Legend
+    line). An unescaped ``&``, ``<`` or ``>`` produces malformed XML that draw.io
+    refuses to open — a latent crash the moment a label contains, say,
+    ``Users & admins`` or ``t < 5ms``. The same five replacements as
+    ``contract._xml_escape`` (``&`` first, so it never double-escapes the entities
+    the others introduce). Callers that build a multi-line value join the escaped
+    lines with the literal ``&#10;`` entity, which stays intact because its own
+    ``&`` is never re-escaped (each line is escaped BEFORE the join).
+    """
+    return (
+        str(text)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
 #: Square icon footprint in model units. The node's cell is exactly this size so
 #: the bottom label hugs the icon (AWS reference uses 78x78).
 ICON_SIZE = 78
@@ -231,7 +254,7 @@ def builtin_icon(shape_style: str) -> IconRenderer:
     def render(node: Node, parent_id: str) -> str:
         style = _embed_asset_style(f"{shape_style};{_LABEL_STYLE}{overlay_suffix(node)}")
         return (
-            f'        <mxCell id="{node.id}" value="{node.label}" style="{style}" '
+            f'        <mxCell id="{node.id}" value="{_xml_escape(node.label)}" style="{style}" '
             f'vertex="1" parent="{parent_id}">\n'
             f'          <mxGeometry x="{node.x}" y="{node.y}" '
             f'width="{ICON_SIZE}" height="{ICON_SIZE}" as="geometry" />\n'
@@ -280,7 +303,7 @@ def image_icon(image_path: str) -> IconRenderer:
             f"{ref_token}image={embedded_image}{overlay_suffix(node)}"
         )
         return (
-            f'        <mxCell id="{node.id}" value="{node.label}" style="{style}" '
+            f'        <mxCell id="{node.id}" value="{_xml_escape(node.label)}" style="{style}" '
             f'vertex="1" parent="{parent_id}">\n'
             f'          <mxGeometry x="{node.x}" y="{node.y}" '
             f'width="{ICON_SIZE}" height="{ICON_SIZE}" as="geometry" />\n'
@@ -633,7 +656,7 @@ class OciStencilIcon:
             f"ociSlug={self.slug}{overlay_suffix(node)}"
         )
         container = (
-            f'        <mxCell id="{node.id}" value="{node.label}" style="{style}" '
+            f'        <mxCell id="{node.id}" value="{_xml_escape(node.label)}" style="{style}" '
             f'vertex="1" connectable="1" parent="{parent_id}">\n'
             f'          <mxGeometry x="{node.x}" y="{node.y}" '
             f'width="{ICON_SIZE}" height="{ICON_SIZE}" as="geometry" />\n'
@@ -650,7 +673,7 @@ class OciStencilIcon:
 
 def title_cell(text: str, x: int = 40, y: int = 20, w: int = 900) -> str:
     return (
-        f'        <mxCell id="title" value="{text}" '
+        f'        <mxCell id="title" value="{_xml_escape(text)}" '
         'style="text;html=1;strokeColor=none;fillColor=none;align=left;'
         'verticalAlign=middle;fontSize=16;fontStyle=1" vertex="1" parent="1">\n'
         f'          <mxGeometry x="{x}" y="{y}" width="{w}" height="30" as="geometry" />\n'
@@ -762,7 +785,7 @@ def _local_background(n: Node, boundaries: Sequence[Boundary]) -> str:
 def boundary_cell(b: Boundary) -> str:
     style = _boundary_style(b)
     return (
-        f'        <mxCell id="{b.id}" value="{b.label}" style="{style}" '
+        f'        <mxCell id="{b.id}" value="{_xml_escape(b.label)}" style="{style}" '
         f'vertex="1" parent="{b.parent}">\n'
         f'          <mxGeometry x="{b.x}" y="{b.y}" width="{b.w}" height="{b.h}" as="geometry" />\n'
         "        </mxCell>\n"
@@ -843,7 +866,7 @@ def edge_cell(e: Edge) -> str:
         "fontSize=12;fontStyle=1"
     )
     head = (
-        f'        <mxCell id="{e.id}" value="{e.marker}" style="{style}" '
+        f'        <mxCell id="{e.id}" value="{_xml_escape(e.marker)}" style="{style}" '
         f'edge="1" parent="1" source="{e.source}" target="{e.target}">\n'
     )
     if e.points:
@@ -863,7 +886,7 @@ def edge_cell(e: Edge) -> str:
 
 
 def text_cell(cid: str, lines: Sequence[str], x: int, y: int, w: int = 320, h: int = 200) -> str:
-    value = "&#10;".join(lines)
+    value = "&#10;".join(_xml_escape(line) for line in lines)
     return (
         f'        <mxCell id="{cid}" value="{value}" style="{_TEXT_STYLE}" '
         f'vertex="1" parent="1">\n'

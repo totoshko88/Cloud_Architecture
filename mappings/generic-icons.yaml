@@ -52,6 +52,31 @@ resources:
     brand_hex: "#000000"
     style: "shape=mxgraph.flowchart.multi-document;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000"
 
+  # --- External / third-party systems (Theme 1) ---
+  # A sanctioned, vendor-neutral node for an EXTERNAL (non-cloud / third-party)
+  # system, so a diagram no longer hand-draws anonymous grey boxes. It is a
+  # neutral dashed rounded box (grayscale) and belongs OUTSIDE every cloud
+  # boundary (it is not a cloud resource); not classified in ROLE_SCOPE on
+  # purpose. Carried on every profile with the same neutral style — an external
+  # system has no provider brand.
+  external_system:
+    icon_id: rectangle
+    brand_hex: "#333333"
+    style: "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;dashed=1;verticalAlign=middle;fontSize=12"
+
+  # MongoDB Atlas — a specific external SaaS. Per MongoDB's Trademark Standards
+  # (brandfolder.com/mongodb press kit, mongodb.com/legal/trademark-usage-guidelines)
+  # the leaf mark is MongoDB's property and may not be redistributed, so this is
+  # an IDENTIFICATION-use neutral labelled box with the service name — NOT the
+  # official leaf glyph (never committed/redistributed). The GENERIC profile
+  # carries no vendor colour (its own grayscale rule), so here the box is
+  # grayscale; the vendor profiles use MongoDB's forest-green (#13AA52).
+  # External SaaS → outside boundaries, unclassified in ROLE_SCOPE.
+  mongodb_atlas:
+    icon_id: rectangle
+    brand_hex: "#333333"
+    style: "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;verticalAlign=middle;fontSize=12"
+
 containers:
   # fontSize=12 keeps the container caption at the 12px accessibility floor
   # (draw.io's default is 11px); added in 1.10.7 when generic/01 switched from

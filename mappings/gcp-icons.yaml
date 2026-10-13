@@ -73,6 +73,19 @@ resources:
     brand_hex: "#4285F4"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-core/Unique Icons/Vertex AI/SVG/VertexAI-512-color.svg"
 
+  # --- External / third-party systems (Theme 1) ---
+  external_system:
+    icon_id: external.system
+    icon_provenance: neutral
+    brand_hex: "#333333"
+    style: "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;dashed=1;verticalAlign=middle;fontSize=12"
+  # MongoDB Atlas — identification-use neutral box in MongoDB green; leaf mark not redistributed.
+  mongodb_atlas:
+    icon_id: mongodb.atlas
+    icon_provenance: neutral
+    brand_hex: "#13AA52"
+    style: "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#13AA52;fontColor=#13AA52;verticalAlign=middle;fontSize=12"
+
 containers:
   boundary:
     icon_id: gcp.project
