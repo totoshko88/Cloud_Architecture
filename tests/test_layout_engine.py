@@ -1983,6 +1983,59 @@ def test_peer_boundary_is_a_disjoint_sibling_outside_the_account(peer_kind):
     assert disjoint, f"peer boundary overlaps the account: acct={acct} peer={peer}"
 
 
+def _many_peers_spec(n_peers):
+    """Primary account + N peer leaf boundaries, each holding one node, declared
+    along the on-premises external lane (Theme 21/18 wrapping input)."""
+    nodes = [_NS(id="app", role="k8s", lane="workers", region="a", slot=0, container="az-a1")]
+    containers = [
+        _CS(id="acct", kind="account", region="", parent=None, label_key="m"),
+        _CS(id="region-a", kind="region", region="a", parent="acct", label_key="r"),
+        _CS(id="vpc-a", kind="vpc", region="a", parent="region-a", label_key="v"),
+        _CS(id="az-a1", kind="az", region="a", parent="vpc-a", label_key="z"),
+    ]
+    for i in range(n_peers):
+        nodes.append(_NS(id=f"p{i}n", role="object_store", lane="on-premises",
+                         region="", slot=i, container=f"peer{i}"))
+        containers.append(_CS(id=f"peer{i}", kind="peer_account", region="",
+                              parent=None, label_key="p"))
+    return _DS(
+        diagram_id="s21", diagram_name="s21", axis="north-south",
+        nodes=tuple(nodes), edges=(), containers=tuple(containers),
+        flow_lines=("Flow", "1. x"), title="t | 2026-10-13 | v1",
+    )
+
+
+def test_external_bands_stack_into_rows_without_widening_the_canvas():
+    """Theme 21/18: many peer boundaries wrap into multiple bands rather than
+    one over-wide external strip. More peers ⇒ more rows, a bounded x-span, and
+    no peer-peer or peer-account overlap."""
+    def rect(b):
+        return (b.x, b.y, b.right, b.bottom)
+
+    def ov(a, b):
+        return not (a.right <= b.x or b.right <= a.x
+                    or a.bottom <= b.y or b.bottom <= a.y)
+
+    spans, rowcounts = [], []
+    for n in (2, 4, 6):
+        pd = le.layout(_many_peers_spec(n))
+        peers = [pd.containers[f"peer{i}"] for i in range(n)]
+        # No peer overlaps another peer, nor the account envelope.
+        acct = pd.containers["acct"]
+        for i in range(n):
+            assert not ov(peers[i], acct), f"peer{i} overlaps account (N={n})"
+            for j in range(i + 1, n):
+                assert not ov(peers[i], peers[j]), f"peer{i}/peer{j} overlap (N={n})"
+        rowcounts.append(len({p.y for p in peers}))
+        allboxes = list(pd.containers.values()) + list(pd.nodes.values())
+        spans.append(max(b.right for b in allboxes) - min(b.x for b in allboxes))
+
+    # Wrapping produces more bands as peers grow (monotonic, strictly more rows
+    # between 2 and 6 peers), and the canvas does NOT keep widening.
+    assert rowcounts[0] < rowcounts[-1], f"no wrap happened: rows={rowcounts}"
+    assert spans[-1] <= spans[0] + 1, f"canvas widened with more peers: {spans}"
+
+
 def test_role_scope_table_covers_the_nine_neutral_types():
     from rule_engine.constants import NEUTRAL_RESOURCE_TYPES
     from rule_engine.layout.base import role_scope

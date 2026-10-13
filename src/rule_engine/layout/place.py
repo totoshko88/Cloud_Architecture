@@ -24,10 +24,12 @@ imported those names already exist on the partially-initialised
 
 from __future__ import annotations
 
-from typing import Dict
+from typing import Dict, Tuple
+
+from dataclasses import replace
 
 try:  # package-relative import when used as ``rule_engine.layout.place``
-    from ..diagram_layout import CONTAINER_PAD
+    from ..diagram_layout import CONTAINER_PAD, ICON_SIZE, COL_STEP, ROW_STEP
     from ..geometry import Box, LABEL_BAND, CONTAINER_LABEL_BAND
     from .model import DiagramSpec
     from .base import (
@@ -36,6 +38,7 @@ try:  # package-relative import when used as ``rule_engine.layout.place``
         _top_lane_containers,
         _ORIGIN,
         _snap,
+        _grid_ceil,
         _validate_spec,
         _secondary_axis,
         _place_base,
@@ -51,7 +54,7 @@ try:  # package-relative import when used as ``rule_engine.layout.place``
         _size_account,
     )
 except ImportError:  # pragma: no cover - fallback for flat-module execution
-    from diagram_layout import CONTAINER_PAD  # type: ignore[no-redef]
+    from diagram_layout import CONTAINER_PAD, ICON_SIZE, COL_STEP, ROW_STEP  # type: ignore[no-redef]
     from geometry import Box, LABEL_BAND, CONTAINER_LABEL_BAND  # type: ignore[no-redef]
     from layout.model import DiagramSpec  # type: ignore[no-redef]
     from layout.base import (  # type: ignore[no-redef]
@@ -60,6 +63,7 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
         _top_lane_containers,
         _ORIGIN,
         _snap,
+        _grid_ceil,
         _validate_spec,
         _secondary_axis,
         _place_base,
@@ -74,6 +78,106 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
         _equalize_peer_widths,
         _size_account,
     )
+
+
+#: Theme 21/18 (1.10.10): the kinds that form the EXTERNAL band — a peer AWS
+#: account or a peer cloud drawn as a disjoint sibling boundary outside the
+#: primary account. Their member nodes are wrapped into multiple rows by
+#: :func:`_wrap_external_bands` so a long row of peers stacks instead of running
+#: the canvas ever wider (which `canvas-quality` → aspect-ratio penalises).
+_EXTERNAL_BAND_KINDS = frozenset({"peer_account", "external_cloud"})
+
+#: Horizontal gap between two external sibling boxes on one band, and the
+#: vertical gap between stacked external bands. One region step keeps a clear
+#: lane for a cross-boundary edge between peers; a whole GRID multiple.
+_EXTERNAL_BAND_GAP = _grid_ceil(COL_STEP)
+
+
+def _wrap_external_bands(placed: Dict[str, Box], spec: DiagramSpec) -> Dict[str, Box]:
+    """Stack external sibling boxes (peer_account / external_cloud) into rows.
+
+    Theme 21/18. A spec may declare several peer-account / external-cloud
+    boundaries (a cross-cloud composition: the primary account plus N peer
+    accounts, an Atlas project, a peer cloud). :func:`_place_base` lays their
+    member nodes out along one external lane, so with enough peers the external
+    band runs the canvas ever **wider** — a long single row that trips
+    ``canvas-quality`` (aspect-ratio) and dwarfs the subject. This post-pass
+    groups the external nodes by their boundary, measures each group's
+    footprint, and **packs the groups left→right with a wrap**: when the next
+    group would push the row past the primary subject's width, it drops to a new
+    band one group-height below. Each group's nodes move together by one
+    ``(dx, dy)`` translation, so their internal layout — and every routed
+    waypoint relative to them — is preserved; :func:`size_containers` then wraps
+    each boundary box around its (moved) members, and the bands read as a tidy
+    grid of disjoint siblings rather than one over-wide strip.
+
+    Scoped strictly to the two external-band kinds, so no diagram without a
+    peer_account / external_cloud boundary (every shipped golden) is touched.
+    """
+    kind_of = {c.id: c.kind for c in spec.containers}
+    # Group external nodes by their boundary id, in a stable declared order.
+    groups: Dict[str, list] = {}
+    for n in spec.nodes:
+        if n.container is not None and kind_of.get(n.container) in _EXTERNAL_BAND_KINDS:
+            groups.setdefault(n.container, []).append(n.id)
+    if len(groups) < 2:
+        return placed  # 0 or 1 external box never needs wrapping
+
+    # Footprint bbox of each group (icon + caption band), ordered by current x.
+    def _footprint(box: Box) -> Tuple[int, int, int, int]:
+        return (box.x, box.y, box.x + box.w, box.y + box.h + LABEL_BAND)
+
+    group_bbox: Dict[str, Tuple[int, int, int, int]] = {}
+    for gid, ids in groups.items():
+        xs1 = min(_footprint(placed[i])[0] for i in ids)
+        ys1 = min(_footprint(placed[i])[1] for i in ids)
+        xs2 = max(_footprint(placed[i])[2] for i in ids)
+        ys2 = max(_footprint(placed[i])[3] for i in ids)
+        group_bbox[gid] = (xs1, ys1, xs2, ys2)
+    order = sorted(groups, key=lambda g: (group_bbox[g][0], group_bbox[g][1]))
+
+    # Width budget: the primary subject's horizontal extent (the account/region/
+    # vpc/non-external nodes). The external grid wraps to stay within it so the
+    # canvas does not grow wider than the subject it annotates. Fall back to two
+    # region steps when there is no inner subject to measure against.
+    external_ids = {i for ids in groups.values() for i in ids}
+    inner = [b for nid, b in placed.items() if nid not in external_ids]
+    if inner:
+        subj_left = min(b.x for b in inner)
+        subj_right = max(b.x + b.w for b in inner)
+        band_left = subj_left
+        max_right = max(subj_right, subj_left + 2 * COL_STEP)
+    else:  # pragma: no cover - external-only spec is not a real diagram
+        band_left = _ORIGIN[0]
+        max_right = band_left + 2 * COL_STEP
+
+    # The external band starts one gap below the lowest external row as placed
+    # (``_place_base`` already drops it below the account); keep that top.
+    band_top = min(group_bbox[g][1] for g in order)
+    row_h = max((group_bbox[g][3] - group_bbox[g][1]) for g in order)
+
+    cur_x = band_left
+    cur_y = band_top
+    moves: Dict[str, Tuple[int, int]] = {}
+    for gid in order:
+        gx1, gy1, gx2, gy2 = group_bbox[gid]
+        gw = gx2 - gx1
+        # Wrap: if this group would overrun the subject width, start a new band.
+        if cur_x != band_left and cur_x + gw > max_right:
+            cur_x = band_left
+            cur_y = _snap(cur_y + row_h + _EXTERNAL_BAND_GAP)
+        moves[gid] = (_snap(cur_x - gx1), _snap(cur_y - gy1))
+        cur_x = _snap(cur_x + gw + _EXTERNAL_BAND_GAP)
+
+    out = dict(placed)
+    for gid, ids in groups.items():
+        dx, dy = moves[gid]
+        if dx == 0 and dy == 0:
+            continue
+        for i in ids:
+            b = out[i]
+            out[i] = replace(b, x=_snap(b.x + dx), y=_snap(b.y + dy))
+    return out
 
 
 def place_nodes(spec: DiagramSpec) -> Dict[str, Box]:
@@ -141,6 +245,11 @@ def place_nodes(spec: DiagramSpec) -> Dict[str, Box]:
                 _low, size = _extent(box, secondary)
                 new_low = _snap(span_centre - size / 2.0)
                 placed[n.id] = _with_extent(box, secondary, new_low, size)
+
+    # Theme 21/18: stack external sibling boxes (peer_account / external_cloud)
+    # into multiple bands when a single external row would run the canvas too
+    # wide. Inert unless the spec declares ≥ 2 external-band boundaries.
+    placed = _wrap_external_bands(placed, spec)
     return placed
 
 
