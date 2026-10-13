@@ -176,6 +176,7 @@ RULE_MIN_FONT_SIZE = "min-font-size"
 RULE_GRID_ALIGNMENT = "grid-alignment"
 RULE_CONTAINER_PADDING = "container-padding"
 RULE_CONTAINER_DEAD_SPACE = "container-dead-space"
+RULE_CANVAS_QUALITY = "canvas-quality"
 RULE_EDGE_ROUTING = "edge-routing"
 RULE_NODE_OVERLAP = "node-overlap"
 RULE_ARROW_STYLE = "arrow-style"
@@ -191,6 +192,7 @@ RULE_ENTRY_THIRDS = "entry-thirds"
 RULE_EDGE_CROSSES_LABEL = "edge-crosses-label"
 RULE_EDGE_CROSSES_CONTAINER_LABEL = "edge-crosses-container-label"
 RULE_EDGE_CROSSES_CONTAINER = "edge-crosses-container"
+RULE_EDGE_CROSSES_TITLE = "edge-crosses-title"
 RULE_EDGE_ON_CONTAINER_BORDER = "edge-on-container-border"
 RULE_LEGEND_PLACEMENT = "legend-placement"
 RULE_FLOW_LEGEND = "flow-legend"
@@ -1180,6 +1182,24 @@ def _check_container_dead_space(a: Artifact):
     )
 
 
+def _check_canvas_quality(a: Artifact):
+    """canvas-quality: a lint-clean diagram that wastes the canvas or runs a wild
+    aspect (Theme 25, advisory WARNING both classes).
+
+    Separate from relationship lint — it asks "is the canvas used, is the aspect
+    sane", the questions 09-crosscloud-landscape passed every relationship rule
+    yet failed. Thresholds are calibrated against the shipped corpus so no golden
+    false-positives (aspect > 2.6, content coverage < 25%)."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    findings = _geo.check_canvas_quality(geo)
+    if not findings:
+        return False
+    return [RuleHit(offenders=(subject,), reason=reason) for subject, reason in findings]
+
+
 def _container_style_providers(a: Artifact) -> List[str]:
     """The provider profile(s) a diagram's containers are judged against.
 
@@ -1559,6 +1579,21 @@ def _check_edge_on_container_border(a: Artifact):
     if not findings:
         return False
     return RuleHit(offenders=_offender_ids(findings), reason="rides-container-border")
+
+
+def _check_edge_crosses_title(a: Artifact):
+    """edge-crosses-title: a route runs through the reserved title band (Theme 26,
+    WARNING). The title cell sits in a band at the top of the canvas; an edge
+    routed up above the top node row runs straight through it and overdraws the
+    title (the 09 defect)."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    findings = _geo.check_edge_crosses_title(geo)
+    if not findings:
+        return False
+    return RuleHit(offenders=_offender_ids(findings), reason="crosses-title-band")
 
 
 def _check_edge_escapes_container(a: Artifact):
@@ -2061,6 +2096,12 @@ RULES: Tuple[Tuple[RuleSpec, Callable[[Artifact], _PredicateResult]], ...] = (
         RuleSpec(RULE_CONTAINER_DEAD_SPACE, Severity.WARNING),
         _check_container_dead_space,
     ),
+    # Theme 25: canvas-quality — a lint-clean diagram that wastes the canvas or
+    # runs a wild aspect. Advisory WARNING on both classes.
+    (
+        RuleSpec(RULE_CANVAS_QUALITY, Severity.WARNING),
+        _check_canvas_quality,
+    ),
     # edge-routing: a bare non-orthogonal edge is a WARNING, but a run cutting
     # through an icon it does not connect (``*-through-*``) or into its own
     # target from the wrong side (``pierces-target-*``) is an ERROR on either
@@ -2136,6 +2177,8 @@ RULES: Tuple[Tuple[RuleSpec, Callable[[Artifact], _PredicateResult]], ...] = (
         _check_edge_escapes_container,
     ),
     (RuleSpec(RULE_EDGE_CROSSES_LEGEND, Severity.WARNING), _check_edge_crosses_legend),
+    # Theme 26: a route must not cross the reserved title band at the top.
+    (RuleSpec(RULE_EDGE_CROSSES_TITLE, Severity.WARNING), _check_edge_crosses_title),
     (RuleSpec(RULE_EDGE_JOG, Severity.WARNING), _check_edge_jog),
     (RuleSpec(RULE_LEGEND_PLACEMENT, Severity.WARNING), _check_legend_placement),
     (RuleSpec(RULE_FLOW_LEGEND, Severity.WARNING), _check_flow_legend),
@@ -2428,6 +2471,7 @@ __all__ = [
     "RULE_GRID_ALIGNMENT",
     "RULE_CONTAINER_PADDING",
     "RULE_CONTAINER_DEAD_SPACE",
+    "RULE_CANVAS_QUALITY",
     "RULE_EDGE_ROUTING",
     "RULE_NODE_OVERLAP",
     "RULE_ARROW_STYLE",
@@ -2448,6 +2492,7 @@ __all__ = [
     "RULE_EDGE_ON_CONTAINER_BORDER",
     "RULE_EDGE_ESCAPES_CONTAINER",
     "RULE_EDGE_CROSSES_LEGEND",
+    "RULE_EDGE_CROSSES_TITLE",
     "RULE_EDGE_JOG",
     "RULE_LEGEND_PLACEMENT",
     "RULE_FLOW_LEGEND",

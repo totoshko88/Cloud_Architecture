@@ -1816,6 +1816,79 @@ DEAD_SPACE_RATIO = 5.0
 # sparsest legitimate tier is a nested box.
 OUTER_DEAD_SPACE_RATIO = 2.5
 
+# --- Canvas-quality thresholds (Theme 25) ---------------------------------- #
+# "lint-clean" is not "readable": a diagram can satisfy every relationship rule
+# (padding, crossings, labels) yet waste the canvas, run a wild aspect, or shove
+# the titled subject into a corner. These three advisory checks catch that,
+# calibrated against the shipped corpus so NO golden false-positives:
+#   * aspect: the widest shipped canvas is the cross-cloud at 2.45 (w/h); 2.6
+#     sits just above it. A diagram wider/taller than 2.6:1 is awkward to read.
+#   * content coverage: summed outer-boundary area + non-contained node area over
+#     the canvas bbox. The sparsest legitimate corpus diagram covers 0.28
+#     (cross-cloud); 0.25 is just below it, so a canvas <25% covered (>75% dead
+#     space — the 09 negative sat at ~0.15) is flagged while every golden passes.
+CANVAS_ASPECT_MAX = 2.6
+CANVAS_MIN_COVERAGE = 0.25
+
+
+def check_canvas_quality(
+    geo: DiagramGeometry,
+    aspect_max: float = CANVAS_ASPECT_MAX,
+    min_coverage: float = CANVAS_MIN_COVERAGE,
+) -> List[Tuple[str, str]]:
+    """Return ``(subject, reason)`` for canvas-quality defects (Theme 25).
+
+    Separate from relationship lint: it asks "is the canvas used, is the aspect
+    sane, is the primary subject prominent" — the questions 09-crosscloud-landscape
+    passed every relationship rule yet failed (subject 15% of canvas, parked in a
+    corner, half the canvas dead).
+
+    Two advisory findings, both pure canvas geometry (no membership needed, so
+    independent of the container model):
+
+    * ``aspect-ratio:<w>x<h>`` — the canvas bounding box is wider/taller than
+      ``aspect_max`` : 1.
+    * ``canvas-utilization:<pct>`` — content (summed outer boundaries + nodes
+      outside every boundary) covers less than ``min_coverage`` of the canvas
+      bbox, i.e. more than ``1 - min_coverage`` dead space.
+
+    A ``primary-boundary-prominence`` sub-check is deliberately NOT implemented
+    here: it needs to know WHICH boundary is the titled subject, and a
+    multi-region / multi-cloud diagram legitimately has several peer outer
+    boundaries (the HA summaries sit at 0.20 single-outer prominence). It is
+    folded into the container-model work where boundary membership becomes
+    structural. Advisory (WARNING) on both classes."""
+    out: List[Tuple[str, str]] = []
+    allb = (
+        list(geo.nodes.values())
+        + list(geo.containers.values())
+        + list(geo.text_boxes.values())
+    )
+    if not allb:
+        return out
+    minx = min(b.x for b in allb)
+    miny = min(b.y for b in allb)
+    maxx = max(b.right for b in allb)
+    maxy = max(b.bottom for b in allb)
+    cw, ch = maxx - minx, maxy - miny
+    if cw <= 0 or ch <= 0:
+        return out
+
+    aspect = max(cw / ch, ch / cw)
+    if aspect > aspect_max:
+        out.append(("canvas", f"aspect-ratio:{int(cw)}x{int(ch)}={aspect:.2f}"))
+
+    conts = list(geo.containers.values())
+    outers = [c for c in conts if _tightest_enclosing(c, conts) is None]
+    content = sum(c.w * c.h for c in outers)
+    for n in geo.nodes.values():
+        if _tightest_enclosing(n, conts) is None:
+            content += n.w * n.h
+    coverage = content / (cw * ch)
+    if coverage < min_coverage:
+        out.append(("canvas", f"canvas-utilization:{coverage * 100:.0f}%"))
+    return out
+
 
 def check_container_dead_space(
     geo: DiagramGeometry,
@@ -3451,17 +3524,34 @@ def check_edge_crosses_legend(geo: DiagramGeometry) -> List[Tuple[str, str]]:
     return sorted(set(out))
 
 
+def check_edge_crosses_title(geo: DiagramGeometry) -> List[Tuple[str, str]]:
+    """Return ``(edge_id, "title")`` for a route that runs through the title band.
+
+    diagram-standards (Theme 26): the title cell occupies a reserved band at the
+    top of the canvas; the router must not cross it. In 09 two edges routed up
+    above the top node row — straight through where the title sits — making it
+    hard to read. The title cell is the ``text_boxes`` entry whose id is
+    ``title`` (the shared builder's ``title_cell``). The box is grown by one grid
+    step so a run hugging the title's edge counts too, the same halo the legend
+    keep-out uses. Advisory (WARNING)."""
+    tbox = geo.text_boxes.get("title")
+    if tbox is None:
+        return []
+    step = geo.grid or GRID
+    halo = Box("title", tbox.x - step, tbox.y - step, tbox.w + 2 * step, tbox.h + 2 * step)
+    out: List[Tuple[str, str]] = []
+    for e in geo.edges:
+        poly = edge_polyline(geo, e)
+        if len(poly) < 2:
+            continue
+        if any(segment_crosses_box(p, q, halo, inset=0.0) for p, q in zip(poly, poly[1:])):
+            out.append((e.id, "title"))
+    return sorted(set(out))
+
+
 def check_edge_jog(geo: DiagramGeometry) -> List[Tuple[str, str]]:
     """Return ``(edge_id, reason)`` for an edge between two DIRECTLY FACING nodes
-    that is not drawn as one straight segment.
-
-    diagram-standards (*Distinct same-side exits — straight line keeps the
-    centre*): an edge whose target sits directly opposite — the next node on the
-    same row, or directly below in the same column, nothing between — is the most
-    readable route there is, so it keeps one straight line and the siblings spread
-    around it. The engine broke this whenever a face carried three exits: the band
-    spread handed the level edge the upper quarter while its entry stayed centred,
-    and draw.io drew a 20px jog into a neighbour two centimetres away
+    that is not drawn as one straight segment
     (``agent-tool-invoker → agent-bedrock-llm``).
 
     ``level-jog``: exit on the right face, entry on the left face, the two boxes
