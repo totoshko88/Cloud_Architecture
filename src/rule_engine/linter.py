@@ -194,6 +194,7 @@ RULE_EDGE_CROSSES_CONTAINER_LABEL = "edge-crosses-container-label"
 RULE_EDGE_CROSSES_CONTAINER = "edge-crosses-container"
 RULE_EDGE_CROSSES_TITLE = "edge-crosses-title"
 RULE_EDGE_ON_CONTAINER_BORDER = "edge-on-container-border"
+RULE_GEOMETRIC_CONTAINMENT = "geometric-containment"
 RULE_LEGEND_PLACEMENT = "legend-placement"
 RULE_FLOW_LEGEND = "flow-legend"
 RULE_NODE_CONNECTIVITY = "node-connectivity"
@@ -1581,6 +1582,26 @@ def _check_edge_on_container_border(a: Artifact):
     return RuleHit(offenders=_offender_ids(findings), reason="rides-container-border")
 
 
+def _check_geometric_containment(a: Artifact):
+    """geometric-containment: a node drawn INSIDE a Boundary it is not a
+    structural member of (Theme 27). The "lint-clean but structurally wrong"
+    class — an external peer node visually inside the account box. WARNING by
+    default; ERROR on landscape (via RuleSpec) and on a network diagram
+    (escalated here)."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    findings = _geo.check_geometric_containment(geo)
+    if not findings:
+        return False
+    offenders = _offender_ids(findings)
+    if _is_network_diagram(a):
+        return RuleHit(offenders=offenders, reason="node-inside-nonmember-boundary",
+                       severity=Severity.ERROR)
+    return RuleHit(offenders=offenders, reason="node-inside-nonmember-boundary")
+
+
 def _check_edge_crosses_title(a: Artifact):
     """edge-crosses-title: a route runs through the reserved title band (Theme 26,
     WARNING). The title cell sits in a band at the top of the canvas; an edge
@@ -2171,6 +2192,13 @@ RULES: Tuple[Tuple[RuleSpec, Callable[[Artifact], _PredicateResult]], ...] = (
         RuleSpec(RULE_EDGE_ON_CONTAINER_BORDER, Severity.WARNING),
         _check_edge_on_container_border,
     ),
+    # Theme 27: a node geometrically inside a Boundary it is not a structural
+    # member of. ERROR on landscape (and on a network diagram, escalated in the
+    # predicate); WARNING otherwise.
+    (
+        RuleSpec(RULE_GEOMETRIC_CONTAINMENT, Severity.WARNING, landscape=Severity.ERROR),
+        _check_geometric_containment,
+    ),
     # deterministic-engine 1.10.6: three advisory routing rules (both classes).
     (
         RuleSpec(RULE_EDGE_ESCAPES_CONTAINER, Severity.WARNING),
@@ -2490,6 +2518,7 @@ __all__ = [
     "RULE_EDGE_CROSSES_CONTAINER_LABEL",
     "RULE_EDGE_CROSSES_CONTAINER",
     "RULE_EDGE_ON_CONTAINER_BORDER",
+    "RULE_GEOMETRIC_CONTAINMENT",
     "RULE_EDGE_ESCAPES_CONTAINER",
     "RULE_EDGE_CROSSES_LEGEND",
     "RULE_EDGE_CROSSES_TITLE",

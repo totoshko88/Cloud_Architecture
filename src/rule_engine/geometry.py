@@ -1694,6 +1694,44 @@ _BORDER_RIDE_TOL = 4.0
 _BORDER_RIDE_MIN_LEN = 3 * GRID
 
 
+def check_geometric_containment(geo: DiagramGeometry) -> List[Tuple[str, str]]:
+    """Return ``(node_id, container_id)`` for a node drawn geometrically INSIDE a
+    Boundary it is not a structural MEMBER of (Theme 27).
+
+    The "lint-clean but structurally wrong" class: an external peer-account node
+    drawn inside the SEP account box purely because column packing ran past its
+    right edge (08-network-crossaccount), contradicting the diagram's own
+    anti-pattern yet raising 0 findings — because membership was purely visual.
+
+    Membership is now STRUCTURAL (Wave C): a node parented to a boundary id is a
+    member of it; a node parented to the root layer is a flat node. A flat node
+    whose icon box is fully inside a boundary's box is visually contained WITHOUT
+    being a member — the defect. A structural member is never flagged for its own
+    boundary (or any boundary), and a node genuinely outside every boundary (an
+    external actor to the left/above) is not flagged. A programmatic geometry
+    with no parent info cannot judge membership and is skipped.
+
+    Escalated to ERROR on landscape / network classes by the linter (a hidden
+    non-membership is a correctness failure); advisory elsewhere."""
+    out: List[Tuple[str, str]] = []
+    if not geo.node_parent_ids:
+        return out
+
+    def _inside(box: Box, c: Box) -> bool:
+        return c.x <= box.x and box.x + box.w <= c.right and \
+            c.y <= box.y and box.y + box.h <= c.bottom
+
+    for nid, box in geo.nodes.items():
+        parent = geo.node_parent_ids.get(nid, _ROOT_LAYER_ID)
+        # A node structurally parented to a boundary IS a member — never flagged.
+        if parent in geo.containers:
+            continue
+        for cid, c in geo.containers.items():
+            if _inside(box, c):
+                out.append((nid, cid))
+    return out
+
+
 def check_edge_on_container_border(geo: DiagramGeometry) -> List[Tuple[str, str]]:
     """Return ``(edge_id, "<container>.<side>")`` for edges with a **long,
     axis-aligned leg that coincides with a container border** it does not belong
