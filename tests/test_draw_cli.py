@@ -171,6 +171,42 @@ def test_generated_diagram_is_publication_eligible(tmp_path, diagram_type):
 
 
 # --------------------------------------------------------------------------- #
+# Theme 2 (1.10.10): C4 Context build mode
+# --------------------------------------------------------------------------- #
+
+
+def test_context_collapses_the_cloud_into_one_system_block():
+    """A C4 Context view collapses every in-cloud resource into ONE system
+    block (the neutral external_system role), so the diagram answers 'who uses
+    the system and what it talks to' as a black box — no account boundary."""
+    from rule_engine.draw import spec_from_snapshot
+    spec = spec_from_snapshot(_AWS_SNAPSHOT, "aws", "context", relationships=None)
+    assert spec.axis == "left-right"
+    assert spec.containers == ()  # C4 Context does not open the system box
+    system = [n for n in spec.nodes if n.id == "system"]
+    assert len(system) == 1 and system[0].role == "external_system"
+
+
+def test_context_companion_declares_type_and_flow_class():
+    """The context companion carries diagram_type: context (taxonomy + ip-range
+    scoping) and the flow lint class."""
+    text = build_companion("aws", "context", "10-aws-context")
+    assert "diagram_type: context" in text
+    assert "diagram_class: flow" in text
+
+
+def test_context_diagram_is_publication_eligible(tmp_path):
+    stem = tmp_path / "10-context"
+    result = generate(_AWS_SNAPSHOT, "aws", "context", stem, export=False)
+    report = _lint(Path(result["drawio"]))
+    blocking = [
+        f for f in report.get("findings", [])
+        if f.get("severity") in ("CRITICAL", "ERROR")
+    ]
+    assert blocking == [], blocking
+
+
+# --------------------------------------------------------------------------- #
 # Determinism (Requirement 10.6)
 # --------------------------------------------------------------------------- #
 

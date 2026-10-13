@@ -194,6 +194,16 @@ class Edge:
     target: str
     marker: str
     dashed: bool = False
+    #: Theme 16 (1.10.10): a network-level PEERING relationship (VPC/VCN peering,
+    #: a cross-cloud peering link), not a directional data-flow step. Rendered as
+    #: a symmetric dashed line with NO arrowhead on either end (``startArrow=none;
+    #: endArrow=none``) — a peering is bidirectional and undirected, so a single
+    #: head would misstate it and a double head trips ``edge-bidirectional``.
+    #: ``startArrow=none`` + ``endArrow=none`` passes both ``arrow-style`` (none
+    #: is an accepted head) and ``edge-bidirectional`` (either end none → not
+    #: double-headed). The marker is a text label (e.g. ``peering``), not a
+    #: numeric flow step, so it never enters the flow-marker hygiene passes.
+    peering: bool = False
     exit: Tuple[float, float] = (1.0, 0.5)
     entry: Tuple[float, float] = (0.0, 0.5)
     # Explicit routing waypoints (model coords) so parallel runs never share a
@@ -843,7 +853,7 @@ def _orthogonalised(
         out.append(
             Edge(
                 id=e.id, source=e.source, target=e.target, marker=e.marker,
-                dashed=e.dashed, exit=exit_frac, entry=entry_frac,
+                dashed=e.dashed, peering=e.peering, exit=exit_frac, entry=entry_frac,
                 points=tuple(pts),
             )
         )
@@ -851,15 +861,23 @@ def _orthogonalised(
 
 
 def edge_cell(e: Edge) -> str:
-    dash = "dashed=1;" if e.dashed else ""
+    dash = "dashed=1;" if (e.dashed or e.peering) else ""
     ex, ey = e.exit
     nx, ny = e.entry
-    style = (
+    if e.peering:
+        # Theme 16: a peering link is symmetric and undirected — a dashed line
+        # with NO head on either end. startArrow=none + endArrow=none passes
+        # arrow-style (none is accepted) and edge-bidirectional (either-none →
+        # not double-headed). Keeps the orthogonal routing + contact contract.
+        heads = "startArrow=none;startFill=0;endArrow=none;endFill=0;"
+    else:
         # Open arrowhead (endArrow=open;endFill=0) and a >= 1pt stroke, per AWS
         # diagram conventions (diagram-standards "Accessibility & Contrast" /
         # arrow-style lint rule): open pointers read cleaner than heavy filled
         # heads and the stroke stays visible when scaled down.
-        f"edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;"
+        heads = "endArrow=open;endFill=0;"
+    style = (
+        f"edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;{heads}"
         f"strokeWidth={EDGE_STROKE_WIDTH};{dash}"
         f"exitX={ex};exitY={ey};exitDx=0;exitDy=0;exitPerimeter=0;"
         f"entryX={nx};entryY={ny};entryDx=0;entryDy=0;"

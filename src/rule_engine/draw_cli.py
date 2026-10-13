@@ -28,12 +28,13 @@ is read from committed mappings, and the companion carries a fixed date/owner
 rather than the wall clock, so two runs produce byte-identical ``.drawio`` and
 ``.diagram.md``.
 
-The three user-facing diagram types map onto the two lint classes
+The user-facing diagram types map onto the two lint classes
 (``diagram-standards.md`` → "Choosing the diagram type after inventory"):
-``simple`` / ``summary`` are ``diagram_class: flow``; ``landscape`` is
-``diagram_class: landscape``. A ``summary`` names its ``detailed_view`` (the
-paired landscape basename) and a ``landscape`` names its ``summary_of`` (the
-paired summary basename) so the sanctioned pair cross-links both ways.
+``context`` (C4 Context) / ``simple`` / ``summary`` are ``diagram_class: flow``;
+``landscape`` is ``diagram_class: landscape``. A ``summary`` names its
+``detailed_view`` (the paired landscape basename) and a ``landscape`` names its
+``summary_of`` (the paired summary basename) so the sanctioned pair cross-links
+both ways.
 """
 
 from __future__ import annotations
@@ -78,8 +79,9 @@ __all__ = ["main", "generate"]
 # the same value the shipped HA generator uses.
 _PAGE_MARGIN = 2 * CONTAINER_PAD  # 60, a whole grid multiple
 
-#: The three user-facing diagram types → the lint ``diagram_class`` they carry.
-_CLASS_OF = {"simple": "flow", "summary": "flow", "landscape": "landscape"}
+#: The user-facing diagram types → the lint ``diagram_class`` they carry.
+#: ``context`` is the C4 Context level (feedback Theme 2), a ``flow`` class.
+_CLASS_OF = {"context": "flow", "simple": "flow", "summary": "flow", "landscape": "landscape"}
 
 #: A fixed date used for the companion frontmatter dates and the title, so the
 #: generated triple is byte-identical across runs (Requirement 10.6 — no
@@ -260,6 +262,7 @@ def _edges_from(placed: PlacedDiagram) -> List[Edge]:
             target=pe.spec.target,
             marker=pe.spec.marker,
             dashed=pe.spec.dashed,
+            peering=pe.spec.peering,
             exit=pe.exit,
             entry=pe.entry,
             points=tuple((int(x), int(y)) for x, y in pe.points),
@@ -399,6 +402,12 @@ def _companion_frontmatter(
         "tags": tags,
         "related_docs": [],
     }
+    # Theme 2: a C4 Context companion declares diagram_type=context so the
+    # diagram-type taxonomy reads it and ip-range (scoped to network/infra/
+    # deployment or the landscape class) correctly does NOT evaluate it. Only
+    # emitted for context; simple/summary/landscape are byte-unchanged.
+    if diagram_type == "context":
+        fm["diagram_type"] = "context"
     # A landscape MUST cross-link a flow summary or it is orphan-landscape (an
     # ERROR). When no explicit pair was given, derive a summary basename so the
     # standalone landscape is still publication-eligible; the reader is pointed
@@ -440,7 +449,7 @@ def _yaml_frontmatter(fm: Mapping[str, Any]) -> str:
     scalar_order = [
         "id", "title", "kb_namespace", "section", "category", "status",
         "updated", "owner", "author", "next_review_date", "diagram_class",
-        "summary_of", "detailed_view",
+        "diagram_type", "summary_of", "detailed_view",
     ]
     for key in scalar_order:
         if key in fm:
@@ -665,9 +674,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--provider", required=True, choices=sorted(PROVIDERS),
                     help="provider profile of the Snapshot")
     ap.add_argument("--type", required=True, dest="diagram_type",
-                    choices=("simple", "summary", "landscape"),
-                    help="diagram type: simple/summary are flow-class, landscape "
-                    "is landscape-class")
+                    choices=("context", "simple", "summary", "landscape"),
+                    help="diagram type: context (C4 Context) / simple / summary "
+                    "are flow-class, landscape is landscape-class")
     ap.add_argument("--out", required=True, dest="out_basename",
                     help="output path stem; writes <out>.drawio and "
                     "<out>.diagram.md")

@@ -175,12 +175,21 @@ def lane_of(role: str) -> str:
 
 #: The three user-facing diagram types (diagram-standards → "Choosing the
 #: diagram type after inventory"). ``simple`` / ``summary`` are the ``flow`` lint
-#: class; ``landscape`` is the ``landscape`` class.
-DIAGRAM_TYPES: Tuple[str, ...] = ("simple", "summary", "landscape")
+#: class; ``landscape`` is the ``landscape`` class. ``context`` is the C4
+#: Context level (feedback Theme 2): the widest single view — external actors
+#: around ONE system block — also the ``flow`` class.
+DIAGRAM_TYPES: Tuple[str, ...] = ("context", "simple", "summary", "landscape")
 
 #: The ``flow`` node budget (diagram-standards → Node Limit). A ``simple`` /
 #: ``summary`` diagram shows the in-scope subset up to this many nodes.
 _FLOW_NODE_BUDGET = 12
+
+#: Theme 2: in a C4 Context view every in-cloud resource collapses into a single
+#: system block, drawn in the platform-core lane; only EXTERNAL actors / consumers
+#: (the external lanes) stay as their own nodes around it. The system block uses
+#: the neutral ``external_system`` presentation role so no provider icon stands
+#: in for "the whole system", and reads as a black box per C4 Context.
+_CONTEXT_SYSTEM_ROLE = "external_system"
 
 
 def _manifest_field(manifest_text: str, field: str) -> Optional[str]:
@@ -381,6 +390,12 @@ def spec_from_snapshot(
                 "Snapshot into smaller boundaries and draw each separately"
             )
 
+    # Theme 2: C4 Context view — external actors/consumers around ONE system
+    # block (the whole cloud as a black box). Built separately: it does not use
+    # the per-lane subset-and-slot assembly below.
+    if diagram_type == "context":
+        return _context_spec(provider, boundary_id, region, resolved, relationships)
+
     # Stable ordering: sort every resolved resource by (lane index, identity) so
     # slot assignment is deterministic and independent of file/dict order.
     lane_names = _lane_order()
@@ -460,6 +475,101 @@ def spec_from_snapshot(
         containers=containers,
         flow_lines=(),
         title=title,
+    )
+
+
+def _context_spec(
+    provider: str,
+    boundary_id: str,
+    region: str,
+    resolved: Sequence[Tuple[Any, str]],
+    relationships: Optional[Sequence[Mapping[str, Any]]],
+) -> "DiagramSpec":
+    """Build a C4 **Context** spec (feedback Theme 2): the widest single view.
+
+    The whole cloud system is drawn as ONE black-box ``system`` node (the neutral
+    ``external_system`` role, so no single provider icon stands in for the whole
+    system), surrounded by its **external** actors / consumers — the resources
+    whose lane is an external lane (``actors`` / ``on-premises``). Every in-cloud
+    resource collapses into the system node, and any supplied relationship that
+    touched an in-cloud resource is redirected to the system node (self-loops
+    and duplicates dropped), so the context diagram answers "who uses the system
+    and what does it talk to" at a glance.
+
+    ``flow`` class, left→right axis, no account boundary — the system is a box,
+    not a nested account tree (C4 Context does not open the box). The companion
+    carries ``diagram_type: context`` (``_CLASS_OF`` → ``flow``).
+    """
+    try:
+        from rule_engine.layout.base import EXTERNAL_LANES
+    except ImportError:  # pragma: no cover - flat-module fallback
+        from layout.base import EXTERNAL_LANES  # type: ignore[no-redef]
+
+    # Stable order for deterministic slot assignment.
+    lane_names = _lane_order()
+    lane_rank = {name: i for i, name in enumerate(lane_names)}
+    ordered = sorted(
+        resolved,
+        key=lambda pair: (
+            lane_rank.get(lane_of(pair[1]), len(lane_names)),
+            _resource_identity(pair[0]),
+        ),
+    )
+
+    nodes: List[NodeSpec] = []
+    slot_by_lane: Dict[str, int] = {}
+    used_ids: Dict[str, int] = {}
+    # Map every in-cloud resource identity's slug to the single system node id,
+    # so a relationship naming an internal resource reconnects to the system.
+    SYSTEM_ID = "system"
+    cloud_slugs: set = set()
+    for resource, role in ordered:
+        lane = lane_of(role)
+        identity = _resource_identity(resource)
+        base_id = _slug(identity)
+        if lane not in EXTERNAL_LANES:
+            cloud_slugs.add(base_id)
+            continue  # collapses into the system node
+        node_id = base_id
+        if node_id in used_ids:
+            used_ids[base_id] += 1
+            node_id = f"{base_id}-{used_ids[base_id]}"
+        else:
+            used_ids[base_id] = 0
+        slot = slot_by_lane.get(lane, 0)
+        slot_by_lane[lane] = slot + 1
+        nodes.append(NodeSpec(id=node_id, role=role, lane=lane, region="", slot=slot))
+
+    # The one system block, in the platform-core lane between the external lanes.
+    nodes.append(
+        NodeSpec(id=SYSTEM_ID, role=_CONTEXT_SYSTEM_ROLE, lane="platform",
+                 region="", slot=0)
+    )
+
+    # Redirect relationships: an endpoint resolving to a collapsed cloud resource
+    # becomes the system node; keep only edges between two distinct surviving ids.
+    external_ids = {n.id for n in nodes}
+    redirected: List[Mapping[str, Any]] = []
+    for rel in (relationships or ()):
+        src = str(rel.get("source", ""))
+        tgt = str(rel.get("target", ""))
+        s = SYSTEM_ID if _slug(src) in cloud_slugs else src
+        t = SYSTEM_ID if _slug(tgt) in cloud_slugs else tgt
+        if s == t:
+            continue  # self-loop after collapse
+        redirected.append({**rel, "source": s, "target": t})
+    edges = _edges_from_relationships(redirected, external_ids)
+
+    diagram_id = f"{provider}-{_slug(boundary_id)}-context"
+    return DiagramSpec(
+        diagram_id=diagram_id,
+        diagram_name=diagram_id,
+        axis="left-right",
+        nodes=tuple(nodes),
+        edges=edges,
+        containers=(),  # C4 Context does not open the system box
+        flow_lines=(),
+        title=f"{provider} context — {boundary_id} / {region}",
     )
 
 

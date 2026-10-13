@@ -103,6 +103,12 @@ class EdgeSpec:
     marker: str
     dashed: bool = False
     kind_hint: Optional[str] = None
+    #: Theme 16 (1.10.10): a network-level PEERING relationship (VPC/VCN peering,
+    #: a cross-cloud peering link) rather than a directional data-flow step. The
+    #: skin renders it as a symmetric dashed line with no arrowhead on either end
+    #: (see ``diagram_layout.Edge.peering`` / ``edge_cell``). Presentation only —
+    #: the engine routes it exactly like any other edge; not a coordinate.
+    peering: bool = False
     #: Engine-derived (never authored): ``True`` when both endpoints belong to
     #: the same non-empty region, ``False`` for two different regions, ``None``
     #: when unknown. Set by ``layout()`` from the node declarations so the

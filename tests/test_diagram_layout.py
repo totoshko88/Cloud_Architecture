@@ -329,3 +329,32 @@ def test_build_diagram_uses_the_conditional_legend_by_default():
         nodes=[], edges=[], flow_lines=("Flow",), legend_x=200,
     )
     assert "Outer boundary" in xml and "Inner boundary" not in xml
+
+
+# ---------------------------------------------------------------------------
+# Theme 16 (1.10.10): peering edge annotation
+# ---------------------------------------------------------------------------
+
+
+def test_peering_edge_is_a_symmetric_headless_dashed_line():
+    """A peering edge (VPC/VCN peering, cross-cloud peering) renders as a dashed
+    line with NO arrowhead on either end, so it reads as an undirected
+    network-level relationship rather than a directional data-flow step."""
+    cell = dl.edge_cell(
+        dl.Edge(id="px", source="a", target="b", marker="peering", peering=True)
+    )
+    assert "startArrow=none" in cell and "endArrow=none" in cell
+    assert "dashed=1" in cell
+    assert 'value="peering"' in cell
+    # A peering line passes arrow-style (none is an accepted head) and
+    # edge-bidirectional (either-end-none ⇒ not double-headed).
+    assert "endArrow=open" not in cell
+
+
+def test_normal_edge_is_unchanged_by_the_peering_option():
+    """A non-peering edge keeps the open single arrowhead — the peering branch is
+    opt-in and must not change the default edge style."""
+    cell = dl.edge_cell(dl.Edge(id="e1", source="a", target="b", marker="1"))
+    assert "endArrow=open" in cell and "endFill=0" in cell
+    assert "startArrow=none" not in cell  # single-head, start unset
+    assert "dashed=1" not in cell
