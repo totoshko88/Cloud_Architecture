@@ -567,9 +567,17 @@ def test_compute_scale_partitions_scale_up_and_split_signal(
                 assert scale < 1.0
                 assert measured * scale + border <= max_width + 0.5
         else:
-            # A flow still raises the split signal.
-            with pytest.raises(er.CanvasTooWideError):
-                er.compute_scale(src, diagram_class)
+            # A flow MARGINALLY over (within the wrapped-legend overshoot + border)
+            # is absorbed by a hair of downscale; a flow genuinely bigger still
+            # raises the split signal.
+            margin = er._WRAPPED_TEXT_RENDER_OVERSHOOT + border
+            if width + border <= max_width + margin:
+                scale, measured = er.compute_scale(src, diagram_class)
+                assert scale <= 1.0
+                assert measured * scale + border <= max_width + 0.5
+            else:
+                with pytest.raises(er.CanvasTooWideError):
+                    er.compute_scale(src, diagram_class)
     else:
         scale, measured = er.compute_scale(src, diagram_class)
         # The measured width is exactly the vertex box width W.

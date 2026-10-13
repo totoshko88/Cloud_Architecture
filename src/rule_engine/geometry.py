@@ -197,6 +197,12 @@ class DiagramGeometry:
     #: (:func:`node_caption_box`, 1.10.7). Empty for a programmatic geometry, in
     #: which case the icon-width band applies.
     node_labels: Dict[str, str] = field(default_factory=dict)
+    #: Node id -> its draw.io ``parent`` cell id (Wave C). A node parented to a
+    #: boundary id is a structural MEMBER of that boundary; one parented to the
+    #: root layer is a flat node. ``check_geometric_containment`` (Theme 27) uses
+    #: this to tell a member from an interloper — a flat node drawn inside a
+    #: boundary it is not parented to.
+    node_parent_ids: Dict[str, str] = field(default_factory=dict)
     #: The model grid step this geometry was built with (``page.grid_size`` in
     #: ``build_geometry``, else the module :data:`GRID` default). Carried so the
     #: grid-alignment check judges node origins against the *page's* declared
@@ -261,6 +267,7 @@ def build_geometry(page: Page) -> DiagramGeometry:
         ax, ay = absolute_origin(page, cid)
         geo.nodes[cid] = Box(cid, ax, ay, float(g.w), float(g.h))
         geo.node_labels[cid] = cell.label or ""
+        geo.node_parent_ids[cid] = cell.parent
         overlay = cell.style_map.get("overlay")
         if overlay:
             geo.overlay_nodes[cid] = overlay

@@ -936,6 +936,41 @@ def legend_lines_for(boundaries: Sequence[Boundary]) -> Tuple[str, ...]:
     return tuple(line for line in STANDARD_LEGEND_LINES if line not in drop)
 
 
+def _node_membership(
+    nodes: Sequence["Node"], boundaries: Sequence["Boundary"]
+) -> Dict[str, Tuple[str, int, int]]:
+    """Map node id -> (host boundary id, host x, host y) for structural nesting.
+
+    Wave C (container-cell model): a node is a *structural member* of the
+    tightest Boundary that geometrically contains its icon box. Emitting it as a
+    child of that boundary (``parent=<id>`` + geometry relative to the host
+    origin) makes membership checkable (Theme 27) while — per the proven spike —
+    keeping every absolute position, hence every lint verdict and the raster,
+    identical. A node contained by NO boundary (an external actor to the left /
+    above) keeps ``parent="1"`` and is absent from the map.
+
+    Containment is the icon box (not the caption): a boundary wraps its members'
+    icons, and the label band hangs below. Ties (equal area) are impossible for
+    well-formed nested boundaries; the smallest-area winner is deterministic.
+    """
+    host: Dict[str, Tuple[str, int, int]] = {}
+    for n in nodes:
+        best_id, best_x, best_y, best_area = None, 0, 0, None
+        for b in boundaries:
+            if (
+                b.x <= n.x
+                and b.y <= n.y
+                and n.x + ICON_SIZE <= b.x + b.w
+                and n.y + ICON_SIZE <= b.y + b.h
+            ):
+                area = b.w * b.h
+                if best_area is None or area < best_area:
+                    best_id, best_x, best_y, best_area = b.id, b.x, b.y, area
+        if best_id is not None:
+            host[n.id] = (best_id, best_x, best_y)
+    return host
+
+
 def build_diagram(
     *,
     diagram_id: str,
@@ -992,8 +1027,21 @@ def build_diagram(
             if e.id in under:
                 parts.append(edge_cell(e))
         parts.append("\n")
+    # Wave C: emit each node as a structural child of its tightest enclosing
+    # boundary (``parent=<id>`` + geometry relative to the host origin), so
+    # membership is checkable (Theme 27). A node contained by no boundary keeps
+    # parent="1". Absolute positions are unchanged — draw.io resolves a child's
+    # relative geometry back to the same pixels — so render and lint are identical
+    # (proven by the Wave C spike). Edges stay flat on the root layer.
+    _host = _node_membership(nodes, boundaries)
     for n in nodes:
-        parts.append(n.render(n, "1"))
+        hb = _host.get(n.id)
+        if hb is None:
+            parts.append(n.render(n, "1"))
+        else:
+            host_id, hx, hy = hb
+            rel = replace(n, x=n.x - hx, y=n.y - hy)
+            parts.append(rel.render(rel, host_id))
     parts.append("\n")
     for e in routed:
         if e.id not in under:

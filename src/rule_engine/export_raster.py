@@ -363,6 +363,16 @@ def compute_scale(
                 # illegible postage stamp (split or page the landscape instead).
                 raise CanvasTooWideError(source, width, dclass, max_width)
             return (fit, width)
+        # A FLOW that is only MARGINALLY over — within the wrapped-legend render
+        # overshoot plus the border — is absorbed by a hair of downscale (visually
+        # imperceptible, ~0.99) rather than hard-failing: Theme 13 opt1 added that
+        # ~15px to every width, which can tip a legitimate edge-of-budget
+        # multi-column flow (the cross-cloud composition at 1595px content) 11px
+        # over. A flow genuinely bigger than that margin still raises "split the
+        # diagram" — its 12-node cap means it is holding too much.
+        margin = _WRAPPED_TEXT_RENDER_OVERSHOOT + border
+        if width + border <= max_width + margin and width > 0:
+            return ((max_width - border) / width, width)
         raise CanvasTooWideError(source, width, dclass, max_width)
 
     if width <= 0:
