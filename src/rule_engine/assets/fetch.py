@@ -71,7 +71,8 @@ class AssetSource:
     Attributes
     ----------
     provider:
-        Provider profile key (``aws`` | ``azure`` | ``gcp`` | ``oci``).
+        Provider profile key (``aws`` | ``azure`` | ``gcp`` | ``oci`` |
+        ``kubernetes``).
     asset_pack:
         Human-readable authoritative asset-pack identifier recorded as
         provenance for the provider (matches the ``asset_pack`` field used in
@@ -166,6 +167,20 @@ ASSET_SOURCES: dict[str, tuple[AssetSource, ...]] = {
             ),
             archive_kind="zip",
             description="Google Cloud architecture icons: category icon set plus core-products icon set.",
+        ),
+    ),
+    "kubernetes": (
+        AssetSource(
+            provider="kubernetes",
+            asset_pack="Kubernetes Icons Set (kubernetes/community, Apache-2.0 / CC-BY-4.0)",
+            icon_source="custom",
+            # The Kubernetes pack is a git-archive gzip tarball, fetched via the
+            # primary mappings/asset-sources.yaml path (fetch_assets.py), not this
+            # legacy URL downloader — so no url / archive_kind="none" here (the
+            # enumerate path reads only asset_pack + icon_source for provenance).
+            urls=(),
+            archive_kind="none",
+            description="Official Kubernetes Icons Set (community pack); fetched via asset-sources.yaml.",
         ),
     ),
 }
