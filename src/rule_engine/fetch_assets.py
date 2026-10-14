@@ -35,6 +35,7 @@ import re
 import secrets
 import shutil
 import sys
+import tarfile
 import tempfile
 import urllib.parse
 import urllib.request
@@ -306,17 +307,43 @@ def _unpack_fresh(zip_path: Path, out_dir: Path) -> int:
     return count
 
 
-def _unpack(zip_path: Path, out_dir: Path) -> int:
-    """Unpack ``zip_path`` into ``out_dir``, skipping mac cruft. Returns file count.
+def _is_within(root: Path, target: Path) -> bool:
+    """True iff ``target`` is ``root`` or lies under it (zip/tar-slip guard)."""
+    return root == target or root in target.parents
 
-    Rejects any entry whose resolved path escapes ``out_dir`` (zip-slip), so a
+
+def _unpack(archive_path: Path, out_dir: Path) -> int:
+    """Unpack ``archive_path`` into ``out_dir``, skipping mac cruft. Returns file count.
+
+    Supports both a **ZIP** (``PK\\x03\\x04``) and a **gzip tarball**
+    (``\\x1f\\x8b`` magic — ``.tar.gz`` / ``.tgz``), dispatched by the leading
+    magic bytes rather than the file name, because a verified download is cached
+    under a digest name with no real extension. The AWS/Azure/GCP packs are ZIPs;
+    the Kubernetes community pack is a ``codeload`` git-archive ``tar.gz`` and the
+    opensource Simple Icons pack is an npm ``.tgz`` — both gzip tarballs.
+
+    Rejects any entry whose resolved path escapes ``out_dir`` (zip/tar-slip), so a
     tampered or malicious pack cannot write outside the asset root.
 
-    The archive is opened BEFORE ``out_dir`` is created (v1.6.1): a download
-    that is not a zip (an HTML error page, a truncated file) used to leave an
-    empty pack directory behind, which the icon-index check then read as a
-    present-but-stale pack instead of a missing one.
+    The archive is opened and its type validated BEFORE ``out_dir`` is created
+    (v1.6.1): a download that is neither a zip nor a gzip tarball (an HTML error
+    page, a truncated file) used to leave an empty pack directory behind, which
+    the icon-index check then read as a present-but-stale pack instead of a
+    missing one.
     """
+    with open(archive_path, "rb") as fh:
+        magic = fh.read(4)
+    if magic[:2] == b"PK":  # ZIP (local-file PK\x03\x04 or empty-archive PK\x05\x06)
+        return _unpack_zip(archive_path, out_dir)
+    if magic[:2] == b"\x1f\x8b":  # gzip (.tar.gz / .tgz)
+        return _unpack_tar(archive_path, out_dir)
+    raise ValueError(
+        f"{archive_path}: not a ZIP or gzip tarball (magic {magic!r})"
+    )
+
+
+def _unpack_zip(zip_path: Path, out_dir: Path) -> int:
+    """Unpack a ZIP into ``out_dir``, skipping mac cruft, with a zip-slip guard."""
     with zipfile.ZipFile(zip_path) as zf:
         out_dir.mkdir(parents=True, exist_ok=True)
         root = out_dir.resolve()
@@ -325,9 +352,42 @@ def _unpack(zip_path: Path, out_dir: Path) -> int:
             if "__MACOSX" in name or name.endswith(".DS_Store") or name.endswith("/"):
                 continue
             target = (out_dir / name).resolve()
-            if root != target and root not in target.parents:
+            if not _is_within(root, target):
                 raise ValueError(f"{zip_path}: entry {name!r} escapes {out_dir}")
             zf.extract(name, out_dir)
+            count += 1
+    return count
+
+
+def _unpack_tar(tar_path: Path, out_dir: Path) -> int:
+    """Unpack a gzip tarball into ``out_dir``, skipping mac cruft, tar-slip guarded.
+
+    Only regular files are extracted (directories are implied, symlinks/devices
+    are skipped — a vendor icon pack carries none and a symlink is an escape
+    vector). Each member's resolved path is checked against ``out_dir`` before
+    extraction, the same guarantee ``_unpack_zip`` gives.
+    """
+    with tarfile.open(tar_path, mode="r:gz") as tf:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        root = out_dir.resolve()
+        count = 0
+        for member in tf.getmembers():
+            name = member.name
+            if not member.isfile():
+                continue
+            if "__MACOSX" in name or name.endswith(".DS_Store"):
+                continue
+            target = (out_dir / name).resolve()
+            if not _is_within(root, target):
+                raise ValueError(f"{tar_path}: entry {name!r} escapes {out_dir}")
+            # Flatten any member mode bits that are not a plain file read/write;
+            # extract the file content only, never a special node.
+            fileobj = tf.extractfile(member)
+            if fileobj is None:
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with open(target, "wb") as out:
+                shutil.copyfileobj(fileobj, out)
             count += 1
     return count
 
