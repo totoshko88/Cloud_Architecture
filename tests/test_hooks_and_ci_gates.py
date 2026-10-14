@@ -260,14 +260,17 @@ def test_an_empty_pack_directory_counts_as_missing(tmp_path, capsys):
 
 
 def test_unpacking_a_non_zip_download_creates_no_pack_directory(tmp_path):
-    import zipfile
-
     from rule_engine import fetch_assets
 
     bogus = tmp_path / "pack.zip"
     bogus.write_text("<html>rate limited</html>", encoding="utf-8")
     out_dir = tmp_path / "assets" / "vendor" / "aws-icons"
-    with pytest.raises(zipfile.BadZipFile):
+    # 1.10.11: _unpack now sniffs the leading magic bytes (PK -> zip,
+    # 0x1f8b -> gzip tar) before touching the filesystem, so a non-archive
+    # (an HTML rate-limit page) is rejected with the module's own ValueError
+    # rather than a raw zipfile.BadZipFile. The no-pack-directory guarantee is
+    # unchanged: nothing is created when the download is not a real archive.
+    with pytest.raises(ValueError, match="not a ZIP or gzip tarball"):
         fetch_assets._unpack(bogus, out_dir)
     assert not out_dir.exists()
 
