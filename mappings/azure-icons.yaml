@@ -75,6 +75,20 @@ resources:
     icon_provenance: neutral
     brand_hex: "#333333"
     style: "shape=mxgraph.flowchart.multiple_documents;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12"
+  # Peer AWS/Azure account AND peer cloud AS A NODE (feedback Theme 34). A high-
+  # level node for a peer Azure subscription / peer cloud carries Azure's own
+  # Subscriptions glyph (the built-in azure2 shape, consistent with this
+  # profile) instead of a grey box — the one-role-per-service choice, not a
+  # look-alike. Resolved only for a NodeSpec role; the peer_account CONTAINER
+  # kind (resolve_container) is untouched.
+  peer_account:
+    icon_id: azure2.subscriptions
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/general/Subscriptions.svg"
+  external_cloud:
+    icon_id: azure2.subscriptions
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/general/Subscriptions.svg"
 
 containers:
   # Container styles follow Microsoft's published Azure architecture diagrams

@@ -87,6 +87,19 @@ resources:
     icon_provenance: neutral
     brand_hex: "#333333"
     style: "shape=mxgraph.flowchart.multiple_documents;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12"
+  # Peer account / peer cloud AS A NODE (feedback Theme 34). The OCI pack ships
+  # no high-level tenancy/compartment glyph suitable for a peer-cloud node, so it
+  # keeps the neutral external box (Icon Fidelity: no look-alike substitute).
+  peer_account:
+    icon_id: external.system
+    icon_provenance: neutral
+    brand_hex: "#333333"
+    style: "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;dashed=1;verticalAlign=middle;fontSize=12"
+  external_cloud:
+    icon_id: external.system
+    icon_provenance: neutral
+    brand_hex: "#333333"
+    style: "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;dashed=1;verticalAlign=middle;fontSize=12"
 
 containers:
   # Container styles follow the official OCI Architecture Diagram Toolkit v24.2

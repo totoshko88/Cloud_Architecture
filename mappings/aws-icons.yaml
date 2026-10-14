@@ -347,6 +347,33 @@ resources:
     brand_hex: "#333333"
     style: "shape=mxgraph.flowchart.multiple_documents;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12"
 
+  # Peer / external AWS account AS A NODE (feedback Theme 34). When a high-level
+  # view draws a peer AWS account as a single node (not a captioned container
+  # with children — that stays the `peer_account` CONTAINER kind), it should
+  # carry AWS's own Organizations *Account* glyph instead of an anonymous grey
+  # box. This is the correct one-role-per-service choice (the node literally IS
+  # an AWS account), not a look-alike, so it is Icon-Fidelity clean. The glyph
+  # ships in the pinned pack (Res_Management-Governance). Resolved only when a
+  # NodeSpec sets role="peer_account"; the container-kind path (resolve_container
+  # → containers table) is untouched and still a boundary box.
+  peer_account:
+    icon_id: aws.res.organizations_account
+    icon_provenance: resource
+    brand_hex: "#E7157B"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_Management-Governance/Res_AWS-Organizations_Account_48.svg"
+
+  # External-cloud high-level node (feedback Theme 34). For AWS the sibling of
+  # peer_account at the org-management level (an organization's management
+  # account). Per-cloud, Azure resolves external_cloud to its Subscriptions
+  # glyph; GCP/OCI/generic have no high-level org glyph in their packs, so they
+  # keep the neutral external box (see those mappings) — Icon Fidelity forbids a
+  # look-alike substitute where the real asset is absent.
+  external_cloud:
+    icon_id: aws.res.organizations_management_account
+    icon_provenance: resource
+    brand_hex: "#E7157B"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_Management-Governance/Res_AWS-Organizations_Management-Account_48.svg"
+
 # Container styles for boundaries (using mxgraph.aws4.group for proper draw.io
 # group behavior — these are structural elements, not service icons)
 # `brand_hex` on a container entry is the PROVIDER ANCHOR (AWS Squid Ink
