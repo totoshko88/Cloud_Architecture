@@ -301,6 +301,10 @@ resources:
     generic:
       label: Compute Instance
       aliases: [compute_instance, vm]
+    kubernetes:
+      label: Node
+      aliases: [k8s_node, kube_node, worker_node]
+      icon: { id: k8s.node, name: Kubernetes Node, hex: "#326CE5" }
 
   file_system:
     aws:
@@ -318,6 +322,10 @@ resources:
     generic:
       label: File System
       aliases: [file_system, nfs]
+    kubernetes:
+      label: PersistentVolumeClaim
+      aliases: [k8s_pvc, persistentvolumeclaim, persistent_volume_claim]
+      icon: { id: k8s.pvc, name: Kubernetes PersistentVolumeClaim, hex: "#326CE5" }
 
   cdn:
     aws:
@@ -335,6 +343,10 @@ resources:
     generic:
       label: CDN
       aliases: [cdn]
+    kubernetes:
+      label: Ingress
+      aliases: [k8s_ingress, ingress, ingress_controller]
+      icon: { id: k8s.ing, name: Kubernetes Ingress, hex: "#326CE5" }
 
   dns:
     aws:
@@ -352,6 +364,10 @@ resources:
     generic:
       label: DNS
       aliases: [dns]
+    kubernetes:
+      label: Endpoints
+      aliases: [k8s_endpoints, endpoints, coredns, service_discovery]
+      icon: { id: k8s.ep, name: Kubernetes Endpoints, hex: "#326CE5" }
 
   waf:
     aws:
@@ -369,6 +385,10 @@ resources:
     generic:
       label: WAF
       aliases: [waf, web_application_firewall]
+    kubernetes:
+      label: NetworkPolicy
+      aliases: [k8s_netpol, networkpolicy, network_policy]
+      icon: { id: k8s.netpol, name: Kubernetes NetworkPolicy, hex: "#326CE5" }
 
   lb:
     aws:
@@ -386,6 +406,10 @@ resources:
     generic:
       label: Load Balancer
       aliases: [lb, load_balancer]
+    kubernetes:
+      label: Service (LoadBalancer)
+      aliases: [k8s_lb_service, loadbalancer_service, service_loadbalancer]
+      icon: { id: k8s.svc, name: Kubernetes Service, hex: "#326CE5" }
 
   cache:
     aws:
@@ -403,3 +427,7 @@ resources:
     generic:
       label: Cache
       aliases: [cache, in_memory_cache]
+    kubernetes:
+      label: Pod (cache)
+      aliases: [k8s_cache_pod, cache_pod]
+      icon: { id: k8s.pod, name: Kubernetes Pod, hex: "#326CE5" }
