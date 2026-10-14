@@ -91,8 +91,15 @@ def summary_spec() -> DS:
             NS(id="ingress", role="k8s_ingress", lane="actors", region="", slot=0),
             NS(id="svc", role="k8s_service", lane="router", region="a", slot=0, container="ns-app"),
             NS(id="deploy", role="k8s_deployment", lane="workers", region="a", slot=0, container="ns-app"),
-            NS(id="sts", role="k8s_statefulset", lane="data", region="b", slot=0, container="ns-data"),
-            NS(id="pvc", role="k8s_pvc", lane="data", region="b", slot=1, container="ns-data"),
+            # ns-data stacked in the SAME region band as ns-app (not a disjoint
+            # peer band). A summary is the *shape* (<=12 nodes); placing the two
+            # namespaces in one vertical column keeps them as two distinct
+            # namespace boxes while packing the Cluster envelope tightly — the
+            # diagonal a/b split left the outer Cluster box with a dead-space
+            # ratio of 3.087 (> OUTER_DEAD_SPACE_RATIO 2.5). The landscape keeps
+            # the disjoint a/b peer bands, where the fuller content earns them.
+            NS(id="sts", role="k8s_statefulset", lane="data", region="a", slot=0, container="ns-data"),
+            NS(id="pvc", role="k8s_pvc", lane="data", region="a", slot=1, container="ns-data"),
         ),
         edges=(
             ES(id="e1", source="ingress", target="svc", marker="1"),
@@ -103,7 +110,7 @@ def summary_spec() -> DS:
         containers=(
             CS(id="cluster", kind="account", region="", parent=None, label_key="cluster"),
             CS(id="ns-app", kind="namespace", region="a", parent="cluster", label_key="ns-app"),
-            CS(id="ns-data", kind="namespace", region="b", parent="cluster", label_key="ns-data"),
+            CS(id="ns-data", kind="namespace", region="a", parent="cluster", label_key="ns-data"),
         ),
         flow_lines=(
             "Flow",
@@ -140,7 +147,11 @@ def landscape_spec() -> DS:
             NS(id="svc-data", role="k8s_service", lane="router", region="b", slot=0, container="ns-data"),
             NS(id="sts", role="k8s_statefulset", lane="data", region="b", slot=0, container="ns-data"),
             NS(id="pvc", role="k8s_pvc", lane="data", region="b", slot=1, container="ns-data"),
-            NS(id="secret", role="k8s_secret", lane="platform", region="b", slot=0, container="ns-data"),
+            # secret at platform slot 1 (not 0): directly above sts it made e9
+            # (secret->sts) and e5 (svc-data->sts) merge on sts's top face
+            # (entry-thirds top-entries-merge ERROR); slot 1 offsets it so the
+            # two edges enter sts on separate faces.
+            NS(id="secret", role="k8s_secret", lane="platform", region="b", slot=1, container="ns-data"),
         ),
         edges=(
             # Primary spine (linear): ingress -> service -> deployment -> pod,
@@ -148,7 +159,12 @@ def landscape_spec() -> DS:
             ES(id="e1", source="ingress", target="svc-app", marker="1"),
             ES(id="e2", source="svc-app", target="deploy", marker="2"),
             ES(id="e3", source="deploy", target="pod1", marker="3"),
-            ES(id="e4", source="deploy", target="svc-data", marker="4"),
+            # Cross-namespace handoff app -> data. Marked cross-region so the
+            # router allocates it its OWN corridor instead of dropping the drop-
+            # lane onto ns-data's left border (the border-riding `e4 ns-data.left`
+            # defect): a namespace boundary is a region boundary here, so this is
+            # the honest hint, the same pattern the cross-region flow edges use.
+            ES(id="e4", source="deploy", target="svc-data", marker="4", kind_hint="cross-region"),
             ES(id="e5", source="svc-data", target="sts", marker="5"),
             ES(id="e6", source="sts", target="pvc", marker="6"),
             # Supporting config/scaling/secret — each attaches to ONE node and

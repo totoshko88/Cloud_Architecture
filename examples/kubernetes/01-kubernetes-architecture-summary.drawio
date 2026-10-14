@@ -1,6 +1,6 @@
 <mxfile host="app.diagrams.net" agent="rule-engine golden-example" version="24.0.0">
   <diagram id="k8s-summary" name="kubernetes-architecture-summary">
-    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1560" pageHeight="1430" math="0" shadow="0">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="820" pageHeight="1430" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -9,14 +9,14 @@
           <mxGeometry x="40" y="20" width="900" height="30" as="geometry" />
         </mxCell>
 
-        <mxCell id="cluster" value="Cluster: prod" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#326CE5;dashed=1;verticalAlign=top;align=left;spacingLeft=30;fontColor=#326CE5;fontSize=12" vertex="1" parent="1">
-          <mxGeometry x="30" y="440" width="1160" height="930" as="geometry" />
+        <mxCell id="cluster" value="Cluster: prod" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#326CE5;dashed=1;verticalAlign=top;fontColor=#326CE5;fontSize=12;align=left;spacingLeft=110" vertex="1" parent="1">
+          <mxGeometry x="30" y="440" width="420" height="930" as="geometry" />
         </mxCell>
         <mxCell id="ns-app" value="Namespace: app" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#326CE5;dashed=1;verticalAlign=top;align=left;spacingLeft=30;fontColor=#326CE5;fontSize=12" vertex="1" parent="1">
-          <mxGeometry x="60" y="500" width="358" height="518" as="geometry" />
+          <mxGeometry x="60" y="500" width="138" height="518" as="geometry" />
         </mxCell>
-        <mxCell id="ns-data" value="Namespace: data" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#326CE5;dashed=1;verticalAlign=top;align=left;spacingLeft=30;fontColor=#326CE5;fontSize=12" vertex="1" parent="1">
-          <mxGeometry x="800" y="1140" width="358" height="198" as="geometry" />
+        <mxCell id="ns-data" value="Namespace: data" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#326CE5;dashed=1;verticalAlign=top;fontColor=#326CE5;fontSize=12;align=left;spacingLeft=80" vertex="1" parent="1">
+          <mxGeometry x="60" y="1140" width="358" height="198" as="geometry" />
         </mxCell>
 
         <mxCell id="e1" value="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.5128205128205128;exitY=1.0256410256410255;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5128205128205128;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="ingress" target="svc">
@@ -25,15 +25,18 @@
         <mxCell id="e2" value="2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.5128205128205128;exitY=1.0256410256410255;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5128205128205128;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="svc" target="deploy">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
+        <mxCell id="e3" value="3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.5128205128205128;exitY=1.0256410256410255;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5128205128205128;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="deploy" target="sts">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
 
         <mxCell id="ingress" value="ingress" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/ing.svg;labelBackgroundColor=#FFFFFF" vertex="1" parent="1">
-          <mxGeometry x="310" y="60" width="78" height="78" as="geometry" />
+          <mxGeometry x="90" y="60" width="78" height="78" as="geometry" />
         </mxCell>
         <mxCell id="svc" value="svc" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/svc.svg;labelBackgroundColor=#FFFFFF" vertex="1" parent="ns-app">
-          <mxGeometry x="250" y="60" width="78" height="78" as="geometry" />
+          <mxGeometry x="30" y="60" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="deploy" value="deploy" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/deploy.svg" vertex="1" parent="ns-app">
-          <mxGeometry x="250" y="380" width="78" height="78" as="geometry" />
+        <mxCell id="deploy" value="deploy" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/deploy.svg;labelBackgroundColor=#FFFFFF" vertex="1" parent="ns-app">
+          <mxGeometry x="30" y="380" width="78" height="78" as="geometry" />
         </mxCell>
         <mxCell id="sts" value="sts" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/sts.svg" vertex="1" parent="ns-data">
           <mxGeometry x="30" y="60" width="78" height="78" as="geometry" />
@@ -42,24 +45,15 @@
           <mxGeometry x="250" y="60" width="78" height="78" as="geometry" />
         </mxCell>
 
-        <mxCell id="e3" value="3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5128205128205128;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="deploy" target="sts">
-          <mxGeometry relative="1" as="geometry">
-            <Array as="points">
-              <mxPoint x="430.00" y="920.00" />
-              <mxPoint x="430.00" y="1170.00" />
-              <mxPoint x="870.00" y="1170.00" />
-            </Array>
-          </mxGeometry>
-        </mxCell>
         <mxCell id="e4" value="4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="sts" target="pvc">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
 
         <mxCell id="flow-legend" value="Flow&#10;1. External traffic enters via the Ingress&#10;2. Service routes to the app Deployment&#10;3. App reads/writes the data StatefulSet&#10;4. StatefulSet persists to its PersistentVolumeClaim" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF;spacingLeft=10;spacingRight=10;spacingTop=10;spacingBottom=10" vertex="1" parent="1">
-          <mxGeometry x="1220" y="120" width="280" height="116" as="geometry" />
+          <mxGeometry x="480" y="120" width="280" height="116" as="geometry" />
         </mxCell>
         <mxCell id="legend" value="Legend&#10;Solid line = primary flow&#10;Dashed line = asynchronous / event-driven flow&#10;Red = blocked / missing / disabled&#10;🆕 = new in version N&#10;🔄 = changed in version N&#10;Outer boundary = stack Boundary (captioned; provider style)&#10;Numbered markers (1..N) = ordered data flow steps; see Flow list" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF;spacingLeft=10;spacingRight=10;spacingTop=10;spacingBottom=10" vertex="1" parent="1">
-          <mxGeometry x="1220" y="360" width="280" height="180" as="geometry" />
+          <mxGeometry x="480" y="360" width="280" height="180" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>
