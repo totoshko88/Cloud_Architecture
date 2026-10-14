@@ -41,6 +41,29 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 # Canonical layout geometry (AWS reference). Do not fork these per provider.
 # ---------------------------------------------------------------------------
 
+
+def _xml_escape(text: str) -> str:
+    """Escape text for safe interpolation into an XML attribute value.
+
+    Theme 4 (REVIEW.md): every ``value="…"`` the builder emits is free-form
+    display text (a node/boundary label, the title, an edge marker, a Flow/Legend
+    line). An unescaped ``&``, ``<`` or ``>`` produces malformed XML that draw.io
+    refuses to open — a latent crash the moment a label contains, say,
+    ``Users & admins`` or ``t < 5ms``. The same five replacements as
+    ``contract._xml_escape`` (``&`` first, so it never double-escapes the entities
+    the others introduce). Callers that build a multi-line value join the escaped
+    lines with the literal ``&#10;`` entity, which stays intact because its own
+    ``&`` is never re-escaped (each line is escaped BEFORE the join).
+    """
+    return (
+        str(text)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
 #: Square icon footprint in model units. The node's cell is exactly this size so
 #: the bottom label hugs the icon (AWS reference uses 78x78).
 ICON_SIZE = 78
@@ -171,6 +194,16 @@ class Edge:
     target: str
     marker: str
     dashed: bool = False
+    #: Theme 16 (1.10.10): a network-level PEERING relationship (VPC/VCN peering,
+    #: a cross-cloud peering link), not a directional data-flow step. Rendered as
+    #: a symmetric dashed line with NO arrowhead on either end (``startArrow=none;
+    #: endArrow=none``) — a peering is bidirectional and undirected, so a single
+    #: head would misstate it and a double head trips ``edge-bidirectional``.
+    #: ``startArrow=none`` + ``endArrow=none`` passes both ``arrow-style`` (none
+    #: is an accepted head) and ``edge-bidirectional`` (either end none → not
+    #: double-headed). The marker is a text label (e.g. ``peering``), not a
+    #: numeric flow step, so it never enters the flow-marker hygiene passes.
+    peering: bool = False
     exit: Tuple[float, float] = (1.0, 0.5)
     entry: Tuple[float, float] = (0.0, 0.5)
     # Explicit routing waypoints (model coords) so parallel runs never share a
@@ -231,7 +264,7 @@ def builtin_icon(shape_style: str) -> IconRenderer:
     def render(node: Node, parent_id: str) -> str:
         style = _embed_asset_style(f"{shape_style};{_LABEL_STYLE}{overlay_suffix(node)}")
         return (
-            f'        <mxCell id="{node.id}" value="{node.label}" style="{style}" '
+            f'        <mxCell id="{node.id}" value="{_xml_escape(node.label)}" style="{style}" '
             f'vertex="1" parent="{parent_id}">\n'
             f'          <mxGeometry x="{node.x}" y="{node.y}" '
             f'width="{ICON_SIZE}" height="{ICON_SIZE}" as="geometry" />\n'
@@ -280,7 +313,7 @@ def image_icon(image_path: str) -> IconRenderer:
             f"{ref_token}image={embedded_image}{overlay_suffix(node)}"
         )
         return (
-            f'        <mxCell id="{node.id}" value="{node.label}" style="{style}" '
+            f'        <mxCell id="{node.id}" value="{_xml_escape(node.label)}" style="{style}" '
             f'vertex="1" parent="{parent_id}">\n'
             f'          <mxGeometry x="{node.x}" y="{node.y}" '
             f'width="{ICON_SIZE}" height="{ICON_SIZE}" as="geometry" />\n'
@@ -633,7 +666,7 @@ class OciStencilIcon:
             f"ociSlug={self.slug}{overlay_suffix(node)}"
         )
         container = (
-            f'        <mxCell id="{node.id}" value="{node.label}" style="{style}" '
+            f'        <mxCell id="{node.id}" value="{_xml_escape(node.label)}" style="{style}" '
             f'vertex="1" connectable="1" parent="{parent_id}">\n'
             f'          <mxGeometry x="{node.x}" y="{node.y}" '
             f'width="{ICON_SIZE}" height="{ICON_SIZE}" as="geometry" />\n'
@@ -650,7 +683,7 @@ class OciStencilIcon:
 
 def title_cell(text: str, x: int = 40, y: int = 20, w: int = 900) -> str:
     return (
-        f'        <mxCell id="title" value="{text}" '
+        f'        <mxCell id="title" value="{_xml_escape(text)}" '
         'style="text;html=1;strokeColor=none;fillColor=none;align=left;'
         'verticalAlign=middle;fontSize=16;fontStyle=1" vertex="1" parent="1">\n'
         f'          <mxGeometry x="{x}" y="{y}" width="{w}" height="30" as="geometry" />\n'
@@ -762,7 +795,7 @@ def _local_background(n: Node, boundaries: Sequence[Boundary]) -> str:
 def boundary_cell(b: Boundary) -> str:
     style = _boundary_style(b)
     return (
-        f'        <mxCell id="{b.id}" value="{b.label}" style="{style}" '
+        f'        <mxCell id="{b.id}" value="{_xml_escape(b.label)}" style="{style}" '
         f'vertex="1" parent="{b.parent}">\n'
         f'          <mxGeometry x="{b.x}" y="{b.y}" width="{b.w}" height="{b.h}" as="geometry" />\n'
         "        </mxCell>\n"
@@ -820,7 +853,7 @@ def _orthogonalised(
         out.append(
             Edge(
                 id=e.id, source=e.source, target=e.target, marker=e.marker,
-                dashed=e.dashed, exit=exit_frac, entry=entry_frac,
+                dashed=e.dashed, peering=e.peering, exit=exit_frac, entry=entry_frac,
                 points=tuple(pts),
             )
         )
@@ -828,22 +861,30 @@ def _orthogonalised(
 
 
 def edge_cell(e: Edge) -> str:
-    dash = "dashed=1;" if e.dashed else ""
+    dash = "dashed=1;" if (e.dashed or e.peering) else ""
     ex, ey = e.exit
     nx, ny = e.entry
-    style = (
+    if e.peering:
+        # Theme 16: a peering link is symmetric and undirected — a dashed line
+        # with NO head on either end. startArrow=none + endArrow=none passes
+        # arrow-style (none is accepted) and edge-bidirectional (either-none →
+        # not double-headed). Keeps the orthogonal routing + contact contract.
+        heads = "startArrow=none;startFill=0;endArrow=none;endFill=0;"
+    else:
         # Open arrowhead (endArrow=open;endFill=0) and a >= 1pt stroke, per AWS
         # diagram conventions (diagram-standards "Accessibility & Contrast" /
         # arrow-style lint rule): open pointers read cleaner than heavy filled
         # heads and the stroke stays visible when scaled down.
-        f"edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;"
+        heads = "endArrow=open;endFill=0;"
+    style = (
+        f"edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;{heads}"
         f"strokeWidth={EDGE_STROKE_WIDTH};{dash}"
         f"exitX={ex};exitY={ey};exitDx=0;exitDy=0;exitPerimeter=0;"
         f"entryX={nx};entryY={ny};entryDx=0;entryDy=0;"
         "fontSize=12;fontStyle=1"
     )
     head = (
-        f'        <mxCell id="{e.id}" value="{e.marker}" style="{style}" '
+        f'        <mxCell id="{e.id}" value="{_xml_escape(e.marker)}" style="{style}" '
         f'edge="1" parent="1" source="{e.source}" target="{e.target}">\n'
     )
     if e.points:
@@ -863,7 +904,7 @@ def edge_cell(e: Edge) -> str:
 
 
 def text_cell(cid: str, lines: Sequence[str], x: int, y: int, w: int = 320, h: int = 200) -> str:
-    value = "&#10;".join(lines)
+    value = "&#10;".join(_xml_escape(line) for line in lines)
     return (
         f'        <mxCell id="{cid}" value="{value}" style="{_TEXT_STYLE}" '
         f'vertex="1" parent="1">\n'
@@ -911,6 +952,41 @@ def legend_lines_for(boundaries: Sequence[Boundary]) -> Tuple[str, ...]:
     if "vpc" not in kinds:
         drop.add(_INNER_BOUNDARY_LINE)
     return tuple(line for line in STANDARD_LEGEND_LINES if line not in drop)
+
+
+def _node_membership(
+    nodes: Sequence["Node"], boundaries: Sequence["Boundary"]
+) -> Dict[str, Tuple[str, int, int]]:
+    """Map node id -> (host boundary id, host x, host y) for structural nesting.
+
+    Wave C (container-cell model): a node is a *structural member* of the
+    tightest Boundary that geometrically contains its icon box. Emitting it as a
+    child of that boundary (``parent=<id>`` + geometry relative to the host
+    origin) makes membership checkable (Theme 27) while — per the proven spike —
+    keeping every absolute position, hence every lint verdict and the raster,
+    identical. A node contained by NO boundary (an external actor to the left /
+    above) keeps ``parent="1"`` and is absent from the map.
+
+    Containment is the icon box (not the caption): a boundary wraps its members'
+    icons, and the label band hangs below. Ties (equal area) are impossible for
+    well-formed nested boundaries; the smallest-area winner is deterministic.
+    """
+    host: Dict[str, Tuple[str, int, int]] = {}
+    for n in nodes:
+        best_id, best_x, best_y, best_area = None, 0, 0, None
+        for b in boundaries:
+            if (
+                b.x <= n.x
+                and b.y <= n.y
+                and n.x + ICON_SIZE <= b.x + b.w
+                and n.y + ICON_SIZE <= b.y + b.h
+            ):
+                area = b.w * b.h
+                if best_area is None or area < best_area:
+                    best_id, best_x, best_y, best_area = b.id, b.x, b.y, area
+        if best_id is not None:
+            host[n.id] = (best_id, best_x, best_y)
+    return host
 
 
 def build_diagram(
@@ -969,8 +1045,21 @@ def build_diagram(
             if e.id in under:
                 parts.append(edge_cell(e))
         parts.append("\n")
+    # Wave C: emit each node as a structural child of its tightest enclosing
+    # boundary (``parent=<id>`` + geometry relative to the host origin), so
+    # membership is checkable (Theme 27). A node contained by no boundary keeps
+    # parent="1". Absolute positions are unchanged — draw.io resolves a child's
+    # relative geometry back to the same pixels — so render and lint are identical
+    # (proven by the Wave C spike). Edges stay flat on the root layer.
+    _host = _node_membership(nodes, boundaries)
     for n in nodes:
-        parts.append(n.render(n, "1"))
+        hb = _host.get(n.id)
+        if hb is None:
+            parts.append(n.render(n, "1"))
+        else:
+            host_id, hx, hy = hb
+            rel = replace(n, x=n.x - hx, y=n.y - hy)
+            parts.append(rel.render(rel, host_id))
     parts.append("\n")
     for e in routed:
         if e.id not in under:

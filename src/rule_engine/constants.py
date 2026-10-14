@@ -110,6 +110,12 @@ CONTAINER_KINDS: Tuple[str, ...] = (
     # official group boxes, and an on-premises estate as "Corporate data center".
     "public_subnet",
     "on_premises",
+    # 1.10.10 (Theme 20/7): a peer AWS account or a peer cloud (Azure/GCP/Atlas)
+    # drawn as a DISJOINT SIBLING boundary OUTSIDE the primary account, holding
+    # its own child nodes. A LEAF boundary (nodes are members directly), unlike
+    # the primary `account` envelope which nests region/vpc/az.
+    "peer_account",
+    "external_cloud",
 )
 
 #: The two container kinds EVERY profile must declare (Requirement 2 AC6). The

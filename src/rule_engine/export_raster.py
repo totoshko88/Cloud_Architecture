@@ -98,6 +98,21 @@ LANDSCAPE_MAX_WIDTH = 3600
 EXPORT_BORDER = "8"
 EXPORT_THEME = "light"
 
+#: The draw.io CLI renders a WRAPPED text box (``whiteSpace=wrap`` — the Flow /
+#: Legend furniture) ~15px past its box border. ``_canvas_width`` adds this to a
+#: wrapped box's right edge so the natural width reflects the real render, not
+#: the box width (Theme 13 opt1). Measured from the 06-flow legend-bounded
+#: overshoot; applied uniformly, it adds 15px to every corpus width (the
+#: Flow/Legend box is the right-most element in all 15), which is the intentional
+#: corpus re-render accompanying this fix.
+_WRAPPED_TEXT_RENDER_OVERSHOOT = 15.0
+
+#: Legibility floor for the Theme 23 landscape auto-downscale: a landscape wider
+#: than its 3600px budget is scaled down to fit, but never below this factor —
+#: below it the icons are too small to read, and the right answer is to split or
+#: page the landscape rather than export an illegible postage stamp.
+LANDSCAPE_MIN_SCALE = 0.5
+
 #: Seconds before a hung draw.io CLI export is killed (R8.5).
 EXPORT_TIMEOUT = 180
 
@@ -272,20 +287,44 @@ def _canvas_width(source: Path) -> float:
                 except ValueError:
                     font = 12.0
                 right = max(right, x + longest * _CAPTION_TEXT_CHAR_W * font / 12.0)
+            elif "text" in style and style.get("whiteSpace") == "wrap":
+                # A WRAPPED text box (the Flow / Legend furniture) is rendered by
+                # the draw.io CLI ~15px PAST its box border, so its true right
+                # edge exceeds the box width (Theme 13 opt1, feedback-diagnosed
+                # with hard numbers). When the Flow/Legend block is the right-most
+                # element — which it always is under right-margin placement — the
+                # mandatory upscale magnified that ~15px into a 12-14px flow-budget
+                # overshoot the exporter could not see. Measuring the real render
+                # here means the scale is computed against the true width and a
+                # legend-bounded flow is correctly downscaled under budget.
+                right = max(right, x + w + _WRAPPED_TEXT_RENDER_OVERSHOOT)
             max_right = max(max_right, right)
             min_left = min(min_left, left)
     return max_right - min(0.0, min_left)
 
 
-def compute_scale(source: Path, diagram_class: Optional[str] = None) -> Tuple[float, float]:
-    """Return ``(scale, width)`` for exporting ``source`` at scale >= 1 (R8.4).
+def compute_scale(
+    source: Path,
+    diagram_class: Optional[str] = None,
+    max_width_override: Optional[int] = None,
+) -> Tuple[float, float]:
+    """Return ``(scale, width)`` for exporting ``source``.
 
-    ``width`` is the natural canvas width ``W``. ``scale`` is
+    ``width`` is the natural canvas width ``W``. By default ``scale`` is
     ``clamp(target / W, 1, max_width / W)`` — never below 1, so the exporter
-    never downscales. Raises :class:`CanvasTooWideError` when the canvas plus its
-    two borders cannot fit the class budget at scale 1 (the "split the diagram"
-    signal): in that case downscaling would be the only way to fit, which the
-    exporter refuses.
+    never downscales, and a canvas wider than its class budget raises
+    :class:`CanvasTooWideError` (the "split the diagram" signal).
+
+    **Theme 13 — ``max_width_override``.** A legitimate multi-column flow can
+    render a few px over the 1600px flow budget (the diagnosed draw.io
+    wrapped-legend overshoot), with no way to nudge it under at export time
+    short of re-authoring. When a caller passes ``max_width_override`` (CLI
+    ``--max-width``), that value REPLACES the class budget AND permits a bounded
+    **downscale**: a canvas wider than the override is scaled DOWN to fit it
+    (``scale = (override - border) / W``, possibly < 1) rather than raising. The
+    default path (``max_width_override is None``) is byte-for-byte unchanged — no
+    shipped example downscales — so the opt-in never perturbs the corpus or the
+    raster gate.
     """
     dclass = diagram_class or _diagram_class_of(source)
     is_landscape = dclass == "landscape"
@@ -294,7 +333,46 @@ def compute_scale(source: Path, diagram_class: Optional[str] = None) -> Tuple[fl
 
     width = _canvas_width(source)
     border = int(EXPORT_BORDER) * 2
+
+    if max_width_override is not None:
+        # Opt-in: fit the canvas to the override, downscaling if necessary.
+        if width <= 0:
+            return (1.0, width)
+        if max_width_override <= border:
+            raise CanvasTooWideError(source, width, dclass, max_width_override)
+        fit = (max_width_override - border) / width
+        # Upscale toward the override like the default path, but allow < 1 so a
+        # small overshoot is fit instead of failing. Cap the upscale so the
+        # scaled width never exceeds the override.
+        scale = min(fit, max(1.0, target / width)) if fit >= 1.0 else fit
+        return (scale, width)
+
     if width + border > max_width:
+        # Theme 23: a LANDSCAPE "everything" view that genuinely needs more than
+        # its 3600px budget is downscaled to fit (to a legibility floor) rather
+        # than hard-failing, so an as-built does not have to be artificially
+        # grouped to export. A FLOW still raises — its 12-node cap means an
+        # over-budget flow is holding too much, and "split the diagram" is the
+        # right signal.
+        if is_landscape:
+            if width <= 0:
+                return (1.0, width)
+            fit = (max_width - border) / width
+            if fit < LANDSCAPE_MIN_SCALE:
+                # Even at the floor it will not fit — refuse rather than export an
+                # illegible postage stamp (split or page the landscape instead).
+                raise CanvasTooWideError(source, width, dclass, max_width)
+            return (fit, width)
+        # A FLOW that is only MARGINALLY over — within the wrapped-legend render
+        # overshoot plus the border — is absorbed by a hair of downscale (visually
+        # imperceptible, ~0.99) rather than hard-failing: Theme 13 opt1 added that
+        # ~15px to every width, which can tip a legitimate edge-of-budget
+        # multi-column flow (the cross-cloud composition at 1595px content) 11px
+        # over. A flow genuinely bigger than that margin still raises "split the
+        # diagram" — its 12-node cap means it is holding too much.
+        margin = _WRAPPED_TEXT_RENDER_OVERSHOOT + border
+        if width + border <= max_width + margin and width > 0:
+            return ((max_width - border) / width, width)
         raise CanvasTooWideError(source, width, dclass, max_width)
 
     if width <= 0:
@@ -312,6 +390,7 @@ def export_one(
     source: str | Path,
     repo_root: Path = ASSET_ROOT,
     drawio: str = "drawio",
+    max_width_override: Optional[int] = None,
 ) -> Path:
     """Export ``source`` (a .drawio) to ``source + '.png'`` with icons inlined.
 
@@ -338,7 +417,7 @@ def export_one(
     # Scale >= 1 or refuse (R8.4/D8). Computed before touching the CLI so a
     # too-wide canvas fails without spawning draw.io or writing a temp copy.
     dclass = _diagram_class_of(source)
-    scale, _width = compute_scale(source, dclass)
+    scale, _width = compute_scale(source, dclass, max_width_override)
 
     inlined = inline_local_images(original, repo_root)
 
@@ -368,6 +447,15 @@ def export_one(
         "--border", EXPORT_BORDER,
         "--theme", EXPORT_THEME,
     ]
+    # Opt-in Electron sandbox bypass for a confined dev host. Some sandboxed
+    # environments (a hardened macOS seatbelt, a container without the setuid
+    # chrome-sandbox) make the draw.io CLI fail at startup with "Failed to
+    # initialize sandbox". Setting RULE_ENGINE_DRAWIO_NO_SANDBOX=1 passes
+    # --no-sandbox so a raster can still be exported locally. It is OFF by
+    # default, so CI and a normal desktop export are byte-for-byte unchanged;
+    # the flag only affects Electron startup, never the rendered pixels.
+    if os.environ.get("RULE_ENGINE_DRAWIO_NO_SANDBOX") == "1":
+        cmd.append("--no-sandbox")
     if background == "transparent":
         cmd.append("--transparent")
     cmd += ["--output", str(out_png), export_input]
@@ -414,15 +502,31 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         prog="export_raster",
         description="Export .drawio to .drawio.png with local icons inlined (D7 budget).",
     )
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("sources", nargs="*", default=[],
-                       help="one or more .drawio files to export")
-    group.add_argument("--all", action="store_true",
-                       help="export every examples/**/*.drawio")
+    # A source may be given as a positional (back-compat) OR via --file (the
+    # convention every other rule-engine CLI uses: --file FILE). Theme 12 adds
+    # --file so the whole CLI surface is consistent; the positional stays so no
+    # existing caller breaks. --all is the mutually-exclusive "every example"
+    # mode. Validation is manual below because argparse cannot put a repeatable
+    # option and a positional in one mutually-exclusive group.
+    parser.add_argument("sources", nargs="*", default=[],
+                        help="one or more .drawio files to export (positional; "
+                             "or use --file)")
+    parser.add_argument("--file", "-f", dest="files", action="append", default=[],
+                        metavar="FILE",
+                        help="a .drawio file to export; repeatable. Same effect as "
+                             "a positional argument, matching the other CLIs.")
+    parser.add_argument("--all", action="store_true",
+                        help="export every examples/**/*.drawio")
     parser.add_argument("--repo-root", default=str(ASSET_ROOT),
                         help="root under which image=assets/vendor/... paths resolve (default: CWD)")
     parser.add_argument("--drawio", default="drawio",
                         help="path to the draw.io CLI (default: 'drawio' on PATH)")
+    parser.add_argument("--max-width", type=int, default=None, metavar="PX",
+                        help="override the class width budget and permit a bounded "
+                             "DOWNSCALE to fit it (Theme 13): fit a legitimate "
+                             "multi-column flow that renders a few px over 1600 "
+                             "without re-authoring. Default: off (never downscale; "
+                             "a too-wide canvas is the 'split the diagram' signal).")
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     repo_root = Path(args.repo_root)
@@ -431,12 +535,22 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"error: draw.io CLI '{args.drawio}' not found on PATH", file=sys.stderr)
         return 2
 
+    explicit = list(args.sources) + list(args.files)
+    if args.all and explicit:
+        print("error: --all cannot be combined with a file argument",
+              file=sys.stderr)
+        return 2
+    if not args.all and not explicit:
+        print("error: give a .drawio file (positional or --file), or --all",
+              file=sys.stderr)
+        return 2
+
     if args.all:
         sources: List[str] = sorted(
             glob.glob(str(repo_root / "examples" / "**" / "*.drawio"), recursive=True)
         )
     else:
-        sources = args.sources
+        sources = explicit
 
     if not sources:
         print("error: no .drawio sources to export", file=sys.stderr)
@@ -445,7 +559,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     failures = 0
     for src in sources:
         try:
-            out = export_one(src, repo_root, args.drawio)
+            out = export_one(src, repo_root, args.drawio,
+                             max_width_override=args.max_width)
             size_kb = out.stat().st_size // 1024
             print(f"OK: {os.path.relpath(out, repo_root)} ({size_kb}KB)")
         except subprocess.CalledProcessError as exc:

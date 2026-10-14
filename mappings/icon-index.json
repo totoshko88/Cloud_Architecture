@@ -70,6 +70,32 @@
         "source": "stencil"
       }
     },
+    "batch": {
+      "aws": {
+        "display_name": "AWS Batch",
+        "note": "resolved 'Batch'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Compute/32/Arch_AWS-Batch_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Batch Accounts",
+        "note": "resolved 'Batch Accounts'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/containers/10031-icon-service-Batch-Accounts.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "Compute",
+        "note": "category icon (Compute) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Compute/SVG/Compute-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Bare Metal Compute",
+        "note": "resolved 'compute'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#bare-metal-compute",
+        "source": "stencil"
+      }
+    },
     "bedrock_agentcore": {
       "aws": {
         "display_name": "Amazon Bedrock AgentCore",
@@ -330,6 +356,32 @@
         "source": "stencil"
       }
     },
+    "ecr": {
+      "aws": {
+        "display_name": "Amazon Elastic Container Registry",
+        "note": "resolved 'Elastic Container Registry'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Containers/32/Arch_Amazon-Elastic-Container-Registry_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Container Registries",
+        "note": "resolved 'Container Registries'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/containers/10105-icon-service-Container-Registries.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "Containers",
+        "note": "category icon (Containers) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Containers/SVG/Containers-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Container Registry",
+        "note": "resolved 'registry'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#container-registry",
+        "source": "stencil"
+      }
+    },
     "eventbridge": {
       "aws": {
         "display_name": "Amazon EventBridge",
@@ -405,6 +457,32 @@
         "display_name": "IAM Identity and Access Management",
         "note": "resolved 'identity-and-access-management'",
         "ref": "assets/vendor/oci-stencils/stencils.json#iam-identity-and-access-management",
+        "source": "stencil"
+      }
+    },
+    "internet_gateway": {
+      "aws": {
+        "display_name": "Amazon VPC Internet Gateway",
+        "note": "resolved 'VPC Internet Gateway'",
+        "ref": "assets/vendor/aws-icons/Resource-Icons_07312026/Res_Networking-Content-Delivery/Res_Amazon-VPC_Internet-Gateway_48.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Virtual Networks",
+        "note": "resolved 'Virtual Networks'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/networking/10061-icon-service-Virtual-Networks.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "Networking",
+        "note": "category icon (Networking) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Internet Gateway",
+        "note": "resolved 'internet-gateway'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#internet-gateway",
         "source": "stencil"
       }
     },
@@ -561,6 +639,32 @@
         "display_name": "Streaming",
         "note": "resolved 'streaming'",
         "ref": "assets/vendor/oci-stencils/stencils.json#streaming",
+        "source": "stencil"
+      }
+    },
+    "nat_gateway": {
+      "aws": {
+        "display_name": "Amazon VPC NAT Gateway",
+        "note": "resolved 'VPC NAT Gateway'",
+        "ref": "assets/vendor/aws-icons/Resource-Icons_07312026/Res_Networking-Content-Delivery/Res_Amazon-VPC_NAT-Gateway_48.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "NAT",
+        "note": "resolved 'NAT'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/networking/10310-icon-service-NAT.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "Networking",
+        "note": "category icon (Networking) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "NAT Gateway",
+        "note": "resolved 'nat-gateway'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#nat-gateway",
         "source": "stencil"
       }
     },
@@ -821,6 +925,84 @@
         "display_name": "Resource Manager",
         "note": "resolved 'resource-manager'",
         "ref": "assets/vendor/oci-stencils/stencils.json#resource-manager",
+        "source": "stencil"
+      }
+    },
+    "vpc": {
+      "aws": {
+        "display_name": "Amazon Virtual Private Cloud",
+        "note": "resolved 'Virtual Private Cloud'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Networking-Content-Delivery/32/Arch_Amazon-Virtual-Private-Cloud_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Virtual Networks",
+        "note": "resolved 'Virtual Networks'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/networking/10061-icon-service-Virtual-Networks.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "Networking",
+        "note": "category icon (Networking) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Virtual Cloud Network VCN",
+        "note": "resolved 'virtual-cloud-network-vcn'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#virtual-cloud-network-vcn",
+        "source": "stencil"
+      }
+    },
+    "vpc_endpoint": {
+      "aws": {
+        "display_name": "Amazon VPC Endpoints",
+        "note": "resolved 'VPC Endpoints'",
+        "ref": "assets/vendor/aws-icons/Resource-Icons_07312026/Res_Networking-Content-Delivery/Res_Amazon-VPC_Endpoints_48.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Private Link",
+        "note": "resolved 'Private Link'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/networking/00427-icon-service-Private-Link.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "Networking",
+        "note": "category icon (Networking) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Service Gateway",
+        "note": "resolved 'service-gateway'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#service-gateway",
+        "source": "stencil"
+      }
+    },
+    "vpc_peering": {
+      "aws": {
+        "display_name": "Amazon VPC Peering Connection",
+        "note": "resolved 'VPC Peering Connection'",
+        "ref": "assets/vendor/aws-icons/Resource-Icons_07312026/Res_Networking-Content-Delivery/Res_Amazon-VPC_Peering-Connection_48.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Virtual Networks",
+        "note": "resolved 'Virtual Networks'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/networking/10061-icon-service-Virtual-Networks.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "Networking",
+        "note": "category icon (Networking) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Remote Peering Gateway",
+        "note": "resolved 'remote-peering-gateway'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#remote-peering-gateway",
         "source": "stencil"
       }
     },

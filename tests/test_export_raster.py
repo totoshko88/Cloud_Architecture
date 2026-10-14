@@ -555,9 +555,29 @@ def test_compute_scale_partitions_scale_up_and_split_signal(
     over_budget = width + border > max_width
 
     if over_budget:
-        # Fails exactly when the canvas plus its borders cannot fit at scale 1.
-        with pytest.raises(er.CanvasTooWideError):
-            er.compute_scale(src, diagram_class)
+        if diagram_class == "landscape":
+            # Theme 23: a landscape over budget DOWNSCALES to fit (to a floor),
+            # or raises only when even the floor cannot fit.
+            fit = (max_width - border) / width
+            if fit < er.LANDSCAPE_MIN_SCALE:
+                with pytest.raises(er.CanvasTooWideError):
+                    er.compute_scale(src, diagram_class)
+            else:
+                scale, measured = er.compute_scale(src, diagram_class)
+                assert scale < 1.0
+                assert measured * scale + border <= max_width + 0.5
+        else:
+            # A flow MARGINALLY over (within the wrapped-legend overshoot + border)
+            # is absorbed by a hair of downscale; a flow genuinely bigger still
+            # raises the split signal.
+            margin = er._WRAPPED_TEXT_RENDER_OVERSHOOT + border
+            if width + border <= max_width + margin:
+                scale, measured = er.compute_scale(src, diagram_class)
+                assert scale <= 1.0
+                assert measured * scale + border <= max_width + 0.5
+            else:
+                with pytest.raises(er.CanvasTooWideError):
+                    er.compute_scale(src, diagram_class)
     else:
         scale, measured = er.compute_scale(src, diagram_class)
         # The measured width is exactly the vertex box width W.
@@ -635,7 +655,123 @@ _CORPUS_DRAWIOS = sorted((_REPO_ROOT / "examples").rglob("*.drawio"))
 
 
 @pytest.mark.parametrize("path", _CORPUS_DRAWIOS, ids=lambda p: str(p.relative_to(_REPO_ROOT)))
-def test_corpus_width_is_unchanged_by_caption_measurement(path: Path) -> None:
-    """Every shipped example's width (hence its export scale and raster) is the
-    plain vertex max-right, exactly as before 1.10.7."""
-    assert er._canvas_width(path) == _plain_vertex_right(path)
+def test_corpus_width_includes_wrapped_legend_overshoot(path: Path) -> None:
+    """Every shipped example's width is the plain vertex max-right PLUS the
+    draw.io wrapped-text render overshoot when the right-most element is a
+    wrapped Flow/Legend box (Theme 13 opt1).
+
+    Before 1.10.10 ``_canvas_width`` measured a wrapped box at its box width, so
+    the exporter's upscale magnified draw.io's ~15px render overshoot into a flow
+    budget overshoot it could not see. The width is now the true render: the
+    plain vertex right, or that right + 15 when a wrapped box reaches it. The
+    delta is therefore 0 or exactly ``_WRAPPED_TEXT_RENDER_OVERSHOOT`` — and the
+    Flow/Legend box is the right-most element in every shipped golden, so each is
+    +15. No flow golden crosses 1600 and no landscape crosses 3600 as a result."""
+    plain = _plain_vertex_right(path)
+    measured = er._canvas_width(path)
+    assert measured in (plain, plain + er._WRAPPED_TEXT_RENDER_OVERSHOOT)
+
+
+# --- Theme 12: --file CLI consistency --------------------------------------
+
+
+def _tiny_drawio(path: Path) -> None:
+    """A minimal, asset-free .drawio so export_one copies the source directly."""
+    _write(
+        path,
+        '<mxfile><diagram name="d"><mxGraphModel><root>'
+        '<mxCell id="0"/><mxCell id="1" parent="0"/>'
+        '<mxCell id="n" value="n" style="rounded=1" vertex="1" parent="1">'
+        '<mxGeometry x="0" y="0" width="78" height="78" as="geometry"/></mxCell>'
+        "</root></mxGraphModel></diagram></mxfile>",
+    )
+
+
+def test_file_flag_is_equivalent_to_positional(tmp_path: Path) -> None:
+    """--file FILE exports exactly like a positional source (Theme 12)."""
+    drawio = _make_fake_drawio(tmp_path)
+    src = tmp_path / "d.drawio"
+    _tiny_drawio(src)
+    rc = er.main(["--file", str(src), "--repo-root", str(tmp_path),
+                  "--drawio", str(drawio)])
+    assert rc == 0
+    assert (tmp_path / "d.drawio.png").is_file()
+
+
+def test_file_flag_is_repeatable(tmp_path: Path) -> None:
+    """--file may be given more than once; every file is exported."""
+    drawio = _make_fake_drawio(tmp_path)
+    a, b = tmp_path / "a.drawio", tmp_path / "b.drawio"
+    _tiny_drawio(a)
+    _tiny_drawio(b)
+    rc = er.main(["--file", str(a), "--file", str(b),
+                  "--repo-root", str(tmp_path), "--drawio", str(drawio)])
+    assert rc == 0
+    assert (tmp_path / "a.drawio.png").is_file()
+    assert (tmp_path / "b.drawio.png").is_file()
+
+
+def test_all_with_file_is_rejected(tmp_path: Path) -> None:
+    drawio = _make_fake_drawio(tmp_path)
+    rc = er.main(["--all", "--file", "x.drawio",
+                  "--repo-root", str(tmp_path), "--drawio", str(drawio)])
+    assert rc == 2
+
+
+def test_no_source_is_rejected(tmp_path: Path) -> None:
+    drawio = _make_fake_drawio(tmp_path)
+    rc = er.main(["--repo-root", str(tmp_path), "--drawio", str(drawio)])
+    assert rc == 2
+
+
+# --- Theme 13: --max-width override permits a bounded downscale -------------
+
+
+def _wide_flow_drawio(path: Path, right_edge: int) -> None:
+    """A flow .drawio whose single text box reaches ``right_edge`` px."""
+    _write(
+        path,
+        '<mxfile><diagram name="d"><mxGraphModel><root>'
+        '<mxCell id="0"/><mxCell id="1" parent="0"/>'
+        '<mxCell id="t" value="Flow" style="text;html=1;whiteSpace=wrap" '
+        f'vertex="1" parent="1"><mxGeometry x="0" y="0" width="{right_edge}" '
+        'height="40" as="geometry"/></mxCell>'
+        "</root></mxGraphModel></diagram></mxfile>",
+    )
+
+
+def test_default_still_refuses_a_too_wide_flow(tmp_path: Path) -> None:
+    """Without --max-width, a canvas over the flow budget still raises (unchanged)."""
+    src = tmp_path / "wide.drawio"
+    _wide_flow_drawio(src, 1700)  # > 1600 flow budget
+    with pytest.raises(er.CanvasTooWideError):
+        er.compute_scale(src, "flow")
+
+
+def test_override_downscales_a_too_wide_flow(tmp_path: Path) -> None:
+    """--max-width fits an over-budget flow by downscaling (scale < 1)."""
+    src = tmp_path / "wide.drawio"
+    _wide_flow_drawio(src, 1700)
+    scale, width = er.compute_scale(src, "flow", max_width_override=1600)
+    border = int(er.EXPORT_BORDER) * 2
+    assert scale < 1.0
+    # scaled width + border fits the override
+    assert width * scale + border <= 1600 + 0.5
+
+
+def test_override_still_upscales_a_narrow_canvas(tmp_path: Path) -> None:
+    """A narrow canvas with --max-width still upscales toward target (>= 1)."""
+    src = tmp_path / "narrow.drawio"
+    _wide_flow_drawio(src, 800)
+    scale, _ = er.compute_scale(src, "flow", max_width_override=1600)
+    assert scale >= 1.0
+
+
+def test_override_end_to_end_export(tmp_path: Path) -> None:
+    """export_one honours --max-width and writes a PNG for an over-budget flow."""
+    drawio = _make_fake_drawio(tmp_path)
+    src = tmp_path / "wide.drawio"
+    _wide_flow_drawio(src, 1700)
+    out = er.export_one(src, repo_root=tmp_path, drawio=str(drawio),
+                        max_width_override=1600)
+    assert out.is_file()

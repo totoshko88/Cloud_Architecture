@@ -275,6 +275,75 @@ resources:
     brand_hex: "#232F3E"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_General-Icons/Res_48_Light/Res_Server_48_Light.svg"
 
+  # --- Compute / registry services (Theme 5) ---
+  batch:                     # AWS Batch (service, Compute family — orange)
+    icon_id: aws.batch
+    icon_provenance: service
+    brand_hex: "#ED7100"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Compute/48/Arch_AWS-Batch_48.svg"
+
+  ecr:                       # Amazon Elastic Container Registry (service, Containers family)
+    icon_id: aws.ecr
+    icon_provenance: service
+    brand_hex: "#ED7100"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Containers/48/Arch_Amazon-Elastic-Container-Registry_48.svg"
+
+  # --- Network resource icons (Theme 15), Networking family (purple #8C4FFF) ---
+  vpc:                       # Amazon VPC node glyph (distinct from the VPC container frame)
+    icon_id: aws.vpc
+    icon_provenance: service
+    brand_hex: "#8C4FFF"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Networking-Content-Delivery/48/Arch_Amazon-Virtual-Private-Cloud_48.svg"
+
+  nat_gateway:               # VPC NAT Gateway (resource icon)
+    icon_id: aws.res.nat_gateway
+    icon_provenance: resource
+    brand_hex: "#8C4FFF"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_Networking-Content-Delivery/Res_Amazon-VPC_NAT-Gateway_48.svg"
+
+  internet_gateway:          # VPC Internet Gateway (resource icon)
+    icon_id: aws.res.internet_gateway
+    icon_provenance: resource
+    brand_hex: "#8C4FFF"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_Networking-Content-Delivery/Res_Amazon-VPC_Internet-Gateway_48.svg"
+
+  vpc_endpoint:              # VPC Endpoints / PrivateLink (resource icon)
+    icon_id: aws.res.vpc_endpoint
+    icon_provenance: resource
+    brand_hex: "#8C4FFF"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_Networking-Content-Delivery/Res_Amazon-VPC_Endpoints_48.svg"
+
+  vpc_peering:               # VPC Peering Connection (resource icon)
+    icon_id: aws.res.vpc_peering
+    icon_provenance: resource
+    brand_hex: "#8C4FFF"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_Networking-Content-Delivery/Res_Amazon-VPC_Peering-Connection_48.svg"
+
+  # --- External / third-party systems (Theme 1) ---
+  # Vendor-neutral node for an EXTERNAL (non-AWS) system — neutral dashed box,
+  # drawn OUTSIDE every cloud boundary. No AWS brand (it is not an AWS service).
+  external_system:
+    icon_id: external.system
+    icon_provenance: neutral
+    brand_hex: "#333333"
+    style: "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;dashed=1;verticalAlign=middle;fontSize=12"
+
+  # MongoDB Atlas — external SaaS. Identification-use neutral box in MongoDB
+  # forest-green (#13AA52); the official leaf mark is NOT redistributed (MongoDB
+  # Trademark Standards). External SaaS → drawn outside boundaries.
+  mongodb_atlas:
+    icon_id: mongodb.atlas
+    icon_provenance: neutral
+    brand_hex: "#13AA52"
+    style: "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#13AA52;fontColor=#13AA52;verticalAlign=middle;fontSize=12"
+
+  # Fleet of N (Theme 22) — stacked-box glyph for a count of like resources.
+  fleet:
+    icon_id: fleet.stack
+    icon_provenance: neutral
+    brand_hex: "#333333"
+    style: "shape=mxgraph.flowchart.multiple_documents;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12"
+
 # Container styles for boundaries (using mxgraph.aws4.group for proper draw.io
 # group behavior — these are structural elements, not service icons)
 # `brand_hex` on a container entry is the PROVIDER ANCHOR (AWS Squid Ink

@@ -1908,6 +1908,134 @@ def test_regional_service_is_placed_inside_region_outside_vpc():
     assert pd.nodes["obj"].y == pd.nodes["app"].y
 
 
+def _vpc_attached_fn_spec(scope):
+    """A serverless_fn declared INSIDE the VPC, carrying a scope override."""
+    return _DS(
+        diagram_id="s14", diagram_name="s14", axis="north-south",
+        nodes=(
+            _NS(id="lb", role="lb", lane="router", region="a", slot=0, container="vpc-a"),
+            _NS(id="fn", role="serverless_fn", lane="workers", region="a", slot=0,
+                container="az-a1", scope=scope),
+        ),
+        edges=(_ES(id="e1", source="lb", target="fn", marker="1"),),
+        containers=(
+            _CS(id="acct", kind="account", region="", parent=None, label_key="acct"),
+            _CS(id="region-a", kind="region", region="a", parent="acct", label_key="r"),
+            _CS(id="vpc-a", kind="vpc", region="a", parent="region-a", label_key="v"),
+            _CS(id="az-a1", kind="az", region="a", parent="vpc-a", label_key="z"),
+        ),
+        flow_lines=("Flow", "1. a"), title="t | 2026-10-13 | v1",
+    )
+
+
+def test_vpc_attached_fn_default_scope_is_rejected_in_vpc():
+    """Theme 14: without an override a serverless_fn (regional) in a VPC still raises."""
+    with pytest.raises(le.SpecError, match="regional"):
+        le.layout(_vpc_attached_fn_spec(None))
+
+
+def test_vpc_attached_fn_scope_override_allows_in_vpc():
+    """Theme 14: scope='network' lets a genuinely VPC-attached fn sit in the VPC."""
+    pd = le.layout(_vpc_attached_fn_spec("network"))
+    assert pd.nodes["fn"] is not None  # laid out without raising
+
+
+def test_invalid_scope_override_is_rejected():
+    with pytest.raises(le.SpecError, match="unknown scope"):
+        le.layout(_vpc_attached_fn_spec("subnet"))
+
+
+def _peer_boundary_spec(peer_kind):
+    """Primary account (region/az) + a peer leaf boundary holding one node,
+    placed via the on-premises external lane (Theme 20)."""
+    return _DS(
+        diagram_id="s20", diagram_name="s20", axis="north-south",
+        nodes=(
+            _NS(id="app", role="k8s", lane="workers", region="a", slot=0, container="az-a1"),
+            _NS(id="peerdb", role="sql", lane="on-premises", region="", slot=0,
+                container="peer"),
+        ),
+        edges=(_ES(id="e1", source="app", target="peerdb", marker="1"),),
+        containers=(
+            _CS(id="acct", kind="account", region="", parent=None, label_key="m"),
+            _CS(id="region-a", kind="region", region="a", parent="acct", label_key="r"),
+            _CS(id="vpc-a", kind="vpc", region="a", parent="region-a", label_key="v"),
+            _CS(id="az-a1", kind="az", region="a", parent="vpc-a", label_key="z"),
+            _CS(id="peer", kind=peer_kind, region="", parent=None, label_key="p"),
+        ),
+        flow_lines=("Flow", "1. x"), title="t | 2026-10-13 | v1",
+    )
+
+
+@pytest.mark.parametrize("peer_kind", ["peer_account", "external_cloud"])
+def test_peer_boundary_is_a_disjoint_sibling_outside_the_account(peer_kind):
+    """Theme 20: a peer_account / external_cloud leaf boundary holds its own node
+    and sits DISJOINT from the primary account (no overlap)."""
+    pd = le.layout(_peer_boundary_spec(peer_kind))
+    acct, peer = pd.containers["acct"], pd.containers["peer"]
+    # The peer boundary wraps its member node.
+    assert le._box_contains(peer, pd.nodes["peerdb"].footprint(le.LABEL_BAND))
+    # Disjoint from the account (sibling boundaries must not overlap).
+    disjoint = (
+        acct.right <= peer.x or peer.right <= acct.x
+        or acct.bottom <= peer.y or peer.bottom <= acct.y
+    )
+    assert disjoint, f"peer boundary overlaps the account: acct={acct} peer={peer}"
+
+
+def _many_peers_spec(n_peers):
+    """Primary account + N peer leaf boundaries, each holding one node, declared
+    along the on-premises external lane (Theme 21/18 wrapping input)."""
+    nodes = [_NS(id="app", role="k8s", lane="workers", region="a", slot=0, container="az-a1")]
+    containers = [
+        _CS(id="acct", kind="account", region="", parent=None, label_key="m"),
+        _CS(id="region-a", kind="region", region="a", parent="acct", label_key="r"),
+        _CS(id="vpc-a", kind="vpc", region="a", parent="region-a", label_key="v"),
+        _CS(id="az-a1", kind="az", region="a", parent="vpc-a", label_key="z"),
+    ]
+    for i in range(n_peers):
+        nodes.append(_NS(id=f"p{i}n", role="object_store", lane="on-premises",
+                         region="", slot=i, container=f"peer{i}"))
+        containers.append(_CS(id=f"peer{i}", kind="peer_account", region="",
+                              parent=None, label_key="p"))
+    return _DS(
+        diagram_id="s21", diagram_name="s21", axis="north-south",
+        nodes=tuple(nodes), edges=(), containers=tuple(containers),
+        flow_lines=("Flow", "1. x"), title="t | 2026-10-13 | v1",
+    )
+
+
+def test_external_bands_stack_into_rows_without_widening_the_canvas():
+    """Theme 21/18: many peer boundaries wrap into multiple bands rather than
+    one over-wide external strip. More peers ⇒ more rows, a bounded x-span, and
+    no peer-peer or peer-account overlap."""
+    def rect(b):
+        return (b.x, b.y, b.right, b.bottom)
+
+    def ov(a, b):
+        return not (a.right <= b.x or b.right <= a.x
+                    or a.bottom <= b.y or b.bottom <= a.y)
+
+    spans, rowcounts = [], []
+    for n in (2, 4, 6):
+        pd = le.layout(_many_peers_spec(n))
+        peers = [pd.containers[f"peer{i}"] for i in range(n)]
+        # No peer overlaps another peer, nor the account envelope.
+        acct = pd.containers["acct"]
+        for i in range(n):
+            assert not ov(peers[i], acct), f"peer{i} overlaps account (N={n})"
+            for j in range(i + 1, n):
+                assert not ov(peers[i], peers[j]), f"peer{i}/peer{j} overlap (N={n})"
+        rowcounts.append(len({p.y for p in peers}))
+        allboxes = list(pd.containers.values()) + list(pd.nodes.values())
+        spans.append(max(b.right for b in allboxes) - min(b.x for b in allboxes))
+
+    # Wrapping produces more bands as peers grow (monotonic, strictly more rows
+    # between 2 and 6 peers), and the canvas does NOT keep widening.
+    assert rowcounts[0] < rowcounts[-1], f"no wrap happened: rows={rowcounts}"
+    assert spans[-1] <= spans[0] + 1, f"canvas widened with more peers: {spans}"
+
+
 def test_role_scope_table_covers_the_nine_neutral_types():
     from rule_engine.constants import NEUTRAL_RESOURCE_TYPES
     from rule_engine.layout.base import role_scope

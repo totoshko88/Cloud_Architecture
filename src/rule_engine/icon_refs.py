@@ -276,7 +276,8 @@ def load_sources(workspace_root: Path) -> IconSources:
 # --------------------------------------------------------------------------- #
 
 
-def _is_service_vertex(cell: Cell, vertex_ids: FrozenSet[str]) -> bool:
+def _is_service_vertex(cell: Cell, vertex_ids: FrozenSet[str],
+                       boundary_ids: FrozenSet[str]) -> bool:
     """True for a **top-level** service node (neither a boundary nor a text cell).
 
     A service vertex is a vertex parented to a page **layer** (the root ``mxCell``,
@@ -289,8 +290,12 @@ def _is_service_vertex(cell: Cell, vertex_ids: FrozenSet[str]) -> bool:
     ``unverified`` generic-shape/oci-glyph vertex under ``--strict`` (R4.2).
 
     ``vertex_ids`` is the set of every vertex id on the page; a cell whose parent
-    is in that set is nested inside another vertex and is therefore not a
-    top-level service vertex.
+    is in that set is nested inside another vertex. **Wave C:** a service node may
+    now be a structural child of its **Boundary** container (``parent=<boundary>``)
+    — that boundary is a vertex, but the node is still a service vertex. Only a
+    node nested inside a NON-boundary vertex (an OCI glyph ``-gN`` sub-cell) is
+    excluded. So the parent-is-vertex exclusion applies only when the parent is
+    not itself a boundary container.
     """
     if not cell.vertex:
         return False
@@ -298,9 +303,10 @@ def _is_service_vertex(cell: Cell, vertex_ids: FrozenSet[str]) -> bool:
         return False
     if _is_text_style(cell.style):
         return False
-    if cell.parent in vertex_ids:
-        # Nested inside another vertex (e.g. an OCI glyph sub-cell) -> not a
-        # service vertex; the enclosing top-level vertex is the service node.
+    if cell.parent in vertex_ids and cell.parent not in boundary_ids:
+        # Nested inside a NON-boundary vertex (e.g. an OCI glyph sub-cell) -> not
+        # a service vertex. A node parented to a boundary container is still a
+        # service node (Wave C structural membership).
         return False
     return True
 
@@ -315,7 +321,12 @@ def service_vertices(page: Page) -> List[Cell]:
     excluded because their parent is another vertex.
     """
     vertex_ids = frozenset(c.id for c in page.cells.values() if c.vertex)
-    return [c for c in page.cells.values() if _is_service_vertex(c, vertex_ids)]
+    boundary_ids = frozenset(
+        c.id for c in page.cells.values()
+        if c.vertex and _is_boundary_style(c.id, c.style)
+    )
+    return [c for c in page.cells.values()
+            if _is_service_vertex(c, vertex_ids, boundary_ids)]
 
 
 _STENCIL_RE = re.compile(r"shape=stencil\(([^)]*)\)")

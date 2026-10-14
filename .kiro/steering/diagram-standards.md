@@ -418,6 +418,14 @@ The standard Legend block additionally documents the marker convention with the 
 
 So wrapping is **not** a defect in itself — wrapping *at the default width* is, because it means the width was hand-set too small for no reason. Reserve enough right-margin page width for `legend_x + box_w` either way, and never let the Legend box overlap the Flow box above it: `build_diagram` pushes the Legend down to clear the Flow box by one grid step, since a long Flow list (or a pinned narrow width) can grow past a caller's requested `legend_y_legend`.
 
+**Sectioned / paged Flow legend for a very long list (guidance, Theme 28).** A Flow legend of **more than ~12 numbered steps** in one box is past what a reader can follow in a single run — the symptom of collapsing a multi-account / multi-subsystem world onto one canvas (the capstone cluster with the summary/landscape pair, Theme 20/21/23). A 20-plus-line legend block is a readability defect even when every marker is covered. The sanctioned remedies, in preference order:
+
+- **Split the diagram first.** A flow needing 20+ ordered steps is usually two or more flows wearing one costume — prefer splitting into per-subsystem flows (each ≤ 12 nodes, its own short Flow legend) with an index document, exactly as the node-count split rule already requires. This is the real fix; a long legend is a signal the diagram is overloaded.
+- **Group the legend into sections.** When the steps genuinely belong to one flow, break the single `Flow` list into **grouped sub-headers** (e.g. `Ingest 1–4`, `Verify 5–9`, `Deliver 10–13`) so the reader navigates by subsystem rather than scanning one undifferentiated column. Each group is still ascending-numeric and collectively covers every marker, so `flow-legend` coverage is unaffected.
+- **Index on-canvas, detail in the companion.** For an "everything" landscape where splitting is not an option, keep a **short on-canvas index** (the section headers and their marker ranges) and move the full `N. <description>` list into the companion `.diagram.md`. The canvas stays legible; the exhaustive legend lives where length is not a readability cost.
+
+This is **guidance only** — no new lint rule and no change to `flow-legend` (which still requires every numeric marker to be covered by the Flow cell). It records the sanctioned shape for the long-legend case the current builder has no first-class idiom for; a grouped or indexed legend is still one `Flow` text cell whose first line is `Flow`.
+
 ## Edge Routing
 
 Route edges so that no edge crosses through a node icon and no two edges overlap where it can be avoided. Use orthogonal routing (`edgeStyle=orthogonalEdgeStyle`) for `.drawio` sources. Fix connection points explicitly with `exitX/exitY` and `entryX/entryY` rather than relying on floating connections.

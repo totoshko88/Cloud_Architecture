@@ -40,29 +40,29 @@
         <mxCell id="dns" value="global-dns-failover" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/networking/Traffic_Manager_Profiles.svg;labelBackgroundColor=#FFFFFF" vertex="1" parent="1">
           <mxGeometry x="540" y="60" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="lb_a" value="lb-primary" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/networking/Load_Balancers.svg;labelBackgroundColor=#FFFFFF" vertex="1" parent="1">
-          <mxGeometry x="60" y="240" width="78" height="78" as="geometry" />
+        <mxCell id="lb_a" value="lb-primary" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/networking/Load_Balancers.svg;labelBackgroundColor=#FFFFFF" vertex="1" parent="boundary-region-a">
+          <mxGeometry x="30" y="80" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="app_a" value="app-primary" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/compute/Kubernetes_Services.svg;labelBackgroundColor=#FFFFFF" vertex="1" parent="1">
-          <mxGeometry x="60" y="400" width="78" height="78" as="geometry" />
+        <mxCell id="app_a" value="app-primary" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/compute/Kubernetes_Services.svg;labelBackgroundColor=#FFFFFF" vertex="1" parent="boundary-region-a">
+          <mxGeometry x="30" y="240" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="db_a" value="db-primary" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/databases/SQL_Database.svg" vertex="1" parent="1">
-          <mxGeometry x="60" y="560" width="78" height="78" as="geometry" />
+        <mxCell id="db_a" value="db-primary" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/databases/SQL_Database.svg" vertex="1" parent="boundary-region-a">
+          <mxGeometry x="30" y="400" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="obj_a" value="objstore-primary" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/storage/Storage_Accounts.svg" vertex="1" parent="1">
-          <mxGeometry x="280" y="560" width="78" height="78" as="geometry" />
+        <mxCell id="obj_a" value="objstore-primary" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/storage/Storage_Accounts.svg" vertex="1" parent="boundary-region-a">
+          <mxGeometry x="250" y="400" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="lb_b" value="lb-passive" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/networking/Load_Balancers.svg;labelBackgroundColor=#FFFFFF" vertex="1" parent="1">
-          <mxGeometry x="800" y="240" width="78" height="78" as="geometry" />
+        <mxCell id="lb_b" value="lb-passive" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/networking/Load_Balancers.svg;labelBackgroundColor=#FFFFFF" vertex="1" parent="boundary-region-b">
+          <mxGeometry x="30" y="80" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="app_b" value="app-passive" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/compute/Kubernetes_Services.svg;labelBackgroundColor=#FFFFFF" vertex="1" parent="1">
-          <mxGeometry x="800" y="400" width="78" height="78" as="geometry" />
+        <mxCell id="app_b" value="app-passive" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/compute/Kubernetes_Services.svg;labelBackgroundColor=#FFFFFF" vertex="1" parent="boundary-region-b">
+          <mxGeometry x="30" y="240" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="db_b" value="db-passive" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/databases/SQL_Database.svg" vertex="1" parent="1">
-          <mxGeometry x="800" y="560" width="78" height="78" as="geometry" />
+        <mxCell id="db_b" value="db-passive" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/databases/SQL_Database.svg" vertex="1" parent="boundary-region-b">
+          <mxGeometry x="30" y="400" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="obj_b" value="objstore-passive" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/storage/Storage_Accounts.svg" vertex="1" parent="1">
-          <mxGeometry x="1020" y="560" width="78" height="78" as="geometry" />
+        <mxCell id="obj_b" value="objstore-passive" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/storage/Storage_Accounts.svg" vertex="1" parent="boundary-region-b">
+          <mxGeometry x="250" y="400" width="78" height="78" as="geometry" />
         </mxCell>
 
         <mxCell id="s4" value="4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5128205128205128;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="app_a" target="obj_a">

@@ -242,3 +242,63 @@ roles:
     azure: "SQL Database"
     gcp: "Cloud SQL"
     oci: "autonomous-db"
+
+  # --- Compute / registry services (Theme 5) ---------------------------------
+  # AWS Batch — managed batch compute. Compute family (orange). VPC-scoped
+  # (jobs run on compute in a subnet).
+  batch:
+    aws: "Batch"
+    azure: "Batch Accounts"
+    gcp_category: "Compute"
+    oci: "compute"
+
+  # Elastic Container Registry — managed container image registry. Containers
+  # family. Regional service reached over endpoints.
+  ecr:
+    aws: "Elastic Container Registry"
+    azure: "Container Registries"
+    gcp_category: "Containers"
+    oci: "registry"
+
+  # --- Network resource icons (Theme 15) -------------------------------------
+  # First-class network-plumbing roles so a connectivity diagram no longer has
+  # to hand-draw grey boxes. AWS uses the Resource-Icons (Res_*) set; the brand
+  # colour is the Networking family purple (#8C4FFF). All are VPC-scoped (they
+  # live inside the Network Boundary) — see ROLE_SCOPE in layout/base.py.
+
+  # The VPC itself as a node marker (distinct from the network_boundary CONTAINER
+  # frame — this is the small VPC glyph used when a VPC is referenced as a node).
+  vpc:
+    aws: "Virtual Private Cloud"
+    azure: "Virtual Networks"
+    gcp_category: "Networking"
+    oci: "virtual-cloud-network-vcn"
+
+  # NAT Gateway — outbound-only egress for private subnets.
+  nat_gateway:
+    aws: "VPC NAT Gateway"
+    azure: "NAT"
+    gcp_category: "Networking"
+    oci: "nat-gateway"
+
+  # Internet Gateway — the VPC's attachment to the public internet.
+  internet_gateway:
+    aws: "VPC Internet Gateway"
+    azure: "Virtual Networks"
+    gcp_category: "Networking"
+    oci: "internet-gateway"
+
+  # VPC Endpoint — PrivateLink/interface or gateway endpoint to a regional
+  # service without traversing the public internet.
+  vpc_endpoint:
+    aws: "VPC Endpoints"
+    azure: "Private Link"
+    gcp_category: "Networking"
+    oci: "service-gateway"
+
+  # VPC Peering Connection — a direct network link between two VPCs.
+  vpc_peering:
+    aws: "VPC Peering Connection"
+    azure: "Virtual Networks"
+    gcp_category: "Networking"
+    oci: "remote-peering-gateway"

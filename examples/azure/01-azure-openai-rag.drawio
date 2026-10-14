@@ -31,29 +31,29 @@
         <mxCell id="user" value="User" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/identity/Users.svg" vertex="1" parent="1">
           <mxGeometry x="30" y="400" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="appgw" value="AppGateway" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/networking/Application_Gateways.svg" vertex="1" parent="1">
-          <mxGeometry x="250" y="220" width="78" height="78" as="geometry" />
+        <mxCell id="appgw" value="AppGateway" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/networking/Application_Gateways.svg" vertex="1" parent="boundary-vnet-a">
+          <mxGeometry x="30" y="40" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="api" value="ApiFunction" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/compute/Function_Apps.svg;labelBackgroundColor=#FFFFFF" vertex="1" parent="1">
-          <mxGeometry x="690" y="240" width="78" height="78" as="geometry" />
+        <mxCell id="api" value="ApiFunction" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/compute/Function_Apps.svg;labelBackgroundColor=#FFFFFF" vertex="1" parent="boundary-region-a">
+          <mxGeometry x="500" y="120" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="bus" value="ServiceBus" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/general/Service_Bus.svg" vertex="1" parent="1">
-          <mxGeometry x="470" y="560" width="78" height="78" as="geometry" />
+        <mxCell id="bus" value="ServiceBus" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/general/Service_Bus.svg" vertex="1" parent="boundary-region-a">
+          <mxGeometry x="280" y="440" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="ingest" value="IngestFunction" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/compute/Function_Apps.svg" vertex="1" parent="1">
-          <mxGeometry x="690" y="560" width="78" height="78" as="geometry" />
+        <mxCell id="ingest" value="IngestFunction" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/compute/Function_Apps.svg" vertex="1" parent="boundary-region-a">
+          <mxGeometry x="500" y="440" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="openai" value="AzureOpenAI" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/ai_machine_learning/Azure_OpenAI.svg" vertex="1" parent="1">
-          <mxGeometry x="910" y="240" width="78" height="78" as="geometry" />
+        <mxCell id="openai" value="AzureOpenAI" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/ai_machine_learning/Azure_OpenAI.svg" vertex="1" parent="boundary-region-a">
+          <mxGeometry x="720" y="120" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="vault" value="KeyVault" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/security/Key_Vaults.svg" vertex="1" parent="1">
-          <mxGeometry x="910" y="400" width="78" height="78" as="geometry" />
+        <mxCell id="vault" value="KeyVault" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/security/Key_Vaults.svg" vertex="1" parent="boundary-region-a">
+          <mxGeometry x="720" y="280" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="blob" value="BlobStorage" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/storage/Storage_Accounts.svg" vertex="1" parent="1">
-          <mxGeometry x="1130" y="560" width="78" height="78" as="geometry" />
+        <mxCell id="blob" value="BlobStorage" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/storage/Storage_Accounts.svg" vertex="1" parent="boundary-region-a">
+          <mxGeometry x="940" y="440" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="sql" value="AzureSqlDB" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/databases/SQL_Database.svg" vertex="1" parent="1">
-          <mxGeometry x="1130" y="400" width="78" height="78" as="geometry" />
+        <mxCell id="sql" value="AzureSqlDB" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/databases/SQL_Database.svg" vertex="1" parent="boundary-region-a">
+          <mxGeometry x="940" y="280" width="78" height="78" as="geometry" />
         </mxCell>
 
         <mxCell id="e1" value="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="user" target="appgw">

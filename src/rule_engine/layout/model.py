@@ -77,6 +77,15 @@ class NodeSpec:
     #: an active peer with its edges omitted for clarity. Coordinate-free: it
     #: names a vocabulary term, never geometry.
     overlay: Optional[str] = None
+    #: Optional **per-node scope override** (Theme 14). Normally a node's
+    #: network/regional/global scope comes from its role (:data:`ROLE_SCOPE`),
+    #: and a ``regional`` role (e.g. ``serverless_fn``) may not sit inside a
+    #: VPC/AZ. A genuinely VPC-attached function (subnet ENIs) is the honest
+    #: exception: set ``scope="network"`` on that one node and it may be declared
+    #: inside the Network Boundary, without changing the role's default for every
+    #: other diagram. One of ``"network"`` / ``"regional"`` / ``"global"``;
+    #: ``None`` means "use the role default". Coordinate-free.
+    scope: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -94,6 +103,12 @@ class EdgeSpec:
     marker: str
     dashed: bool = False
     kind_hint: Optional[str] = None
+    #: Theme 16 (1.10.10): a network-level PEERING relationship (VPC/VCN peering,
+    #: a cross-cloud peering link) rather than a directional data-flow step. The
+    #: skin renders it as a symmetric dashed line with no arrowhead on either end
+    #: (see ``diagram_layout.Edge.peering`` / ``edge_cell``). Presentation only —
+    #: the engine routes it exactly like any other edge; not a coordinate.
+    peering: bool = False
     #: Engine-derived (never authored): ``True`` when both endpoints belong to
     #: the same non-empty region, ``False`` for two different regions, ``None``
     #: when unknown. Set by ``layout()`` from the node declarations so the

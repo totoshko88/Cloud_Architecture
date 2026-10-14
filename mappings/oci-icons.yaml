@@ -65,6 +65,26 @@ resources:
     stencil: "assets/vendor/oci-stencils/stencils.json#artificial-intelligence"  # Analytics and AI - Artificial Intelligence
     style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans,Helvetica,Arial,sans-serif;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
 
+  # --- External / third-party systems (Theme 1) ---
+  # Neutral (non-OCI) external node. No OCI-red brand — it is not an OCI service.
+  external_system:
+    icon_id: external.system
+    icon_provenance: neutral
+    brand_hex: "#333333"
+    style: "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;dashed=1;verticalAlign=middle;fontSize=12"
+  # MongoDB Atlas — identification-use neutral box in MongoDB green; leaf mark not redistributed.
+  mongodb_atlas:
+    icon_id: mongodb.atlas
+    icon_provenance: neutral
+    brand_hex: "#13AA52"
+    style: "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#13AA52;fontColor=#13AA52;verticalAlign=middle;fontSize=12"
+  # Fleet of N (Theme 22) — stacked-box glyph for a count of like resources.
+  fleet:
+    icon_id: fleet.stack
+    icon_provenance: neutral
+    brand_hex: "#333333"
+    style: "shape=mxgraph.flowchart.multiple_documents;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12"
+
 containers:
   # Container styles follow the official OCI Architecture Diagram Toolkit v24.2
   # (OCI Style Guide for draw.io) — a nested, neutral-grey nesting system, NOT
