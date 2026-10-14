@@ -79,7 +79,7 @@ def _container_styles():
 # Summary spec (flow, <= 12 nodes) — the shape.
 # --------------------------------------------------------------------------- #
 
-SUMMARY_TITLE = "kubernetes architecture — cluster prod / ns app+data | 2026-10-14 | v1"
+SUMMARY_TITLE = "kubernetes architecture — cluster-prod / default | 2026-10-14 | v1"
 
 
 def summary_spec() -> DS:
@@ -91,8 +91,8 @@ def summary_spec() -> DS:
             NS(id="ingress", role="k8s_ingress", lane="actors", region="", slot=0),
             NS(id="svc", role="k8s_service", lane="router", region="a", slot=0, container="ns-app"),
             NS(id="deploy", role="k8s_deployment", lane="workers", region="a", slot=0, container="ns-app"),
-            NS(id="sts", role="k8s_statefulset", lane="data", region="a", slot=0, container="ns-data"),
-            NS(id="pvc", role="k8s_pvc", lane="data", region="a", slot=1, container="ns-data"),
+            NS(id="sts", role="k8s_statefulset", lane="data", region="b", slot=0, container="ns-data"),
+            NS(id="pvc", role="k8s_pvc", lane="data", region="b", slot=1, container="ns-data"),
         ),
         edges=(
             ES(id="e1", source="ingress", target="svc", marker="1"),
@@ -103,7 +103,7 @@ def summary_spec() -> DS:
         containers=(
             CS(id="cluster", kind="account", region="", parent=None, label_key="cluster"),
             CS(id="ns-app", kind="namespace", region="a", parent="cluster", label_key="ns-app"),
-            CS(id="ns-data", kind="namespace", region="a", parent="cluster", label_key="ns-data"),
+            CS(id="ns-data", kind="namespace", region="b", parent="cluster", label_key="ns-data"),
         ),
         flow_lines=(
             "Flow",
@@ -120,7 +120,7 @@ def summary_spec() -> DS:
 # Landscape spec (landscape, full as-built).
 # --------------------------------------------------------------------------- #
 
-LANDSCAPE_TITLE = "kubernetes architecture — cluster prod / ns app+data | 2026-10-14 | v1"
+LANDSCAPE_TITLE = "kubernetes architecture — cluster-prod / default | 2026-10-14 | v1"
 
 
 def landscape_spec() -> DS:
@@ -134,43 +134,45 @@ def landscape_spec() -> DS:
             NS(id="svc-app", role="k8s_service", lane="router", region="a", slot=0, container="ns-app"),
             NS(id="deploy", role="k8s_deployment", lane="workers", region="a", slot=0, container="ns-app"),
             NS(id="pod1", role="k8s_pod", lane="workers", region="a", slot=1, container="ns-app"),
-            NS(id="pod2", role="k8s_pod", lane="workers", region="a", slot=2, container="ns-app"),
             NS(id="hpa", role="k8s_hpa", lane="platform", region="a", slot=0, container="ns-app"),
             NS(id="cm", role="k8s_configmap", lane="platform", region="a", slot=1, container="ns-app"),
-            # Namespace: data (distinct slots within each shared lane/region)
-            NS(id="svc-data", role="k8s_service", lane="router", region="a", slot=1, container="ns-data"),
-            NS(id="sts", role="k8s_statefulset", lane="data", region="a", slot=0, container="ns-data"),
-            NS(id="pvc", role="k8s_pvc", lane="data", region="a", slot=1, container="ns-data"),
-            NS(id="secret", role="k8s_secret", lane="platform", region="a", slot=2, container="ns-data"),
+            # Namespace: data (region b → disjoint peer band beside app)
+            NS(id="svc-data", role="k8s_service", lane="router", region="b", slot=0, container="ns-data"),
+            NS(id="sts", role="k8s_statefulset", lane="data", region="b", slot=0, container="ns-data"),
+            NS(id="pvc", role="k8s_pvc", lane="data", region="b", slot=1, container="ns-data"),
+            NS(id="secret", role="k8s_secret", lane="platform", region="b", slot=0, container="ns-data"),
         ),
         edges=(
+            # Primary spine (linear): ingress -> service -> deployment -> pod,
+            # then cross-namespace to the data service -> statefulset -> pvc.
             ES(id="e1", source="ingress", target="svc-app", marker="1"),
             ES(id="e2", source="svc-app", target="deploy", marker="2"),
             ES(id="e3", source="deploy", target="pod1", marker="3"),
-            ES(id="e4", source="deploy", target="pod2", marker="4"),
-            ES(id="e5", source="hpa", target="deploy", marker="5"),
-            ES(id="e6", source="cm", target="deploy", marker="6"),
-            ES(id="e7", source="deploy", target="svc-data", marker="7"),
-            ES(id="e8", source="svc-data", target="sts", marker="8"),
-            ES(id="e9", source="sts", target="pvc", marker="9"),
-            ES(id="e10", source="secret", target="sts", marker="10"),
+            ES(id="e4", source="deploy", target="svc-data", marker="4"),
+            ES(id="e5", source="svc-data", target="sts", marker="5"),
+            ES(id="e6", source="sts", target="pvc", marker="6"),
+            # Supporting config/scaling/secret — each attaches to ONE node and
+            # enters on a distinct face, so no face carries >2 merged entries.
+            ES(id="e7", source="cm", target="deploy", marker="7"),
+            ES(id="e8", source="hpa", target="pod1", marker="8"),
+            ES(id="e9", source="secret", target="sts", marker="9"),
         ),
         containers=(
             CS(id="cluster", kind="account", region="", parent=None, label_key="cluster"),
             CS(id="ns-app", kind="namespace", region="a", parent="cluster", label_key="ns-app"),
-            CS(id="ns-data", kind="namespace", region="a", parent="cluster", label_key="ns-data"),
+            CS(id="ns-data", kind="namespace", region="b", parent="cluster", label_key="ns-data"),
         ),
         flow_lines=(
             "Flow",
             "1. Ingress -> app Service",
             "2. Service -> Deployment",
-            "3-4. Deployment manages its Pods",
-            "5. HPA scales the Deployment",
-            "6. ConfigMap configures the Deployment",
-            "7. App -> data Service",
-            "8. Service -> StatefulSet",
-            "9. StatefulSet -> PersistentVolumeClaim",
-            "10. Secret mounted by the StatefulSet",
+            "3. Deployment manages its Pod",
+            "4. App -> data Service",
+            "5. Service -> StatefulSet",
+            "6. StatefulSet -> PersistentVolumeClaim",
+            "7. ConfigMap configures the Deployment",
+            "8. HPA scales the Pod",
+            "9. Secret mounted by the StatefulSet",
         ),
         title=LANDSCAPE_TITLE,
     )

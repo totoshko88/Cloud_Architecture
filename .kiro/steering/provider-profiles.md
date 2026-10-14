@@ -69,6 +69,7 @@ Boundary or Network Boundary is a profile-convention error.
 | gcp | Project boundary — dashed rectangle (`#4285F4`) | VPC boundary — dashed rectangle (`#34A853`) | GCP icon library (custom/built-in) |
 | oci | Compartment/Tenancy boundary — dashed rectangle, terracotta `#AE562C` stroke, `#312D2A` caption | VCN boundary — dashed rectangle, terracotta `#AE562C` | OCI Style Guide for draw.io v24.2 (custom, unpacked) |
 | generic | Environment boundary — dashed grayscale rectangle (`#333333`) | Network boundary — dashed grayscale rectangle (`#666666`) | grayscale, no vendor icons |
+| kubernetes | Cluster boundary — dashed Kubernetes-blue rectangle (`#326CE5`) | Namespace boundary — dashed Kubernetes-blue rectangle (`#326CE5`) | Kubernetes Icons Set (kubernetes/community, Apache-2.0 / CC-BY-4.0) |
 
 Diagram convention (see `diagram-standards.md`): every provider draws its stack Boundary
 and its Network Boundary with the container style its own profile declares — there is no
@@ -80,6 +81,32 @@ authoritative in `containers.*.style` of `mappings/<provider>-icons.yaml` and is
 by the `container-style` lint rule (ERROR).
 
 Only **AWS** ships a dedicated vendor **group shape** (`mxgraph.aws4.group` with `grIcon=group_account` / `group_vpc2`). Azure, GCP, and OCI have no built-in group stencil, so their Boundary / Network Boundary render as **dashed rectangles** in the profile brand color (the exact `containers.*.style` is authoritative in `mappings/<provider>-icons.yaml`); `generic` uses a grayscale dashed rectangle. All are valid container styles — the requirement is that each profile declares exactly one Boundary and one Network Boundary style, not that it be a vendor group shape.
+
+### Kubernetes profile — Cluster envelope, Namespace leaf (1.10.11)
+
+The `kubernetes` profile is an **orchestrator-platform** profile, not a cloud
+account. Its two structural concepts map so a reader sees a real cluster shape:
+
+- the **Boundary** is a **Cluster** (the `boundary`-kind envelope);
+- the **Network Boundary** is a **Namespace**. A Namespace is additionally a
+  first-class **leaf** container kind (`namespace`, 1.10.11) that holds workloads
+  (Deployments / Pods / StatefulSets / Services) **directly**, nested inside the
+  Cluster — the same leaf-boundary mechanics as `peer_account` (nodes are members
+  of the namespace, which is itself nested in the cluster envelope).
+
+Both boundaries are dashed, **borderless** (`fillColor=none`) Kubernetes-blue
+(`#326CE5`) rectangles — the borderless-dashed signature is what the geometry
+parser recognises as a boundary container, so a Namespace drawn with a solid fill
+would silently stop nesting its workloads. Two or more namespaces are drawn as
+**disjoint sibling bands** (distinct region tokens place them side by side). An
+external **Ingress** sits in the `actors` lane **above** the Cluster, cleared
+from the cluster top by one pad (the Theme 18 external-row fix, 1.10.11) — it is
+NOT drawn in the `edge` lane, which is an in-boundary lane. The nine neutral
+resource types map to the closest native Kubernetes object (Cluster / Namespace /
+Job / PersistentVolume / StatefulSet / Service / Secret / Cluster / Deployment),
+and the real k8s objects (pod, deployment, service, ingress, …) are presentation
+roles `k8s_*` in `mappings/kubernetes-icons.yaml`, resolved to the official
+Kubernetes Icons Set (Apache-2.0 / CC-BY-4.0).
 
 ### OCI canonical nested palette (Style Guide v24.2)
 
@@ -152,6 +179,7 @@ profile. The primary brand color per provider:
 | gcp | `#4285F4` | Google blue |
 | oci | `#F80000` | Oracle red |
 | generic | grayscale — `#FFFFFF` fill, `#000000` stroke | no vendor color |
+| kubernetes | `#326CE5` | Kubernetes blue |
 
 Individual service icons may carry their own service-family hex (for example AWS S3 uses
 `#7AA116`) as declared in `mappings/<provider>-icons.yaml`; the values above are the
@@ -181,6 +209,7 @@ A verb not present in this list is never executed.
 | gcp | `gcloud … list`, `gcloud … describe` |
 | oci | `oci … list`, `oci … get` |
 | generic | manual entry / Terraform-state import |
+| kubernetes | `kubectl get`, `kubectl describe` (read-only) / manifest import |
 
 Rules:
 

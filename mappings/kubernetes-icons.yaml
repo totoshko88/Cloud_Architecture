@@ -223,11 +223,11 @@ containers:
   network_boundary:
     icon_id: k8s.namespace
     brand_hex: "#326CE5"
-    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=#F2F6FD;strokeColor=#326CE5;dashed=1;verticalAlign=top;align=left;spacingLeft=30;fontColor=#326CE5;fontSize=12"
+    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#326CE5;dashed=1;verticalAlign=top;align=left;spacingLeft=30;fontColor=#326CE5;fontSize=12"
   # Namespace as a first-class LEAF container kind (1.10.11) — holds workloads
   # directly; same visual as network_boundary so a Namespace reads identically
   # whether declared as the network boundary or as a nested leaf.
   namespace:
     icon_id: k8s.namespace
     brand_hex: "#326CE5"
-    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=#F2F6FD;strokeColor=#326CE5;dashed=1;verticalAlign=top;align=left;spacingLeft=30;fontColor=#326CE5;fontSize=12"
+    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#326CE5;dashed=1;verticalAlign=top;align=left;spacingLeft=30;fontColor=#326CE5;fontSize=12"

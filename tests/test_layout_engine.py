@@ -2164,3 +2164,76 @@ def test_clean_layout_is_not_degraded():
     placed = le.layout(_four_below_left_spec())
     assert placed.layout_warnings == ()
     assert placed.degraded is False
+
+
+# --------------------------------------------------------------------------- #
+# kubernetes profile: namespace leaf boundaries + Theme 18 external clearance
+# --------------------------------------------------------------------------- #
+
+
+def _k8s_namespace_spec():
+    """A cluster (account envelope) with two disjoint Namespace leaf boundaries
+    (region a / region b) holding workloads, and an Ingress in the external
+    actors lane above the cluster (the kubernetes golden shape, 1.10.11)."""
+    return _DS(
+        diagram_id="k8s", diagram_name="k8s", axis="north-south",
+        nodes=(
+            _NS(id="ingress", role="k8s_ingress", lane="actors", region="", slot=0),
+            _NS(id="svc", role="k8s_service", lane="router", region="a", slot=0, container="ns-app"),
+            _NS(id="deploy", role="k8s_deployment", lane="workers", region="a", slot=0, container="ns-app"),
+            _NS(id="sts", role="k8s_statefulset", lane="data", region="b", slot=0, container="ns-data"),
+            _NS(id="pvc", role="k8s_pvc", lane="data", region="b", slot=1, container="ns-data"),
+        ),
+        edges=(
+            _ES(id="e1", source="ingress", target="svc", marker="1"),
+            _ES(id="e2", source="svc", target="deploy", marker="2"),
+            _ES(id="e3", source="deploy", target="sts", marker="3"),
+            _ES(id="e4", source="sts", target="pvc", marker="4"),
+        ),
+        containers=(
+            _CS(id="cluster", kind="account", region="", parent=None, label_key="c"),
+            _CS(id="ns-app", kind="namespace", region="a", parent="cluster", label_key="na"),
+            _CS(id="ns-data", kind="namespace", region="b", parent="cluster", label_key="nd"),
+        ),
+        flow_lines=("Flow", "1. x", "2. y", "3. z", "4. w"),
+        title="kubernetes architecture — cluster-prod / default | 2026-10-14 | v1",
+    )
+
+
+def test_namespace_leaf_nests_in_cluster_and_wraps_workloads():
+    """cluster ⊃ namespace ⊃ workload: each namespace wraps its own nodes and
+    nests inside the cluster envelope; the two namespaces are disjoint siblings."""
+    pd = le.layout(_k8s_namespace_spec())
+    cl = pd.containers["cluster"]
+    na = pd.containers["ns-app"]
+    nd = pd.containers["ns-data"]
+
+    # Each namespace wraps its member workloads.
+    assert le._box_contains(na, pd.nodes["deploy"].footprint(le.LABEL_BAND))
+    assert le._box_contains(nd, pd.nodes["sts"].footprint(le.LABEL_BAND))
+
+    # The cluster nests both namespaces (not disjoint from them).
+    def nests(parent, child):
+        return (parent.x <= child.x and parent.y <= child.y
+                and child.right <= parent.right and child.bottom <= parent.bottom)
+    assert nests(cl, na) and nests(cl, nd)
+
+    # The two namespaces are disjoint siblings (no overlap).
+    disjoint = (na.right <= nd.x or nd.right <= na.x
+                or na.bottom <= nd.y or nd.bottom <= na.y)
+    assert disjoint, f"namespaces overlap: ns-app={na} ns-data={nd}"
+
+
+def test_theme18_external_row_clears_the_cluster_top():
+    """Theme 18: an external (actors) row above a non-compact envelope with
+    nested containers clears the envelope top by at least one pad — so a
+    namespace that is the cluster's topmost child does not crowd the border."""
+    pd = le.layout(_k8s_namespace_spec())
+    cl = pd.containers["cluster"]
+    ing = pd.nodes["ingress"].footprint(le.LABEL_BAND)
+    # The ingress footprint sits fully above the cluster top, cleared by >= pad.
+    assert ing.bottom <= cl.y, "ingress must sit above the cluster envelope"
+    assert cl.y - ing.bottom >= le.CONTAINER_PAD, (
+        f"external row clears cluster top by only {cl.y - ing.bottom}px "
+        f"(need >= {le.CONTAINER_PAD})"
+    )
