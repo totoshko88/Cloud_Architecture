@@ -340,6 +340,28 @@ resources:
     # referenced by file path — the mark is identification use, never committed.
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/opensource-colorized/mongodb.svg"
 
+  # Open-source brand leaves (feedback Theme 35), same colorized-Simple-Icons
+  # path as mongodb_atlas: the brand's own monochrome silhouette injected with
+  # its brand hex at fetch time into the git-ignored opensource-colorized dir,
+  # referenced by file path (identification use, never committed). Curated in
+  # asset-sources.yaml -> opensource.icons. Resolve to the real mark once
+  # `rule-engine-build-icon-sets --update-pins` populates the colorized dir.
+  keycloak:
+    icon_id: keycloak
+    icon_provenance: neutral
+    brand_hex: "#4D4D4D"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/opensource-colorized/keycloak.svg"
+  redis:
+    icon_id: redis
+    icon_provenance: neutral
+    brand_hex: "#FF4438"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/opensource-colorized/redis.svg"
+  postgresql:
+    icon_id: postgresql
+    icon_provenance: neutral
+    brand_hex: "#4169E1"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/opensource-colorized/postgresql.svg"
+
   # Fleet of N (Theme 22) — stacked-box glyph for a count of like resources.
   fleet:
     icon_id: fleet.stack
