@@ -63,7 +63,7 @@ every applicable rule against every artifact.
 | `corridor-sharing` | Two unrelated long edges run in the same straight horizontal/vertical corridor (same grid line, overlapping extent). | WARNING | diagram-standards Edge Routing (one edge per corridor) |
 | `edge-float` | An edge declares no explicit exit/entry contact point (floats its connection to the perimeter router). Raised to ERROR for `landscape`. | WARNING/ERROR | diagram-standards Edge Routing (no-float on landscape) |
 | `edge-crosses-label` | A routed edge's polyline crosses an **unrelated node's label band** (the caption strip drawn beneath the icon, as wide as its text at 7.0px/char and never narrower than the icon), i.e. a corridor runs through a service name. The edge's own source/target captions are exempt. | WARNING | diagram-standards Edge Routing (corridors clear the label band) |
-| `edge-crosses-container-label` | A routed edge's polyline runs **along a Boundary container's top caption band** (a corridor slicing a `vpc-…`/`az-…` label). The caption width is sized from its text, so a run clearing a short caption is not flagged; only a long horizontal run along the caption trips. | WARNING | diagram-standards Edge Routing (adaptive routing / corridors clear the caption) |
+| `edge-crosses-container-label` | A routed edge's polyline runs **along a Boundary container's top caption band** (a corridor slicing a `vpc-…`/`az-…` label). The caption width is sized from its text, so a run clearing a short caption is not flagged; only a long horizontal run along the caption trips. **Caption-overflow escape (guidance, Theme 3):** when a MANDATED long caption (e.g. `provider account / region`) is attached to a boundary that is *necessarily* small (a single-node boundary), the caption text overflows the box on both sides, so an unavoidable top-entry crossing is a caption-overflow artifact, not a routing defect — treat it as an accepted WARNING rather than re-routing into a worse finding (a 4th left-face entry → `entry-thirds`) or shortening a required caption. The sanctioned structural fix is a **wrapped / two-line boundary caption** so it no longer overflows horizontally; until the builder emits one, the overflow crossing is the lesser evil. (Guidance only — no change to the WARNING condition.) | WARNING | diagram-standards Edge Routing (adaptive routing / corridors clear the caption) |
 | `edge-crosses-container` | A routed edge's polyline passes **through the interior of a Boundary container that neither endpoint belongs to** — e.g. a fan-out from a VPC-scoped node to a regional node outside the VPC that dips into the VPC band. A container either endpoint is inside (a legitimate border crossing to enter/leave) is exempt, as is a parent of such a box. The stronger companion to `edge-crosses-container-label`, which guards only the top caption strip. | WARNING | diagram-standards Edge Routing (route around a container, not through it) |
 | `edge-on-container-border` | A routed edge has a **long, axis-aligned leg that coincides with a Boundary container border** it does not belong to — a grid-aligned corridor (a whole grid multiple) allocated beside a non-grid-aligned container edge lands ~2px off it and reads as riding the border. A *parallel*-ride test (a vertical leg is judged only against left/right borders, a horizontal leg only against top/bottom), so a leg that merely crosses a border to enter/leave is never flagged; there is no endpoint-inside exemption because a run parallel to and coincident with a border reads as part of it even when one endpoint sits inside the box. | WARNING | diagram-standards Edge Routing (a long vertical never coincides with a container border) |
 | `geometric-containment` | A node drawn geometrically INSIDE a Boundary it is not a structural **member** of (Theme 27) — the "lint-clean but structurally wrong" class, e.g. an external peer-account node packed inside the account box. Membership is structural (Wave C: a node parented to a boundary id is a member; a flat node parented to the root layer whose icon box falls fully inside a boundary is a non-member interloper). A member is never flagged; a node outside every boundary is never flagged. **ERROR on `landscape` and on a network diagram** (a hidden non-membership is a correctness failure), WARNING otherwise. | WARNING/ERROR | diagram-standards Service Scope Placement / Container Nesting |
@@ -402,6 +402,21 @@ every applicable rule against every artifact.
   The reason names the offending face — `exit-top-not-right-or-bottom`,
   `exit-left-not-right-or-bottom`, `enter-bottom-not-left-or-top`,
   `enter-right-not-left-or-top` — so the author knows which contact to move.
+
+  **Back-edge-to-external-actor escape (guidance, Theme 11).** The directional
+  contract wants a leftward back-edge to exit the source's right and loop (the
+  documented exit-right / loop / enter-left pattern). But a grade-callback /
+  response back-edge from a boundary-internal node to an **external actor** that
+  sits to the LEFT and whose only crossing-free route is blocked by a node
+  **directly below the source** has no contract-legal right/bottom exit left: the
+  bottom is occupied and the right loops back across the whole diagram. The honest
+  route is a **left-face exit**, which trips `edge-direction` with no exemption.
+  Treat this as the actor-facing sibling of the existing below-left back-edge
+  rule: when the only crossing-free exit for a back-edge **to an external actor
+  outside the boundary** is blocked by a node directly below the source, the
+  left-face exit is the sanctioned route and the resulting WARNING is accepted,
+  not re-routed into a worse crossing. (Guidance only — no change to the
+  `edge-direction` condition or severity.)
 - **Label-aware geometry (applies to `container-padding` and `node-overlap`).**
   A node's footprint is not its 78×78 icon box alone — the service name renders
   in a caption band **below** the icon (`verticalLabelPosition=bottom`), and that
