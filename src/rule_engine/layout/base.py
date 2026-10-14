@@ -1216,6 +1216,26 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
     }
 
     placed: Dict[str, Box] = {}
+    # Theme 18 (1.10.11): on a NON-compact North–South spec that still has an
+    # account/boundary envelope (e.g. cluster ⊃ namespace, or account ⊃ region ⊃
+    # vpc) with an external row (actors / on-premises) above it, the in-boundary
+    # lanes get only ``lane_i * primary_step`` — so the envelope box (sized around
+    # its in-boundary children) ends up within one grid step of the external
+    # row's footprint (``container-padding``). The compact path already widens
+    # that one transition via ``_EXTERNAL_TOP_STEP``; mirror it here as a per-node
+    # push-DOWN of the in-boundary lanes by the shortfall, applied only when an
+    # external lane is actually occupied above them. Banded/regional nodes and the
+    # compact path are untouched, so a banded (region/vpc/az) golden is unchanged;
+    # only a non-compact envelope spec with an external row shifts, which is the
+    # Theme 18 case.
+    _has_envelope = any(c.kind == "account" for c in spec.containers)
+    _ext_lift = 0
+    if _has_envelope and spec.axis == "north-south" and not compact:
+        _occupied = sorted({LANE_INDEX[n.lane] for n in spec.nodes})
+        _ext_above = any(LANES[li] in EXTERNAL_LANES for li in _occupied)
+        _nonext_below = any(LANES[li] not in EXTERNAL_LANES for li in _occupied)
+        if _ext_above and _nonext_below:
+            _ext_lift = max(0, _EXTERNAL_TOP_STEP - primary_step)
     for node in spec.nodes:
         lane_i = LANE_INDEX[node.lane]
         banded = node.container is not None and kind_of.get(node.container) in banded_kinds
@@ -1234,6 +1254,11 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
             # secondary, sub nudges secondary. In compact mode the lane's
             # consecutive rank replaces its absolute index on the primary axis.
             primary_offset = lane_offset[lane_i] if compact else lane_i * primary_step
+            # Theme 18: push in-boundary lanes down by the external-clearance
+            # shortfall so the envelope box clears the external row above it. The
+            # external lanes themselves stay at the top (no lift).
+            if _ext_lift and node.lane not in EXTERNAL_LANES:
+                primary_offset += _ext_lift
             slot = slot_rank.get(node.id, node.slot)
             if spec.axis == "north-south":
                 x = base_x + slot * COL_STEP + node.sub * SUB_STEP

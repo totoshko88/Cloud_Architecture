@@ -24,7 +24,7 @@
 
 version: 1
 
-providers: [aws, azure, gcp, oci, generic]
+providers: [aws, azure, gcp, oci, generic, kubernetes]
 
 brand_hex:
   aws: "#232F3E"      # AWS Squid Ink
@@ -32,6 +32,7 @@ brand_hex:
   gcp: "#4285F4"      # Google blue
   oci: "#F80000"      # Oracle red
   generic: "#FFFFFF"  # grayscale — no vendor color (white fill / black stroke)
+  kubernetes: "#326CE5"  # Kubernetes brand blue
 
 # Native short name of a redundancy zone inside a region (diagram container
 # captions only; not an inventory type). OCI calls it an Availability Domain,
@@ -42,6 +43,7 @@ zone_label:
   gcp: Zone
   oci: AD
   generic: Zone
+  kubernetes: Node
 
 resources:
   boundary:
@@ -64,6 +66,10 @@ resources:
     generic:
       label: Environment
       aliases: [environment, boundary]
+    kubernetes:
+      label: Cluster
+      aliases: [cluster, k8s_cluster, kube_cluster]
+      icon: { id: k8s.control_plane, name: Kubernetes Cluster, hex: "#326CE5" }
 
   network_boundary:
     aws:
@@ -85,6 +91,10 @@ resources:
     generic:
       label: Network
       aliases: [network, network_boundary]
+    kubernetes:
+      label: Namespace
+      aliases: [namespace, ns, k8s_namespace]
+      icon: { id: k8s.ns, name: Kubernetes Namespace, hex: "#326CE5" }
 
   serverless_fn:
     aws:
@@ -106,6 +116,10 @@ resources:
     generic:
       label: Function
       aliases: [function, serverless_fn]
+    kubernetes:
+      label: Job
+      aliases: [job, k8s_job, batch_job, cronjob]
+      icon: { id: k8s.job, name: Kubernetes Job, hex: "#326CE5" }
 
   object_store:
     aws:
@@ -127,6 +141,10 @@ resources:
     generic:
       label: Object Store
       aliases: [object_store]
+    kubernetes:
+      label: PersistentVolume
+      aliases: [persistentvolume, pv, k8s_pv, persistent_volume]
+      icon: { id: k8s.pv, name: Kubernetes PersistentVolume, hex: "#326CE5" }
 
   managed_sql:
     aws:
@@ -148,6 +166,10 @@ resources:
     generic:
       label: Managed SQL
       aliases: [managed_sql]
+    kubernetes:
+      label: StatefulSet
+      aliases: [statefulset, sts, k8s_statefulset, stateful_set]
+      icon: { id: k8s.sts, name: Kubernetes StatefulSet, hex: "#326CE5" }
 
   message_queue:
     aws:
@@ -169,6 +191,10 @@ resources:
     generic:
       label: Message Queue
       aliases: [message_queue]
+    kubernetes:
+      label: Service
+      aliases: [service, svc, k8s_service]
+      icon: { id: k8s.svc, name: Kubernetes Service, hex: "#326CE5" }
 
   secrets_store:
     aws:
@@ -190,6 +216,10 @@ resources:
     generic:
       label: Secrets Store
       aliases: [secrets_store]
+    kubernetes:
+      label: Secret
+      aliases: [secret, k8s_secret, kube_secret]
+      icon: { id: k8s.secret, name: Kubernetes Secret, hex: "#326CE5" }
 
   managed_k8s:
     aws:
@@ -211,6 +241,10 @@ resources:
     generic:
       label: Managed Kubernetes
       aliases: [managed_kubernetes, managed_k8s]
+    kubernetes:
+      label: Cluster
+      aliases: [control_plane, control_plane_components, kube_control_plane]
+      icon: { id: k8s.control_plane, name: Kubernetes Control Plane, hex: "#326CE5" }
 
   llm_platform:
     aws:
@@ -237,6 +271,10 @@ resources:
     generic:
       label: LLM Platform
       aliases: [llm_platform]
+    kubernetes:
+      label: Deployment
+      aliases: [deployment, deploy, k8s_deployment]
+      icon: { id: k8s.deploy, name: Kubernetes Deployment, hex: "#326CE5" }
 
   # --- diagram presentation roles (1.7.0, design D4) -----------------------
   # The seven roles below are not first-class inventory types like the nine

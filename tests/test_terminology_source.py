@@ -29,12 +29,25 @@ _STEERING = (
 def _parse_steering_table() -> dict[str, dict[str, str]]:
     """Parse the terminology table rows from provider-profiles.md.
 
-    Row shape: ``| N | concept | `resource_type` | aws | azure | gcp | oci | generic |``
-    Returns ``{resource_type -> {provider -> label}}``.
+    Row shape: ``| N | concept | `resource_type` | <provider cols...> |``. The
+    provider columns are read from the table HEADER rather than assumed to be
+    exactly five, so adding a profile (e.g. ``kubernetes`` in 1.10.11) is a data
+    edit — the parser follows the header's provider order instead of a hard-wired
+    positional slice. Returns ``{resource_type -> {provider -> label}}``.
     """
     text = _STEERING.read_text(encoding="utf-8")
     out: dict[str, dict[str, str]] = {}
+    providers: list[str] | None = None
     for line in text.splitlines():
+        # Header row: ``| # | Neutral concept | `resource_type` | aws | ... |``.
+        if providers is None:
+            hm = re.match(
+                r"^\|\s*#\s*\|\s*Neutral concept\s*\|\s*`?resource_type`?\s*\|(.+)\|\s*$",
+                line,
+            )
+            if hm:
+                providers = [c.strip() for c in hm.group(1).split("|")]
+            continue
         m = re.match(
             r"^\|\s*\d+\s*\|[^|]*\|\s*`([a-z0-9_]+)`\s*\|(.+)\|\s*$", line
         )
@@ -42,12 +55,9 @@ def _parse_steering_table() -> dict[str, dict[str, str]]:
             continue
         rtype = m.group(1)
         cells = [c.strip() for c in m.group(2).split("|")]
-        if len(cells) < 5:
+        if len(cells) < len(providers):
             continue
-        aws, azure, gcp, oci, generic = cells[:5]
-        out[rtype] = {
-            "aws": aws, "azure": azure, "gcp": gcp, "oci": oci, "generic": generic,
-        }
+        out[rtype] = {prov: cells[i] for i, prov in enumerate(providers)}
     return out
 
 

@@ -1,0 +1,233 @@
+# Kubernetes icon mapping table for the Diagram & Inventory Rule Engine.
+#
+# The `kubernetes` profile (1.10.11) is an ORCHESTRATOR-PLATFORM profile, not a
+# cloud account. Its structural model is:
+#
+#   Cluster  (boundary)              ← the k8s cluster envelope
+#     └ Namespace (namespace / network_boundary)   ← LEAF boundary holding
+#          workloads (deployments / pods / services) directly
+#
+# Icons are the OFFICIAL Kubernetes Icons Set (kubernetes/community/icons),
+# licensed Apache-2.0 / CC-BY-4.0 — a permissive, redistributable set (unlike
+# the SaaS brand marks). The k8s logo itself is a Linux Foundation trademark,
+# but the resource icons (pod / deploy / svc / …) are free to use. We use the
+# UNLABELED variant and let the engine draw the service caption, so a node
+# carries exactly one label.
+#
+# All paths are relative to the git-ignored asset root (assets/vendor/k8s-icons).
+# The pack is fetched by scripts/fetch_assets.py from asset-sources.yaml
+# (a pinned git-archive tarball of kubernetes/community at a fixed commit).
+#
+# Brand anchor: Kubernetes blue #326CE5.
+provider: kubernetes
+asset_pack: "Kubernetes Icons Set (kubernetes/community, Apache-2.0 / CC-BY-4.0)"
+icon_source: custom
+
+# Path prefix for the unlabeled resource/control-plane SVGs inside the pack.
+# resources:            icons/svg/resources/unlabeled/<name>.svg
+# control plane:        icons/svg/control_plane_components/unlabeled/<name>.svg
+# infrastructure:       icons/svg/infrastructure_components/unlabeled/<name>.svg
+
+resources:
+  # ==========================================================================
+  # Nine neutral resource types (inventory schema) — mapped to the closest
+  # native Kubernetes object (see profiles/terminology.yaml / provider-profiles).
+  # ==========================================================================
+
+  # boundary → Cluster: resolved via the containers table below (structural).
+  # network_boundary → Namespace: resolved via the containers table below.
+
+  serverless_fn:             # → Job (ephemeral run-to-completion workload)
+    icon_id: k8s.job
+    icon_provenance: service
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/job.svg"
+
+  object_store:              # → PersistentVolume
+    icon_id: k8s.pv
+    icon_provenance: service
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/pv.svg"
+
+  managed_sql:               # → StatefulSet (stateful data workload)
+    icon_id: k8s.sts
+    icon_provenance: service
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/sts.svg"
+
+  message_queue:             # → Service (in-cluster routing endpoint)
+    icon_id: k8s.svc
+    icon_provenance: service
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/svc.svg"
+
+  secrets_store:             # → Secret
+    icon_id: k8s.secret
+    icon_provenance: service
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/secret.svg"
+
+  managed_k8s:               # → Control Plane (the cluster's control plane)
+    icon_id: k8s.control_plane
+    icon_provenance: service
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/infrastructure_components/unlabeled/control-plane.svg"
+
+  llm_platform:              # → Deployment (a model-serving workload)
+    icon_id: k8s.deploy
+    icon_provenance: service
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/deploy.svg"
+
+  # ==========================================================================
+  # Diagram presentation roles beyond the nine neutral types — the real
+  # Kubernetes objects a k8s architecture diagram draws. One role per distinct
+  # object (diagram-standards "Icon Fidelity"), each the official unlabeled SVG.
+  # ==========================================================================
+
+  # --- Workloads ---
+  k8s_pod:
+    icon_id: k8s.pod
+    icon_provenance: resource
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/pod.svg"
+  k8s_deployment:
+    icon_id: k8s.deploy
+    icon_provenance: resource
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/deploy.svg"
+  k8s_replicaset:
+    icon_id: k8s.rs
+    icon_provenance: resource
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/rs.svg"
+  k8s_statefulset:
+    icon_id: k8s.sts
+    icon_provenance: resource
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/sts.svg"
+  k8s_daemonset:
+    icon_id: k8s.ds
+    icon_provenance: resource
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/ds.svg"
+  k8s_job:
+    icon_id: k8s.job
+    icon_provenance: resource
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/job.svg"
+  k8s_cronjob:
+    icon_id: k8s.cronjob
+    icon_provenance: resource
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/cronjob.svg"
+
+  # --- Networking / exposure ---
+  k8s_service:
+    icon_id: k8s.svc
+    icon_provenance: resource
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/svc.svg"
+  k8s_ingress:
+    icon_id: k8s.ing
+    icon_provenance: resource
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/ing.svg"
+  k8s_endpoint:
+    icon_id: k8s.ep
+    icon_provenance: resource
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/ep.svg"
+  k8s_netpol:
+    icon_id: k8s.netpol
+    icon_provenance: resource
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/netpol.svg"
+
+  # --- Config / storage ---
+  k8s_configmap:
+    icon_id: k8s.cm
+    icon_provenance: resource
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/cm.svg"
+  k8s_secret:
+    icon_id: k8s.secret
+    icon_provenance: resource
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/secret.svg"
+  k8s_pv:
+    icon_id: k8s.pv
+    icon_provenance: resource
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/pv.svg"
+  k8s_pvc:
+    icon_id: k8s.pvc
+    icon_provenance: resource
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/pvc.svg"
+
+  # --- Identity / scaling / nodes ---
+  k8s_sa:
+    icon_id: k8s.sa
+    icon_provenance: resource
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/sa.svg"
+  k8s_hpa:
+    icon_id: k8s.hpa
+    icon_provenance: resource
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/hpa.svg"
+  k8s_node:
+    icon_id: k8s.node
+    icon_provenance: resource
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/infrastructure_components/unlabeled/node.svg"
+
+  # --- Control plane components ---
+  k8s_api:
+    icon_id: k8s.api
+    icon_provenance: resource
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/control_plane_components/unlabeled/api.svg"
+  k8s_etcd:
+    icon_id: k8s.etcd
+    icon_provenance: resource
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/control_plane_components/unlabeled/etcd.svg"
+  k8s_scheduler:
+    icon_id: k8s.sched
+    icon_provenance: resource
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/control_plane_components/unlabeled/sched.svg"
+  k8s_controller_manager:
+    icon_id: k8s.c_m
+    icon_provenance: resource
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/control_plane_components/unlabeled/c-m.svg"
+  k8s_kubelet:
+    icon_id: k8s.kubelet
+    icon_provenance: resource
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/control_plane_components/unlabeled/kubelet.svg"
+
+containers:
+  # Cluster envelope — k8s-blue dashed box with a top-left caption, matching the
+  # cloud-account group convention (caption meets 4.5:1 on white at #326CE5).
+  boundary:
+    icon_id: k8s.cluster
+    brand_hex: "#326CE5"
+    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#326CE5;dashed=1;verticalAlign=top;align=left;spacingLeft=30;fontColor=#326CE5;fontSize=12"
+  # Namespace — the network_boundary-level box (the k8s profile's "network
+  # boundary" IS the namespace). A light blue fill distinguishes it from the
+  # cluster envelope.
+  network_boundary:
+    icon_id: k8s.namespace
+    brand_hex: "#326CE5"
+    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=#F2F6FD;strokeColor=#326CE5;dashed=1;verticalAlign=top;align=left;spacingLeft=30;fontColor=#326CE5;fontSize=12"
+  # Namespace as a first-class LEAF container kind (1.10.11) — holds workloads
+  # directly; same visual as network_boundary so a Namespace reads identically
+  # whether declared as the network boundary or as a nested leaf.
+  namespace:
+    icon_id: k8s.namespace
+    brand_hex: "#326CE5"
+    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=#F2F6FD;strokeColor=#326CE5;dashed=1;verticalAlign=top;align=left;spacingLeft=30;fontColor=#326CE5;fontSize=12"

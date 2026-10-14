@@ -25,17 +25,17 @@ the reference used when adding a new provider.
 Every profile defines a row for each of the nine neutral concepts. This is the
 authoritative neutral-concept → per-provider mapping (Requirement 9 AC10).
 
-| # | Neutral concept | `resource_type` | aws | azure | gcp | oci | generic |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| 1 | Boundary | `boundary` | Account | Subscription | Project | Tenancy/Compartment | Environment |
-| 2 | Network Boundary | `network_boundary` | VPC | VNet | VPC | VCN | Network |
-| 3 | serverless function | `serverless_fn` | Lambda | Functions | Cloud Functions | Functions | Function |
-| 4 | object store | `object_store` | S3 | Blob Storage | Cloud Storage | Object Storage | Object Store |
-| 5 | managed SQL | `managed_sql` | RDS | Azure SQL DB | Cloud SQL | Autonomous/DB Systems | Managed SQL |
-| 6 | message queue | `message_queue` | SQS | Service Bus/Queue | Pub/Sub | Streaming/Queue | Message Queue |
-| 7 | secrets store | `secrets_store` | Secrets Manager | Key Vault | Secret Manager | Vault | Secrets Store |
-| 8 | managed Kubernetes | `managed_k8s` | EKS | AKS | GKE | OKE | Managed Kubernetes |
-| 9 | LLM platform | `llm_platform` | Bedrock | Azure OpenAI | Vertex AI | OCI Generative AI | LLM Platform |
+| # | Neutral concept | `resource_type` | aws | azure | gcp | oci | generic | kubernetes |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | Boundary | `boundary` | Account | Subscription | Project | Tenancy/Compartment | Environment | Cluster |
+| 2 | Network Boundary | `network_boundary` | VPC | VNet | VPC | VCN | Network | Namespace |
+| 3 | serverless function | `serverless_fn` | Lambda | Functions | Cloud Functions | Functions | Function | Job |
+| 4 | object store | `object_store` | S3 | Blob Storage | Cloud Storage | Object Storage | Object Store | PersistentVolume |
+| 5 | managed SQL | `managed_sql` | RDS | Azure SQL DB | Cloud SQL | Autonomous/DB Systems | Managed SQL | StatefulSet |
+| 6 | message queue | `message_queue` | SQS | Service Bus/Queue | Pub/Sub | Streaming/Queue | Message Queue | Service |
+| 7 | secrets store | `secrets_store` | Secrets Manager | Key Vault | Secret Manager | Vault | Secrets Store | Secret |
+| 8 | managed Kubernetes | `managed_k8s` | EKS | AKS | GKE | OKE | Managed Kubernetes | Cluster |
+| 9 | LLM platform | `llm_platform` | Bedrock | Azure OpenAI | Vertex AI | OCI Generative AI | LLM Platform | Deployment |
 
 The `resource_type` column is the enum value used in the Normalized Resource schema
 (`schemas/inventory.schema.json`). Provider labels are the native service names surfaced
