@@ -378,11 +378,61 @@ def extract_oci_stencils(library_xml: Path) -> Dict[str, Dict[str, Any]]:
     return out
 
 
+_HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def colorize_opensource_icons(
+    pack_root: Path,
+    out_dir: Path,
+    curated: Sequence[Dict[str, Any]],
+) -> Dict[str, Dict[str, Any]]:
+    """Colorize curated monochrome Simple Icons silhouettes to their brand hex.
+
+    Simple Icons ships every brand as a **monochrome single-fill** silhouette
+    (black path, no colour) under CC0 — but each *mark* remains its brand's
+    trademark. We therefore (a) copy only a **curated** subset (never the whole
+    3000-icon pack), (b) inject each brand's own hex as the SVG ``fill`` so a
+    node reads in brand colour (e.g. the MongoDB leaf in forest-green
+    ``#13AA52``), and (c) write the result into a **git-ignored** derived dir —
+    the mark is fetched + colorized locally, exactly like every other vendor
+    pack, and is NEVER committed (identification use, not redistribution).
+
+    ``curated`` is the ``opensource`` provider's ``icons`` list from
+    ``asset-sources.yaml``: each entry ``{slug, hex, license}``. Returns
+    ``{slug -> {src, out, hex, license}}`` for the ones found; a slug missing
+    from the pack is skipped with a warning (fail-honest, never a placeholder).
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    # Simple Icons npm layout: icons/<slug>.svg (monochrome path, no fill attr).
+    icons_dir = pack_root / "icons"
+    result: Dict[str, Dict[str, Any]] = {}
+    for item in curated:
+        slug = str(item.get("slug") or "").strip()
+        hex_ = str(item.get("hex") or "").strip()
+        lic = str(item.get("license") or "").strip()
+        if not slug or not _HEX_RE.match(hex_):
+            continue
+        src = icons_dir / f"{slug}.svg"
+        if not src.is_file():
+            print(f"  [opensource] WARNING: {slug}.svg not in pack", file=sys.stderr)
+            continue
+        svg = src.read_text(encoding="utf-8")
+        # Inject the brand fill on the root <svg> so every unstyled path inherits
+        # it (Simple Icons paths carry no own fill). Idempotent: replace an
+        # existing fill= on the <svg>, else add one.
+        if re.search(r"<svg\b[^>]*\bfill=", svg):
+            colored = re.sub(r'(<svg\b[^>]*\bfill=)"[^"]*"', rf'\1"{hex_}"', svg, count=1)
+        else:
+            colored = re.sub(r"<svg\b", f'<svg fill="{hex_}"', svg, count=1)
+        dst = out_dir / f"{slug}.svg"
+        dst.write_text(colored, encoding="utf-8")
+        result[slug] = {"src": str(src), "out": str(dst), "hex": hex_, "license": lic}
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Orchestration
 # ---------------------------------------------------------------------------
-
-
 def load_sources(path: Path) -> Dict[str, Any]:
     if not path.is_file():
         raise FileNotFoundError(f"asset sources config not found: {path}")
@@ -442,6 +492,16 @@ def fetch_provider(
             print(f"  [{key}] extracted {len(stencils)} stencils -> {manifest}")
         else:
             print(f"  [{key}] WARNING: library_xml not found at {lib_path}", file=sys.stderr)
+
+    if spec.get("kind") == "simple-icons":
+        curated = spec.get("icons") or []
+        colorized_out = asset_root / spec.get("colorized_out", f"{key}-colorized")
+        # npm tarballs unpack under package/; icons live at package/icons/<slug>.svg.
+        pack_root = out_dir / "package" if (out_dir / "package").is_dir() else out_dir
+        colored = colorize_opensource_icons(pack_root, colorized_out, curated)
+        result["colorized"] = len(colored)
+        result["colorized_out"] = str(colorized_out)
+        print(f"  [{key}] colorized {len(colored)} brand icons -> {colorized_out}")
 
     print(f"  [{key}] unpacked {n} files -> {out_dir}")
     return result

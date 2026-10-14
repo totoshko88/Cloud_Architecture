@@ -335,7 +335,10 @@ resources:
     icon_id: mongodb.atlas
     icon_provenance: neutral
     brand_hex: "#13AA52"
-    style: "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#13AA52;fontColor=#13AA52;verticalAlign=middle;fontSize=12"
+    # 1.10.11 (Opt 2): the real MongoDB leaf silhouette, colorized to brand green
+    # at fetch time into the git-ignored assets/vendor/opensource-colorized and
+    # referenced by file path — the mark is identification use, never committed.
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/opensource-colorized/mongodb.svg"
 
   # Fleet of N (Theme 22) — stacked-box glyph for a count of like resources.
   fleet:
