@@ -188,27 +188,27 @@ resources:
     icon_id: k8s.api
     icon_provenance: resource
     brand_hex: "#326CE5"
-    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/control_plane_components/unlabeled/api.svg"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/control_plane_components/labeled/api.svg"
   k8s_etcd:
     icon_id: k8s.etcd
     icon_provenance: resource
     brand_hex: "#326CE5"
-    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/control_plane_components/unlabeled/etcd.svg"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/infrastructure_components/unlabeled/etcd.svg"
   k8s_scheduler:
     icon_id: k8s.sched
     icon_provenance: resource
     brand_hex: "#326CE5"
-    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/control_plane_components/unlabeled/sched.svg"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/control_plane_components/labeled/sched.svg"
   k8s_controller_manager:
     icon_id: k8s.c_m
     icon_provenance: resource
     brand_hex: "#326CE5"
-    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/control_plane_components/unlabeled/c-m.svg"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/control_plane_components/labeled/c-m.svg"
   k8s_kubelet:
     icon_id: k8s.kubelet
     icon_provenance: resource
     brand_hex: "#326CE5"
-    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/control_plane_components/unlabeled/kubelet.svg"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/control_plane_components/labeled/kubelet.svg"
 
 containers:
   # Cluster envelope — k8s-blue dashed box with a top-left caption, matching the

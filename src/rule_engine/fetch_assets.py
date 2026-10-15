@@ -371,13 +371,36 @@ def _unpack_tar(tar_path: Path, out_dir: Path) -> int:
         out_dir.mkdir(parents=True, exist_ok=True)
         root = out_dir.resolve()
         count = 0
-        for member in tf.getmembers():
+        members = tf.getmembers()
+        # Strip a single common top-level directory ONLY when it is a git-archive
+        # wrapper (``<repo>-<40-hex-sha>/``, as codeload.github.com emits). The
+        # mappings reference the k8s icons at the pack root (``k8s-icons/icons/
+        # svg/...``), so that wrapper must go — matching the ``# after the
+        # tarball's top-level <...>/ dir is stripped`` contract. An npm tarball's
+        # ``package/`` wrapper is deliberately NOT stripped: the opensource pack's
+        # colorizer reads it at ``package/icons/<slug>.svg``, and the mappings
+        # reference the colorized OUTPUT, not the raw tree.
+        import re as _re
+        file_names = [m.name for m in members if m.isfile()]
+        strip_prefix = ""
+        if file_names:
+            first_parts = file_names[0].split("/")
+            if len(first_parts) > 1:
+                cand = first_parts[0]
+                if _re.fullmatch(r"[A-Za-z0-9._-]+-[0-9a-f]{40}", cand) and all(
+                    n.startswith(cand + "/") for n in file_names
+                ):
+                    strip_prefix = cand + "/"
+        for member in members:
             name = member.name
             if not member.isfile():
                 continue
             if "__MACOSX" in name or name.endswith(".DS_Store"):
                 continue
-            target = (out_dir / name).resolve()
+            rel = name[len(strip_prefix):] if strip_prefix and name.startswith(strip_prefix) else name
+            if not rel:
+                continue
+            target = (out_dir / rel).resolve()
             if not _is_within(root, target):
                 raise ValueError(f"{tar_path}: entry {name!r} escapes {out_dir}")
             # Flatten any member mode bits that are not a plain file read/write;
