@@ -671,6 +671,43 @@ def test_two_az_stacking_mirrors_across_regions():
     assert a2.y >= a1.bottom and b2.y >= b1.bottom
 
 
+def test_theme46_x_aligned_cross_region_edge_routes_straight():
+    # Theme 46: a cross-region hop whose source exits a column and whose target
+    # sits directly below in the SAME column (clear corridor) routes as one
+    # straight vertical leg — no out-and-back jog (SEP 08 e9/e11). The pipeline
+    # pins a bottom-exit -> top-entry pair for a directly-below cross-region
+    # target, and the router's straight-drop guard emits it with no interior
+    # waypoint.
+    spec = DiagramSpec(
+        diagram_id="xr-straight",
+        diagram_name="xr-straight",
+        axis="north-south",
+        nodes=(
+            NodeSpec(id="src", role="serverless_fn", lane="workers", region="", slot=0, container="vpc"),
+            # target far below, same column, with no container (a free peer node
+            # below the account) — the cross-region shape, directly below with a
+            # clear corridor.
+            NodeSpec(id="dst", role="managed_sql", lane="data", region="", slot=0),
+        ),
+        edges=(EdgeSpec(id="e1", source="src", target="dst", marker="1", kind_hint="cross-region"),),
+        containers=(
+            ContainerSpec(id="acct", kind="account", region="", parent=None, label_key="acct"),
+            ContainerSpec(id="vpc", kind="vpc", region="", parent="acct", label_key="vpc"),
+        ),
+        flow_lines=("Flow",),
+        title="xr-straight | 2025-01-15 | v1",
+    )
+    placed = le.layout(spec, strict=False)
+    e = next(pe for pe in placed.edges if pe.spec.id == "e1")
+    sb, tb = placed.nodes["src"], placed.nodes["dst"]
+    sx = sb.x + e.exit[0] * sb.w
+    tx = tb.x + e.entry[0] * tb.w
+    # Exit and entry are vertically aligned (same column) and the drop is a
+    # single straight leg — no interior corridor waypoints (no out-and-back jog).
+    assert abs(sx - tx) < 1.0
+    assert e.points == []
+
+
 # ---------------------------------------------------------------------------
 # Task 16: VPC service-row tier above the availability zones
 # (Req 12.3)

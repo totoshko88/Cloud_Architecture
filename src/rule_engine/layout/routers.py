@@ -1432,6 +1432,54 @@ def route_cross_region(
 
     entry = _contact_point(tgt, entry_pt)
 
+    # Theme 46: STRAIGHT vertical cross-region drop. When the source exit column
+    # and the target entry column coincide EXACTLY (the target sits directly
+    # below — above the source) and the straight segment between the two contacts
+    # crosses no unrelated obstacle, the edge is a clean vertical and needs NO
+    # corridor. The default cross-region shape (step out to a gap column, run the
+    # over/below-row lane, run back across to the target column, drop) would
+    # otherwise emit a spurious out-and-back jog whenever ``rise_x`` differs from
+    # the shared exit/entry column (SEP 08 e9 rds->cmtr-cmtm and e11
+    # nat->eks-shared: a 4-turn appendix stepping out ~70px and back to the same
+    # x). Routing the straight drop collapses that to a single unbroken vertical
+    # leg (no interior waypoint — draw.io draws exit->entry straight). Scoped
+    # hard: fires ONLY when the two contacts are EXACTLY x-aligned (a pure
+    # vertical, never a slant) AND the straight run is obstacle-free, so any edge
+    # that needs a corridor to clear content falls through unchanged below.
+    exit_abs0 = _contact_point(src, exit_pt)
+    if abs(exit_abs0[0] - entry[0]) < 1.0 and not _obstacles_between(
+        exit_abs0, entry, others
+    ):
+        return []
+
+    # Theme 46 (horizontal companion): STRAIGHT same-row cross-region hop. When
+    # the source and target sit on the SAME row — the target directly to the
+    # right, entering its LEFT face — and the straight run between the two
+    # contacts is obstacle-free, the hop is a near-horizontal leg that needs no
+    # over-row corridor. The default left-entry branch escapes a region-rightmost
+    # source into the inter-region gap and rises into an over/below-row lane,
+    # which for two ADJACENT top-band externals (SEP 09 e19 cmtr->eks-dev, both
+    # at y=120..198) emits a 4-turn staircase climbing above the row and back —
+    # "two turns where one does". This routes the run as one horizontal leg at
+    # the exit level, then (when the two faces differ in y by a sub-stair) a
+    # single short vertical stub into the entry — at most ONE turn. Scoped hard:
+    # fires ONLY when exit and entry are y-aligned within one STAIR_STEP (a true
+    # same-row pair, never a diagonal) AND both legs are obstacle-free; anything
+    # that needs the corridor falls through to the normal path unchanged.
+    if (
+        entry_pt[0] is not None
+        and entry_pt[0] <= 0.0                       # target entered on its LEFT face
+        and entry[0] > exit_abs0[0]                  # target is to the RIGHT
+        and abs(exit_abs0[1] - entry[1]) <= STAIR_STEP  # same row (within a stair)
+    ):
+        corner = (_snap(entry[0]), _snap(exit_abs0[1]))  # run across at exit level
+        if not _obstacles_between(exit_abs0, corner, others) and not _obstacles_between(
+            corner, entry, others
+        ):
+            if abs(corner[1] - entry[1]) < 1.0:
+                return []                             # exactly level → one straight leg
+            return [corner]                           # one short vertical stub into entry
+
     # Adaptive INTER-ROW corridor + LEFT entry (v1.5.1, edge-11 generalisation).
     # A same-tier cross-region hop whose target has a clear LEFT approach
     # (:func:`_has_free_left_approach`) routes in the inter-row gap BELOW the

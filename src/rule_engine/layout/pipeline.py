@@ -189,7 +189,19 @@ def _global_contacts(
             tgt = placed[edge.target]
             others = [b for nid, b in placed.items()
                       if nid not in (edge.source, edge.target)]
-            if _has_free_left_approach(tgt, others):
+            src = placed[edge.source]
+            if _box_directly_below(src, tgt, others):
+                # Theme 46: the target sits directly below the source in a CLEAR
+                # column (same x, nothing between). A left entry would send the
+                # hop out to a side corridor and back across under the source
+                # (SEP 08 e8 Lambda->cmtr-sre: exit-right -> step left past the
+                # source -> drop -> re-enter, visibly crossing the source glyph).
+                # A straight bottom-exit -> top-entry drop in the clear column is
+                # the same clean vertical the spine Exception uses; the router's
+                # Theme 46 straight-drop guard then emits one unbroken leg.
+                exits[edge.id] = (0.5, 1.0)     # bottom-centre
+                entries[edge.id] = (0.5, 0.0)   # top-centre -> straight drop
+            elif _has_free_left_approach(tgt, others):
                 entries[edge.id] = (0.0, 0.5)   # left face → inter-row route
             else:
                 entries[edge.id] = (0.5, 0.0)   # top-centre (Rule C)
