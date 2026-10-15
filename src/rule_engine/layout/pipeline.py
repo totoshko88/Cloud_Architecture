@@ -67,7 +67,7 @@ try:  # package-relative import when used as ``rule_engine.layout.pipeline``
         spread_contacts,
         spill_over_connected_faces,
     )
-    from .place import place_nodes, size_containers, centre_block_in_vpc
+    from .place import place_nodes, size_containers, centre_block_in_vpc, lift_subject_over_external_lane
     from .routers import (
         classify_edge,
         _contact_point,
@@ -111,7 +111,7 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
         spread_contacts,
         spill_over_connected_faces,
     )
-    from layout.place import place_nodes, size_containers, centre_block_in_vpc  # type: ignore[no-redef]
+    from layout.place import place_nodes, size_containers, centre_block_in_vpc, lift_subject_over_external_lane  # type: ignore[no-redef]
     from layout.routers import (  # type: ignore[no-redef]
         classify_edge,
         _contact_point,
@@ -786,6 +786,7 @@ def _place_and_route(spec: DiagramSpec) -> "PlacedDiagram":
     global result, exactly as before."""
     placed = place_nodes(spec)
     containers = size_containers(placed, spec)
+    placed, containers = lift_subject_over_external_lane(placed, containers, spec)
     placed = centre_block_in_vpc(placed, containers, spec)
 
     exits, entries, lane_sides = _global_contacts(spec, placed, containers)
@@ -833,6 +834,7 @@ def _place_and_route_scored(spec: DiagramSpec) -> "PlacedDiagram":
     identical shape (R4.2, R4.3) — only *how* the waypoints are chosen differs."""
     placed = place_nodes(spec)
     containers = size_containers(placed, spec)
+    placed, containers = lift_subject_over_external_lane(placed, containers, spec)
     placed = centre_block_in_vpc(placed, containers, spec)
 
     # Contacts + route: the scored per-edge solver replaces the ten-pass global

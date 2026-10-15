@@ -1,6 +1,6 @@
 <mxfile host="app.diagrams.net" agent="rule-engine golden-example" version="24.0.0">
   <diagram id="k8s-landscape" name="kubernetes-architecture-landscape">
-    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1570" pageHeight="1430" math="0" shadow="0">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1570" pageHeight="1350" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -10,13 +10,13 @@
         </mxCell>
 
         <mxCell id="cluster" value="Cluster: prod" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#326CE5;dashed=1;verticalAlign=top;fontColor=#326CE5;fontSize=12;align=left;spacingLeft=120" vertex="1" parent="1">
-          <mxGeometry x="30" y="440" width="1170" height="930" as="geometry" />
+          <mxGeometry x="30" y="360" width="1170" height="930" as="geometry" />
         </mxCell>
         <mxCell id="ns-app" value="Namespace: app" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#326CE5;dashed=1;verticalAlign=top;fontColor=#326CE5;fontSize=12;align=left;spacingLeft=90" vertex="1" parent="1">
-          <mxGeometry x="60" y="500" width="410" height="720" as="geometry" />
+          <mxGeometry x="60" y="420" width="410" height="720" as="geometry" />
         </mxCell>
         <mxCell id="ns-data" value="Namespace: data" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#326CE5;dashed=1;verticalAlign=top;align=left;spacingLeft=30;fontColor=#326CE5;fontSize=12" vertex="1" parent="1">
-          <mxGeometry x="810" y="500" width="358" height="838" as="geometry" />
+          <mxGeometry x="810" y="420" width="358" height="838" as="geometry" />
         </mxCell>
 
         <mxCell id="e1" value="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.5128205128205128;exitY=1.0256410256410255;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5128205128205128;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="ingress" target="svc-app">
@@ -31,8 +31,8 @@
         <mxCell id="e9" value="9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.5128205128205128;exitY=1.0256410256410255;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.7692307692307693;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="secret" target="sts">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="1100.00" y="1170.00" />
-              <mxPoint x="900.00" y="1170.00" />
+              <mxPoint x="1100.00" y="1090.00" />
+              <mxPoint x="900.00" y="1090.00" />
             </Array>
           </mxGeometry>
         </mxCell>
@@ -74,10 +74,10 @@
         <mxCell id="e4" value="4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.2564102564102564;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="deploy" target="svc-data">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="210.00" y="900.00" />
-              <mxPoint x="210.00" y="840.00" />
-              <mxPoint x="800.00" y="840.00" />
-              <mxPoint x="800.00" y="600.00" />
+              <mxPoint x="210.00" y="820.00" />
+              <mxPoint x="210.00" y="760.00" />
+              <mxPoint x="800.00" y="760.00" />
+              <mxPoint x="800.00" y="520.00" />
             </Array>
           </mxGeometry>
         </mxCell>
@@ -87,22 +87,22 @@
         <mxCell id="e7" value="7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.7692307692307693;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="cm" target="deploy">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="440.00" y="1080.00" />
-              <mxPoint x="440.00" y="1190.00" />
-              <mxPoint x="90.00" y="1190.00" />
-              <mxPoint x="90.00" y="840.00" />
-              <mxPoint x="160.00" y="840.00" />
+              <mxPoint x="440.00" y="1000.00" />
+              <mxPoint x="440.00" y="1110.00" />
+              <mxPoint x="90.00" y="1110.00" />
+              <mxPoint x="90.00" y="760.00" />
+              <mxPoint x="160.00" y="760.00" />
             </Array>
           </mxGeometry>
         </mxCell>
         <mxCell id="e8" value="8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5128205128205128;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="hpa" target="pod1">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
+              <mxPoint x="210.00" y="1000.00" />
               <mxPoint x="210.00" y="1080.00" />
-              <mxPoint x="210.00" y="1160.00" />
-              <mxPoint x="400.00" y="1160.00" />
-              <mxPoint x="400.00" y="850.00" />
-              <mxPoint x="360.00" y="850.00" />
+              <mxPoint x="400.00" y="1080.00" />
+              <mxPoint x="400.00" y="770.00" />
+              <mxPoint x="360.00" y="770.00" />
             </Array>
           </mxGeometry>
         </mxCell>

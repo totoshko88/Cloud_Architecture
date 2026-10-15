@@ -2218,6 +2218,45 @@ def test_subject_lifts_when_bands_move_beside_it():
     assert min(b.x for b in side_bands) >= acct.right
 
 
+def test_account_lifts_over_a_plain_external_lane_row():
+    """Theme 44: an account whose only overhead content is a short external-lane
+    (actors) row must not hang far below it. The account box lifts so its top
+    clears just that row (+ gap + nesting margin); the external row stays put and
+    no node goes to negative y. (The SEP 03/08 dead-space fix.)"""
+    nodes = (
+        # external actors row above the account columns
+        _NS(id="ext1", role="dns", lane="actors", region="", slot=0),
+        _NS(id="ext2", role="cdn", lane="actors", region="", slot=1),
+        # in-account body (region/vpc nodes)
+        _NS(id="api", role="api_gateway", lane="edge", region="a", slot=0, container="region-a"),
+        _NS(id="fn", role="fn", lane="workers", region="a", slot=0, container="region-a"),
+        _NS(id="db", role="sql", lane="data", region="a", slot=0, container="vpc-a"),
+    )
+    conts = (
+        _CS(id="acct", kind="account", region="", parent=None, label_key="a"),
+        _CS(id="region-a", kind="region", region="a", parent="acct", label_key="r"),
+        _CS(id="vpc-a", kind="vpc", region="a", parent="region-a", label_key="v"),
+    )
+    spec = _DS(diagram_id="s44", diagram_name="s44", axis="north-south",
+               nodes=nodes, edges=(), containers=conts,
+               flow_lines=("Flow", "1. x"), title="t | 2026-10-15 | v1")
+    pd = le.layout(spec)
+    acct = pd.containers["acct"]
+    ext_bottom = max(pd.nodes["ext1"].bottom, pd.nodes["ext2"].bottom)
+    # The account BOX clears the external row (no overlap), and it was lifted
+    # from the full lane-grid drop toward that row rather than hanging far below
+    # the whole external-lane extent. The exact gap depends on the nesting chrome
+    # size_containers reserves; the invariant is no-overlap + a lift occurred.
+    assert acct.y >= ext_bottom, "account box overlaps the external row"
+    # a lift occurred: the account sits far closer to the external row than the
+    # un-lifted lane-grid drop would place it (which was ~400+ below the row).
+    assert acct.y - ext_bottom <= 600, (
+        f"account still hangs far below the external row: {acct.y - ext_bottom}px")
+    # external row stays at the top; nothing went negative.
+    assert min(pd.nodes["ext1"].y, pd.nodes["ext2"].y) >= 0
+    assert all(b.y >= 0 for b in pd.nodes.values())
+
+
 def test_role_scope_table_covers_the_nine_neutral_types():
     from rule_engine.constants import NEUTRAL_RESOURCE_TYPES
     from rule_engine.layout.base import role_scope

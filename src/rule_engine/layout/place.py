@@ -349,6 +349,80 @@ def _wrap_external_bands(placed: Dict[str, Box], spec: DiagramSpec) -> Dict[str,
     return out
 
 
+def lift_subject_over_external_lane(
+    placed: Dict[str, Box], containers: Dict[str, Box], spec: DiagramSpec
+) -> Tuple[Dict[str, Box], Dict[str, Box]]:
+    """Theme 44: lift an account subject that hangs too far below its overhead
+    external lane (SEP 03/08). The companion of Theme 42 for the PLAIN external-
+    lane case (externals as ordinary ``actors``-lane nodes above an ``account``
+    envelope, not peer_account bands). ``_place_base`` drops the in-account lanes
+    clear of the WHOLE external-lane extent, over-clearing when the external row
+    is a single short band — a tall dead-space gap above the account.
+
+    Runs AFTER ``size_containers`` so the REAL account box is known: it computes
+    the lift from the account box top (not an estimate of the nesting chrome),
+    then translates the account's container boxes AND its in-boundary nodes up by
+    one uniform delta. A pure translation preserves every internal coordinate and
+    routed waypoint, so no re-size is needed and nothing can overlap by
+    construction. Scoped hard: armed only with an account envelope whose top sits
+    more than one gap below the lowest overhead external node that x-overlaps its
+    columns; the lift is the exact excess, never makes a coordinate negative, and
+    leaves the external row and every non-account box untouched. A diagram already
+    tight above the account sees excess <= 0 and is byte-inert (the shipped
+    goldens; the k8s cluster, whose Ingress actor sits a full drop above it, is
+    the one that legitimately tightens)."""
+    from .base import EXTERNAL_LANES
+    acct_ids = [c.id for c in spec.containers if c.kind == "account"]
+    if not acct_ids:
+        return placed, containers
+    acct_id = acct_ids[0]
+    acct = containers.get(acct_id)
+    if acct is None:
+        return placed, containers
+    ext_ids = {n.id for n in spec.nodes if n.lane in EXTERNAL_LANES}
+    exts = [placed[i] for i in ext_ids if i in placed]
+    if not exts:
+        return placed, containers
+    # External nodes above the account box that x-overlap its columns.
+    overhead = [
+        b for b in exts
+        if b.y + b.h <= acct.y
+        and not (b.x + b.w <= acct.x or acct.x + acct.w <= b.x)
+    ]
+    if not overhead:
+        return placed, containers
+    overhead_bottom = max(b.y + b.h for b in overhead)
+    new_top = _snap(overhead_bottom + _external_band_gap())
+    lift = acct.y - new_top
+    if lift <= 0:
+        return placed, containers
+    # Everything inside the account envelope: its descendant containers + the
+    # nodes they hold. Translate them AND the account box up by `lift`.
+    acct_descendants = {acct_id}
+    changed = True
+    parent_of = {c.id: c.parent for c in spec.containers}
+    while changed:
+        changed = False
+        for cid, par in parent_of.items():
+            if par in acct_descendants and cid not in acct_descendants:
+                acct_descendants.add(cid); changed = True
+    inner_node_ids = {
+        n.id for n in spec.nodes
+        if n.lane not in EXTERNAL_LANES
+    }
+    out_nodes = dict(placed)
+    for nid in inner_node_ids:
+        b = out_nodes.get(nid)
+        if b is not None:
+            out_nodes[nid] = replace(b, y=_snap(max(0, b.y - lift)))
+    out_conts = dict(containers)
+    for cid in acct_descendants:
+        b = out_conts.get(cid)
+        if b is not None:
+            out_conts[cid] = replace(b, y=_snap(max(0, b.y - lift)))
+    return out_nodes, out_conts
+
+
 def place_nodes(spec: DiagramSpec) -> Dict[str, Box]:
     """Place every node on the lane grid, returning ``id -> Box`` (Req 3).
 
