@@ -1288,6 +1288,32 @@ def test_route_fan_out_row_owns_below_row_lane_and_turns_up_before_target():
     assert check_edge_routing(geo) == []       # does not cut the mid icon
 
 
+def test_route_fan_out_row_short_hop_has_no_redundant_jog():
+    """Theme 39: a short diagonal fan-out hop (target one column over and one
+    row up, nothing between) must climb in ONE straight vertical, not climb-jog-
+    climb. The old shape stepped out, rose into the lane, jogged a sub-gap nub
+    sideways to the left-approach column, then rose again — two corners for a
+    hop that needs one (the 05-e6 / e8 'needless staircase'). The collapse snaps
+    the turn column onto the climb column when the nub is under half a gap."""
+    src = Box("s", 100, 100 + _R, _S, _S)          # lower row
+    tgt = Box("t", 100 + _C, 100, _S, _S)          # one column over, one row up
+    placed = _placed(src, tgt)
+    edge = _spec_edge("s", "t")
+    exit_pt, entry_pt = select_contacts(edge, placed)
+    wps = route_fan_out_row(edge, exit_pt, entry_pt, CorridorAllocator(), [src, tgt])
+    # Count horizontal<->vertical corners among the interior waypoints: the old
+    # climb-jog-climb shape has two, a clean step-out-then-single-climb has one.
+    corners = 0
+    for i in range(1, len(wps) - 1):
+        h1 = wps[i][0] != wps[i - 1][0]
+        h2 = wps[i + 1][0] != wps[i][0]
+        if h1 != h2:
+            corners += 1
+    assert corners <= 1, f"short-hop fan-out kept a redundant jog: {list(wps)}"
+    geo = _routed_geo(edge, exit_pt, entry_pt, wps, placed)
+    assert check_edge_routing(geo) == []
+
+
 def test_route_cross_region_rises_into_over_row_corridor_and_crosses_nothing():
     # Req 7.5: step out, own over-row corridor, across, enter target top.
     src = Box("s", 100, 400, _S, _S)

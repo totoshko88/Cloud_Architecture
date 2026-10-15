@@ -747,11 +747,27 @@ def route_fan_out_row(
             (drop_x, _snap(entry[1])),  # straight drop into the top face
         ]
     else:
+        # Theme 39: on a SHORT diagonal hop the across-run between the step-out
+        # column (``first[0]``) and the left-approach turn column (``turn_x``)
+        # collapses to a <= STAIR_STEP nub — the drawn line climbs, jogs ~30px
+        # sideways, then climbs again (the "needless staircase" the owner flagged
+        # on 05-e6 / e8). The turn column is ``tgt.x - (col_step - ICON_SIZE)/2``
+        # and the step-out column is ~``src.right + GRID``; when the target sits
+        # just one column over those two land < half a column step apart in the
+        # SAME gap right of the source, so the across segment is a redundant nub,
+        # not a real traverse. Snap ``turn_x`` to the climb column so the two
+        # corners fuse into one clean right angle (step out, single climb into
+        # the target). Guarded tight: only when the nub is under half a column
+        # step and the climb column is left of the target, so a real wide fan-out
+        # keeps its distinct turn column.
+        _turn_x = turn_x
+        if abs(turn_x - first[0]) < col_step() // 2 and first[0] < tgt.x:
+            _turn_x = first[0]
         waypoints = [
             first,
             (first[0], lane_y),
-            (turn_x, lane_y),
-            (turn_x, _snap(entry[1])),
+            (_turn_x, lane_y),
+            (_turn_x, _snap(entry[1])),
         ]
     waypoints = _dedupe_axis_collapse(waypoints, first)
     route = [_contact_point(src, exit_pt)] + waypoints + [entry]
