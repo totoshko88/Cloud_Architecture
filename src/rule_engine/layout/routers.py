@@ -1413,6 +1413,7 @@ def route_cross_region(
     containers: Optional[Dict[str, Box]] = None,
     lane_above: Optional[bool] = None,
     corridor_y: Optional[float] = None,
+    turn_near_target: bool = False,
 ) -> List[Point]:
     """Route a ``cross-region`` A→B hop through its own over-row corridor (Req 7.5).
 
@@ -1489,6 +1490,24 @@ def route_cross_region(
         exit_abs = _contact_point(src, exit_pt)
         entry_left = _contact_point(tgt, entry_pt)
         left_of_tgt = _snap(tgt.x - STAIR_STEP)   # standardized approach: step in one stair (30px)
+        if turn_near_target:
+            # Theme 38b: run the horizontal leg FIRST, at the source's own exit
+            # level, straight to the target's approach column, then ONE long
+            # vertical into the target. The long climb now stands at the target
+            # column (reads as the target's arrival), with no near-source rise
+            # that would otherwise trace a backward "appendix" off the source
+            # (03-e7 ECR→CICD: the step-out-then-back-left jog is gone). The
+            # across level is the exit row rather than the inter-row lane, so the
+            # vertical is a single unbroken leg to the entry.
+            across_y = _snap(exit_abs[1])
+            waypoints = [
+                (left_of_tgt, across_y),            # run across at the source level
+                (left_of_tgt, _snap(entry_left[1])),# single long vertical into target
+            ]
+            waypoints = _dedupe_axis_collapse(waypoints, exit_abs)
+            route = [exit_abs] + waypoints + [entry_left]
+            route = _detour_clockwise_if_blocked(route, others)
+            return _interior_waypoints(route)
         waypoints = [
             (rise_x, _snap(exit_abs[1])),       # step out into the gap right of src
             (rise_x, lane_y),                   # drop into the below-row lane
@@ -1549,6 +1568,7 @@ def route_back_edge(
     containers: Optional[Dict[str, Box]] = None,
     lane_above: Optional[bool] = None,
     corridor_y: Optional[float] = None,
+    turn_near_target: bool = False,
 ) -> List[Point]:
     """Route a ``back-edge`` (target left of source) out the right and back (Req 7.6).
 
@@ -1741,6 +1761,7 @@ def route_edge(
     containers: Optional[Dict[str, Box]] = None,
     lane_above: Optional[bool] = None,
     corridor_y: Optional[float] = None,
+    turn_near_target: bool = False,
 ) -> List[Point]:
     """Classify ``edge`` and dispatch to the matching ``route_<kind>`` router.
 
@@ -1765,7 +1786,7 @@ def route_edge(
     if kind in ("cross-region", "back-edge"):
         return ROUTERS[kind](
             edge, exit_pt, entry_pt, allocator, obstacles, containers, lane_above,
-            corridor_y,
+            corridor_y, turn_near_target,
         )
     if kind == "fan-out-row":
         return ROUTERS[kind](

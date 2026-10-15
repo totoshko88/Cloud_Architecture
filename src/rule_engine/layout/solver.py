@@ -240,6 +240,7 @@ def _lay_variant(
         obstacles,
         containers,
         lane_above,
+        turn_near_target=variant.plan is RoutePlan.TURN_NEAR_TARGET,
     )
     src_box = placed[edge.source]
     tgt_box = placed[edge.target]

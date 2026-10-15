@@ -1328,6 +1328,33 @@ def test_route_cross_region_rises_into_over_row_corridor_and_crosses_nothing():
     assert check_edge_routing(geo) == []
 
 
+def test_route_cross_region_turn_near_target_has_no_near_source_appendix():
+    """Theme 38b: a cross-region hop routed with turn_near_target=True runs the
+    horizontal leg at the source level then a SINGLE long vertical at the
+    target's approach column — no step-out-then-back-left jog near the source
+    (03-e7's ECR→CICD appendix). The default route keeps its over-row shape; the
+    turn-near-target route must have at most one horizontal<->vertical corner."""
+    # target up-and-right with a left entry and a free left approach
+    src = Box("s", 100, 100 + 6 * _R, _S, _S)
+    tgt = Box("t", 100 + _C, 100, _S, _S)
+    placed = _placed(src, tgt)
+    edge = _spec_edge("s", "t")
+    exit_pt, entry_pt = select_contacts(edge, placed)
+    wps = route_cross_region(
+        edge, exit_pt, entry_pt, CorridorAllocator(), [src, tgt],
+        turn_near_target=True,
+    )
+    corners = 0
+    for i in range(1, len(wps) - 1):
+        h1 = wps[i][0] != wps[i - 1][0]
+        h2 = wps[i + 1][0] != wps[i][0]
+        if h1 != h2:
+            corners += 1
+    assert corners <= 1, f"turn-near-target kept an appendix: {list(wps)}"
+    geo = _routed_geo(edge, exit_pt, entry_pt, wps, placed)
+    assert check_edge_routing(geo) == []
+
+
 def test_route_back_edge_exits_right_and_enters_left():
     # Req 7.6: target left of source → exit right, loop corridor, enter left.
     src = Box("s", 100 + 3 * _C, 100, _S, _S)

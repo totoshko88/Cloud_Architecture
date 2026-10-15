@@ -58,7 +58,7 @@ from typing import TYPE_CHECKING, Dict, List, Tuple
 
 try:  # package-relative import when used as ``rule_engine.layout.variants``
     from .model import Contact, EdgeSpec, DiagramSpec, NodeSpec
-    from .base import LANE_INDEX
+    from .base import LANE_INDEX, ROW_STEP
     from .contacts import (
         select_contacts,
         _box_directly_below,
@@ -67,7 +67,7 @@ try:  # package-relative import when used as ``rule_engine.layout.variants``
     )
 except ImportError:  # pragma: no cover - fallback for flat-module execution
     from layout.model import Contact, EdgeSpec, DiagramSpec, NodeSpec  # type: ignore[no-redef]
-    from layout.base import LANE_INDEX  # type: ignore[no-redef]
+    from layout.base import LANE_INDEX, ROW_STEP  # type: ignore[no-redef]
     from layout.contacts import (  # type: ignore[no-redef]
         select_contacts,
         _box_directly_below,
@@ -98,6 +98,9 @@ class RoutePlan(str, Enum):
     SIDE_CORRIDOR = "side-corridor" # spine via the column's side gap corridor
     LEFT_GAP = "left-gap"           # corridor in the column's left gap
     RIGHT_GAP = "right-gap"         # corridor in the column's right gap
+    TURN_NEAR_TARGET = "turn-near-target"  # long haul: run horizontal first,
+    #                                        put the long vertical at the TARGET's
+    #                                        approach column (Theme 38b)
 
 
 @dataclass(frozen=True)
@@ -243,6 +246,42 @@ def _lane_side_variants(edge: "EdgeSpec", rule_exit: Contact,
                  RoutePlan.LANE_ABOVE, start_rank),
         _variant(edge.id, "lane-below", rule_exit, rule_entry,
                  RoutePlan.LANE_BELOW, start_rank + 1),
+    ]
+
+
+def _vertical_haul_dominates(edge: "EdgeSpec", placed: Dict[str, "Box"]) -> bool:
+    """True when ``edge``'s endpoints are far apart VERTICALLY but close
+    horizontally — the shape where a near-source vertical reads as an appendix
+    and a target-column vertical reads as the target's arrival (Theme 38b).
+
+    Gated so the turn-near-target variant is offered only for a genuine long
+    vertical haul: the vertical centre-to-centre distance must exceed the
+    horizontal distance AND be at least two rows, so an ordinary diagonal hop
+    (where the rule-based route is already clean) is never offered the shape."""
+    src = placed.get(edge.source)
+    tgt = placed.get(edge.target)
+    if src is None or tgt is None:
+        return False
+    dx = abs((src.x + src.w / 2.0) - (tgt.x + tgt.w / 2.0))
+    dy = abs((src.y + src.h / 2.0) - (tgt.y + tgt.h / 2.0))
+    return dy > dx and dy >= 2 * ROW_STEP
+
+
+def _turn_near_target_variant(edge: "EdgeSpec", rule_exit: Contact,
+                              rule_entry: Contact, start_rank: int
+                              ) -> List[RouteVariant]:
+    """turn-near-target family (Theme 38b): for a long haul whose vertical span
+    dominates, run the horizontal leg FIRST (near the source row) and put the
+    long vertical at the TARGET's approach column, so the climb reads as the
+    target's arrival instead of a near-source "appendix" (03-e7's ECR→CICD).
+
+    Same contract-legal contacts as the rule-based route — only the route PLAN
+    differs, so the solver scores this shape against the default and keeps it
+    only when ``route_cost`` prefers it. The router honours it by laying the
+    vertical at the target's drop column rather than the gap right of source."""
+    return [
+        _variant(edge.id, "turn-near-target", rule_exit, rule_entry,
+                 RoutePlan.TURN_NEAR_TARGET, start_rank),
     ]
 
 
@@ -447,6 +486,10 @@ def generate(
         lane = _lane_side_variants(edge, rule_exit, rule_entry, rank)
         variants.extend(lane)
         rank += len(lane)
+        if kind == "cross-region" and _vertical_haul_dominates(edge, placed):
+            tnt = _turn_near_target_variant(edge, rule_exit, rule_entry, rank)
+            variants.extend(tnt)
+            rank += len(tnt)
     elif kind == "back-edge":
         back = _back_edge_variants(edge, rule_exit, rule_entry, rank)
         variants.extend(back)
@@ -454,6 +497,10 @@ def generate(
         lane = _lane_side_variants(edge, rule_exit, rule_entry, rank)
         variants.extend(lane)
         rank += len(lane)
+        if _vertical_haul_dominates(edge, placed):
+            tnt = _turn_near_target_variant(edge, rule_exit, rule_entry, rank)
+            variants.extend(tnt)
+            rank += len(tnt)
     # kind == "straight": a directly-opposite adjacent target is a single centred
     # segment; there is no sanctioned alternative shape, so the rule-based variant
     # is the only one. The list is still non-empty.
