@@ -2125,6 +2125,46 @@ def test_pure_external_stacking_inert_without_two_pure_bands():
     assert "identp" in pd.containers
 
 
+def test_subject_lifts_when_bands_move_beside_it():
+    """Theme 42: once the pure-external bands are stacked into a side column
+    (Theme 41), the only band left OVER the subject's columns is the account-
+    linked one; the subject must lift up to clear just that band (plus a gap)
+    instead of hanging below the whole external-lane extent — collapsing the
+    dead space — and the lift must collide with no side band."""
+    def ov(a, b):
+        return not (a.right <= b.x or b.right <= a.x
+                    or a.bottom <= b.y or b.bottom <= a.y)
+
+    spec, pure = _pure_external_above_spec()
+
+    # Baseline: the SAME spec with the Theme 42 lift disabled would leave the
+    # account far below. We assert the POST-fix invariant directly: the account
+    # top sits just below the one band that x-overlaps its columns (the linked
+    # band), NOT below the lowest side band.
+    pd = le.layout(spec)
+    acct = pd.containers["acct"]
+    linked = pd.containers["linkedp"]
+    side_bands = [pd.containers[c] for c in pure]
+
+    # 1. The account clears the linked (overhead) band — its top is at or below
+    #    that band's bottom.
+    assert acct.y >= linked.bottom, "account not below its overhead linked band"
+
+    # 2. The account top is CLOSE to the overhead band (within a couple of band
+    #    gaps), i.e. it did not hang below the full side-stack extent.
+    lowest_side_bottom = max(b.bottom for b in side_bands)
+    assert acct.y < lowest_side_bottom, (
+        "account still hangs below the side stack — lift did not fire")
+
+    # 3. No side band collides with the (raised) account box.
+    for i, b in enumerate(side_bands):
+        assert not ov(acct, b), f"{pure[i]} collides the raised account"
+
+    # 4. The side bands sit entirely to the right of the account (the condition
+    #    that makes the lift safe).
+    assert min(b.x for b in side_bands) >= acct.right
+
+
 def test_role_scope_table_covers_the_nine_neutral_types():
     from rule_engine.constants import NEUTRAL_RESOURCE_TYPES
     from rule_engine.layout.base import role_scope

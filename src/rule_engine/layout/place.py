@@ -293,6 +293,59 @@ def _wrap_external_bands(placed: Dict[str, Box], spec: DiagramSpec) -> Dict[str,
         for i in ids:
             b = out[i]
             out[i] = replace(b, x=_snap(b.x + dx), y=_snap(b.y + dy))
+
+    # Theme 42: lift the subject up to the bands that actually sit ABOVE it.
+    # `_place_base` drops the account/subject below the WHOLE external-lane
+    # extent, which is correct when every external band is a row above it. But
+    # once the pure-external bands are stacked into a side column (Theme 41) or
+    # otherwise moved beside the subject, the bands that forced the drop no
+    # longer sit over the subject's columns — only the account-linked ingress
+    # row does — so the subject hangs far below its one real overhead band,
+    # leaving a tall dead-space gap and raking its cross-band edges (e.g. the
+    # ingress CloudFront→API-Gateway drop and the Lambda→Atlas return) across
+    # it. Lift every inner (subject) node UP by the slack between the subject
+    # top and the lowest bottom of the bands that genuinely x-overlap the
+    # subject's columns (plus one gap). Scoped hard: armed only when the subject
+    # sits BELOW the external bands (band_top < subj_top — the landscape case)
+    # AND at least one band does NOT x-overlap the subject (so there is slack to
+    # reclaim; a plain single-row-above layout has every band overlapping and is
+    # untouched). The lift never moves a node to a NEGATIVE y, and because the
+    # non-overlapping bands are by definition clear of the subject's x-span,
+    # raising the subject into their y-range collides with none of them.
+    if inner and subj_top is not None and band_top < subj_top:
+        def _band_box(gid):
+            gx1, gy1, gx2, gy2 = group_bbox[gid]
+            dx, dy = moves[gid]
+            return (gx1 + dx, gy1 + dy, gx2 + dx, gy2 + dy)
+
+        over = []  # bands whose final x-span overlaps the subject's columns
+        side = []  # bands entirely beside the subject
+        for gid in order:
+            bx1, by1, bx2, by2 = _band_box(gid)
+            if not (bx2 <= subj_left or subj_right <= bx1):
+                over.append((bx1, by1, bx2, by2))
+            else:
+                side.append((bx1, by1, bx2, by2))
+        if over and side:
+            overhead_bottom = max(by2 for _, _, _, by2 in over)
+            new_top = _snap(overhead_bottom + _external_band_gap())
+            # `placed` holds NODES only (containers are sized later), so subj_top
+            # is the topmost in-subject NODE, which sits inside its container
+            # chrome: size_containers will wrap the subject box ~CONTAINER_PAD
+            # per nesting level ABOVE that node. Reserve that chrome so the
+            # resized BOX — not just the node — clears the overhead band. The
+            # subject here is a nested envelope (account ⊃ region ⊃ vpc at most),
+            # so three top pads is a safe, slightly-conservative margin: the
+            # box lands at or just below new_top, never overlapping the band.
+            nest_margin = 3 * CONTAINER_PAD
+            lift = (subj_top - new_top) - nest_margin
+            if lift > 0:
+                external_set = external_ids
+                for nid, b in list(out.items()):
+                    if nid in external_set:
+                        continue
+                    out[nid] = replace(b, y=_snap(max(0, b.y - lift)))
+
     return out
 
 
