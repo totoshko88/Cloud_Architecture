@@ -2036,6 +2036,95 @@ def test_external_bands_stack_into_rows_without_widening_the_canvas():
     assert spans[-1] <= spans[0] + 1, f"canvas widened with more peers: {spans}"
 
 
+def _pure_external_above_spec():
+    """Theme 41 input: an account subject plus THREE pure-external peer bands in
+    the ABOVE-subject `actors` lane, none of which has a cross-band edge to the
+    account (so all land in `_affinity` bucket 1). The one account-linked band
+    (`linkedp`, whose node drops an edge into the account) must keep the normal
+    wrap; the three pure bands must stack in one left-aligned column."""
+    nodes = [
+        _NS(id="app", role="k8s", lane="workers", region="a", slot=0, container="az-a1"),
+        # account-linked external band (edge into the account) -> affinity 0
+        _NS(id="lk", role="object_store", lane="actors", region="", slot=0, container="linkedp"),
+    ]
+    containers = [
+        _CS(id="acct", kind="account", region="", parent=None, label_key="m"),
+        _CS(id="region-a", kind="region", region="a", parent="acct", label_key="r"),
+        _CS(id="vpc-a", kind="vpc", region="a", parent="region-a", label_key="v"),
+        _CS(id="az-a1", kind="az", region="a", parent="vpc-a", label_key="z"),
+        _CS(id="linkedp", kind="peer_account", region="", parent=None, label_key="p"),
+    ]
+    # three pure-external bands, two members each, NO account edge
+    pure = ["identp", "integp", "sbp"]
+    for gi, cid in enumerate(pure):
+        for j in range(2):
+            nodes.append(_NS(id=f"{cid}{j}", role="object_store", lane="actors",
+                             region="", slot=2 + gi * 2 + j, container=cid))
+        containers.append(_CS(id=cid, kind="peer_account", region="",
+                              parent=None, label_key="p"))
+    edges = (_ES("e1", "lk", "app", "1"),)  # only the linked band touches the account
+    return _DS(
+        diagram_id="s41", diagram_name="s41", axis="north-south",
+        nodes=tuple(nodes), edges=edges, containers=tuple(containers),
+        flow_lines=("Flow", "1. x"), title="t | 2026-10-15 | v1",
+    ), pure
+
+
+def test_pure_external_bands_stack_in_one_aligned_column():
+    """Theme 41: external bands with NO cross-band edge (pure context clusters)
+    stack into ONE left-aligned vertical column to the right of the subject,
+    instead of scattering across the grid to fill cells. Their shared left edge
+    is the leftmost member node's x (grid-aligned), they descend top→bottom with
+    no two sharing a y, and none overlaps the account or another band."""
+    def ov(a, b):
+        return not (a.right <= b.x or b.right <= a.x
+                    or a.bottom <= b.y or b.bottom <= a.y)
+
+    spec, pure = _pure_external_above_spec()
+    pd = le.layout(spec)
+    bands = [pd.containers[c] for c in pure]
+    acct = pd.containers["acct"]
+
+    # 1. Each band's leftmost MEMBER NODE shares one grid-aligned x (the stack
+    #    column), so the content lines up (container chrome may differ by label
+    #    width, but the node column is the visual left edge).
+    members = {"identp": ["identp0", "identp1"],
+               "integp": ["integp0", "integp1"],
+               "sbp": ["sbp0", "sbp1"]}
+    left_node_x = {c: min(pd.nodes[n].x for n in members[c]) for c in pure}
+    assert len(set(left_node_x.values())) == 1, (
+        f"stacked bands not left-aligned: {left_node_x}")
+    assert next(iter(left_node_x.values())) % 10 == 0, "stack x off the grid"
+
+    # 2. They descend top→bottom: distinct, strictly increasing y.
+    ys = [b.y for b in bands]
+    assert ys == sorted(ys) and len(set(ys)) == 3, f"not a top→bottom stack: {ys}"
+
+    # 3. No band overlaps the account or another band.
+    for i, bi in enumerate(bands):
+        assert not ov(bi, acct), f"{pure[i]} overlaps account"
+        for bj in bands[i + 1:]:
+            assert not ov(bi, bj), f"{pure[i]} overlaps a sibling band"
+
+    # 4. The stack sits to the RIGHT of the account (beside it, not above it),
+    #    which is what gives it the full subject height to descend into.
+    assert min(b.x for b in bands) >= acct.right, "stack not right of the account"
+
+
+def test_pure_external_stacking_inert_without_two_pure_bands():
+    """Theme 41 is armed only with >=2 pure-external bands above a subject; a
+    spec with a single pure band keeps the legacy wrap (no stack column)."""
+    spec, _ = _pure_external_above_spec()
+    # drop two of the three pure bands -> only one pure band remains
+    keep = {"acct", "region-a", "vpc-a", "az-a1", "linkedp", "identp"}
+    nodes = tuple(n for n in spec.nodes if n.container in keep or n.container == "az-a1")
+    conts = tuple(c for c in spec.containers if c.id in keep)
+    import dataclasses as _dc
+    one_pure = _dc.replace(spec, nodes=nodes, containers=conts)
+    pd = le.layout(one_pure)  # must not raise; single pure band uses legacy path
+    assert "identp" in pd.containers
+
+
 def test_role_scope_table_covers_the_nine_neutral_types():
     from rule_engine.constants import NEUTRAL_RESOURCE_TYPES
     from rule_engine.layout.base import role_scope

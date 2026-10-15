@@ -215,11 +215,39 @@ def _wrap_external_bands(placed: Dict[str, Box], spec: DiagramSpec) -> Dict[str,
     # gap, so a second column of bands clears the first.
     col_pitch = _snap((max_right - band_left) + _external_band_gap())
 
+    # Theme 41: single-column stack for the pure-external bands. The groups in
+    # affinity bucket 1 (``_affinity`` returns 0 for account-linked groups and
+    # 1 for groups with NO cross-band edge — pure external-context clusters:
+    # identity / integrations / sandbox on 09) have no edge that can cross
+    # anything, so scattering them through the shared left→right wrap only to
+    # fill grid cells reads as noise: the owner wants them lined up one under
+    # another, grid-aligned. When the bands sit ABOVE the subject (the
+    # landscape case) the clear top gap holds only one or two bands, so the wrap
+    # spills the rest into far-right columns at mismatched x — exactly the
+    # scatter the owner flagged. Instead, when there are ≥ 2 such pure-external
+    # groups above a subject, lift them OUT of the wrap and stack them in one
+    # dedicated column to the RIGHT of the subject, sharing a single left edge
+    # and descending top→bottom. A right-of-subject column has the subject's
+    # full height to grow into (it never descends INTO the account the way an
+    # above-subject stack would), so no height budget is needed and three bands
+    # line up cleanly. Zero crossings are added because none of these groups has
+    # a cross-band edge (proven by the affinity bucket). Linked groups keep the
+    # existing wrap untouched. Armed only in the above-subject landscape case
+    # with ≥ 2 pure-external groups, so every other diagram — and the whole
+    # shipped golden corpus, which declares no external bands at all — is inert.
+    pure_groups = [g for g in order if _affinity(g)[0] == 1]
+    stack_pure = (
+        subj_top is not None
+        and band_top < subj_top
+        and len(pure_groups) >= 2
+    )
+    linked_order = [g for g in order if g not in pure_groups] if stack_pure else order
+
     cur_x = band_left
     cur_y = band_top
     col_base_x = band_left
     moves: Dict[str, Tuple[int, int]] = {}
-    for gid in order:
+    for gid in linked_order:
         gx1, gy1, gx2, gy2 = group_bbox[gid]
         gw = gx2 - gx1
         # Horizontal wrap: if this group would overrun the subject width, drop
@@ -240,6 +268,22 @@ def _wrap_external_bands(placed: Dict[str, Box], spec: DiagramSpec) -> Dict[str,
             cur_y = band_top
         moves[gid] = (_snap(cur_x - gx1), _snap(cur_y - gy1))
         cur_x = _snap(cur_x + gw + _external_band_gap())
+
+    if stack_pure:
+        # Place the pure-external bands as one left-aligned vertical column to
+        # the right of everything laid so far (the linked bands + the subject),
+        # keeping a clear gap. The column's left edge is a single shared x; each
+        # band drops one footprint-height below the previous. Order top→bottom
+        # by declared order (stable), so the stack reads in the spec's intent.
+        linked_right = max(
+            (group_bbox[g][2] + moves[g][0]) for g in linked_order
+        ) if linked_order else max_right
+        stack_x = _snap(max(linked_right, max_right) + _external_band_gap())
+        stack_y = band_top
+        for gid in pure_groups:
+            gx1, gy1, gx2, gy2 = group_bbox[gid]
+            moves[gid] = (_snap(stack_x - gx1), _snap(stack_y - gy1))
+            stack_y = _snap(stack_y + (gy2 - gy1) + _external_band_gap())
 
     out = dict(placed)
     for gid, ids in groups.items():
