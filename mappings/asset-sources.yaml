@@ -82,8 +82,8 @@ providers:
     # (redistributable, unlike the SaaS brand marks). Commit pinned so the bytes
     # are reproducible; sha256/size populated by `--update-pins`.
     url: "https://codeload.github.com/kubernetes/community/tar.gz/53c338ecba4a2a9240f6654cca1d6a9dac25c785"
-    sha256: ""                   # populated by --update-pins
-    size: 0                      # populated by --update-pins
+    sha256: "655f7cc7d1824c32db96bdad3fce3d47eefce9ba6d52ded037a629919f99f12f"                   # populated by --update-pins
+    size: 45225969                      # populated by --update-pins
     unpack_to: k8s-icons
     kind: svg-png-tree          # per-resource SVG files in category folders
     icon_source: custom         # official SVG icons, referenced by file path
@@ -104,8 +104,8 @@ providers:
     # note below. Commit pinned so bytes are reproducible; sha256/size by
     # `--update-pins`.
     url: "https://registry.npmjs.org/simple-icons/-/simple-icons-13.0.0.tgz"
-    sha256: ""                   # populated by --update-pins
-    size: 0                      # populated by --update-pins
+    sha256: "95eff7ec9779578c91f9816cb82431bc7cce18375046845ec73c9876cf16c3bd"                   # populated by --update-pins
+    size: 6540389                      # populated by --update-pins
     unpack_to: opensource-raw
     kind: simple-icons           # fetch_assets colorizes the curated subset
     icon_source: custom
