@@ -33,14 +33,14 @@ from typing import Dict, List, Optional, Tuple
 
 try:  # package-relative import when used as ``rule_engine.layout.routers``
     from ..diagram_layout import ICON_SIZE, GRID, STAIR_STEP, COL_STEP, ROW_STEP, CONTAINER_PAD
-    from ..geometry import Box, LABEL_BAND, CONTAINER_LABEL_BAND, segment_crosses_box
+    from ..geometry import Box, LABEL_BAND, CONTAINER_LABEL_BAND, segment_crosses_box, RAIL_CLEARANCE, RAIL_MIN_SPAN
     from .model import Contact, Point, EdgeSpec, DiagramSpec
     from .contacts import _UPPER_QUARTER, _LOWER_QUARTER
     from .corridors import CorridorAllocator, CorridorExhaustedError
     from .base import SpecError, _snap, REGION_GAP, col_step, row_step, region_gap
 except ImportError:  # pragma: no cover - fallback for flat-module execution
     from diagram_layout import ICON_SIZE, GRID, STAIR_STEP, COL_STEP, ROW_STEP, CONTAINER_PAD  # type: ignore[no-redef]
-    from geometry import Box, LABEL_BAND, CONTAINER_LABEL_BAND, segment_crosses_box  # type: ignore[no-redef]
+    from geometry import Box, LABEL_BAND, CONTAINER_LABEL_BAND, segment_crosses_box, RAIL_CLEARANCE, RAIL_MIN_SPAN  # type: ignore[no-redef]
     from layout.model import Contact, Point, EdgeSpec, DiagramSpec  # type: ignore[no-redef]
     from layout.contacts import _UPPER_QUARTER, _LOWER_QUARTER  # type: ignore[no-redef]
     from layout.corridors import CorridorAllocator, CorridorExhaustedError  # type: ignore[no-redef]
@@ -575,6 +575,17 @@ def route_spine(
     # Side corridor x: an allocated grid line in the gap right of the source,
     # shared with every other vertical leg in that gap (see _gap_column_x).
     corridor_x = _gap_column_x(allocator, src, edge.id)
+    # Theme 38a: keep the drop corridor off a NEIGHBOURING icon's footprint. The
+    # allocated lane can land ~2px from a stacked glyph in the gap column (03-e2
+    # beside SSM+KMS, a RAIL_CLEARANCE defect); nudge it to the nearest grid line
+    # in the SAME gap (right of src, before the next column) that clears every
+    # unrelated icon over the drop span. A route that already clears is untouched
+    # (byte-inert); if nothing in the gap does better the lane stays put.
+    _drop_lo, _drop_hi = _snap(first[1]), _snap(entry[1])
+    corridor_x = _nudge_clear_of_icons(
+        corridor_x, _drop_lo, _drop_hi, others, (src.id, tgt.id),
+        src.right + GRID, src.x + col_step() - GRID,
+    )
     # The stair's first waypoint moves onto the same allocated corridor x, so the
     # vertical leg and its step-out are one line (no doubled stub).
     first = (corridor_x, first[1])
@@ -1231,6 +1242,71 @@ def _column_is_clear(
         if b.x <= x <= b.right and not (b.bottom <= lo or b.y >= hi):
             return False
     return True
+
+
+def _icon_clearance(x: float, y_lo: float, y_hi: float,
+                    obstacles: List[Box], skip: Tuple[str, ...]) -> float:
+    """Nearest side-border clearance of the vertical line ``x`` over ``[y_lo,y_hi]``.
+
+    The same measure :func:`rule_engine.geometry.route_cost` uses to detect a
+    *rail* — ``min(|x - box.x|, |x - box.right|)`` over every non-``skip`` node
+    whose own vertical extent overlaps the run — but evaluated at ROUTING time so
+    the chooser can avoid landing a corridor flush against a glyph, rather than
+    the linter flagging it afterwards. Returns ``+inf`` when no node overlaps the
+    span (nothing to clear)."""
+    lo, hi = sorted((y_lo, y_hi))
+    best = float("inf")
+    for b in obstacles:
+        if b.id in skip or b.bottom < lo or b.y > hi:
+            continue
+        c = min(abs(x - b.x), abs(x - b.right))
+        if c < best:
+            best = c
+    return best
+
+
+def _nudge_clear_of_icons(x: float, y_lo: float, y_hi: float,
+                          obstacles: List[Box], skip: Tuple[str, ...],
+                          lo_bound: float, hi_bound: float) -> float:
+    """Theme 38a — push a vertical corridor off a neighbouring icon's footprint.
+
+    A chooser (:func:`_gap_column_x`, :func:`_free_drop_column`) picks a corridor
+    ``x`` by lane allocation / column clearance, but neither keeps a MINIMUM
+    distance from an *unrelated* icon it merely runs beside: a spine dropped in
+    the gap column next to a stacked icon can land ~2px off its border (03-e2 by
+    SSM+KMS), the rail defect ``route_cost`` measures with
+    :data:`RAIL_CLEARANCE`. This is the proactive companion — the same metric,
+    applied when the line is chosen.
+
+    When ``x`` already clears every non-``skip`` icon by :data:`RAIL_CLEARANCE`,
+    it is returned unchanged (so a clean route is byte-inert). Otherwise step to
+    the nearest ``GRID`` line within ``[lo_bound, hi_bound]`` whose clearance is
+    strictly larger AND at least :data:`RAIL_CLEARANCE`, preferring the smallest
+    move so the lane stays where it was meant to be. If no grid line in the band
+    does better, ``x`` is returned unchanged — the honest failure (a route 2px
+    from a glyph is never silently moved onto a worse one), never a regression.
+
+    Only a run at least :data:`RAIL_MIN_SPAN` long is considered: that is exactly
+    the length ``route_cost`` requires before a vertical reads as a *rail beside a
+    column* rather than a short step between adjacent rows. Gating on it keeps a
+    short tier-step (the HA-summary 80px legs) untouched — those are not rails and
+    moving them regressed the shipped corpus — while still catching a long spine
+    dropped flush against a glyph (03-e2, span 540)."""
+    if abs(y_hi - y_lo) < RAIL_MIN_SPAN:
+        return x
+    base = _icon_clearance(x, y_lo, y_hi, obstacles, skip)
+    if base >= RAIL_CLEARANCE:
+        return x
+    lo_i, hi_i = int(math.ceil(min(lo_bound, hi_bound) / GRID)) * GRID, \
+        int(math.floor(max(lo_bound, hi_bound) / GRID)) * GRID
+    if hi_i < lo_i:
+        return x
+    best_x, best_c = x, base
+    for cand in range(lo_i, hi_i + 1, GRID):
+        c = _icon_clearance(float(cand), y_lo, y_hi, obstacles, skip)
+        if c >= RAIL_CLEARANCE and (c > best_c or (c == best_c and abs(cand - x) < abs(best_x - x))):
+            best_x, best_c = float(cand), c
+    return _snap(best_x) if best_x != x else x
 
 
 def _free_drop_column(
