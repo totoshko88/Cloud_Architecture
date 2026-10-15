@@ -91,15 +91,17 @@ def summary_spec() -> DS:
             NS(id="ingress", role="k8s_ingress", lane="actors", region="", slot=0),
             NS(id="svc", role="k8s_service", lane="router", region="a", slot=0, container="ns-app"),
             NS(id="deploy", role="k8s_deployment", lane="workers", region="a", slot=0, container="ns-app"),
-            # ns-data stacked in the SAME region band as ns-app (not a disjoint
-            # peer band). A summary is the *shape* (<=12 nodes); placing the two
-            # namespaces in one vertical column keeps them as two distinct
-            # namespace boxes while packing the Cluster envelope tightly — the
-            # diagonal a/b split left the outer Cluster box with a dead-space
-            # ratio of 3.087 (> OUTER_DEAD_SPACE_RATIO 2.5). The landscape keeps
-            # the disjoint a/b peer bands, where the fuller content earns them.
-            NS(id="sts", role="k8s_statefulset", lane="data", region="a", slot=0, container="ns-data"),
-            NS(id="pvc", role="k8s_pvc", lane="data", region="a", slot=1, container="ns-data"),
+            # ns-data as a disjoint peer band (region "b") beside ns-app — the
+            # owner-chosen side-by-side shape. The Theme 45 primary-axis rebase
+            # (place_nodes) lifts region b so ns-data's top tier sits level with
+            # ns-app's, so the two namespace boxes share a top edge instead of
+            # landing diagonally — which keeps the Cluster envelope tight
+            # (dead-space well under OUTER_DEAD_SPACE_RATIO 2.5) AND keeps the
+            # summary wide-and-short so its flow raster stays within budget. The
+            # earlier stacked (both region "a") layout was tall-and-narrow and
+            # overflowed the flow raster height after width-upscale.
+            NS(id="sts", role="k8s_statefulset", lane="data", region="b", slot=0, container="ns-data"),
+            NS(id="pvc", role="k8s_pvc", lane="data", region="b", slot=1, container="ns-data"),
         ),
         edges=(
             ES(id="e1", source="ingress", target="svc", marker="1"),
@@ -110,7 +112,7 @@ def summary_spec() -> DS:
         containers=(
             CS(id="cluster", kind="account", region="", parent=None, label_key="cluster"),
             CS(id="ns-app", kind="namespace", region="a", parent="cluster", label_key="ns-app"),
-            CS(id="ns-data", kind="namespace", region="a", parent="cluster", label_key="ns-data"),
+            CS(id="ns-data", kind="namespace", region="b", parent="cluster", label_key="ns-data"),
         ),
         flow_lines=(
             "Flow",

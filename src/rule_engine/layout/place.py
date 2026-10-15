@@ -44,6 +44,7 @@ try:  # package-relative import when used as ``rule_engine.layout.place``
         _secondary_axis,
         _place_base,
         _region_secondary_offset,
+        _region_primary_rebase,
         _extent,
         _with_extent,
         _container_axes,
@@ -70,6 +71,7 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
         _secondary_axis,
         _place_base,
         _region_secondary_offset,
+        _region_primary_rebase,
         _extent,
         _with_extent,
         _container_axes,
@@ -459,9 +461,15 @@ def place_nodes(spec: DiagramSpec) -> Dict[str, Box]:
     base = _place_base(spec, base_x, base_y)
 
     # Pass 2: translate region B off along the secondary axis by the
-    # content-derived step, so peers sit side-by-side and never overlap.
+    # content-derived step, so peers sit side-by-side and never overlap. Theme 45:
+    # also lift region B along the PRIMARY (tier) axis so its topmost tier is
+    # level with region A's — a no-op (delta 0) when the peers share lanes (every
+    # symmetric HA golden), and the fix for a disjoint-lane peer (k8s ns-data)
+    # that would otherwise land diagonally below A and bloat the outer envelope.
     secondary = _secondary_axis(spec.axis)
+    primary = "y" if spec.axis == "north-south" else "x"
     offset = _region_secondary_offset(spec, base)
+    primary_lift = _region_primary_rebase(spec, base)
 
     placed: Dict[str, Box] = {}
     for node in spec.nodes:
@@ -469,6 +477,9 @@ def place_nodes(spec: DiagramSpec) -> Dict[str, Box]:
         if node.region == "b":
             low, size = _extent(box, secondary)
             box = _with_extent(box, secondary, _snap(low + offset), size)
+            if primary_lift:
+                plo, psize = _extent(box, primary)
+                box = _with_extent(box, primary, _snap(plo + primary_lift), psize)
         placed[node.id] = box
 
     # Compact flow only: centre each account-level ("") node over the SECONDARY

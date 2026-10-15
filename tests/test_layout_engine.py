@@ -210,6 +210,49 @@ def test_place_nodes_region_b_is_region_a_plus_fixed_step_left_right():
     assert next(iter(deltas)) >= le.REGION_GAP
 
 
+def test_disjoint_lane_peer_region_lifts_level_with_region_a():
+    # Theme 45: a peer region (b) whose lanes are a DISJOINT lower set from
+    # region A's is lifted along the PRIMARY (tier) axis so its topmost tier is
+    # level with region A's — the owner's side-by-side shape, no diagonal drop.
+    # (The symmetric-lane case is covered by the mirror tests above, where region
+    # A and B share lanes so the lift is a no-op and b.y == a.y still holds.)
+    spec = DiagramSpec(
+        diagram_id="disjoint-peer",
+        diagram_name="disjoint-peer",
+        axis="north-south",
+        nodes=(
+            # region A occupies the HIGH tiers (router, workers)…
+            NodeSpec(id="svc", role="serverless_fn", lane="router", region="a", slot=0),
+            NodeSpec(id="app", role="serverless_fn", lane="workers", region="a", slot=0),
+            # …region B occupies only the LOW tier (data) — a disjoint lower set.
+            NodeSpec(id="sts", role="managed_sql", lane="data", region="b", slot=0),
+            NodeSpec(id="pvc", role="managed_sql", lane="data", region="b", slot=1),
+        ),
+        edges=(),
+        containers=(),
+        flow_lines=("Flow",),
+        title="disjoint-peer | 2025-01-15 | v1",
+    )
+    placed = le.place_nodes(spec)
+    top_a = min(placed["svc"].y, placed["app"].y)
+    top_b = min(placed["sts"].y, placed["pvc"].y)
+    # Region B's top tier is lifted LEVEL with region A's top tier (not dropped
+    # to its own absolute data-lane y, which would land it below region A).
+    assert top_b == top_a
+    # Region B is still offset to the right along the secondary (x) axis.
+    assert placed["sts"].x > placed["svc"].x
+    assert (placed["sts"].x - placed["svc"].x) % le.GRID == 0
+
+
+def test_shared_lane_peer_region_lift_is_a_no_op():
+    # Theme 45 byte-inertness guard: when region A and region B share their
+    # topmost lane (every HA multiregion golden), the primary-axis rebase delta
+    # is 0, so region B stays mirror-symmetric with A on the primary axis.
+    placed = le.place_nodes(_placement_spec("north-south"))
+    for a_id, b_id in (("wa0", "wb0"), ("da0", "db0")):
+        assert placed[b_id].y == placed[a_id].y
+
+
 def test_place_nodes_axis_maps_lane_and_slot_to_the_right_axes():
     # Req 2.2: north-south → lane index is the row (y), slot is the column (x).
     ns = le.place_nodes(_placement_spec("north-south"))

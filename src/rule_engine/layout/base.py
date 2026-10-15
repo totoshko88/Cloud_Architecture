@@ -1419,6 +1419,43 @@ def _region_secondary_offset(spec: DiagramSpec, base: Dict[str, Box]) -> int:
     return _snap(extent + region_gap())
 
 
+def _region_primary_rebase(spec: DiagramSpec, base: Dict[str, Box]) -> int:
+    """Return the primary-axis shift that lifts region B's top band level with A.
+
+    Theme 45 (1.10.11). A peer region sits beside region A along the *secondary*
+    axis (:func:`_region_secondary_offset`); its nodes keep their own tier
+    (primary-axis) positions, which are driven by lane rank in :func:`_place_base`.
+    When the two peer regions share the same set of lanes — every shipped HA
+    multiregion golden, where ``lb_a``/``lb_b`` are both ``router``, ``db_a``/
+    ``db_b`` both ``data``, … — region A and region B already start on the SAME
+    topmost tier, so this returns ``0`` and placement is byte-identical.
+
+    When region B's lanes are a DISJOINT (lower) set from region A's — the k8s
+    summary, where ``ns-app`` uses ``router``/``workers`` and the peer ``ns-data``
+    uses only the lower ``data`` lane — region B's block would otherwise start
+    far below region A's, landing the two namespace boxes **diagonally** and
+    leaving the outer Cluster envelope with a large dead-space wedge
+    (ratio 3.087 > ``OUTER_DEAD_SPACE_RATIO`` 2.5). Lifting region B so its
+    topmost tier aligns with region A's topmost tier makes the two peer boxes
+    sit **side-by-side on a shared top edge** — the owner-chosen "variant A"
+    shape — with the Cluster envelope wrapping them tightly.
+
+    The shift is a pure function of the spec (determinism, Req 11.1): it is
+    ``top(region A) - top(region B)`` of the pre-offset primary-axis extents,
+    snapped to the grid. It is **non-positive** (a peer region can only start at
+    or below A, never above, since lane ranks only grow downward), so region B
+    is only ever lifted up to A, never pushed down. Returns ``0`` whenever the
+    two regions already share their topmost tier — the byte-inert path for every
+    symmetric a/b golden.
+    """
+    primary = "y" if spec.axis == "north-south" else "x"
+    a_boxes = [base[n.id] for n in spec.nodes if n.region == "a"]
+    b_boxes = [base[n.id] for n in spec.nodes if n.region == "b"]
+    if not a_boxes or not b_boxes:
+        return 0
+    top_a = min(_extent(b, primary)[0] for b in a_boxes)
+    top_b = min(_extent(b, primary)[0] for b in b_boxes)
+    return _snap(top_a - top_b)
 
 
 # ---------------------------------------------------------------------------
