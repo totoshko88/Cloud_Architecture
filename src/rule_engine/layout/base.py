@@ -25,6 +25,7 @@ byte-identical to the pre-split output (R1.1, R1.2).
 
 from __future__ import annotations
 
+import contextvars as _contextvars
 from typing import Dict, List, Optional, Tuple
 
 try:  # package-relative import when used as ``rule_engine.layout.base``
@@ -267,6 +268,125 @@ REGION_STEP = 3 * COL_STEP  # 660, a whole GRID multiple
 #: Secondary-axis offset for a node's ``sub`` (a sub-row: api / monitoring band).
 #: A whole GRID multiple so ``sub`` never knocks a node off the grid.
 SUB_STEP = ROW_STEP // 2  # 80, a whole GRID multiple
+
+# ---------------------------------------------------------------------------
+# Per-spec SPACING override (Theme 36) — a per-call ContextVar read through
+# accessors. The constants above are the canonical FLOOR; a spec may widen the
+# grid (never tighten it). ContextVar (not a module global) is per-call-safe:
+# concurrent / nested ``layout()`` calls never see each other's override, and
+# the empty default resolves every accessor to its canonical constant, so a
+# spec that sets nothing is byte-identical to the pre-Theme-36 engine.
+# ---------------------------------------------------------------------------
+
+#: Active (col, row, sub) step triple for the current ``layout()`` call, or
+#: ``None`` when the spec set no override (the common path → canonical steps).
+#: Resolved ONCE at the ``layout()`` entry (:func:`resolve_spacing`) and set for
+#: the whole placement+routing run by :class:`_spacing_scope`.
+_SPACING: "_contextvars.ContextVar[Optional[Tuple[int, int, int]]]" = (
+    _contextvars.ContextVar("rule_engine_layout_spacing", default=None)
+)
+
+
+def col_step() -> int:
+    """Active secondary-axis step — :data:`COL_STEP` unless a spec widened it."""
+    s = _SPACING.get()
+    return COL_STEP if s is None else s[0]
+
+
+def row_step() -> int:
+    """Active primary-axis step — :data:`ROW_STEP` unless a spec widened it."""
+    s = _SPACING.get()
+    return ROW_STEP if s is None else s[1]
+
+
+def sub_step() -> int:
+    """Active ``sub`` sub-row step — :data:`SUB_STEP` unless a spec widened it."""
+    s = _SPACING.get()
+    return SUB_STEP if s is None else s[2]
+
+
+def region_gap() -> int:
+    """Active region clear-gap — :data:`REGION_GAP` scaled with the live col step."""
+    return 2 * col_step()
+
+
+def region_step() -> int:
+    """Active nominal region step — :data:`REGION_STEP` scaled with the live col step."""
+    return 3 * col_step()
+
+
+def resolve_spacing(spec) -> Optional[Tuple[int, int, int]]:
+    """Resolve a spec's optional spacing override to an active ``(col, row, sub)``.
+
+    Returns ``None`` when the spec sets no ``col_step`` / ``row_step`` /
+    ``sub_step`` (the common path — every accessor then falls back to its
+    canonical constant and the layout is byte-identical to the pre-Theme-36
+    engine). When any field is set, each PROVIDED value is validated and the
+    unset ones take their canonical constant:
+
+    * a provided value must be a whole :data:`GRID` multiple, and
+    * a provided value must be ``>=`` its canonical floor (the engine only ever
+      spreads *wider* than the canonical grid — a tighter step collides icons
+      and breaks ``check_grid_alignment``).
+
+    Raises :class:`ValueError` on a non-``GRID``-multiple or below-floor value.
+    """
+    col = getattr(spec, "col_step", None)
+    row = getattr(spec, "row_step", None)
+    sub = getattr(spec, "sub_step", None)
+    if col is None and row is None and sub is None:
+        return None
+
+    def _check(name: str, value, floor: int) -> int:
+        if value is None:
+            return floor
+        if not isinstance(value, int) or isinstance(value, bool):
+            raise ValueError(
+                f"spacing override {name}={value!r} must be an int"
+            )
+        if value % GRID != 0:
+            raise ValueError(
+                f"spacing override {name}={value} must be a whole GRID "
+                f"({GRID}) multiple"
+            )
+        if value < floor:
+            raise ValueError(
+                f"spacing override {name}={value} must be >= the canonical "
+                f"floor {floor} (the engine only spreads wider, never tighter)"
+            )
+        return value
+
+    return (
+        _check("col_step", col, COL_STEP),
+        _check("row_step", row, ROW_STEP),
+        _check("sub_step", sub, SUB_STEP),
+    )
+
+
+class _spacing_scope:
+    """Context manager binding the active spacing triple for a ``layout()`` run.
+
+    ``with _spacing_scope(resolve_spacing(spec)): ...`` sets :data:`_SPACING` on
+    enter and resets it on exit (restoring any outer binding, so nested
+    ``layout()`` calls are safe). ``None`` is a valid value — it binds the
+    canonical-constant path explicitly, shielding the run from an outer scope's
+    override.
+    """
+
+    __slots__ = ("_value", "_token")
+
+    def __init__(self, value: Optional[Tuple[int, int, int]]):
+        self._value = value
+        self._token = None
+
+    def __enter__(self):
+        self._token = _SPACING.set(self._value)
+        return self
+
+    def __exit__(self, *exc):
+        _SPACING.reset(self._token)
+        return False
+
 
 #: The account-level origin (region ""), on the grid. Region A starts here; a
 #: node's slot / lane index step out from it. Region B = this + REGION_STEP.
@@ -651,7 +771,7 @@ def _band_packing(spec: DiagramSpec) -> Tuple[Dict[int, int], Dict[int, int]]:
             # a single grid line, so the allocator fell back into the caption band
             # and the account-row runs (WAF→CDN, DNS→passive-LB) sliced the
             # ``vpc-…`` captions no matter how the band was narrowed.
-            start = _snap(lo * ROW_STEP + CONTAINER_LABEL_BAND + CONTAINER_PAD)
+            start = _snap(lo * row_step() + CONTAINER_LABEL_BAND + CONTAINER_PAD)
             if any(c.kind == "region" for c in spec.containers):
                 start += CONTAINER_LABEL_BAND + CONTAINER_PAD
             start += band_lane.get(band, 0)
@@ -679,7 +799,7 @@ def _band_packing(spec: DiagramSpec) -> Tuple[Dict[int, int], Dict[int, int]]:
         # A horizontal band is (max_sub_row + 1) rows tall (main row + any
         # sub-rows), each ROW_STEP apart, plus the icon + label footprint.
         rows = sub_rows_by_band.get(band, 0)
-        content_height = rows * ROW_STEP + ICON_SIZE + LABEL_BAND
+        content_height = rows * row_step() + ICON_SIZE + LABEL_BAND
         prev_end = start + content_height
         prev_has_box = has_box
     return band_start, band_min_lane
@@ -800,7 +920,7 @@ def _place_loose_regional(
         return e.target if e.source == nid else e.source
 
     def _free(x: int, y: int) -> bool:
-        return all(not (ox == x and abs(oy - y) < ROW_STEP) for ox, oy in pos.values())
+        return all(not (ox == x and abs(oy - y) < row_step()) for ox, oy in pos.values())
 
     base_rows = set(rows) | ({above_row} if above_row is not None else set())
     min_row = min(base_rows) if base_rows else fallback_y
@@ -811,7 +931,7 @@ def _place_loose_regional(
         # a regional column — so a chain grows in straight drops from a node the
         # fallback stacked off the lattice (an AZ band row is not on it).
         extra = {
-            y + d * ROW_STEP
+            y + d * row_step()
             for (x, y) in pos.values() if x in regional_xs
             for d in (-1, 1)
         }
@@ -861,7 +981,7 @@ def _place_loose_regional(
             x = col_x[default_col]
             y = fallback_y
             while not _free(x, y):
-                y += ROW_STEP
+                y += row_step()
             out[pick] = (default_col, y)
         else:
             best: Optional[Tuple[int, int, int]] = None
@@ -920,7 +1040,7 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
     banded_kinds = {"az", "vpc"}
     # The primary axis (the one lanes/tiers step along) is y (ROW_STEP) for a
     # North–South diagram and x (COL_STEP) for a left→right diagram.
-    primary_step = ROW_STEP if spec.axis == "north-south" else COL_STEP
+    primary_step = row_step() if spec.axis == "north-south" else col_step()
     # Compact mode (small flow): map each OCCUPIED lane to a consecutive rank so
     # the flow's tiers sit on adjacent rows with no empty lane bands between them
     # (e.g. router/workers/data → ranks 0/1/2). Shared across regions so peers
@@ -1021,10 +1141,10 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
         primary = lane_offset[lane_i] if compact else lane_i * primary_step
         slot = slot_rank.get(node.id, node.slot)
         if spec.axis == "north-south":
-            return (base_x + slot * COL_STEP + node.sub * SUB_STEP,
+            return (base_x + slot * col_step() + node.sub * sub_step(),
                     base_y + primary)
         return (base_x + primary,
-                base_y + slot * ROW_STEP + node.sub * SUB_STEP)
+                base_y + slot * row_step() + node.sub * sub_step())
 
     if region_direct and spec.axis == "north-south":
         banded_y: Dict[str, int] = {}
@@ -1034,8 +1154,8 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
                 regional_col_x[n.region] = max(
                     regional_col_x.get(n.region, 0), band_within[n.id][0]
                 )
-                banded_y[n.id] = base_y + band_start[az_band[n.id]] + band_within[n.id][1] * ROW_STEP
-                banded_x[n.id] = base_x + band_within[n.id][0] * COL_STEP
+                banded_y[n.id] = base_y + band_start[az_band[n.id]] + band_within[n.id][1] * row_step()
+                banded_x[n.id] = base_x + band_within[n.id][0] * col_step()
         # Account-level / external nodes keep their lane-grid origin; they are
         # known positions a regional node may be placed next to.
         free_xy = {
@@ -1116,7 +1236,7 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
                 # the later one (lane/slot order) steps down to the next free row.
                 y = anchors[m.id][0]
                 while y in inner_used:
-                    y += ROW_STEP
+                    y += row_step()
                 inner_used.add(y)
                 regional_y[m.id] = y
                 regional_col[m.id] = 1
@@ -1124,19 +1244,19 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
             for m in multi:
                 y = min(anchors[m.id])
                 while y in used:
-                    y += ROW_STEP
+                    y += row_step()
                 regional_y[m.id] = y
                 used.add(y)
                 regional_col[m.id] = 2 if two_cols else 1
             if not two_cols:
                 used |= {regional_y[m.id] for m in single}
-            nxt = (max(used) + ROW_STEP) if used else (
+            nxt = (max(used) + row_step()) if used else (
                 base_y + (min(band_start.values()) if band_start else 0))
             if loose:
                 # 1.10.6: place the unanchored nodes beside their placed
                 # neighbours instead of stacking them all under the column.
                 col_x = {
-                    off: base_x + (regional_col_x.get(region, 0) + off) * COL_STEP
+                    off: base_x + (regional_col_x.get(region, 0) + off) * col_step()
                     + 2 * CONTAINER_PAD
                     for off in _REGIONAL_COLS
                 }
@@ -1159,14 +1279,14 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
                 last_row = max(region_rows + [nxt])
                 rows = sorted(
                     set(region_rows) | feeder_rows
-                    | {first_row + k * ROW_STEP
-                       for k in range(0, (last_row - first_row) // ROW_STEP + len(loose) + 2)}
+                    | {first_row + k * row_step()
+                       for k in range(0, (last_row - first_row) // row_step() + len(loose) + 2)}
                 )
                 # The row above the first banded row is usable only when the
                 # region can grow up into it and still clear every account-level
                 # node above it (its footprint) by two pads — the region's caption
                 # strip and one free corridor lane.
-                above = first_row - ROW_STEP
+                above = first_row - row_step()
                 above_top = above - (CONTAINER_PAD + CONTAINER_LABEL_BAND)
                 ceiling = max(
                     (y + ICON_SIZE + LABEL_BAND for (_x, y) in free_xy.values() if y < first_row),
@@ -1241,14 +1361,14 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
         banded = node.container is not None and kind_of.get(node.container) in banded_kinds
         if node.id in regional_y:
             col = regional_col_x.get(node.region, 0) + regional_col[node.id]
-            x = regional_abs_x.get(node.id, base_x + col * COL_STEP + 2 * CONTAINER_PAD)
+            x = regional_abs_x.get(node.id, base_x + col * col_step() + 2 * CONTAINER_PAD)
             y = regional_y[node.id]
         elif banded and spec.axis == "north-south":
             # Horizontal band: column across (x), tier band + sub-row down (y).
             band = az_band[node.id]
             col, sub_row = band_within[node.id]
-            x = base_x + col * COL_STEP
-            y = base_y + band_start[band] + sub_row * ROW_STEP
+            x = base_x + col * col_step()
+            y = base_y + band_start[band] + sub_row * row_step()
         else:
             # Non-banded, or the left→right axis: lane → primary, slot →
             # secondary, sub nudges secondary. In compact mode the lane's
@@ -1261,11 +1381,11 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
                 primary_offset += _ext_lift
             slot = slot_rank.get(node.id, node.slot)
             if spec.axis == "north-south":
-                x = base_x + slot * COL_STEP + node.sub * SUB_STEP
+                x = base_x + slot * col_step() + node.sub * sub_step()
                 y = base_y + primary_offset + free_lane_shift.get(node.region, 0)
             elif spec.axis == "left-right":
                 x = base_x + primary_offset
-                y = base_y + slot * ROW_STEP + node.sub * SUB_STEP
+                y = base_y + slot * row_step() + node.sub * sub_step()
             else:
                 raise SpecError(
                     f"diagram {spec.diagram_id!r} declares unknown axis "
@@ -1292,11 +1412,11 @@ def _region_secondary_offset(spec: DiagramSpec, base: Dict[str, Box]) -> int:
         base[n.id].footprint(LABEL_BAND) for n in spec.nodes if n.region == "a"
     ]
     if not a_boxes:
-        return _snap(REGION_GAP)
+        return _snap(region_gap())
     lo = min(_extent(b, secondary)[0] for b in a_boxes)
     hi = max(_extent(b, secondary)[0] + _extent(b, secondary)[1] for b in a_boxes)
     extent = hi - lo
-    return _snap(extent + REGION_GAP)
+    return _snap(extent + region_gap())
 
 
 

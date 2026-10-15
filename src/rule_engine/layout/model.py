@@ -183,6 +183,26 @@ class DiagramSpec:
     #: text given to ``diagram_layout.Node(label=…)``, e.g.
     #: ``node_labels=tuple({"users": "Quick users"}.items())``.
     node_labels: Tuple[Tuple[str, str], ...] = ()
+    #: Optional **per-spec grid-spacing override** (Theme 36). The lane/slot grid
+    #: steps are canonical module constants — ``COL_STEP`` (220) along the
+    #: secondary axis, ``ROW_STEP`` (160) along the primary, ``SUB_STEP`` (80) for
+    #: a node's ``sub`` sub-row. For the densest fans those fixed steps force
+    #: residual ``edge-crossing-excess`` warnings; the coordinate-free way to
+    #: "spread the services wider" is to widen the grid itself.
+    #:
+    #: ``None`` (the default on every field) ⇒ use the canonical constant, so
+    #: every existing spec and shipped golden lays out **byte-identically**. A
+    #: provided value must be a whole :data:`~rule_engine.diagram_layout.GRID`
+    #: multiple **≥ the canonical constant** — the engine only ever spreads
+    #: *wider* than the canonical grid, never tighter (a tighter step collides
+    #: icons and breaks ``check_grid_alignment``). Validated once at the
+    #: :func:`~rule_engine.layout.layout` entry by
+    #: :func:`~rule_engine.layout.base.resolve_spacing`, which raises
+    #: :class:`ValueError` on a non-multiple or below-floor value. Not a
+    #: coordinate: it names a *step size*, never an ``x``/``y``.
+    col_step: Optional[int] = None
+    row_step: Optional[int] = None
+    sub_step: Optional[int] = None
 
 
 # ---------------------------------------------------------------------------

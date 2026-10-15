@@ -39,6 +39,7 @@ try:  # package-relative import when used as ``rule_engine.layout.place``
         _ORIGIN,
         _snap,
         _grid_ceil,
+        col_step,
         _validate_spec,
         _secondary_axis,
         _place_base,
@@ -64,6 +65,7 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
         _ORIGIN,
         _snap,
         _grid_ceil,
+        col_step,
         _validate_spec,
         _secondary_axis,
         _place_base,
@@ -89,8 +91,11 @@ _EXTERNAL_BAND_KINDS = frozenset({"peer_account", "external_cloud"})
 
 #: Horizontal gap between two external sibling boxes on one band, and the
 #: vertical gap between stacked external bands. One region step keeps a clear
-#: lane for a cross-boundary edge between peers; a whole GRID multiple.
-_EXTERNAL_BAND_GAP = _grid_ceil(COL_STEP)
+#: lane for a cross-boundary edge between peers; a whole GRID multiple. Scales
+#: with the live column step (Theme 36) — resolved per ``layout()`` call, not at
+#: import — so a widened spec spreads its external bands too.
+def _external_band_gap() -> int:
+    return _grid_ceil(col_step())
 
 
 def _wrap_external_bands(placed: Dict[str, Box], spec: DiagramSpec) -> Dict[str, Box]:
@@ -176,10 +181,10 @@ def _wrap_external_bands(placed: Dict[str, Box], spec: DiagramSpec) -> Dict[str,
         subj_top = min(b.y for b in inner)
         subj_bottom = max(b.y + b.h for b in inner)
         band_left = subj_left
-        max_right = max(subj_right, subj_left + 2 * COL_STEP)
+        max_right = max(subj_right, subj_left + 2 * col_step())
     else:  # pragma: no cover - external-only spec is not a real diagram
         band_left = _ORIGIN[0]
-        max_right = band_left + 2 * COL_STEP
+        max_right = band_left + 2 * col_step()
         subj_top = subj_bottom = None
 
     # The external band starts one gap below the lowest external row as placed
@@ -200,7 +205,7 @@ def _wrap_external_bands(placed: Dict[str, Box], spec: DiagramSpec) -> Dict[str,
     # grows downward unbounded exactly as before -- backward-safe.
     band_height = None
     if subj_top is not None and band_top < subj_top:
-        clear = subj_top - band_top - _EXTERNAL_BAND_GAP
+        clear = subj_top - band_top - _external_band_gap()
         # Only arm the budget when a single band already fits the gap; otherwise
         # there is no room above the subject and we leave the legacy layout
         # (a degraded candidate the caller already flags) rather than crush it.
@@ -208,7 +213,7 @@ def _wrap_external_bands(placed: Dict[str, Box], spec: DiagramSpec) -> Dict[str,
             band_height = clear
     # Column pitch for the grid wrap: one subject-width-or-wider block plus a
     # gap, so a second column of bands clears the first.
-    col_pitch = _snap((max_right - band_left) + _EXTERNAL_BAND_GAP)
+    col_pitch = _snap((max_right - band_left) + _external_band_gap())
 
     cur_x = band_left
     cur_y = band_top
@@ -221,7 +226,7 @@ def _wrap_external_bands(placed: Dict[str, Box], spec: DiagramSpec) -> Dict[str,
         # to a new band one row-height down within the current column.
         if cur_x != col_base_x and cur_x + gw > col_base_x + (max_right - band_left):
             cur_x = col_base_x
-            cur_y = _snap(cur_y + row_h + _EXTERNAL_BAND_GAP)
+            cur_y = _snap(cur_y + row_h + _external_band_gap())
         # Vertical (height) wrap: if armed and this new band would push the
         # stack past the clear gap above the subject, start a new COLUMN to the
         # right at the top band row instead of descending into the subject.
@@ -234,7 +239,7 @@ def _wrap_external_bands(placed: Dict[str, Box], spec: DiagramSpec) -> Dict[str,
             cur_x = col_base_x
             cur_y = band_top
         moves[gid] = (_snap(cur_x - gx1), _snap(cur_y - gy1))
-        cur_x = _snap(cur_x + gw + _EXTERNAL_BAND_GAP)
+        cur_x = _snap(cur_x + gw + _external_band_gap())
 
     out = dict(placed)
     for gid, ids in groups.items():

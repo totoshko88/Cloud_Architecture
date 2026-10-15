@@ -25,10 +25,12 @@ try:  # package-relative import when used as ``rule_engine.layout.contacts``
     from ..diagram_layout import COL_STEP
     from ..geometry import Box
     from .model import Contact, EdgeSpec
+    from .base import col_step
 except ImportError:  # pragma: no cover - fallback for flat-module execution
     from diagram_layout import COL_STEP  # type: ignore[no-redef]
     from geometry import Box  # type: ignore[no-redef]
     from layout.model import Contact, EdgeSpec  # type: ignore[no-redef]
+    from layout.base import col_step  # type: ignore[no-redef]
 
 
 #: ``Contact`` (a unit-square fraction on a node face) is defined in
@@ -72,7 +74,7 @@ def _boxes_adjacent(a: Box, b: Box) -> bool:
 
     Used to detect the *straight-line* exit case: a target directly opposite on
     the same row and adjacent takes the right-centre exit (Req 5.1)."""
-    return a.y == b.y and 0 < (b.x - a.x) <= COL_STEP + a.w
+    return a.y == b.y and 0 < (b.x - a.x) <= col_step() + a.w
 
 
 def _box_directly_below(a: Box, b: Box, others: Optional[list] = None) -> bool:

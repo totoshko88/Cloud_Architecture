@@ -37,14 +37,14 @@ try:  # package-relative import when used as ``rule_engine.layout.routers``
     from .model import Contact, Point, EdgeSpec, DiagramSpec
     from .contacts import _UPPER_QUARTER, _LOWER_QUARTER
     from .corridors import CorridorAllocator, CorridorExhaustedError
-    from .base import SpecError, _snap, REGION_GAP
+    from .base import SpecError, _snap, REGION_GAP, col_step, row_step, region_gap
 except ImportError:  # pragma: no cover - fallback for flat-module execution
     from diagram_layout import ICON_SIZE, GRID, STAIR_STEP, COL_STEP, ROW_STEP, CONTAINER_PAD  # type: ignore[no-redef]
     from geometry import Box, LABEL_BAND, CONTAINER_LABEL_BAND, segment_crosses_box  # type: ignore[no-redef]
     from layout.model import Contact, Point, EdgeSpec, DiagramSpec  # type: ignore[no-redef]
     from layout.contacts import _UPPER_QUARTER, _LOWER_QUARTER  # type: ignore[no-redef]
     from layout.corridors import CorridorAllocator, CorridorExhaustedError  # type: ignore[no-redef]
-    from layout.base import SpecError, _snap, REGION_GAP  # type: ignore[no-redef]
+    from layout.base import SpecError, _snap, REGION_GAP, col_step, row_step, region_gap  # type: ignore[no-redef]
 
 
 EDGE_KINDS = ("straight", "spine", "fan-out-row", "cross-region", "back-edge")
@@ -57,7 +57,18 @@ EDGE_KINDS = ("straight", "spine", "fan-out-row", "cross-region", "back-edge")
 #: 2·COL_STEP`` (880) lands cleanly between them, so a 3-column in-region fan-out
 #: (e.g. app→objstore) is NOT mistaken for a cross-region hop. Genuine
 #: cross-region edges are additionally declared via ``kind_hint`` in the spec.
+#: Retained as the canonical module constant for API/back-compat (re-exported by
+#: ``layout_engine`` and referenced by tests); the DEFAULT value, equal to
+#: ``REGION_GAP + 2 * COL_STEP``.
 CROSS_REGION_SPAN = REGION_GAP + 2 * COL_STEP
+
+
+#: Active cross-region threshold. Scales with the live steps (Theme 36) —
+#: resolved per ``layout()`` call, not at import — so a widened spec's region
+#: classifier tracks its wider grid. Equal to :data:`CROSS_REGION_SPAN` under the
+#: default (unwidened) spacing.
+def _cross_region_span() -> int:
+    return region_gap() + 2 * col_step()
 
 
 class UnclassifiableEdgeError(ValueError):
@@ -120,7 +131,7 @@ def classify_edge(edge: EdgeSpec, placed: Dict[str, Box]) -> str:
         return "back-edge"
 
     # 2. straight: same row, adjacent to the right, nothing between.
-    if _same_row(src, tgt) and 0 < dx <= COL_STEP + src.w:
+    if _same_row(src, tgt) and 0 < dx <= col_step() + src.w:
         return "straight"
 
     # 2b. (1.10.6) straight at ANY distance: same row, and no other icon stands
@@ -140,7 +151,7 @@ def classify_edge(edge: EdgeSpec, placed: Dict[str, Box]) -> str:
     # 3. cross-region: a large rightward hop at roughly the same tier — but
     #    never between two nodes the spec places in ONE region (1.10.3: a zone
     #    app feeding the regional object store column is long, not cross-region).
-    if dx >= CROSS_REGION_SPAN and abs(dy) <= ROW_STEP and edge.same_region is not True:
+    if dx >= _cross_region_span() and abs(dy) <= row_step() and edge.same_region is not True:
         return "cross-region"
 
     # 4. fan-out-row: same row, to the right, but not adjacent.
@@ -261,7 +272,7 @@ def _gap_column_x(allocator: "CorridorAllocator", src: Box, edge_id: str) -> flo
     (e.g. lb→app-az2) off the fan-out step-out lanes in the same gap without any
     repair pass (``check_corridor_sharing`` clean by construction)."""
     gap_left = int(src.right)
-    gap_low, gap_high = allocator.column_gap(src.x, src.x + COL_STEP)
+    gap_low, gap_high = allocator.column_gap(src.x, src.x + col_step())
     return _snap(_allocate_or_first(allocator, f"vcol:{gap_left}", gap_low, gap_high))
 
 
@@ -309,8 +320,8 @@ def _inter_container_gap_x(
     # Target to the right of the box → gap just past its right edge; to the left
     # → gap just before its left edge. Half a grid-column into the gap.
     if tgt.x >= box.right:
-        return _snap(box.right + (COL_STEP - ICON_SIZE) // 2)
-    return _snap(box.x - (COL_STEP - ICON_SIZE) // 2)
+        return _snap(box.right + (col_step() - ICON_SIZE) // 2)
+    return _snap(box.x - (col_step() - ICON_SIZE) // 2)
 
 
 def _enclosing_container(box: Box, containers: Optional[Dict[str, Box]]) -> Optional[Box]:
@@ -553,7 +564,7 @@ def route_spine(
             and not (_tgt_box is not None and _box_contains(_tgt_box, src))):
         ey = _snap(entry[1])
         top_entry = entry_pt[1] is not None and entry_pt[1] <= 0.0
-        approach = _snap(entry[0]) if top_entry else _snap(tgt.x - (COL_STEP - ICON_SIZE) // 2)
+        approach = _snap(entry[0]) if top_entry else _snap(tgt.x - (col_step() - ICON_SIZE) // 2)
         waypoints = _dedupe_axis_collapse(
             [(straddle_x, _snap(first[1])), (straddle_x, ey), (approach, ey)], first)
         route = [_contact_point(src, exit_pt), (_snap(first[0]), _snap(first[1]))] + waypoints + [entry]
@@ -668,7 +679,7 @@ def route_fan_out_row(
 
     # Turn back toward the row in the gap just LEFT of the target (target_x -
     # ~half a gap): UP from a below-row lane, DOWN from an above-row one.
-    turn_x = _snap(tgt.x - (COL_STEP - ICON_SIZE) // 2)
+    turn_x = _snap(tgt.x - (col_step() - ICON_SIZE) // 2)
     # 1.10.3: several fan-outs into ONE target's left face (the regional object
     # store fed from every zone) must not share that turn column. The first keeps
     # the centred column; each later one (declared order — the lower source row)
@@ -752,7 +763,7 @@ def _hcorridor_below(src: Box, tgt: Box) -> bool:
     used to decide this on canvas room alone, which sent the worker→API-tier hop
     UP over the edge tier and back down the far side of the diagram even though its
     target was two rows below it."""
-    return (src.y - ROW_STEP) <= CONTAINER_PAD or tgt.y >= src.y + ROW_STEP
+    return (src.y - row_step()) <= CONTAINER_PAD or tgt.y >= src.y + row_step()
 
 
 def _exit_band_rank(
@@ -876,7 +887,7 @@ def decide_lane_sides(
         home = _enclosing_container(src, containers)
         if home is not None and not _box_contains(home, tgt):
             continue
-        run_lo, run_hi = src.right, tgt.x - (COL_STEP - ICON_SIZE) // 2
+        run_lo, run_hi = src.right, tgt.x - (col_step() - ICON_SIZE) // 2
         if any(run_lo < col < run_hi for col in approach_cols.get(src.y, ())):
             continue        # an inbound approach must cross this band
         above_capable.setdefault(edge.source, []).append(edge.id)
@@ -889,7 +900,7 @@ def decide_lane_sides(
             continue
         src, tgt = placed[edge.source], placed[edge.target]
         ey = exits[edge.id][1]
-        if (ey is None or ey < 1.0) and 0 < src.y - tgt.y <= ROW_STEP:
+        if (ey is None or ey < 1.0) and 0 < src.y - tgt.y <= row_step():
             sides[edge.id] = True
 
     for src_id, eids in sorted(above_capable.items()):
@@ -928,7 +939,7 @@ def decide_lane_sides(
     for eid, above in sorted(sides.items()):
         edge = spec.edges[order_index[eid]]
         src, tgt = placed[edge.source], placed[edge.target]
-        run_lo, run_hi = src.right, tgt.x - (COL_STEP - ICON_SIZE) // 2
+        run_lo, run_hi = src.right, tgt.x - (col_step() - ICON_SIZE) // 2
         claimed.setdefault((src.y, above), []).append(
             (min(run_lo, run_hi), max(run_lo, run_hi))
         )
@@ -941,7 +952,7 @@ def decide_lane_sides(
     ):
         src, tgt = placed[edge.source], placed[edge.target]
         natural = not _hcorridor_below(src, tgt)
-        room_above = (src.y - ROW_STEP) > CONTAINER_PAD
+        room_above = (src.y - row_step()) > CONTAINER_PAD
         span = _span(src, tgt)
         # A same-tier LEFT-entry hop (a replication run: rises near A, runs across,
         # drops into the target's LEFT face near B) prefers the roomier gap BELOW
@@ -1250,7 +1261,7 @@ def _free_drop_column(
         return across
     container = _enclosing_container(tgt, containers)
     left_edge = container.x if container is not None else 0.0
-    right_edge = container.right if container is not None else tgt.right + COL_STEP
+    right_edge = container.right if container is not None else tgt.right + col_step()
     candidates = []
     if tgt.x - left_edge >= 2 * GRID:
         centre = (left_edge + tgt.x) / 2.0
@@ -1291,9 +1302,9 @@ def _hcorridor_band(
     """
     if below:
         row_low = src.y + ICON_SIZE + LABEL_BAND + GRID
-        row_high = src.y + ROW_STEP
+        row_high = src.y + row_step()
     else:
-        row_low = (src.y - ROW_STEP) + ICON_SIZE + LABEL_BAND + GRID
+        row_low = (src.y - row_step()) + ICON_SIZE + LABEL_BAND + GRID
         row_high = src.y
     ceil = _target_container_top(edge, containers, tgt)
     if ceil is not None and row_low < ceil < row_high:
@@ -1537,7 +1548,7 @@ def route_back_edge(
     else:
         # LEFT entry: run left in the loop corridor to the gap just left of the
         # target, then drop into its left face. Clamp so the turn stays on-canvas.
-        left_x = _snap(max(tgt.x - (COL_STEP - ICON_SIZE) // 2, CONTAINER_PAD))
+        left_x = _snap(max(tgt.x - (col_step() - ICON_SIZE) // 2, CONTAINER_PAD))
         waypoints = [
             first,
             (first[0], loop_y),

@@ -81,7 +81,7 @@ try:  # package-relative import when used as ``rule_engine.layout.pipeline``
         route_edge,
         nudge_off_container_borders,
     )
-    from .base import TITLE_BAND, _snap
+    from .base import TITLE_BAND, _snap, col_step, resolve_spacing, _spacing_scope
     from .repair import (
         MAX_REPAIR_ITERS,
         LayoutError,
@@ -125,7 +125,7 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
         route_edge,
         nudge_off_container_borders,
     )
-    from layout.base import TITLE_BAND, _snap  # type: ignore[no-redef]
+    from layout.base import TITLE_BAND, _snap, col_step, resolve_spacing, _spacing_scope  # type: ignore[no-redef]
     from layout.repair import (  # type: ignore[no-redef]
         MAX_REPAIR_ITERS,
         LayoutError,
@@ -215,7 +215,7 @@ def _global_contacts(
                 exits[edge.id] = (0.5, 1.0)
                 entries[edge.id] = (0.0, 0.5) if blocked else (0.5, 0.0)
                 continue
-            left_gap_x = tgt.x - (COL_STEP - ICON_SIZE) // 2
+            left_gap_x = tgt.x - (col_step() - ICON_SIZE) // 2
             if left_gap_x < CONTAINER_PAD + GRID:
                 entries[edge.id] = (0.5, 0.0)   # no left gap → top-centre (Rule G)
         elif kind == "spine":
@@ -295,7 +295,7 @@ def _global_contacts(
                 b for nid, b in placed.items()
                 if nid in xregion_sources
                 and abs((b.y + b.h / 2) - (tgt.y + tgt.h / 2)) < 1e-6
-                and abs(b.x + COL_STEP - tgt.x) < 1e-6
+                and abs(b.x + col_step() - tgt.x) < 1e-6
             ),
             None,
         )
@@ -1067,29 +1067,35 @@ def layout(
     # waypoints (and now the placement) are chosen, never the artifact format
     # (R5.3), and all are deterministic functions of the spec (R5.1).
     spec = _annotate_edge_regions(spec)
-    try:
-        if legacy:
-            return _finish(spec, _place_and_route(spec))
-        if _placement:
-            # Default: the scored placement outer loop. Lazy import keeps the
-            # ``pipeline`` (which ``solver`` imports ``solve`` from at load) and
-            # ``solver.solve_placement`` (which imports ``layout`` back) graph
-            # one-directional at load time — the loop is entered only here, at
-            # call time.
-            try:
-                from .solver import solve_placement as _solve_placement
-            except ImportError:  # pragma: no cover - flat-module fallback
-                from layout.solver import solve_placement as _solve_placement  # type: ignore[no-redef]
-            return _solve_placement(spec, strict=strict)
-        # Inner scored route path (the placement loop's per-variant step, and the
-        # 1.8.0 route-only path): no placement search, just place → size → centre
-        # → scored solve → repair.
-        return _layout_scored_with_guard(spec, strict=strict)
-    except OverConnectedError as exc:
-        raise LayoutError(
-            f"layout({spec.diagram_id!r}) has an over-connected node — the "
-            f"diagram must be split or re-laned: {exc}"
-        ) from exc
+    # Theme 36: resolve the per-spec spacing override ONCE at the entry and bind
+    # it for the whole placement+routing run via the ContextVar. ``None`` (the
+    # common path, no override set) binds the canonical-constant path, so an
+    # unwidened spec is byte-identical to the pre-Theme-36 engine. The scope also
+    # shields a nested ``layout()`` call from an outer spec's override.
+    with _spacing_scope(resolve_spacing(spec)):
+        try:
+            if legacy:
+                return _finish(spec, _place_and_route(spec))
+            if _placement:
+                # Default: the scored placement outer loop. Lazy import keeps the
+                # ``pipeline`` (which ``solver`` imports ``solve`` from at load) and
+                # ``solver.solve_placement`` (which imports ``layout`` back) graph
+                # one-directional at load time — the loop is entered only here, at
+                # call time.
+                try:
+                    from .solver import solve_placement as _solve_placement
+                except ImportError:  # pragma: no cover - flat-module fallback
+                    from layout.solver import solve_placement as _solve_placement  # type: ignore[no-redef]
+                return _solve_placement(spec, strict=strict)
+            # Inner scored route path (the placement loop's per-variant step, and the
+            # 1.8.0 route-only path): no placement search, just place → size → centre
+            # → scored solve → repair.
+            return _layout_scored_with_guard(spec, strict=strict)
+        except OverConnectedError as exc:
+            raise LayoutError(
+                f"layout({spec.diagram_id!r}) has an over-connected node — the "
+                f"diagram must be split or re-laned: {exc}"
+            ) from exc
 
 
 def _annotate_edge_regions(spec: DiagramSpec) -> DiagramSpec:
