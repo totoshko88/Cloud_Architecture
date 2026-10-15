@@ -134,7 +134,35 @@ def _wrap_external_bands(placed: Dict[str, Box], spec: DiagramSpec) -> Dict[str,
         xs2 = max(_footprint(placed[i])[2] for i in ids)
         ys2 = max(_footprint(placed[i])[3] for i in ids)
         group_bbox[gid] = (xs1, ys1, xs2, ys2)
-    order = sorted(groups, key=lambda g: (group_bbox[g][0], group_bbox[g][1]))
+
+    # Edge-aware ordering (Theme 37). A purely geometric x-sort packs the groups
+    # left→right regardless of what each one connects to, so an account-linked
+    # group can land far from its target and its cross-band edge rakes across
+    # the grid (crossings-over-hard-cap). Instead order each group by the MEAN x
+    # of the subject-side nodes its member edges reach: a group that feeds the
+    # account sits above the columns it links to, so its edge drops almost
+    # straight down. Groups with NO account/SEP edge (pure external-context
+    # clusters — identity / integrations / sandbox here) have no edge to cross
+    # anything, so they sort LAST (by their own x) and fill the remaining grid
+    # cells without affecting the crossing count.
+    external_ids_all = {i for ids in groups.values() for i in ids}
+    _node_x = {nid: b.x for nid, b in placed.items()}
+
+    def _affinity(gid: str) -> Tuple[int, float, int]:
+        members = set(groups[gid])
+        targets = []
+        for e in spec.edges:
+            if e.source in members and e.target not in external_ids_all:
+                targets.append(_node_x.get(e.target))
+            elif e.target in members and e.source not in external_ids_all:
+                targets.append(_node_x.get(e.source))
+        targets = [x for x in targets if x is not None]
+        if targets:
+            return (0, sum(targets) / len(targets), group_bbox[gid][0])
+        # No account/SEP edge: sort after all linked groups, by own x.
+        return (1, float(group_bbox[gid][0]), group_bbox[gid][0])
+
+    order = sorted(groups, key=_affinity)
 
     # Width budget: the primary subject's horizontal extent (the account/region/
     # vpc/non-external nodes). The external grid wraps to stay within it so the
@@ -145,27 +173,66 @@ def _wrap_external_bands(placed: Dict[str, Box], spec: DiagramSpec) -> Dict[str,
     if inner:
         subj_left = min(b.x for b in inner)
         subj_right = max(b.x + b.w for b in inner)
+        subj_top = min(b.y for b in inner)
+        subj_bottom = max(b.y + b.h for b in inner)
         band_left = subj_left
         max_right = max(subj_right, subj_left + 2 * COL_STEP)
     else:  # pragma: no cover - external-only spec is not a real diagram
         band_left = _ORIGIN[0]
         max_right = band_left + 2 * COL_STEP
+        subj_top = subj_bottom = None
 
     # The external band starts one gap below the lowest external row as placed
     # (``_place_base`` already drops it below the account); keep that top.
     band_top = min(group_bbox[g][1] for g in order)
     row_h = max((group_bbox[g][3] - group_bbox[g][1]) for g in order)
 
+    # Height budget (Theme 37, tall-account fix). When the external bands sit
+    # ABOVE the subject (band_top < subj_top -- the landscape case, where the
+    # externals live in the top `actors` row and the account is a tall body
+    # below), a long VERTICAL stack of bands runs down INTO the account
+    # (container-overlap). Cap the stack to the clear vertical gap above the
+    # subject and, when it is exhausted, start a NEW COLUMN of bands to the
+    # right instead of descending. This keeps the external grid tucked in the
+    # dead space above the account and never overlapping it. The budget is only
+    # armed in that above-subject case; when the externals sit BELOW the subject
+    # (the 1.10.10 cross-cloud behaviour) band_height stays None and the stack
+    # grows downward unbounded exactly as before -- backward-safe.
+    band_height = None
+    if subj_top is not None and band_top < subj_top:
+        clear = subj_top - band_top - _EXTERNAL_BAND_GAP
+        # Only arm the budget when a single band already fits the gap; otherwise
+        # there is no room above the subject and we leave the legacy layout
+        # (a degraded candidate the caller already flags) rather than crush it.
+        if clear >= row_h:
+            band_height = clear
+    # Column pitch for the grid wrap: one subject-width-or-wider block plus a
+    # gap, so a second column of bands clears the first.
+    col_pitch = _snap((max_right - band_left) + _EXTERNAL_BAND_GAP)
+
     cur_x = band_left
     cur_y = band_top
+    col_base_x = band_left
     moves: Dict[str, Tuple[int, int]] = {}
     for gid in order:
         gx1, gy1, gx2, gy2 = group_bbox[gid]
         gw = gx2 - gx1
-        # Wrap: if this group would overrun the subject width, start a new band.
-        if cur_x != band_left and cur_x + gw > max_right:
-            cur_x = band_left
+        # Horizontal wrap: if this group would overrun the subject width, drop
+        # to a new band one row-height down within the current column.
+        if cur_x != col_base_x and cur_x + gw > col_base_x + (max_right - band_left):
+            cur_x = col_base_x
             cur_y = _snap(cur_y + row_h + _EXTERNAL_BAND_GAP)
+        # Vertical (height) wrap: if armed and this new band would push the
+        # stack past the clear gap above the subject, start a new COLUMN to the
+        # right at the top band row instead of descending into the subject.
+        if (
+            band_height is not None
+            and cur_y != band_top
+            and (cur_y + row_h) - band_top > band_height
+        ):
+            col_base_x = _snap(col_base_x + col_pitch)
+            cur_x = col_base_x
+            cur_y = band_top
         moves[gid] = (_snap(cur_x - gx1), _snap(cur_y - gy1))
         cur_x = _snap(cur_x + gw + _EXTERNAL_BAND_GAP)
 
