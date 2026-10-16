@@ -145,7 +145,7 @@ validate:
     # HTTPS only, so a fetch failure is a pin/integrity/transport failure — not a
     # transient to paper over. The old `|| echo WARNING` let a failed fetch
     # silently skip the asset-paths guard; the fetch now fails the pipeline.
-    - python scripts/fetch_assets.py --only gcp_category gcp_core azure aws oci
+    - python scripts/fetch_assets.py --only gcp_category gcp_core azure aws oci kubernetes opensource
     - echo "Verifying every mapping icon file path exists under the asset root"
     # Call the declared console script (not python -m) so a broken
     # [project.scripts] entry-point mapping is caught by CI too.

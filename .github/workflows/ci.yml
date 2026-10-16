@@ -128,7 +128,7 @@ jobs:
         # pin/integrity/transport failure — NOT a transient we should paper over.
         # The old ``|| echo WARNING`` let a failed fetch silently skip the
         # asset-paths guard; the fetch now fails the job.
-        run: python scripts/fetch_assets.py --only gcp_category gcp_core azure aws oci
+        run: python scripts/fetch_assets.py --only gcp_category gcp_core azure aws oci kubernetes opensource
       - name: Verify every mapping icon file path exists under the asset root
         # Call the declared console script (not python -m) so a broken
         # [project.scripts] entry-point mapping is caught by CI too.
