@@ -55,8 +55,12 @@ __all__ = [
 # Core enums
 # --------------------------------------------------------------------------- #
 
-#: The five supported Provider Profiles.
-PROVIDERS: Tuple[str, ...] = ("aws", "azure", "gcp", "oci", "generic")
+#: The supported Provider Profiles. ``kubernetes`` (1.10.11) is an
+#: orchestrator-platform profile, not a cloud account: its ``boundary`` is a
+#: Cluster and its ``namespace`` leaf container holds workloads directly (see
+#: :data:`CONTAINER_KINDS`). It carries the k8s brand blue ``#326CE5`` and the
+#: official Kubernetes Icons Set (Apache-2.0 / CC-BY-4.0).
+PROVIDERS: Tuple[str, ...] = ("aws", "azure", "gcp", "oci", "generic", "kubernetes")
 
 #: The nine neutral Normalized Resource Types (schemas/inventory.schema.json).
 NEUTRAL_RESOURCE_TYPES: Tuple[str, ...] = (
@@ -116,6 +120,12 @@ CONTAINER_KINDS: Tuple[str, ...] = (
     # the primary `account` envelope which nests region/vpc/az.
     "peer_account",
     "external_cloud",
+    # 1.10.11 (kubernetes profile): a Kubernetes Namespace drawn as a LEAF
+    # boundary that holds workloads (deployments / pods / services) directly,
+    # nested inside the Cluster `boundary`. Like `peer_account`, nodes are
+    # members directly (not via a nested region/vpc), so it reuses the
+    # sibling-leaf-boundary placement + bottom-up sizing added in 1.10.10.
+    "namespace",
 )
 
 #: The two container kinds EVERY profile must declare (Requirement 2 AC6). The

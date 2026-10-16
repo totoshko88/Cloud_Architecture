@@ -67,7 +67,7 @@ try:  # package-relative import when used as ``rule_engine.layout.pipeline``
         spread_contacts,
         spill_over_connected_faces,
     )
-    from .place import place_nodes, size_containers, centre_block_in_vpc
+    from .place import place_nodes, size_containers, centre_block_in_vpc, lift_subject_over_external_lane
     from .routers import (
         classify_edge,
         _contact_point,
@@ -81,7 +81,7 @@ try:  # package-relative import when used as ``rule_engine.layout.pipeline``
         route_edge,
         nudge_off_container_borders,
     )
-    from .base import TITLE_BAND, _snap
+    from .base import TITLE_BAND, _snap, col_step, resolve_spacing, _spacing_scope
     from .repair import (
         MAX_REPAIR_ITERS,
         LayoutError,
@@ -111,7 +111,7 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
         spread_contacts,
         spill_over_connected_faces,
     )
-    from layout.place import place_nodes, size_containers, centre_block_in_vpc  # type: ignore[no-redef]
+    from layout.place import place_nodes, size_containers, centre_block_in_vpc, lift_subject_over_external_lane  # type: ignore[no-redef]
     from layout.routers import (  # type: ignore[no-redef]
         classify_edge,
         _contact_point,
@@ -125,7 +125,7 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
         route_edge,
         nudge_off_container_borders,
     )
-    from layout.base import TITLE_BAND, _snap  # type: ignore[no-redef]
+    from layout.base import TITLE_BAND, _snap, col_step, resolve_spacing, _spacing_scope  # type: ignore[no-redef]
     from layout.repair import (  # type: ignore[no-redef]
         MAX_REPAIR_ITERS,
         LayoutError,
@@ -189,7 +189,41 @@ def _global_contacts(
             tgt = placed[edge.target]
             others = [b for nid, b in placed.items()
                       if nid not in (edge.source, edge.target)]
-            if _has_free_left_approach(tgt, others):
+            src = placed[edge.source]
+            if _box_directly_below(src, tgt, others):
+                # Theme 46: the target sits directly below the source in a CLEAR
+                # column (same x, nothing between). A left entry would send the
+                # hop out to a side corridor and back across under the source
+                # (SEP 08 e8 Lambda->cmtr-sre: exit-right -> step left past the
+                # source -> drop -> re-enter, visibly crossing the source glyph).
+                # A straight bottom-exit -> top-entry drop in the clear column is
+                # the same clean vertical the spine Exception uses; the router's
+                # Theme 46 straight-drop guard then emits one unbroken leg.
+                exits[edge.id] = (0.5, 1.0)     # bottom-centre
+                entries[edge.id] = (0.5, 0.0)   # top-centre -> straight drop
+            elif (
+                abs(src.x - tgt.x) < 1e-9
+                and tgt.y > src.y
+                and _free_left_corridor_x(src, tgt, others, containers, edge.id)
+                is not None
+            ):
+                # Theme 47: the target is in the SAME COLUMN below but a node
+                # stands between them (so the straight drop above is blocked).
+                # The default pinned only the LEFT entry and left the exit on the
+                # RIGHT face -- the router then has to leave the right face and
+                # step back LEFT across the source to reach the left corridor,
+                # which draws the exit stub straight through the source glyph
+                # (SEP 08 e8 Lambda->cmtr-sre: "crosses lambda"). Pin a
+                # bottom-centre exit so route_cross_region's dedicated
+                # left-corridor branch (bottom_exit AND left_entry) fires: it
+                # drops off the bottom into the clear left gap and enters the
+                # target's left face, never crossing the source. Mirrors the
+                # spine branch's same-column-blocked handling below. Guarded on a
+                # usable left corridor, so a dense layout with no left gap keeps
+                # the default top-entry route.
+                exits[edge.id] = (0.5, 1.0)     # bottom-centre -> left gap
+                entries[edge.id] = (0.0, 0.5)   # target LEFT face
+            elif _has_free_left_approach(tgt, others):
                 entries[edge.id] = (0.0, 0.5)   # left face → inter-row route
             else:
                 entries[edge.id] = (0.5, 0.0)   # top-centre (Rule C)
@@ -215,7 +249,7 @@ def _global_contacts(
                 exits[edge.id] = (0.5, 1.0)
                 entries[edge.id] = (0.0, 0.5) if blocked else (0.5, 0.0)
                 continue
-            left_gap_x = tgt.x - (COL_STEP - ICON_SIZE) // 2
+            left_gap_x = tgt.x - (col_step() - ICON_SIZE) // 2
             if left_gap_x < CONTAINER_PAD + GRID:
                 entries[edge.id] = (0.5, 0.0)   # no left gap → top-centre (Rule G)
         elif kind == "spine":
@@ -295,7 +329,7 @@ def _global_contacts(
                 b for nid, b in placed.items()
                 if nid in xregion_sources
                 and abs((b.y + b.h / 2) - (tgt.y + tgt.h / 2)) < 1e-6
-                and abs(b.x + COL_STEP - tgt.x) < 1e-6
+                and abs(b.x + col_step() - tgt.x) < 1e-6
             ),
             None,
         )
@@ -596,6 +630,24 @@ def _global_contacts(
         if len(eids) != 1:
             continue                              # keep the spread's distinct bands
         eid = eids[0]
+        # v1.10.11 (Theme 47): only claim the bottom-LEFT band when no OTHER
+        # bottom exit from the same source already sits on it. SEP 08 lambda has
+        # a TOP-entry leftward branch (e4->vpce-gw) that the 2a spread already put
+        # on the left band; forcing the left-entry branch (e8->cmtr-sre) there too
+        # merges the two bottom stubs (``exit-thirds`` bottom-exits-merge). When
+        # the left band is taken, keep the spread's distinct band so the two
+        # diverge from the glyph. Narrow: only skips the move on a real collision,
+        # so the single-left-branch case every landscape relies on is unchanged.
+        src_id = spec.edges[order_index[eid]].source
+        taken_left = any(
+            other != eid
+            and spec.edges[order_index[other]].source == src_id
+            and (exits[other][1] is not None and exits[other][1] >= 1.0)
+            and abs(exits[other][0] - _UPPER_QUARTER) < 1e-9
+            for other in (e.id for e in spec.edges)
+        )
+        if taken_left:
+            continue                              # left band occupied → keep spread band
         exits[eid] = (_UPPER_QUARTER, exits[eid][1])  # bottom-LEFT band (0.25)
 
     # 2b4. Monotone exit bands on the RIGHT face (v1.6.0), replacing the old
@@ -786,6 +838,7 @@ def _place_and_route(spec: DiagramSpec) -> "PlacedDiagram":
     global result, exactly as before."""
     placed = place_nodes(spec)
     containers = size_containers(placed, spec)
+    placed, containers = lift_subject_over_external_lane(placed, containers, spec)
     placed = centre_block_in_vpc(placed, containers, spec)
 
     exits, entries, lane_sides = _global_contacts(spec, placed, containers)
@@ -833,6 +886,7 @@ def _place_and_route_scored(spec: DiagramSpec) -> "PlacedDiagram":
     identical shape (R4.2, R4.3) — only *how* the waypoints are chosen differs."""
     placed = place_nodes(spec)
     containers = size_containers(placed, spec)
+    placed, containers = lift_subject_over_external_lane(placed, containers, spec)
     placed = centre_block_in_vpc(placed, containers, spec)
 
     # Contacts + route: the scored per-edge solver replaces the ten-pass global
@@ -1067,29 +1121,35 @@ def layout(
     # waypoints (and now the placement) are chosen, never the artifact format
     # (R5.3), and all are deterministic functions of the spec (R5.1).
     spec = _annotate_edge_regions(spec)
-    try:
-        if legacy:
-            return _finish(spec, _place_and_route(spec))
-        if _placement:
-            # Default: the scored placement outer loop. Lazy import keeps the
-            # ``pipeline`` (which ``solver`` imports ``solve`` from at load) and
-            # ``solver.solve_placement`` (which imports ``layout`` back) graph
-            # one-directional at load time — the loop is entered only here, at
-            # call time.
-            try:
-                from .solver import solve_placement as _solve_placement
-            except ImportError:  # pragma: no cover - flat-module fallback
-                from layout.solver import solve_placement as _solve_placement  # type: ignore[no-redef]
-            return _solve_placement(spec, strict=strict)
-        # Inner scored route path (the placement loop's per-variant step, and the
-        # 1.8.0 route-only path): no placement search, just place → size → centre
-        # → scored solve → repair.
-        return _layout_scored_with_guard(spec, strict=strict)
-    except OverConnectedError as exc:
-        raise LayoutError(
-            f"layout({spec.diagram_id!r}) has an over-connected node — the "
-            f"diagram must be split or re-laned: {exc}"
-        ) from exc
+    # Theme 36: resolve the per-spec spacing override ONCE at the entry and bind
+    # it for the whole placement+routing run via the ContextVar. ``None`` (the
+    # common path, no override set) binds the canonical-constant path, so an
+    # unwidened spec is byte-identical to the pre-Theme-36 engine. The scope also
+    # shields a nested ``layout()`` call from an outer spec's override.
+    with _spacing_scope(resolve_spacing(spec)):
+        try:
+            if legacy:
+                return _finish(spec, _place_and_route(spec))
+            if _placement:
+                # Default: the scored placement outer loop. Lazy import keeps the
+                # ``pipeline`` (which ``solver`` imports ``solve`` from at load) and
+                # ``solver.solve_placement`` (which imports ``layout`` back) graph
+                # one-directional at load time — the loop is entered only here, at
+                # call time.
+                try:
+                    from .solver import solve_placement as _solve_placement
+                except ImportError:  # pragma: no cover - flat-module fallback
+                    from layout.solver import solve_placement as _solve_placement  # type: ignore[no-redef]
+                return _solve_placement(spec, strict=strict)
+            # Inner scored route path (the placement loop's per-variant step, and the
+            # 1.8.0 route-only path): no placement search, just place → size → centre
+            # → scored solve → repair.
+            return _layout_scored_with_guard(spec, strict=strict)
+        except OverConnectedError as exc:
+            raise LayoutError(
+                f"layout({spec.diagram_id!r}) has an over-connected node — the "
+                f"diagram must be split or re-laned: {exc}"
+            ) from exc
 
 
 def _annotate_edge_regions(spec: DiagramSpec) -> DiagramSpec:

@@ -61,6 +61,7 @@ Packs are downloaded on demand into a local, **uncommitted** directory (the `.bu
 | gcp | GCP Category Icons | `https://services.google.com/fh/files/misc/category-icons.zip` |
 | gcp | GCP Core Product Icons | `https://services.google.com/fh/files/misc/core-products-icons.zip` |
 | oci | OCI Style Guide for draw.io | `https://docs.oracle.com/iaas/Content/Resources/Assets/OCI-Style-Guide-for-Drawio.zip` |
+| kubernetes | Kubernetes Icons Set (kubernetes/community) | `https://codeload.github.com/kubernetes/community/tar.gz/<pinned-commit>` (Apache-2.0 / CC-BY-4.0; icons under `icons/svg/{resources,control_plane_components,infrastructure_components}`) |
 
 Vendor icon assets remain under their owners' trademark/usage terms; they are a build-time input, not redistributed by this repository.
 

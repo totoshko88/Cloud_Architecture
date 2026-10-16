@@ -72,3 +72,50 @@ providers:
     library_xml: "OCI Style Guide for Drawio/OCI Library.xml"
     # Extract the library into standalone, importable stencils here (git-ignored).
     stencils_out: oci-stencils
+
+  kubernetes:
+    pack: Kubernetes Icons Set (kubernetes/community)
+    # A COMMIT-PINNED git-archive tarball of kubernetes/community. The icons live
+    # under icons/svg/{resources,control_plane_components,infrastructure_components}
+    # in the tarball; the mapping (mappings/kubernetes-icons.yaml) references them
+    # by file path under assets/vendor/k8s-icons. Licensed Apache-2.0 / CC-BY-4.0
+    # (redistributable, unlike the SaaS brand marks). Commit pinned so the bytes
+    # are reproducible; sha256/size populated by `--update-pins`.
+    url: "https://codeload.github.com/kubernetes/community/tar.gz/53c338ecba4a2a9240f6654cca1d6a9dac25c785"
+    sha256: "655f7cc7d1824c32db96bdad3fce3d47eefce9ba6d52ded037a629919f99f12f"                   # populated by --update-pins
+    size: 45225969                      # populated by --update-pins
+    unpack_to: k8s-icons
+    kind: svg-png-tree          # per-resource SVG files in category folders
+    icon_source: custom         # official SVG icons, referenced by file path
+    # Pack layout (after the tarball's top-level community-<sha>/ dir is stripped):
+    #   icons/svg/resources/{labeled,unlabeled}/<name>.svg
+    #   icons/svg/control_plane_components/{labeled,unlabeled}/<name>.svg
+    #   icons/svg/infrastructure_components/{labeled,unlabeled}/<name>.svg
+
+  opensource:
+    pack: Simple Icons (brand SVG silhouettes)
+    # A COMMIT-PINNED npm tarball of simple-icons. The pack is CC0 as a whole,
+    # but each MARK remains its brand's trademark — so we (a) colorize only a
+    # CURATED subset to its brand hex (fetch_assets.colorize_opensource_icons),
+    # (b) write the result to the git-ignored assets/vendor/opensource-colorized,
+    # and (c) reference it by file path. The mark is fetched + colorized LOCALLY
+    # and NEVER committed — identification use (naming a real service on a
+    # diagram), exactly like every other vendor pack. See the per-icon `license`
+    # note below. Commit pinned so bytes are reproducible; sha256/size by
+    # `--update-pins`.
+    url: "https://registry.npmjs.org/simple-icons/-/simple-icons-13.0.0.tgz"
+    sha256: "95eff7ec9779578c91f9816cb82431bc7cce18375046845ec73c9876cf16c3bd"                   # populated by --update-pins
+    size: 6540389                      # populated by --update-pins
+    unpack_to: opensource-raw
+    kind: simple-icons           # fetch_assets colorizes the curated subset
+    icon_source: custom
+    colorized_out: opensource-colorized
+    # Curated brand icons: slug (Simple Icons file stem), brand hex (its own
+    # metadata colour), and the license/trademark note. The npm tarball unpacks
+    # under package/, so the pack root passed to the colorizer is
+    # opensource-raw/package and icons live at package/icons/<slug>.svg.
+    icons:
+      - { slug: mongodb,    hex: "#47A248", license: "CC0 pack; MongoDB leaf is a MongoDB Inc. trademark — identification use, not committed" }
+      - { slug: redis,      hex: "#FF4438", license: "CC0 pack; Redis is a Redis Ltd. trademark — identification use" }
+      - { slug: postgresql, hex: "#4169E1", license: "CC0 pack; PostgreSQL mark under the PostgreSQL community trademark policy — identification use" }
+      - { slug: keycloak,   hex: "#4D4D4D", license: "CC0 pack; Keycloak is a CNCF/Red Hat project (Apache-2.0) — identification use" }

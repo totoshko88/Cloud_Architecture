@@ -16,7 +16,7 @@
   ],
   "additionalProperties": false,
   "properties": {
-    "provider": { "enum": ["aws", "azure", "gcp", "oci", "generic"] },
+    "provider": { "enum": ["aws", "azure", "gcp", "oci", "generic", "kubernetes"] },
     "resource_type": {
       "enum": [
         "boundary",

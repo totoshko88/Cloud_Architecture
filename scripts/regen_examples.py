@@ -67,6 +67,9 @@ GENERATORS: Tuple[Generator, ...] = (
     # Engine-generated flow examples (were hand-authored until this release).
     Generator("build_aws_agent_platform_example.py", ("aws/01-aws-agent-platform.drawio",)),
     Generator("build_azure_openai_rag_example.py", ("azure/01-azure-openai-rag.drawio",)),
+    Generator("build_kubernetes_example.py",
+              ("kubernetes/01-kubernetes-architecture-summary.drawio",
+               "kubernetes/01-kubernetes-architecture-landscape.drawio")),
 )
 
 #: The Snapshot data generator (per-domain JSON + per-resource docs); not a diagram.

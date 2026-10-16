@@ -84,13 +84,47 @@ resources:
     icon_id: mongodb.atlas
     icon_provenance: neutral
     brand_hex: "#13AA52"
-    style: "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#13AA52;fontColor=#13AA52;verticalAlign=middle;fontSize=12"
+    # 1.10.11 (Opt 2): the real MongoDB leaf silhouette, colorized to brand green
+    # at fetch time into the git-ignored assets/vendor/opensource-colorized and
+    # referenced by file path — the mark is identification use, never committed.
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/opensource-colorized/mongodb.svg"
+  # Open-source brand leaves (feedback Theme 35) — colorized Simple Icons, same
+  # path as mongodb_atlas; resolve once --update-pins populates the dir.
+  keycloak:
+    icon_id: keycloak
+    icon_provenance: neutral
+    brand_hex: "#4D4D4D"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/opensource-colorized/keycloak.svg"
+  redis:
+    icon_id: redis
+    icon_provenance: neutral
+    brand_hex: "#FF4438"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/opensource-colorized/redis.svg"
+  postgresql:
+    icon_id: postgresql
+    icon_provenance: neutral
+    brand_hex: "#4169E1"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/opensource-colorized/postgresql.svg"
   # Fleet of N (Theme 22) — stacked-box glyph for a count of like resources.
   fleet:
     icon_id: fleet.stack
     icon_provenance: neutral
     brand_hex: "#333333"
     style: "shape=mxgraph.flowchart.multiple_documents;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12"
+  # Peer account / peer cloud AS A NODE (feedback Theme 34). The GCP pack ships
+  # no high-level project/organization glyph, so a peer-cloud node keeps the
+  # neutral external box — Icon Fidelity forbids substituting a look-alike where
+  # the real asset is absent. (AWS/Azure resolve these to their own org glyph.)
+  peer_account:
+    icon_id: external.system
+    icon_provenance: neutral
+    brand_hex: "#333333"
+    style: "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;dashed=1;verticalAlign=middle;fontSize=12"
+  external_cloud:
+    icon_id: external.system
+    icon_provenance: neutral
+    brand_hex: "#333333"
+    style: "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;dashed=1;verticalAlign=middle;fontSize=12"
 
 containers:
   boundary:

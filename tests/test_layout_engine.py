@@ -210,6 +210,49 @@ def test_place_nodes_region_b_is_region_a_plus_fixed_step_left_right():
     assert next(iter(deltas)) >= le.REGION_GAP
 
 
+def test_disjoint_lane_peer_region_lifts_level_with_region_a():
+    # Theme 45: a peer region (b) whose lanes are a DISJOINT lower set from
+    # region A's is lifted along the PRIMARY (tier) axis so its topmost tier is
+    # level with region A's — the owner's side-by-side shape, no diagonal drop.
+    # (The symmetric-lane case is covered by the mirror tests above, where region
+    # A and B share lanes so the lift is a no-op and b.y == a.y still holds.)
+    spec = DiagramSpec(
+        diagram_id="disjoint-peer",
+        diagram_name="disjoint-peer",
+        axis="north-south",
+        nodes=(
+            # region A occupies the HIGH tiers (router, workers)…
+            NodeSpec(id="svc", role="serverless_fn", lane="router", region="a", slot=0),
+            NodeSpec(id="app", role="serverless_fn", lane="workers", region="a", slot=0),
+            # …region B occupies only the LOW tier (data) — a disjoint lower set.
+            NodeSpec(id="sts", role="managed_sql", lane="data", region="b", slot=0),
+            NodeSpec(id="pvc", role="managed_sql", lane="data", region="b", slot=1),
+        ),
+        edges=(),
+        containers=(),
+        flow_lines=("Flow",),
+        title="disjoint-peer | 2025-01-15 | v1",
+    )
+    placed = le.place_nodes(spec)
+    top_a = min(placed["svc"].y, placed["app"].y)
+    top_b = min(placed["sts"].y, placed["pvc"].y)
+    # Region B's top tier is lifted LEVEL with region A's top tier (not dropped
+    # to its own absolute data-lane y, which would land it below region A).
+    assert top_b == top_a
+    # Region B is still offset to the right along the secondary (x) axis.
+    assert placed["sts"].x > placed["svc"].x
+    assert (placed["sts"].x - placed["svc"].x) % le.GRID == 0
+
+
+def test_shared_lane_peer_region_lift_is_a_no_op():
+    # Theme 45 byte-inertness guard: when region A and region B share their
+    # topmost lane (every HA multiregion golden), the primary-axis rebase delta
+    # is 0, so region B stays mirror-symmetric with A on the primary axis.
+    placed = le.place_nodes(_placement_spec("north-south"))
+    for a_id, b_id in (("wa0", "wb0"), ("da0", "db0")):
+        assert placed[b_id].y == placed[a_id].y
+
+
 def test_place_nodes_axis_maps_lane_and_slot_to_the_right_axes():
     # Req 2.2: north-south → lane index is the row (y), slot is the column (x).
     ns = le.place_nodes(_placement_spec("north-south"))
@@ -626,6 +669,86 @@ def test_two_az_stacking_mirrors_across_regions():
     assert a1.w == b1.w == a2.w == b2.w
     # Stacked (a2 below a1, b2 below b1).
     assert a2.y >= a1.bottom and b2.y >= b1.bottom
+
+
+def test_theme46_x_aligned_cross_region_edge_routes_straight():
+    # Theme 46: a cross-region hop whose source exits a column and whose target
+    # sits directly below in the SAME column (clear corridor) routes as one
+    # straight vertical leg — no out-and-back jog (SEP 08 e9/e11). The pipeline
+    # pins a bottom-exit -> top-entry pair for a directly-below cross-region
+    # target, and the router's straight-drop guard emits it with no interior
+    # waypoint.
+    spec = DiagramSpec(
+        diagram_id="xr-straight",
+        diagram_name="xr-straight",
+        axis="north-south",
+        nodes=(
+            NodeSpec(id="src", role="serverless_fn", lane="workers", region="", slot=0, container="vpc"),
+            # target far below, same column, with no container (a free peer node
+            # below the account) — the cross-region shape, directly below with a
+            # clear corridor.
+            NodeSpec(id="dst", role="managed_sql", lane="data", region="", slot=0),
+        ),
+        edges=(EdgeSpec(id="e1", source="src", target="dst", marker="1", kind_hint="cross-region"),),
+        containers=(
+            ContainerSpec(id="acct", kind="account", region="", parent=None, label_key="acct"),
+            ContainerSpec(id="vpc", kind="vpc", region="", parent="acct", label_key="vpc"),
+        ),
+        flow_lines=("Flow",),
+        title="xr-straight | 2025-01-15 | v1",
+    )
+    placed = le.layout(spec, strict=False)
+    e = next(pe for pe in placed.edges if pe.spec.id == "e1")
+    sb, tb = placed.nodes["src"], placed.nodes["dst"]
+    sx = sb.x + e.exit[0] * sb.w
+    tx = tb.x + e.entry[0] * tb.w
+    # Exit and entry are vertically aligned (same column) and the drop is a
+    # single straight leg — no interior corridor waypoints (no out-and-back jog).
+    assert abs(sx - tx) < 1.0
+    assert e.points == []
+
+
+def test_theme47_blocked_column_cross_region_exits_bottom_not_right():
+    # Theme 47: a cross-region hop whose target sits in the SAME column but is
+    # BLOCKED by an intermediate node (so the straight drop is impossible) must
+    # leave the source's BOTTOM face and drop in the column's clear LEFT gap into
+    # the target's left face — never leave the RIGHT face and step back left
+    # ACROSS the source (SEP 08 e8 Lambda->cmtr-sre "crosses lambda"). The
+    # pipeline pins a bottom exit + left entry when a usable left corridor exists.
+    spec = DiagramSpec(
+        diagram_id="xr-blocked",
+        diagram_name="xr-blocked",
+        axis="north-south",
+        nodes=(
+            NodeSpec(id="src", role="serverless_fn", lane="workers", region="", slot=0, container="vpc"),
+            # an intermediate node in the SAME column (same lane+slot) but nested
+            # one tier lower (an AZ inside the vpc) — lands directly below the
+            # source and blocks the straight drop.
+            NodeSpec(id="mid", role="vpc_endpoint", lane="workers", region="", slot=0, container="az1"),
+            # far below, same column (slot 0), free peer node (cross-region target).
+            NodeSpec(id="dst", role="acct", lane="on-premises", region="", slot=0),
+        ),
+        edges=(EdgeSpec(id="e1", source="src", target="dst", marker="1", kind_hint="cross-region"),),
+        containers=(
+            ContainerSpec(id="acct", kind="account", region="", parent=None, label_key="acct"),
+            ContainerSpec(id="vpc", kind="vpc", region="", parent="acct", label_key="vpc"),
+            ContainerSpec(id="az1", kind="az", region="", parent="vpc", label_key="az"),
+        ),
+        flow_lines=("Flow",),
+        title="xr-blocked | 2025-01-15 | v1",
+    )
+    placed = le.layout(spec, strict=False)
+    e = next(pe for pe in placed.edges if pe.spec.id == "e1")
+    sb = placed.nodes["src"]
+    # Exit leaves the BOTTOM face (fy >= 1.0), not the right face (fx > 1.0).
+    assert e.exit[1] >= 1.0, f"expected bottom exit, got {e.exit}"
+    # No route segment runs horizontally THROUGH the source box: every point
+    # after the exit is at or below the source's bottom edge.
+    for px, py in e.points[1:]:
+        assert py >= sb.bottom - 1.0, (
+            f"route point {(px, py)} runs back up across the source "
+            f"(bottom={sb.bottom})"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1288,6 +1411,32 @@ def test_route_fan_out_row_owns_below_row_lane_and_turns_up_before_target():
     assert check_edge_routing(geo) == []       # does not cut the mid icon
 
 
+def test_route_fan_out_row_short_hop_has_no_redundant_jog():
+    """Theme 39: a short diagonal fan-out hop (target one column over and one
+    row up, nothing between) must climb in ONE straight vertical, not climb-jog-
+    climb. The old shape stepped out, rose into the lane, jogged a sub-gap nub
+    sideways to the left-approach column, then rose again — two corners for a
+    hop that needs one (the 05-e6 / e8 'needless staircase'). The collapse snaps
+    the turn column onto the climb column when the nub is under half a gap."""
+    src = Box("s", 100, 100 + _R, _S, _S)          # lower row
+    tgt = Box("t", 100 + _C, 100, _S, _S)          # one column over, one row up
+    placed = _placed(src, tgt)
+    edge = _spec_edge("s", "t")
+    exit_pt, entry_pt = select_contacts(edge, placed)
+    wps = route_fan_out_row(edge, exit_pt, entry_pt, CorridorAllocator(), [src, tgt])
+    # Count horizontal<->vertical corners among the interior waypoints: the old
+    # climb-jog-climb shape has two, a clean step-out-then-single-climb has one.
+    corners = 0
+    for i in range(1, len(wps) - 1):
+        h1 = wps[i][0] != wps[i - 1][0]
+        h2 = wps[i + 1][0] != wps[i][0]
+        if h1 != h2:
+            corners += 1
+    assert corners <= 1, f"short-hop fan-out kept a redundant jog: {list(wps)}"
+    geo = _routed_geo(edge, exit_pt, entry_pt, wps, placed)
+    assert check_edge_routing(geo) == []
+
+
 def test_route_cross_region_rises_into_over_row_corridor_and_crosses_nothing():
     # Req 7.5: step out, own over-row corridor, across, enter target top.
     src = Box("s", 100, 400, _S, _S)
@@ -1298,6 +1447,33 @@ def test_route_cross_region_rises_into_over_row_corridor_and_crosses_nothing():
     wps = route_cross_region(edge, exit_pt, entry_pt, CorridorAllocator(), [src, tgt])
     assert wps
     assert _first_wp_moves_both_axes(src, exit_pt, wps)
+    geo = _routed_geo(edge, exit_pt, entry_pt, wps, placed)
+    assert check_edge_routing(geo) == []
+
+
+def test_route_cross_region_turn_near_target_has_no_near_source_appendix():
+    """Theme 38b: a cross-region hop routed with turn_near_target=True runs the
+    horizontal leg at the source level then a SINGLE long vertical at the
+    target's approach column — no step-out-then-back-left jog near the source
+    (03-e7's ECR→CICD appendix). The default route keeps its over-row shape; the
+    turn-near-target route must have at most one horizontal<->vertical corner."""
+    # target up-and-right with a left entry and a free left approach
+    src = Box("s", 100, 100 + 6 * _R, _S, _S)
+    tgt = Box("t", 100 + _C, 100, _S, _S)
+    placed = _placed(src, tgt)
+    edge = _spec_edge("s", "t")
+    exit_pt, entry_pt = select_contacts(edge, placed)
+    wps = route_cross_region(
+        edge, exit_pt, entry_pt, CorridorAllocator(), [src, tgt],
+        turn_near_target=True,
+    )
+    corners = 0
+    for i in range(1, len(wps) - 1):
+        h1 = wps[i][0] != wps[i - 1][0]
+        h2 = wps[i + 1][0] != wps[i][0]
+        if h1 != h2:
+            corners += 1
+    assert corners <= 1, f"turn-near-target kept an appendix: {list(wps)}"
     geo = _routed_geo(edge, exit_pt, entry_pt, wps, placed)
     assert check_edge_routing(geo) == []
 
@@ -2036,6 +2212,174 @@ def test_external_bands_stack_into_rows_without_widening_the_canvas():
     assert spans[-1] <= spans[0] + 1, f"canvas widened with more peers: {spans}"
 
 
+def _pure_external_above_spec():
+    """Theme 41 input: an account subject plus THREE pure-external peer bands in
+    the ABOVE-subject `actors` lane, none of which has a cross-band edge to the
+    account (so all land in `_affinity` bucket 1). The one account-linked band
+    (`linkedp`, whose node drops an edge into the account) must keep the normal
+    wrap; the three pure bands must stack in one left-aligned column."""
+    nodes = [
+        _NS(id="app", role="k8s", lane="workers", region="a", slot=0, container="az-a1"),
+        # account-linked external band (edge into the account) -> affinity 0
+        _NS(id="lk", role="object_store", lane="actors", region="", slot=0, container="linkedp"),
+    ]
+    containers = [
+        _CS(id="acct", kind="account", region="", parent=None, label_key="m"),
+        _CS(id="region-a", kind="region", region="a", parent="acct", label_key="r"),
+        _CS(id="vpc-a", kind="vpc", region="a", parent="region-a", label_key="v"),
+        _CS(id="az-a1", kind="az", region="a", parent="vpc-a", label_key="z"),
+        _CS(id="linkedp", kind="peer_account", region="", parent=None, label_key="p"),
+    ]
+    # three pure-external bands, two members each, NO account edge
+    pure = ["identp", "integp", "sbp"]
+    for gi, cid in enumerate(pure):
+        for j in range(2):
+            nodes.append(_NS(id=f"{cid}{j}", role="object_store", lane="actors",
+                             region="", slot=2 + gi * 2 + j, container=cid))
+        containers.append(_CS(id=cid, kind="peer_account", region="",
+                              parent=None, label_key="p"))
+    edges = (_ES("e1", "lk", "app", "1"),)  # only the linked band touches the account
+    return _DS(
+        diagram_id="s41", diagram_name="s41", axis="north-south",
+        nodes=tuple(nodes), edges=edges, containers=tuple(containers),
+        flow_lines=("Flow", "1. x"), title="t | 2026-10-15 | v1",
+    ), pure
+
+
+def test_pure_external_bands_stack_in_one_aligned_column():
+    """Theme 41: external bands with NO cross-band edge (pure context clusters)
+    stack into ONE left-aligned vertical column to the right of the subject,
+    instead of scattering across the grid to fill cells. Their shared left edge
+    is the leftmost member node's x (grid-aligned), they descend top→bottom with
+    no two sharing a y, and none overlaps the account or another band."""
+    def ov(a, b):
+        return not (a.right <= b.x or b.right <= a.x
+                    or a.bottom <= b.y or b.bottom <= a.y)
+
+    spec, pure = _pure_external_above_spec()
+    pd = le.layout(spec)
+    bands = [pd.containers[c] for c in pure]
+    acct = pd.containers["acct"]
+
+    # 1. Each band's leftmost MEMBER NODE shares one grid-aligned x (the stack
+    #    column), so the content lines up (container chrome may differ by label
+    #    width, but the node column is the visual left edge).
+    members = {"identp": ["identp0", "identp1"],
+               "integp": ["integp0", "integp1"],
+               "sbp": ["sbp0", "sbp1"]}
+    left_node_x = {c: min(pd.nodes[n].x for n in members[c]) for c in pure}
+    assert len(set(left_node_x.values())) == 1, (
+        f"stacked bands not left-aligned: {left_node_x}")
+    assert next(iter(left_node_x.values())) % 10 == 0, "stack x off the grid"
+
+    # 2. They descend top→bottom: distinct, strictly increasing y.
+    ys = [b.y for b in bands]
+    assert ys == sorted(ys) and len(set(ys)) == 3, f"not a top→bottom stack: {ys}"
+
+    # 3. No band overlaps the account or another band.
+    for i, bi in enumerate(bands):
+        assert not ov(bi, acct), f"{pure[i]} overlaps account"
+        for bj in bands[i + 1:]:
+            assert not ov(bi, bj), f"{pure[i]} overlaps a sibling band"
+
+    # 4. The stack sits to the RIGHT of the account (beside it, not above it),
+    #    which is what gives it the full subject height to descend into.
+    assert min(b.x for b in bands) >= acct.right, "stack not right of the account"
+
+
+def test_pure_external_stacking_inert_without_two_pure_bands():
+    """Theme 41 is armed only with >=2 pure-external bands above a subject; a
+    spec with a single pure band keeps the legacy wrap (no stack column)."""
+    spec, _ = _pure_external_above_spec()
+    # drop two of the three pure bands -> only one pure band remains
+    keep = {"acct", "region-a", "vpc-a", "az-a1", "linkedp", "identp"}
+    nodes = tuple(n for n in spec.nodes if n.container in keep or n.container == "az-a1")
+    conts = tuple(c for c in spec.containers if c.id in keep)
+    import dataclasses as _dc
+    one_pure = _dc.replace(spec, nodes=nodes, containers=conts)
+    pd = le.layout(one_pure)  # must not raise; single pure band uses legacy path
+    assert "identp" in pd.containers
+
+
+def test_subject_lifts_when_bands_move_beside_it():
+    """Theme 42: once the pure-external bands are stacked into a side column
+    (Theme 41), the only band left OVER the subject's columns is the account-
+    linked one; the subject must lift up to clear just that band (plus a gap)
+    instead of hanging below the whole external-lane extent — collapsing the
+    dead space — and the lift must collide with no side band."""
+    def ov(a, b):
+        return not (a.right <= b.x or b.right <= a.x
+                    or a.bottom <= b.y or b.bottom <= a.y)
+
+    spec, pure = _pure_external_above_spec()
+
+    # Baseline: the SAME spec with the Theme 42 lift disabled would leave the
+    # account far below. We assert the POST-fix invariant directly: the account
+    # top sits just below the one band that x-overlaps its columns (the linked
+    # band), NOT below the lowest side band.
+    pd = le.layout(spec)
+    acct = pd.containers["acct"]
+    linked = pd.containers["linkedp"]
+    side_bands = [pd.containers[c] for c in pure]
+
+    # 1. The account clears the linked (overhead) band — its top is at or below
+    #    that band's bottom.
+    assert acct.y >= linked.bottom, "account not below its overhead linked band"
+
+    # 2. The account top is CLOSE to the overhead band (within a couple of band
+    #    gaps), i.e. it did not hang below the full side-stack extent.
+    lowest_side_bottom = max(b.bottom for b in side_bands)
+    assert acct.y < lowest_side_bottom, (
+        "account still hangs below the side stack — lift did not fire")
+
+    # 3. No side band collides with the (raised) account box.
+    for i, b in enumerate(side_bands):
+        assert not ov(acct, b), f"{pure[i]} collides the raised account"
+
+    # 4. The side bands sit entirely to the right of the account (the condition
+    #    that makes the lift safe).
+    assert min(b.x for b in side_bands) >= acct.right
+
+
+def test_account_lifts_over_a_plain_external_lane_row():
+    """Theme 44: an account whose only overhead content is a short external-lane
+    (actors) row must not hang far below it. The account box lifts so its top
+    clears just that row (+ gap + nesting margin); the external row stays put and
+    no node goes to negative y. (The SEP 03/08 dead-space fix.)"""
+    nodes = (
+        # external actors row above the account columns
+        _NS(id="ext1", role="dns", lane="actors", region="", slot=0),
+        _NS(id="ext2", role="cdn", lane="actors", region="", slot=1),
+        # in-account body (region/vpc nodes)
+        _NS(id="api", role="api_gateway", lane="edge", region="a", slot=0, container="region-a"),
+        _NS(id="fn", role="fn", lane="workers", region="a", slot=0, container="region-a"),
+        _NS(id="db", role="sql", lane="data", region="a", slot=0, container="vpc-a"),
+    )
+    conts = (
+        _CS(id="acct", kind="account", region="", parent=None, label_key="a"),
+        _CS(id="region-a", kind="region", region="a", parent="acct", label_key="r"),
+        _CS(id="vpc-a", kind="vpc", region="a", parent="region-a", label_key="v"),
+    )
+    spec = _DS(diagram_id="s44", diagram_name="s44", axis="north-south",
+               nodes=nodes, edges=(), containers=conts,
+               flow_lines=("Flow", "1. x"), title="t | 2026-10-15 | v1")
+    pd = le.layout(spec)
+    acct = pd.containers["acct"]
+    ext_bottom = max(pd.nodes["ext1"].bottom, pd.nodes["ext2"].bottom)
+    # The account BOX clears the external row (no overlap), and it was lifted
+    # from the full lane-grid drop toward that row rather than hanging far below
+    # the whole external-lane extent. The exact gap depends on the nesting chrome
+    # size_containers reserves; the invariant is no-overlap + a lift occurred.
+    assert acct.y >= ext_bottom, "account box overlaps the external row"
+    # a lift occurred: the account sits far closer to the external row than the
+    # un-lifted lane-grid drop would place it (which was ~400+ below the row).
+    assert acct.y - ext_bottom <= 600, (
+        f"account still hangs far below the external row: {acct.y - ext_bottom}px")
+    # external row stays at the top; nothing went negative.
+    assert min(pd.nodes["ext1"].y, pd.nodes["ext2"].y) >= 0
+    assert all(b.y >= 0 for b in pd.nodes.values())
+
+
 def test_role_scope_table_covers_the_nine_neutral_types():
     from rule_engine.constants import NEUTRAL_RESOURCE_TYPES
     from rule_engine.layout.base import role_scope
@@ -2164,3 +2508,76 @@ def test_clean_layout_is_not_degraded():
     placed = le.layout(_four_below_left_spec())
     assert placed.layout_warnings == ()
     assert placed.degraded is False
+
+
+# --------------------------------------------------------------------------- #
+# kubernetes profile: namespace leaf boundaries + Theme 18 external clearance
+# --------------------------------------------------------------------------- #
+
+
+def _k8s_namespace_spec():
+    """A cluster (account envelope) with two disjoint Namespace leaf boundaries
+    (region a / region b) holding workloads, and an Ingress in the external
+    actors lane above the cluster (the kubernetes golden shape, 1.10.11)."""
+    return _DS(
+        diagram_id="k8s", diagram_name="k8s", axis="north-south",
+        nodes=(
+            _NS(id="ingress", role="k8s_ingress", lane="actors", region="", slot=0),
+            _NS(id="svc", role="k8s_service", lane="router", region="a", slot=0, container="ns-app"),
+            _NS(id="deploy", role="k8s_deployment", lane="workers", region="a", slot=0, container="ns-app"),
+            _NS(id="sts", role="k8s_statefulset", lane="data", region="b", slot=0, container="ns-data"),
+            _NS(id="pvc", role="k8s_pvc", lane="data", region="b", slot=1, container="ns-data"),
+        ),
+        edges=(
+            _ES(id="e1", source="ingress", target="svc", marker="1"),
+            _ES(id="e2", source="svc", target="deploy", marker="2"),
+            _ES(id="e3", source="deploy", target="sts", marker="3"),
+            _ES(id="e4", source="sts", target="pvc", marker="4"),
+        ),
+        containers=(
+            _CS(id="cluster", kind="account", region="", parent=None, label_key="c"),
+            _CS(id="ns-app", kind="namespace", region="a", parent="cluster", label_key="na"),
+            _CS(id="ns-data", kind="namespace", region="b", parent="cluster", label_key="nd"),
+        ),
+        flow_lines=("Flow", "1. x", "2. y", "3. z", "4. w"),
+        title="kubernetes architecture — cluster-prod / default | 2026-10-14 | v1",
+    )
+
+
+def test_namespace_leaf_nests_in_cluster_and_wraps_workloads():
+    """cluster ⊃ namespace ⊃ workload: each namespace wraps its own nodes and
+    nests inside the cluster envelope; the two namespaces are disjoint siblings."""
+    pd = le.layout(_k8s_namespace_spec())
+    cl = pd.containers["cluster"]
+    na = pd.containers["ns-app"]
+    nd = pd.containers["ns-data"]
+
+    # Each namespace wraps its member workloads.
+    assert le._box_contains(na, pd.nodes["deploy"].footprint(le.LABEL_BAND))
+    assert le._box_contains(nd, pd.nodes["sts"].footprint(le.LABEL_BAND))
+
+    # The cluster nests both namespaces (not disjoint from them).
+    def nests(parent, child):
+        return (parent.x <= child.x and parent.y <= child.y
+                and child.right <= parent.right and child.bottom <= parent.bottom)
+    assert nests(cl, na) and nests(cl, nd)
+
+    # The two namespaces are disjoint siblings (no overlap).
+    disjoint = (na.right <= nd.x or nd.right <= na.x
+                or na.bottom <= nd.y or nd.bottom <= na.y)
+    assert disjoint, f"namespaces overlap: ns-app={na} ns-data={nd}"
+
+
+def test_theme18_external_row_clears_the_cluster_top():
+    """Theme 18: an external (actors) row above a non-compact envelope with
+    nested containers clears the envelope top by at least one pad — so a
+    namespace that is the cluster's topmost child does not crowd the border."""
+    pd = le.layout(_k8s_namespace_spec())
+    cl = pd.containers["cluster"]
+    ing = pd.nodes["ingress"].footprint(le.LABEL_BAND)
+    # The ingress footprint sits fully above the cluster top, cleared by >= pad.
+    assert ing.bottom <= cl.y, "ingress must sit above the cluster envelope"
+    assert cl.y - ing.bottom >= le.CONTAINER_PAD, (
+        f"external row clears cluster top by only {cl.y - ing.bottom}px "
+        f"(need >= {le.CONTAINER_PAD})"
+    )

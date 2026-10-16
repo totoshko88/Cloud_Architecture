@@ -163,6 +163,16 @@ _CEILING = {
     "oci/01-oci-genai-stack.drawio": (2, 0, 0.0),
     "oci/02-oci-ha-multiregion-landscape.drawio": (3, 2, 0.0),
     "oci/02-oci-ha-multiregion-summary.drawio": (0, 0, 0.0),
+    # 1.10.11 kubernetes golden pair. The summary routes clean (0/0/0.0). The
+    # landscape carries two rail runs (rail_penalty 1.7): e7 (ConfigMap->Deployment)
+    # and e8 (HPA->Pod) graze the hpa/cm glyphs in the ns-app platform lane — the
+    # Theme 31 line-to-icon-clearance gap the corridor allocator does not yet
+    # minimise. Swapping the two platform slots trades those 2 clean rails for 4
+    # crossings + a new entry-thirds merge (strictly worse), so this is the honest
+    # engine-native floor: lint-clean (edge-crosses-label is advisory), one
+    # crossing, within the 0.5*E cap. The ceiling guards against future regression.
+    "kubernetes/01-kubernetes-architecture-landscape.drawio": (1, 2, 1.7),
+    "kubernetes/01-kubernetes-architecture-summary.drawio": (0, 0, 0.0),
 }
 
 

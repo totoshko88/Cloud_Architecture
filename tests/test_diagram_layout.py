@@ -358,3 +358,35 @@ def test_normal_edge_is_unchanged_by_the_peering_option():
     assert "endArrow=open" in cell and "endFill=0" in cell
     assert "startArrow=none" not in cell  # single-head, start unset
     assert "dashed=1" not in cell
+
+
+def test_theme43_wide_body_selects_mode_b_row_below():
+    """Theme 43: a physically wide-and-short body (aspect >= 2.2) places the
+    Flow/Legend as a right-aligned horizontal row BELOW the body (Mode B)."""
+    # body 1400 wide x 400 tall -> aspect 3.5
+    nodes = [dl.Node(id="n1", label="n1", x=0, y=0),
+             dl.Node(id="n2", label="n2", x=1322, y=322)]  # right/bottom extent
+    boundaries = [dl.Boundary(id="b", label="b", x=0, y=0, w=1400, h=400)]
+    flow = ("Flow", "1. a", "2. b")
+    legend = ("Legend", "x", "y")
+    lx, ly, mode, pw, ph = dl.theme43_legend_placement(nodes, boundaries, flow, legend, 300)
+    assert mode == "row-below"
+    # row right edge aligns to body right (1400); row width = 2*300 + GRID
+    assert lx + (2 * 300 + dl.GRID) == 1400 or lx == max(0, 1400 - (2 * 300 + dl.GRID))
+    assert ly > 400  # below the body
+
+
+def test_theme43_tall_body_selects_mode_a_stack():
+    """Theme 43: a squarish/tall body (aspect < 2.2) stacks the Flow/Legend in
+    the right margin, top-aligned (Mode A); the engine's caption-safe legend_x
+    is honoured as the floor."""
+    nodes = [dl.Node(id="n1", label="n1", x=0, y=0),
+             dl.Node(id="n2", label="n2", x=922, y=1222)]  # ~1000x1300, aspect 0.77
+    boundaries = [dl.Boundary(id="b", label="b", x=0, y=0, w=1000, h=1300)]
+    flow = ("Flow", "1. a")
+    legend = ("Legend", "x")
+    lx, ly, mode, pw, ph = dl.theme43_legend_placement(
+        nodes, boundaries, flow, legend, 300, engine_legend_x=1100)
+    assert mode == "stack"
+    assert lx >= 1100          # honours the caption-safe engine floor
+    assert ly == 0             # top-aligned to body top

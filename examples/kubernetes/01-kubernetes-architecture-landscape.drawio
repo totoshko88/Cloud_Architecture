@@ -1,0 +1,119 @@
+<mxfile host="app.diagrams.net" agent="rule-engine golden-example" version="24.0.0">
+  <diagram id="k8s-landscape" name="kubernetes-architecture-landscape">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1570" pageHeight="1350" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="kubernetes architecture — cluster-prod / default | 2026-10-14 | v1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=16;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="900" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="cluster" value="Cluster: prod" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#326CE5;dashed=1;verticalAlign=top;fontColor=#326CE5;fontSize=12;align=left;spacingLeft=120" vertex="1" parent="1">
+          <mxGeometry x="30" y="360" width="1170" height="930" as="geometry" />
+        </mxCell>
+        <mxCell id="ns-app" value="Namespace: app" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#326CE5;dashed=1;verticalAlign=top;fontColor=#326CE5;fontSize=12;align=left;spacingLeft=90" vertex="1" parent="1">
+          <mxGeometry x="60" y="420" width="410" height="720" as="geometry" />
+        </mxCell>
+        <mxCell id="ns-data" value="Namespace: data" style="rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#326CE5;dashed=1;verticalAlign=top;align=left;spacingLeft=30;fontColor=#326CE5;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="810" y="420" width="358" height="838" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e1" value="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.5128205128205128;exitY=1.0256410256410255;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5128205128205128;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="ingress" target="svc-app">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.5128205128205128;exitY=1.0256410256410255;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5128205128205128;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="svc-app" target="deploy">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" value="5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.5128205128205128;exitY=1.0256410256410255;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5128205128205128;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="svc-data" target="sts">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e9" value="9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.5128205128205128;exitY=1.0256410256410255;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.7692307692307693;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="secret" target="sts">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1100.00" y="1090.00" />
+              <mxPoint x="900.00" y="1090.00" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="ingress" value="ingress" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/ing.svg;labelBackgroundColor=#FFFFFF" vertex="1" parent="1">
+          <mxGeometry x="100" y="60" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="svc-app" value="svc-app" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/svc.svg;labelBackgroundColor=#FFFFFF" vertex="1" parent="ns-app">
+          <mxGeometry x="40" y="60" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="deploy" value="deploy" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/deploy.svg" vertex="1" parent="ns-app">
+          <mxGeometry x="40" y="380" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="pod1" value="pod1" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/pod.svg" vertex="1" parent="ns-app">
+          <mxGeometry x="260" y="380" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="hpa" value="hpa" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/hpa.svg" vertex="1" parent="ns-app">
+          <mxGeometry x="40" y="540" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="cm" value="cm" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/cm.svg" vertex="1" parent="ns-app">
+          <mxGeometry x="260" y="540" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="svc-data" value="svc-data" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/svc.svg;labelBackgroundColor=#FFFFFF" vertex="1" parent="ns-data">
+          <mxGeometry x="30" y="60" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="sts" value="sts" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/sts.svg" vertex="1" parent="ns-data">
+          <mxGeometry x="30" y="700" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="pvc" value="pvc" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/pvc.svg" vertex="1" parent="ns-data">
+          <mxGeometry x="250" y="700" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="secret" value="secret" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/resources/unlabeled/secret.svg;labelBackgroundColor=#FFFFFF" vertex="1" parent="ns-data">
+          <mxGeometry x="250" y="540" width="78" height="78" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e3" value="3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="deploy" target="pod1">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.2564102564102564;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="deploy" target="svc-data">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="210.00" y="820.00" />
+              <mxPoint x="210.00" y="760.00" />
+              <mxPoint x="800.00" y="760.00" />
+              <mxPoint x="800.00" y="520.00" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e6" value="6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="sts" target="pvc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" value="7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.7692307692307693;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="cm" target="deploy">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="440.00" y="1000.00" />
+              <mxPoint x="440.00" y="1110.00" />
+              <mxPoint x="90.00" y="1110.00" />
+              <mxPoint x="90.00" y="760.00" />
+              <mxPoint x="160.00" y="760.00" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e8" value="8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5128205128205128;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="hpa" target="pod1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="210.00" y="1000.00" />
+              <mxPoint x="210.00" y="1080.00" />
+              <mxPoint x="400.00" y="1080.00" />
+              <mxPoint x="400.00" y="770.00" />
+              <mxPoint x="360.00" y="770.00" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="flow-legend" value="Flow&#10;1. Ingress -&gt; app Service&#10;2. Service -&gt; Deployment&#10;3. Deployment manages its Pod&#10;4. App -&gt; data Service&#10;5. Service -&gt; StatefulSet&#10;6. StatefulSet -&gt; PersistentVolumeClaim&#10;7. ConfigMap configures the Deployment&#10;8. HPA scales the Pod&#10;9. Secret mounted by the StatefulSet" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF;spacingLeft=10;spacingRight=10;spacingTop=10;spacingBottom=10" vertex="1" parent="1">
+          <mxGeometry x="1230" y="120" width="280" height="180" as="geometry" />
+        </mxCell>
+        <mxCell id="legend" value="Legend&#10;Solid line = primary flow&#10;Dashed line = asynchronous / event-driven flow&#10;Red = blocked / missing / disabled&#10;🆕 = new in version N&#10;🔄 = changed in version N&#10;Outer boundary = stack Boundary (captioned; provider style)&#10;Numbered markers (1..N) = ordered data flow steps; see Flow list" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF;spacingLeft=10;spacingRight=10;spacingTop=10;spacingBottom=10" vertex="1" parent="1">
+          <mxGeometry x="1230" y="360" width="280" height="180" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

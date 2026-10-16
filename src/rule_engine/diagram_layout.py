@@ -989,6 +989,80 @@ def _node_membership(
     return host
 
 
+#: Theme 43 — body aspect at/above which the Flow/Legend move BELOW the body as
+#: a right-aligned horizontal row (Mode B) instead of a right-margin top stack
+#: (Mode A). Calibrated on the SEP + shipped corpus: every shipped golden body is
+#: <= 2.02, SEP 02/06/07 are >= 2.50, so 2.2 is a clean separating threshold and
+#: no golden crosses it (an engine-level rule stays byte-inert on the corpus).
+ASPECT_LEGEND_BELOW = 2.2
+
+
+def theme43_legend_placement(
+    nodes: Sequence["Node"],
+    boundaries: Sequence["Boundary"],
+    flow_lines: Sequence[str],
+    legend_lines: Sequence[str],
+    legend_w: int,
+    *,
+    pad: int = CONTAINER_PAD,
+    engine_legend_x: int | None = None,
+):
+    """Aspect-driven Flow/Legend placement (Theme 43).
+
+    Returns ``(legend_x, legend_y_flow, legend_mode, page_w, page_h)``.
+
+    The subject body is every node icon + boundary box (NOT the legend). When the
+    body is squarish or tall (``aspect < ASPECT_LEGEND_BELOW``) use **Mode A**: the
+    two boxes stack in the right margin, their shared left edge one pad past the
+    body's right edge, TOP-aligned to the body top. When the body is physically
+    wide-and-short (``aspect >= ASPECT_LEGEND_BELOW``) use **Mode B**: the two
+    boxes sit side-by-side BELOW the body, as a horizontal row whose RIGHT edge
+    aligns to the body's right edge — kept below (not right of) the body so the
+    legend never drives the canvas width (the flow 1600px raster budget holds)."""
+    rights = [b.x + b.w for b in boundaries] + [n.x + ICON_SIZE for n in nodes]
+    lefts = [b.x for b in boundaries] + [n.x for n in nodes]
+    tops = [b.y for b in boundaries] + [n.y for n in nodes]
+    bottoms = [b.y + b.h for b in boundaries] + [n.y + ICON_SIZE for n in nodes]
+    body_left = min(lefts, default=0)
+    body_right = max(rights, default=0)
+    body_top = min(tops, default=0)
+    body_bottom = max(bottoms, default=0)
+    body_w = body_right - body_left
+    body_h = body_bottom - body_top
+    aspect = (body_w / body_h) if body_h else 1.0
+
+    # Box heights: a line-count estimate (the renderer uses ~16px/line plus the
+    # box's own top/bottom padding). This only sizes the page and the stack gap;
+    # the exact wrapped height is build_diagram's own `_text_h`, which lays the
+    # cells. A small over-estimate is harmless (slightly taller page).
+    _LINE = 16
+    flow_h = len(tuple(flow_lines)) * _LINE + 2 * pad
+    legend_h = len(tuple(legend_lines)) * _LINE + 2 * pad
+
+    if aspect >= ASPECT_LEGEND_BELOW:
+        # Mode B — side-by-side row below the body, right edge = body right.
+        row_w = 2 * legend_w + GRID
+        legend_x = int(max(body_left, body_right - row_w))
+        legend_y_flow = int(body_bottom) + ROW_STEP
+        legend_mode = "row-below"
+        row_bottom = legend_y_flow + max(flow_h, legend_h)
+        page_w = int(body_right) + 2 * pad
+        page_h = int(row_bottom) + 2 * pad
+    else:
+        # Mode A — right-margin vertical stack, top-aligned to the body top.
+        # Use the engine's caption-safe right-margin x (``place_legend_for`` already
+        # clears node captions that overhang the icon right edge) as the floor, so
+        # the stack never lands on a caption or an edge that reaches a right-side
+        # node — falling back to body_right+pad only when no engine value is given.
+        legend_x = int(max(body_right + pad, engine_legend_x or 0))
+        legend_y_flow = int(body_top)
+        legend_mode = "stack"
+        stack_bottom = legend_y_flow + flow_h + GRID + legend_h
+        page_w = int(legend_x + legend_w) + 2 * pad
+        page_h = int(max(body_bottom, stack_bottom)) + 2 * pad
+    return legend_x, legend_y_flow, legend_mode, page_w, page_h
+
+
 def build_diagram(
     *,
     diagram_id: str,
@@ -1003,6 +1077,7 @@ def build_diagram(
     legend_y_legend: int = 360,
     legend_w: int | None = None,
     legend_lines: Sequence[str] | None = None,
+    legend_mode: str = "stack",
     page_w: int = 1850,
     page_h: int = 950,
 ) -> str:
@@ -1105,14 +1180,28 @@ def build_diagram(
     # size to the longest line with no wrap.
     box_w = legend_w if legend_w is not None else _text_w(flow_lines, legend_body)
     flow_h = _text_h(flow_lines, legend_w)
-    # The Legend stacks BELOW the Flow box. A caller's ``legend_y_legend`` is a
-    # hint, not a guarantee: a long Flow list (or a pinned narrow width, which
-    # makes it wrap taller) can grow past it and the two boxes would overlap —
-    # silently, because neither is a node, so no geometry rule would catch it.
-    # Push the Legend down to clear the Flow box by one grid step.
-    legend_y = max(legend_y_legend, legend_y_flow + flow_h + GRID)
-    parts.append(text_cell("flow-legend", flow_lines, legend_x, legend_y_flow, box_w, flow_h))
-    parts.append(text_cell("legend", legend_body, legend_x, legend_y, box_w, _text_h(legend_body, legend_w)))
+    legend_h = _text_h(legend_body, legend_w)
+    if legend_mode == "row-below":
+        # Theme 43 Mode B: a physically wide-and-short diagram puts the two boxes
+        # SIDE-BY-SIDE below the body, as a horizontal row whose RIGHT edge aligns
+        # to the body's right edge (``legend_x`` is passed as that right edge minus
+        # the row width). Flow sits left, Legend right, both at ``legend_y_flow``.
+        # Keeping the row below (not right of) the body means the legend never
+        # drives the canvas width, so a flow raster stays under its 1600px budget.
+        flow_x = legend_x
+        legend2_x = int(legend_x + box_w + GRID)
+        parts.append(text_cell("flow-legend", flow_lines, flow_x, legend_y_flow, box_w, flow_h))
+        parts.append(text_cell("legend", legend_body, legend2_x, legend_y_flow, box_w, legend_h))
+    else:
+        # Mode A (default, stack): the Legend stacks BELOW the Flow box. A caller's
+        # ``legend_y_legend`` is a hint, not a guarantee: a long Flow list (or a
+        # pinned narrow width, which makes it wrap taller) can grow past it and the
+        # two boxes would overlap — silently, because neither is a node, so no
+        # geometry rule would catch it. Push the Legend down to clear the Flow box
+        # by one grid step.
+        legend_y = max(legend_y_legend, legend_y_flow + flow_h + GRID)
+        parts.append(text_cell("flow-legend", flow_lines, legend_x, legend_y_flow, box_w, flow_h))
+        parts.append(text_cell("legend", legend_body, legend_x, legend_y, box_w, legend_h))
     parts.append(
         "      </root>\n    </mxGraphModel>\n  </diagram>\n</mxfile>\n"
     )

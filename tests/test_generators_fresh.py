@@ -55,11 +55,12 @@ from regen_examples import (  # noqa: E402
 
 
 def test_generator_table_is_complete():
-    """Eleven generators own fifteen distinct examples, one owner each."""
-    assert len(GENERATORS) == 11
+    """Twelve generators own seventeen distinct examples, one owner each
+    (fifteen cloud goldens + the 1.10.11 kubernetes summary/landscape pair)."""
+    assert len(GENERATORS) == 12
     owned = [ex for gen in GENERATORS for ex in gen.examples]
-    assert len(owned) == 15
-    assert len(set(owned)) == 15, "an example has more than one generator"
+    assert len(owned) == 17
+    assert len(set(owned)) == 17, "an example has more than one generator"
 
 
 def test_every_builder_script_is_in_the_table():

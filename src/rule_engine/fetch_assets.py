@@ -35,6 +35,7 @@ import re
 import secrets
 import shutil
 import sys
+import tarfile
 import tempfile
 import urllib.parse
 import urllib.request
@@ -306,17 +307,43 @@ def _unpack_fresh(zip_path: Path, out_dir: Path) -> int:
     return count
 
 
-def _unpack(zip_path: Path, out_dir: Path) -> int:
-    """Unpack ``zip_path`` into ``out_dir``, skipping mac cruft. Returns file count.
+def _is_within(root: Path, target: Path) -> bool:
+    """True iff ``target`` is ``root`` or lies under it (zip/tar-slip guard)."""
+    return root == target or root in target.parents
 
-    Rejects any entry whose resolved path escapes ``out_dir`` (zip-slip), so a
+
+def _unpack(archive_path: Path, out_dir: Path) -> int:
+    """Unpack ``archive_path`` into ``out_dir``, skipping mac cruft. Returns file count.
+
+    Supports both a **ZIP** (``PK\\x03\\x04``) and a **gzip tarball**
+    (``\\x1f\\x8b`` magic — ``.tar.gz`` / ``.tgz``), dispatched by the leading
+    magic bytes rather than the file name, because a verified download is cached
+    under a digest name with no real extension. The AWS/Azure/GCP packs are ZIPs;
+    the Kubernetes community pack is a ``codeload`` git-archive ``tar.gz`` and the
+    opensource Simple Icons pack is an npm ``.tgz`` — both gzip tarballs.
+
+    Rejects any entry whose resolved path escapes ``out_dir`` (zip/tar-slip), so a
     tampered or malicious pack cannot write outside the asset root.
 
-    The archive is opened BEFORE ``out_dir`` is created (v1.6.1): a download
-    that is not a zip (an HTML error page, a truncated file) used to leave an
-    empty pack directory behind, which the icon-index check then read as a
-    present-but-stale pack instead of a missing one.
+    The archive is opened and its type validated BEFORE ``out_dir`` is created
+    (v1.6.1): a download that is neither a zip nor a gzip tarball (an HTML error
+    page, a truncated file) used to leave an empty pack directory behind, which
+    the icon-index check then read as a present-but-stale pack instead of a
+    missing one.
     """
+    with open(archive_path, "rb") as fh:
+        magic = fh.read(4)
+    if magic[:2] == b"PK":  # ZIP (local-file PK\x03\x04 or empty-archive PK\x05\x06)
+        return _unpack_zip(archive_path, out_dir)
+    if magic[:2] == b"\x1f\x8b":  # gzip (.tar.gz / .tgz)
+        return _unpack_tar(archive_path, out_dir)
+    raise ValueError(
+        f"{archive_path}: not a ZIP or gzip tarball (magic {magic!r})"
+    )
+
+
+def _unpack_zip(zip_path: Path, out_dir: Path) -> int:
+    """Unpack a ZIP into ``out_dir``, skipping mac cruft, with a zip-slip guard."""
     with zipfile.ZipFile(zip_path) as zf:
         out_dir.mkdir(parents=True, exist_ok=True)
         root = out_dir.resolve()
@@ -325,9 +352,65 @@ def _unpack(zip_path: Path, out_dir: Path) -> int:
             if "__MACOSX" in name or name.endswith(".DS_Store") or name.endswith("/"):
                 continue
             target = (out_dir / name).resolve()
-            if root != target and root not in target.parents:
+            if not _is_within(root, target):
                 raise ValueError(f"{zip_path}: entry {name!r} escapes {out_dir}")
             zf.extract(name, out_dir)
+            count += 1
+    return count
+
+
+def _unpack_tar(tar_path: Path, out_dir: Path) -> int:
+    """Unpack a gzip tarball into ``out_dir``, skipping mac cruft, tar-slip guarded.
+
+    Only regular files are extracted (directories are implied, symlinks/devices
+    are skipped — a vendor icon pack carries none and a symlink is an escape
+    vector). Each member's resolved path is checked against ``out_dir`` before
+    extraction, the same guarantee ``_unpack_zip`` gives.
+    """
+    with tarfile.open(tar_path, mode="r:gz") as tf:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        root = out_dir.resolve()
+        count = 0
+        members = tf.getmembers()
+        # Strip a single common top-level directory ONLY when it is a git-archive
+        # wrapper (``<repo>-<40-hex-sha>/``, as codeload.github.com emits). The
+        # mappings reference the k8s icons at the pack root (``k8s-icons/icons/
+        # svg/...``), so that wrapper must go — matching the ``# after the
+        # tarball's top-level <...>/ dir is stripped`` contract. An npm tarball's
+        # ``package/`` wrapper is deliberately NOT stripped: the opensource pack's
+        # colorizer reads it at ``package/icons/<slug>.svg``, and the mappings
+        # reference the colorized OUTPUT, not the raw tree.
+        import re as _re
+        file_names = [m.name for m in members if m.isfile()]
+        strip_prefix = ""
+        if file_names:
+            first_parts = file_names[0].split("/")
+            if len(first_parts) > 1:
+                cand = first_parts[0]
+                if _re.fullmatch(r"[A-Za-z0-9._-]+-[0-9a-f]{40}", cand) and all(
+                    n.startswith(cand + "/") for n in file_names
+                ):
+                    strip_prefix = cand + "/"
+        for member in members:
+            name = member.name
+            if not member.isfile():
+                continue
+            if "__MACOSX" in name or name.endswith(".DS_Store"):
+                continue
+            rel = name[len(strip_prefix):] if strip_prefix and name.startswith(strip_prefix) else name
+            if not rel:
+                continue
+            target = (out_dir / rel).resolve()
+            if not _is_within(root, target):
+                raise ValueError(f"{tar_path}: entry {name!r} escapes {out_dir}")
+            # Flatten any member mode bits that are not a plain file read/write;
+            # extract the file content only, never a special node.
+            fileobj = tf.extractfile(member)
+            if fileobj is None:
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with open(target, "wb") as out:
+                shutil.copyfileobj(fileobj, out)
             count += 1
     return count
 
@@ -378,11 +461,61 @@ def extract_oci_stencils(library_xml: Path) -> Dict[str, Dict[str, Any]]:
     return out
 
 
+_HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def colorize_opensource_icons(
+    pack_root: Path,
+    out_dir: Path,
+    curated: Sequence[Dict[str, Any]],
+) -> Dict[str, Dict[str, Any]]:
+    """Colorize curated monochrome Simple Icons silhouettes to their brand hex.
+
+    Simple Icons ships every brand as a **monochrome single-fill** silhouette
+    (black path, no colour) under CC0 — but each *mark* remains its brand's
+    trademark. We therefore (a) copy only a **curated** subset (never the whole
+    3000-icon pack), (b) inject each brand's own hex as the SVG ``fill`` so a
+    node reads in brand colour (e.g. the MongoDB leaf in forest-green
+    ``#13AA52``), and (c) write the result into a **git-ignored** derived dir —
+    the mark is fetched + colorized locally, exactly like every other vendor
+    pack, and is NEVER committed (identification use, not redistribution).
+
+    ``curated`` is the ``opensource`` provider's ``icons`` list from
+    ``asset-sources.yaml``: each entry ``{slug, hex, license}``. Returns
+    ``{slug -> {src, out, hex, license}}`` for the ones found; a slug missing
+    from the pack is skipped with a warning (fail-honest, never a placeholder).
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    # Simple Icons npm layout: icons/<slug>.svg (monochrome path, no fill attr).
+    icons_dir = pack_root / "icons"
+    result: Dict[str, Dict[str, Any]] = {}
+    for item in curated:
+        slug = str(item.get("slug") or "").strip()
+        hex_ = str(item.get("hex") or "").strip()
+        lic = str(item.get("license") or "").strip()
+        if not slug or not _HEX_RE.match(hex_):
+            continue
+        src = icons_dir / f"{slug}.svg"
+        if not src.is_file():
+            print(f"  [opensource] WARNING: {slug}.svg not in pack", file=sys.stderr)
+            continue
+        svg = src.read_text(encoding="utf-8")
+        # Inject the brand fill on the root <svg> so every unstyled path inherits
+        # it (Simple Icons paths carry no own fill). Idempotent: replace an
+        # existing fill= on the <svg>, else add one.
+        if re.search(r"<svg\b[^>]*\bfill=", svg):
+            colored = re.sub(r'(<svg\b[^>]*\bfill=)"[^"]*"', rf'\1"{hex_}"', svg, count=1)
+        else:
+            colored = re.sub(r"<svg\b", f'<svg fill="{hex_}"', svg, count=1)
+        dst = out_dir / f"{slug}.svg"
+        dst.write_text(colored, encoding="utf-8")
+        result[slug] = {"src": str(src), "out": str(dst), "hex": hex_, "license": lic}
+    return result
+
+
 # ---------------------------------------------------------------------------
 # Orchestration
 # ---------------------------------------------------------------------------
-
-
 def load_sources(path: Path) -> Dict[str, Any]:
     if not path.is_file():
         raise FileNotFoundError(f"asset sources config not found: {path}")
@@ -442,6 +575,16 @@ def fetch_provider(
             print(f"  [{key}] extracted {len(stencils)} stencils -> {manifest}")
         else:
             print(f"  [{key}] WARNING: library_xml not found at {lib_path}", file=sys.stderr)
+
+    if spec.get("kind") == "simple-icons":
+        curated = spec.get("icons") or []
+        colorized_out = asset_root / spec.get("colorized_out", f"{key}-colorized")
+        # npm tarballs unpack under package/; icons live at package/icons/<slug>.svg.
+        pack_root = out_dir / "package" if (out_dir / "package").is_dir() else out_dir
+        colored = colorize_opensource_icons(pack_root, colorized_out, curated)
+        result["colorized"] = len(colored)
+        result["colorized_out"] = str(colorized_out)
+        print(f"  [{key}] colorized {len(colored)} brand icons -> {colorized_out}")
 
     print(f"  [{key}] unpacked {n} files -> {out_dir}")
     return result
