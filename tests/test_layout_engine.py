@@ -708,6 +708,49 @@ def test_theme46_x_aligned_cross_region_edge_routes_straight():
     assert e.points == []
 
 
+def test_theme47_blocked_column_cross_region_exits_bottom_not_right():
+    # Theme 47: a cross-region hop whose target sits in the SAME column but is
+    # BLOCKED by an intermediate node (so the straight drop is impossible) must
+    # leave the source's BOTTOM face and drop in the column's clear LEFT gap into
+    # the target's left face — never leave the RIGHT face and step back left
+    # ACROSS the source (SEP 08 e8 Lambda->cmtr-sre "crosses lambda"). The
+    # pipeline pins a bottom exit + left entry when a usable left corridor exists.
+    spec = DiagramSpec(
+        diagram_id="xr-blocked",
+        diagram_name="xr-blocked",
+        axis="north-south",
+        nodes=(
+            NodeSpec(id="src", role="serverless_fn", lane="workers", region="", slot=0, container="vpc"),
+            # an intermediate node in the SAME column (same lane+slot) but nested
+            # one tier lower (an AZ inside the vpc) — lands directly below the
+            # source and blocks the straight drop.
+            NodeSpec(id="mid", role="vpc_endpoint", lane="workers", region="", slot=0, container="az1"),
+            # far below, same column (slot 0), free peer node (cross-region target).
+            NodeSpec(id="dst", role="acct", lane="on-premises", region="", slot=0),
+        ),
+        edges=(EdgeSpec(id="e1", source="src", target="dst", marker="1", kind_hint="cross-region"),),
+        containers=(
+            ContainerSpec(id="acct", kind="account", region="", parent=None, label_key="acct"),
+            ContainerSpec(id="vpc", kind="vpc", region="", parent="acct", label_key="vpc"),
+            ContainerSpec(id="az1", kind="az", region="", parent="vpc", label_key="az"),
+        ),
+        flow_lines=("Flow",),
+        title="xr-blocked | 2025-01-15 | v1",
+    )
+    placed = le.layout(spec, strict=False)
+    e = next(pe for pe in placed.edges if pe.spec.id == "e1")
+    sb = placed.nodes["src"]
+    # Exit leaves the BOTTOM face (fy >= 1.0), not the right face (fx > 1.0).
+    assert e.exit[1] >= 1.0, f"expected bottom exit, got {e.exit}"
+    # No route segment runs horizontally THROUGH the source box: every point
+    # after the exit is at or below the source's bottom edge.
+    for px, py in e.points[1:]:
+        assert py >= sb.bottom - 1.0, (
+            f"route point {(px, py)} runs back up across the source "
+            f"(bottom={sb.bottom})"
+        )
+
+
 # ---------------------------------------------------------------------------
 # Task 16: VPC service-row tier above the availability zones
 # (Req 12.3)

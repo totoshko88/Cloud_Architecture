@@ -201,6 +201,28 @@ def _global_contacts(
                 # Theme 46 straight-drop guard then emits one unbroken leg.
                 exits[edge.id] = (0.5, 1.0)     # bottom-centre
                 entries[edge.id] = (0.5, 0.0)   # top-centre -> straight drop
+            elif (
+                abs(src.x - tgt.x) < 1e-9
+                and tgt.y > src.y
+                and _free_left_corridor_x(src, tgt, others, containers, edge.id)
+                is not None
+            ):
+                # Theme 47: the target is in the SAME COLUMN below but a node
+                # stands between them (so the straight drop above is blocked).
+                # The default pinned only the LEFT entry and left the exit on the
+                # RIGHT face -- the router then has to leave the right face and
+                # step back LEFT across the source to reach the left corridor,
+                # which draws the exit stub straight through the source glyph
+                # (SEP 08 e8 Lambda->cmtr-sre: "crosses lambda"). Pin a
+                # bottom-centre exit so route_cross_region's dedicated
+                # left-corridor branch (bottom_exit AND left_entry) fires: it
+                # drops off the bottom into the clear left gap and enters the
+                # target's left face, never crossing the source. Mirrors the
+                # spine branch's same-column-blocked handling below. Guarded on a
+                # usable left corridor, so a dense layout with no left gap keeps
+                # the default top-entry route.
+                exits[edge.id] = (0.5, 1.0)     # bottom-centre -> left gap
+                entries[edge.id] = (0.0, 0.5)   # target LEFT face
             elif _has_free_left_approach(tgt, others):
                 entries[edge.id] = (0.0, 0.5)   # left face → inter-row route
             else:
@@ -608,6 +630,24 @@ def _global_contacts(
         if len(eids) != 1:
             continue                              # keep the spread's distinct bands
         eid = eids[0]
+        # v1.10.11 (Theme 47): only claim the bottom-LEFT band when no OTHER
+        # bottom exit from the same source already sits on it. SEP 08 lambda has
+        # a TOP-entry leftward branch (e4->vpce-gw) that the 2a spread already put
+        # on the left band; forcing the left-entry branch (e8->cmtr-sre) there too
+        # merges the two bottom stubs (``exit-thirds`` bottom-exits-merge). When
+        # the left band is taken, keep the spread's distinct band so the two
+        # diverge from the glyph. Narrow: only skips the move on a real collision,
+        # so the single-left-branch case every landscape relies on is unchanged.
+        src_id = spec.edges[order_index[eid]].source
+        taken_left = any(
+            other != eid
+            and spec.edges[order_index[other]].source == src_id
+            and (exits[other][1] is not None and exits[other][1] >= 1.0)
+            and abs(exits[other][0] - _UPPER_QUARTER) < 1e-9
+            for other in (e.id for e in spec.edges)
+        )
+        if taken_left:
+            continue                              # left band occupied → keep spread band
         exits[eid] = (_UPPER_QUARTER, exits[eid][1])  # bottom-LEFT band (0.25)
 
     # 2b4. Monotone exit bands on the RIGHT face (v1.6.0), replacing the old
