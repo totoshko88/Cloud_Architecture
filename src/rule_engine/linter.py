@@ -2035,16 +2035,23 @@ def _check_edge_crossing_excess(a: Artifact):
 
 def _check_marker_label_collision(a: Artifact):
     """marker-label-collision: a numbered flow-marker renders on a node caption
-    and overprints the service name (WARNING, both classes). offenders = the
-    marker edge and the node whose caption it sits on."""
+    (``marker-on-caption``) or on a node icon (``marker-on-icon``, 1.10.12 WS7)
+    and overprints the service name or glyph (WARNING, both classes).
+    offenders = the marker edge and the node it sits on."""
     geo = _geometry_of(a)
     if geo is None:
         return False
     from rule_engine import geometry as _geo
-    findings = _geo.check_marker_label_collision(geo)
-    if not findings:
+    hits: List[RuleHit] = []
+    on_caption = _geo.check_marker_label_collision(geo)
+    if on_caption:
+        hits.append(RuleHit(offenders=_offender_ids(on_caption), reason="marker-on-caption"))
+    on_icon = _geo.check_marker_icon_collision(geo)
+    if on_icon:
+        hits.append(RuleHit(offenders=_offender_ids(on_icon), reason="marker-on-icon"))
+    if not hits:
         return False
-    return RuleHit(offenders=_offender_ids(findings), reason="marker-on-caption")
+    return hits[0] if len(hits) == 1 else hits
 
 
 def _check_detour_hook(a: Artifact):

@@ -839,6 +839,62 @@ def segment_crosses_box(
     return False
 
 
+#: Border-ride band (1.10.12 WS7). INSIDE the box a leg up to this far from the
+#: border is a ride: it is the band ``segment_crosses_box``'s default 2px inset
+#: deliberately ignores, so the two tests together leave no blind strip.
+BORDER_RIDE_INSIDE = 2.0
+#: OUTSIDE the box a leg up to this far from the border is a ride: half the
+#: 1.5pt edge stroke (0.75) rounded up, i.e. the drawn line still overlaps the
+#: glyph's edge pixels. A leg one or more full pixels clear of the icon is a
+#: near-miss, not a crossing (the k8s landscape ``e8`` runs 2px off ``cm``).
+BORDER_RIDE_OUTSIDE = 1.0
+
+
+def segment_rides_box_border(
+    p: Tuple[float, float],
+    q: Tuple[float, float],
+    b: Box,
+    inside: float = BORDER_RIDE_INSIDE,
+    outside: float = BORDER_RIDE_OUTSIDE,
+    min_overlap: float = float(GRID),
+) -> bool:
+    """Return True when the axis-aligned leg ``p``→``q`` is drawn ON a border of ``b``.
+
+    :func:`segment_crosses_box` shrinks the box by a 2px inset so a graze is not
+    a crossing — which also makes it blind to a leg lying exactly on an icon's
+    border. The SEP 06 v3 ``e8`` run (``y = 360`` from ``x = 580`` to ``1390``)
+    rides S3's top edge (``y = 360``, ``x 1130..1208``) for the icon's full
+    width: on the canvas the line is drawn over the glyph's edge and through
+    both S3 entry contacts, yet no rule fired (C12).
+
+    A horizontal leg whose ``y`` lies on the box top or bottom — at most
+    ``inside`` into the box or ``outside`` beyond it — or a vertical leg whose
+    ``x`` lies likewise on its left or right, and that overlaps the box's extent
+    along the leg by at least ``min_overlap`` (one grid step, so touching a
+    corner is not a ride), is reported. Diagonal legs are never a ride."""
+    (px, py), (qx, qy) = p, q
+    if abs(py - qy) <= AXIS_EPS:
+        near, far, lo, hi = b.y, b.bottom, b.x, b.right
+        coord, a0, a1 = py, min(px, qx), max(px, qx)
+    elif abs(px - qx) <= AXIS_EPS:
+        near, far, lo, hi = b.x, b.right, b.y, b.bottom
+        coord, a0, a1 = px, min(py, qy), max(py, qy)
+    else:
+        return False
+    on_near = near - outside <= coord <= near + inside
+    on_far = far - inside <= coord <= far + outside
+    if not (on_near or on_far):
+        return False
+    return min(a1, hi) - max(a0, lo) >= min_overlap
+
+
+def _leg_hits_box(
+    p: Tuple[float, float], q: Tuple[float, float], b: Box
+) -> bool:
+    """A leg cuts ``b`` (inset-2 crossing) or rides one of its borders (WS7)."""
+    return segment_crosses_box(p, q, b) or segment_rides_box_border(p, q, b)
+
+
 def check_edge_routing(geo: DiagramGeometry) -> List[Tuple[str, str]]:
     """Return ``(edge_id, reason)`` for edges that break routing rules.
 
@@ -851,6 +907,14 @@ def check_edge_routing(geo: DiagramGeometry) -> List[Tuple[str, str]]:
     * a **waypointed** edge whose real *orthogonal* path (the axis-aligned knees
       draw.io actually draws, not the raw diagonals between points) runs through
       an unrelated node is flagged (``knee-through-<node>``, v1.5.4).
+
+    **1.10.12 WS7 — border rides.** A leg that lies ALONG an unrelated icon's
+    border (:data:`BORDER_RIDE_INSIDE` / :data:`BORDER_RIDE_OUTSIDE`,
+    overlapping it by ≥ one grid step)
+    is drawn over the glyph's edge, but the 2px inset of
+    :func:`segment_crosses_box` hid it (SEP 06 v3 ``e8`` on S3's top border).
+    Both the straight and the knee checks now also apply
+    :func:`segment_rides_box_border`, under the same ``*-through-*`` reasons.
 
     **v1.5.4 — the orthogonal-knee gap.** Before this release a waypointed edge
     was trusted entirely on the crossing criterion, because sampling the raw
@@ -917,8 +981,9 @@ def check_edge_routing(geo: DiagramGeometry) -> List[Tuple[str, str]]:
                 if other in (e.source, e.target):
                     continue
                 # Sample the straight segment; a 2px inset means a mere graze of
-                # a border does not count as a crossing.
-                if segment_crosses_box(p, q, b):
+                # a border does not count as a crossing, but a run lying ALONG a
+                # border does (1.10.12 WS7, ``segment_rides_box_border``).
+                if _leg_hits_box(p, q, b):
                     out.append((e.id, f"straight-through-{other}"))
                     break
             continue
@@ -933,7 +998,7 @@ def check_edge_routing(geo: DiagramGeometry) -> List[Tuple[str, str]]:
             if other in (e.source, e.target):
                 continue
             if any(
-                segment_crosses_box(seg_a, seg_b, box)
+                _leg_hits_box(seg_a, seg_b, box)
                 for seg_a, seg_b in zip(knee_pts, knee_pts[1:])
             ):
                 out.append((e.id, f"knee-through-{other}"))
@@ -2980,6 +3045,26 @@ def check_marker_label_collision(geo: DiagramGeometry) -> List[Tuple[str, str]]:
             if (
                 cap.x - AXIS_EPS <= px <= cap.right + AXIS_EPS
                 and cap.y - AXIS_EPS <= py <= cap.bottom + AXIS_EPS
+            ):
+                out.append((eid, nid))
+    return out
+
+
+def check_marker_icon_collision(geo: DiagramGeometry) -> List[Tuple[str, str]]:
+    """Return ``(edge_id, node_id)`` for flow-markers drawn on a node ICON.
+
+    The icon-box companion of :func:`check_marker_label_collision` (1.10.12
+    WS7): a marker whose rendered anchor falls inside a node's icon box
+    (inclusive, :data:`AXIS_EPS` tolerance) prints the step number over the
+    glyph. The caption check never saw it, because a caption rectangle starts
+    below the icon. Every node is checked, endpoints included. Lint-only."""
+    out: List[Tuple[str, str]] = []
+    for eid, (px, py) in sorted(marker_anchors(geo).items()):
+        for nid in sorted(geo.nodes):
+            b = geo.nodes[nid]
+            if (
+                b.x - AXIS_EPS <= px <= b.right + AXIS_EPS
+                and b.y - AXIS_EPS <= py <= b.bottom + AXIS_EPS
             ):
                 out.append((eid, nid))
     return out
