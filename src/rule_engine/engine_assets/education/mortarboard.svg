@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <title>Education (mortarboard)</title>
+  <!-- Provider-neutral education / learning glyph: a graduation mortarboard
+       with tassel. Authored for the Diagram & Inventory Rule Engine and
+       dedicated to the public domain under CC0 1.0 Universal
+       (https://creativecommons.org/publicdomain/zero/1.0/). No vendor brand,
+       grayscale only, so it is valid on every provider profile, generic
+       included. -->
+  <path fill="#333333" d="M14 31 V44 C14 50.5 50 50.5 50 44 V31 L32 39.5 Z"/>
+  <path fill="#333333" stroke="#FFFFFF" stroke-width="1.5" stroke-linejoin="round"
+        d="M32 10 L62 24 L32 38 L2 24 Z"/>
+  <path fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"
+        d="M32 24 L52 28.6"/>
+  <path fill="none" stroke="#333333" stroke-width="2" stroke-linecap="round"
+        d="M52 28.6 V46"/>
+  <path fill="#333333" d="M49 46 H55 L56.5 54 H47.5 Z"/>
+</svg>

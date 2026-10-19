@@ -43,6 +43,7 @@ import sys
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
+from rule_engine import mapping_tree
 from rule_engine.asset_index import build_icon_index, icon_index_to_json
 from rule_engine.constants import resolve_bundled_dir
 from rule_engine.icon_refs import oci_glyph_digest
@@ -395,7 +396,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                         "source keys only (e.g. aws azure gcp_core).")
     parser.add_argument("--manifests-dir", default=None,
                         help="directory the committed manifests (icon-index.json, "
-                        "oci-stencil-digests.json, aws4-icons.json, azure2-shapes.json) "
+                        "oci-stencil-digests.json, aws4-icons.json, azure2-shapes.json, "
+                        "drawio-stencils.json) "
                         "are written to (default: the directory of --out).")
     args = parser.parse_args(list(argv) if argv is not None else None)
 
@@ -438,6 +440,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return rc
         # Pins are now populated; fall through to a normal fetch + index build so
         # the whole update happens "in one step" (R6.5). --no-fetch is honoured.
+
+    # 0b) --check: name every workspace mappings/ edit the merged mapping tree
+    #     ignores (1.10.12, SEP feedback §4.1). Resolution reads the bundled
+    #     mappings plus mappings/local/, so an edit to the workspace's own
+    #     aws-icons.yaml / roles.yaml copy silently does nothing. A warning,
+    #     never a failure; emitted before any early return.
+    if args.check:
+        for warning in mapping_tree.no_effect_edits(Path.cwd() / "mappings", _MAPPINGS_DIR):
+            print(f"rule-engine-build-icon-sets: WARNING: {warning}", file=sys.stderr)
 
     # 1) Fetch the official packs (unless indexing pre-fetched ones or --check).
     if not args.no_fetch and not args.check:
@@ -570,6 +581,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             aws4 = _az2.build_aws4_manifest(asar)
             _az2.write_aws4_manifest(aws4, out=aws4_out)
             print(f"Refreshed {_shown(aws4_out)} — {len(aws4)} aws4 ids.")
+            # 1.10.12: the built-in stencil allow-list verify-icon --strict
+            # accepts a plain mxgraph.* stencil from (asar-extracted only).
+            stencils_out = manifests_dir / _az2.DRAWIO_STENCILS_MANIFEST.name
+            stencil_ids = _az2.extract_drawio_stencil_ids(asar)
+            _az2.write_drawio_stencils_manifest(stencil_ids, out=stencils_out)
+            print(f"Refreshed {_shown(stencils_out)} — {len(stencil_ids)} built-in stencil ids.")
         else:
             print("  note: draw.io app.asar not found; kept existing azure2/aws4 manifests.")
     except Exception as exc:  # noqa: BLE001 - non-fatal; manifest is optional

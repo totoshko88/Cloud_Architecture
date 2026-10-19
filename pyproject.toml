@@ -111,6 +111,10 @@ where = ["src"]
 # the installed package with no repo checkout. The trees are git-ignored in the
 # source tree; the build backend regenerates them for every wheel/sdist.
 "rule_engine._bootstrap" = ["**/*"]
+# Engine-authored icon assets with no vendor source (1.10.12: the CC0
+# education mortarboard). Committed in-repo; resolved by
+# rule_engine.engine_assets.locate_asset when a workspace has no copy.
+"rule_engine.engine_assets" = ["**/*.svg"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

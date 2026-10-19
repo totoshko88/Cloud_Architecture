@@ -382,6 +382,32 @@
         "source": "stencil"
       }
     },
+    "education": {
+      "aws": {
+        "display_name": "Education (mortarboard)",
+        "note": "engine-bundled neutral asset",
+        "ref": "assets/vendor/education/mortarboard.svg",
+        "source": "bundled"
+      },
+      "azure": {
+        "display_name": "Education (mortarboard)",
+        "note": "engine-bundled neutral asset",
+        "ref": "assets/vendor/education/mortarboard.svg",
+        "source": "bundled"
+      },
+      "gcp": {
+        "display_name": "Education (mortarboard)",
+        "note": "engine-bundled neutral asset",
+        "ref": "assets/vendor/education/mortarboard.svg",
+        "source": "bundled"
+      },
+      "oci": {
+        "display_name": "Education (mortarboard)",
+        "note": "engine-bundled neutral asset",
+        "ref": "assets/vendor/education/mortarboard.svg",
+        "source": "bundled"
+      }
+    },
     "eventbridge": {
       "aws": {
         "display_name": "Amazon EventBridge",
@@ -717,6 +743,32 @@
         "display_name": "Object Storage",
         "note": "resolved 'object-storage'",
         "ref": "assets/vendor/oci-stencils/stencils.json#object-storage",
+        "source": "stencil"
+      }
+    },
+    "organizations": {
+      "aws": {
+        "display_name": "AWS Organizations",
+        "note": "resolved 'Organizations'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Management-Tools/32/Arch_AWS-Organizations_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Management Groups",
+        "note": "resolved 'Management Groups'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/general/10011-icon-service-Management-Groups.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "ManagementTools",
+        "note": "category icon (Management Tools) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Management Tools/SVG/ManagementTools-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Organization",
+        "note": "resolved 'organization'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#organization",
         "source": "stencil"
       }
     },

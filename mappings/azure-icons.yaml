@@ -106,6 +106,13 @@ resources:
     icon_id: azure2.subscriptions
     brand_hex: "#0078D4"
     style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/general/Subscriptions.svg"
+  # Education / learning system (1.10.12) — the provider-neutral CC0
+  # mortarboard bundled with the engine (see aws-icons.yaml `education`).
+  education:
+    icon_id: education.mortarboard
+    icon_provenance: neutral
+    brand_hex: "#333333"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/education/mortarboard.svg"
 
 containers:
   # Container styles follow Microsoft's published Azure architecture diagrams

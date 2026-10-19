@@ -11,6 +11,12 @@ such declared path actually exists, so a typo or a stale rename is caught in CI
 rather than silently rendering an empty box (which the linter's ``icon-resolved``
 rule would only catch on a generated diagram, not in the mapping itself).
 
+Mapping tree (1.10.12): the guard checks the same merged tree the icon resolver
+renders from (:mod:`rule_engine.mapping_tree` — bundled mappings plus every
+``mappings/local/`` overlay), and warns about workspace ``mappings/`` edits that
+tree ignores. An engine-bundled asset (``rule_engine.engine_assets``, e.g. the
+``education`` mortarboard) counts as present.
+
 Scope of the check (deliberately narrow to avoid false positives):
 
 * Only ``image=<path>`` style tokens whose path is a **relative filesystem path**
@@ -45,6 +51,9 @@ from pathlib import Path
 from typing import List, Optional, Sequence
 
 import yaml
+
+from rule_engine import mapping_tree
+from rule_engine.engine_assets import locate_asset
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -128,27 +137,69 @@ def _is_checkable(path: str) -> bool:
     return not low.startswith(_SKIP_PREFIXES)
 
 
+def _effective_mappings(
+    mappings_dir: Path, overlays: Optional[Sequence[Path]]
+) -> List[tuple]:
+    """``[(mapping file name, effective mapping)]`` for the merged mapping tree.
+
+    1.10.12: the guard checks the SAME tree the icon resolver renders from —
+    ``mappings_dir/*-icons.yaml`` with every ``local/<provider>-icons.yaml``
+    overlay merged per key (``mapping_tree``). ``overlays=None`` uses the
+    default overlay dirs (``mappings_dir/local``, ``<cwd>/mappings/local``);
+    an explicit sequence uses exactly those dirs. A mapping that cannot be
+    read or parsed is skipped, as before.
+    """
+    if overlays is None:
+        dirs = mapping_tree.overlay_dirs(mappings_dir)
+    else:
+        dirs = [Path(d) for d in overlays if Path(d).is_dir()]
+    names = {Path(p).name for p in glob.glob(str(mappings_dir / "*-icons.yaml"))}
+    for d in dirs:
+        names.update(p.name for p in d.glob("*-icons.yaml"))
+    out: List[tuple] = []
+    for name in sorted(names):
+        base_path = mappings_dir / name
+        data: dict = {}
+        if base_path.is_file():
+            try:
+                loaded = yaml.safe_load(base_path.read_text(encoding="utf-8"))
+            except (OSError, yaml.YAMLError):
+                continue
+            if not isinstance(loaded, dict):
+                continue
+            data = loaded
+        for d in dirs:
+            overlay = d / name
+            if not overlay.is_file():
+                continue
+            try:
+                extra = yaml.safe_load(overlay.read_text(encoding="utf-8"))
+            except (OSError, yaml.YAMLError):
+                continue
+            if isinstance(extra, dict):
+                data = mapping_tree.merge_provider_mapping(data, extra)
+        out.append((name, data))
+    return out
+
+
 def check_mapping_assets(
     mappings_dir: str | Path,
     repo_root: str | Path = REPO_ROOT,
+    overlays: Optional[Sequence[Path]] = None,
 ) -> List[AssetRef]:
     """Return an :class:`AssetRef` for every checkable icon path in the mappings.
 
-    Scans ``mappings_dir/*-icons.yaml``, reads each ``resources``/``containers``
-    entry's ``image=<path>`` style token, and records whether the file exists
-    under ``repo_root``. Non-file styles (stencils, ``data:`` URIs, draw.io
+    Scans the merged tree (``mappings_dir/*-icons.yaml`` plus the
+    ``local/`` overlays, see :func:`_effective_mappings`), reads each
+    ``resources``/``containers`` entry's ``image=<path>`` style token, and
+    records whether the file exists under ``repo_root`` (or is an
+    engine-bundled asset). Non-file styles (stencils, ``data:`` URIs, draw.io
     ``img/lib`` references, URLs) are skipped.
     """
     mappings_dir = Path(mappings_dir)
     repo_root = Path(repo_root)
     refs: List[AssetRef] = []
-    for map_path in sorted(glob.glob(str(mappings_dir / "*-icons.yaml"))):
-        try:
-            data = yaml.safe_load(Path(map_path).read_text(encoding="utf-8"))
-        except (OSError, yaml.YAMLError):
-            continue
-        if not isinstance(data, dict):
-            continue
+    for map_name, data in _effective_mappings(mappings_dir, overlays):
         for section in ("resources", "containers"):
             table = data.get(section)
             if not isinstance(table, dict):
@@ -157,10 +208,10 @@ def check_mapping_assets(
                 for img_path in _iter_style_images(entry):
                     if not _is_checkable(img_path):
                         continue
-                    exists = (repo_root / img_path).is_file()
+                    exists = locate_asset(img_path, repo_root) is not None
                     refs.append(
                         AssetRef(
-                            mapping=os.path.basename(map_path),
+                            mapping=map_name,
                             resource=str(resource),
                             path=img_path,
                             exists=exists,
@@ -172,6 +223,7 @@ def check_mapping_assets(
 def check_mapping_stencils(
     mappings_dir: str | Path,
     repo_root: str | Path = REPO_ROOT,
+    overlays: Optional[Sequence[Path]] = None,
 ) -> List[StencilRef]:
     """Return a :class:`StencilRef` for every ``stencil: <manifest>#<slug>`` entry.
 
@@ -199,13 +251,7 @@ def check_mapping_stencils(
         return manifest_cache[rel_manifest]
 
     refs: List[StencilRef] = []
-    for map_path in sorted(glob.glob(str(mappings_dir / "*-icons.yaml"))):
-        try:
-            data = yaml.safe_load(Path(map_path).read_text(encoding="utf-8"))
-        except (OSError, yaml.YAMLError):
-            continue
-        if not isinstance(data, dict):
-            continue
+    for map_name, data in _effective_mappings(mappings_dir, overlays):
         for section in ("resources", "containers"):
             table = data.get(section)
             if not isinstance(table, dict):
@@ -220,7 +266,7 @@ def check_mapping_stencils(
                 keys = _keys(rel_manifest)
                 refs.append(
                     StencilRef(
-                        mapping=os.path.basename(map_path),
+                        mapping=map_name,
                         resource=str(resource),
                         manifest=rel_manifest,
                         slug=slug,
@@ -253,9 +299,24 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         description="Verify mapping icon file paths exist under the asset root.",
     )
     default_root = _default_workspace_root()
-    parser.add_argument("--mappings", default=str(default_root / "mappings"))
+    # 1.10.12: the default mapping tree is the one the icon resolver renders
+    # from — the bundled mappings plus the mappings/local/ overlays — not the
+    # workspace's own mappings/ copy (which resolution never reads).
+    parser.add_argument("--mappings", default=None,
+                        help="mappings dir to check (default: the bundled mappings "
+                        "merged with mappings/local/ overlays)")
     parser.add_argument("--repo-root", default=str(default_root))
     args = parser.parse_args(list(argv) if argv is not None else None)
+
+    mappings_dir = (
+        Path(args.mappings) if args.mappings is not None else mapping_tree.bundled_dir()
+    )
+    if args.mappings is None:
+        for warning in mapping_tree.no_effect_edits(
+            Path(args.repo_root) / "mappings", mappings_dir
+        ):
+            print(f"asset-paths-guard: WARNING: {warning}", file=sys.stderr)
+    args.mappings = str(mappings_dir)
 
     refs = check_mapping_assets(args.mappings, args.repo_root)
     checkable = len(refs)

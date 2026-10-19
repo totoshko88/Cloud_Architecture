@@ -34,6 +34,7 @@ import yaml
 from rule_engine.constants import CONTAINER_KINDS, ICON_SOURCES, PROVIDERS
 from rule_engine.constants import NEUTRAL_RESOURCE_TYPES as RESOURCE_TYPES
 from rule_engine.constants import resolve_bundled_dir
+from rule_engine import mapping_tree
 
 # ---------------------------------------------------------------------------
 # Domain constants (re-exported from rule_engine.constants, the single source)
@@ -48,55 +49,14 @@ _HEX_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
 # not just a repo checkout.
 _MAPPINGS_DIR = resolve_bundled_dir("mappings")
 
-# Workspace-local roles/icon overlay (Theme 6 / REVIEW.md G17). A workspace that
-# needs a role the bundled mapping lacks — a new presentation role, a corrected
-# style — drops ``mappings/local/<provider>-icons.yaml`` here. It is merged OVER
-# the bundled mapping and the local file wins ONLY for the keys it defines
-# (``resources`` / ``containers`` are merged entry-by-entry); every other key
-# keeps the bundled value, so a later engine upgrade still delivers its corrected
-# styles. ``rule-engine-init`` never copies or overwrites ``mappings/local/``, so
-# an upgrade never conflicts with a local edit. The overlay is looked up next to
-# the bundled mappings dir first, then under the current working directory (a
-# bootstrapped workspace), so an override lands without touching the bundled
-# payload. Absent, nothing changes — resolution is byte-identical to before.
-_LOCAL_OVERLAY_SUBDIR = "local"
-
-
-def _local_overlay_path(provider: str) -> Path | None:
-    """Return the first existing ``mappings/local/<provider>-icons.yaml``, or None."""
-    name = f"{provider}-icons.yaml"
-    for base in (
-        _MAPPINGS_DIR / _LOCAL_OVERLAY_SUBDIR,          # beside the bundled mappings
-        Path.cwd() / "mappings" / _LOCAL_OVERLAY_SUBDIR,  # bootstrapped workspace cwd
-    ):
-        candidate = base / name
-        if candidate.is_file():
-            return candidate
-    return None
-
-
-def _merge_overlay(base: Dict[str, Any], overlay: Dict[str, Any]) -> Dict[str, Any]:
-    """Overlay ``overlay`` onto ``base`` for one provider mapping.
-
-    Top-level scalar keys (``asset_pack`` / ``icon_source`` / ``provider`` …) are
-    replaced when the overlay defines them. The two nested tables ``resources``
-    and ``containers`` are merged **entry by entry**: an overlay role replaces
-    only that role's entry, and every bundled role the overlay does not mention
-    is preserved. This is the per-key-wins contract — a local override of one
-    role never drops the rest, and a bundled upgrade still reaches every role the
-    overlay is silent on. ``base`` is not mutated (it is already a deep copy).
-    """
-    merged: Dict[str, Any] = dict(base)
-    for key, value in overlay.items():
-        if key in ("resources", "containers") and isinstance(value, dict):
-            sub = dict(merged.get(key) or {})
-            if not isinstance(sub, dict):  # bundled table malformed — overlay wins
-                sub = {}
-            sub.update(value)
-            merged[key] = sub
-        else:
-            merged[key] = value
-    return merged
+# Workspace-local roles/icon overlay (Theme 6 / REVIEW.md G17; one merged tree
+# since 1.10.12, see :mod:`rule_engine.mapping_tree`). A workspace that needs a
+# role the bundled mapping lacks drops ``mappings/local/<provider>-icons.yaml``.
+# Every existing overlay — ``<bundled>/local`` then ``<cwd>/mappings/local`` —
+# is merged OVER the bundled mapping, per key (``resources`` / ``containers``
+# entry by entry); every other key keeps the bundled value, so a later engine
+# upgrade still delivers its corrected styles. ``rule-engine-init`` never copies
+# or overwrites ``mappings/local/``. Absent, resolution is unchanged.
 
 
 # ---------------------------------------------------------------------------
@@ -193,27 +153,12 @@ def _load_mapping_cached(provider: str) -> Dict[str, Any]:
     # overlay may add/override a role without re-declaring asset_pack/icon_source
     # (those are inherited from the bundled mapping). A malformed overlay fails
     # loudly, naming its own path, rather than being silently ignored.
-    overlay_path = _local_overlay_path(provider)
-    if overlay_path is not None:
-        try:
-            overlay_raw = overlay_path.read_text(encoding="utf-8")
-        except OSError as exc:
-            raise AssetSourceError(
-                provider, f"cannot read local overlay {overlay_path}: {exc}"
-            ) from exc
-        try:
-            overlay = yaml.safe_load(overlay_raw)
-        except yaml.YAMLError as exc:
-            raise AssetSourceError(
-                provider, f"cannot parse local overlay {overlay_path}: {exc}"
-            ) from exc
-        if overlay is None:
-            overlay = {}
-        if not isinstance(overlay, dict):
-            raise AssetSourceError(
-                provider, f"local overlay {overlay_path} does not contain a mapping"
-            )
-        data = _merge_overlay(data, overlay)
+    try:
+        data = mapping_tree.apply_provider_overlays(provider, data, _MAPPINGS_DIR)
+    except mapping_tree.MappingTreeError as exc:
+        raise AssetSourceError(
+            provider, f"local overlay {exc.path}: {exc.reason}"
+        ) from exc
 
     # Provenance keys must be present so every resolved icon/color can be
     # attributed to the declared asset pack (Requirement 2 AC9).

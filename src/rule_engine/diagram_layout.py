@@ -38,6 +38,8 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
+from rule_engine.engine_assets import locate_asset, sniff_mime
+
 # ---------------------------------------------------------------------------
 # Canonical layout geometry (AWS reference). Do not fork these per provider.
 # ---------------------------------------------------------------------------
@@ -334,8 +336,9 @@ _EMBEDDABLE_ASSET_PREFIX = "assets/vendor/"
 def _embed_asset_image(image_path: str) -> Tuple[str, Optional[str]]:
     """Return ``(image_token_value, icon_ref)`` for an ``image=`` style value.
 
-    For a repo-relative ``assets/vendor/*.svg`` path that exists cwd-relative,
-    returns the ``data:image/svg+xml,<b64>`` (comma form) inline value plus the
+    For a repo-relative ``assets/vendor/*`` path that exists cwd-relative (or
+    is an engine-bundled asset), returns the ``data:<mime>,<b64>`` (comma form,
+    MIME sniffed from the bytes) inline value plus the
     original path as ``icon_ref`` (the honest-gates reverse-identification key).
     For an ``img/lib/...`` draw.io-internal path, an already-inline ``data:``
     URI, or an asset that cannot be read, returns the path unchanged and
@@ -344,14 +347,20 @@ def _embed_asset_image(image_path: str) -> Tuple[str, Optional[str]]:
     path = image_path.strip()
     if path.startswith("data:") or not path.startswith(_EMBEDDABLE_ASSET_PREFIX):
         return image_path, None
+    # The workspace file, else an engine-bundled asset (1.10.12: education).
+    asset = locate_asset(path)
     try:
-        raw = Path(path).read_bytes()
+        raw = asset.read_bytes() if asset is not None else None
     except OSError:
+        raw = None
+    if raw is None:
         # Asset not present at generation time — keep the path form (do not
         # crash); the asset-paths guard / Icon_Verifier still flag it.
         return image_path, None
     b64 = base64.b64encode(raw).decode("ascii")
-    return f"data:image/svg+xml,{b64}", path
+    # MIME from the bytes (1.10.12): a PNG brand mark inlined as svg+xml
+    # renders as a broken image.
+    return f"data:{sniff_mime(raw, path)},{b64}", path
 
 
 # ``image=<path>`` token in a style string (value runs to the next ``;`` or end).

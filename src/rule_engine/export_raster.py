@@ -75,6 +75,8 @@ import tempfile
 from pathlib import Path
 from typing import List, Optional, Sequence, Tuple
 
+from rule_engine.engine_assets import locate_asset, sniff_mime
+
 # The asset root defaults to the CURRENT WORKING DIRECTORY (the workspace a
 # user runs the exporter in), NOT a repo path — the packaged console script
 # has no repo checkout. ``image=assets/vendor/...`` tokens are resolved under
@@ -193,15 +195,18 @@ def _diagram_background_of(source: Path) -> str:
     return "transparent" if m.group(1).strip().lower() == "transparent" else "white"
 
 
-def _mime_for(path: Path) -> str:
-    suffix = path.suffix.lower()
-    if suffix == ".svg":
-        return "image/svg+xml"
-    if suffix in (".png",):
-        return "image/png"
-    if suffix in (".jpg", ".jpeg"):
-        return "image/jpeg"
-    return "application/octet-stream"
+def _mime_for(path: Path, data: Optional[bytes] = None) -> str:
+    """The image MIME of an asset: sniffed from its bytes, else its suffix.
+
+    1.10.12: a PNG saved under an ``.svg`` name (or any mislabelled file) is
+    inlined with its real MIME — draw.io renders a wrong MIME as a broken image.
+    """
+    if data is None:
+        try:
+            data = path.read_bytes()
+        except OSError:
+            data = b""
+    return sniff_mime(data, path.name)
 
 
 def missing_assets(text: str, repo_root: Path = ASSET_ROOT) -> List[str]:
@@ -215,7 +220,7 @@ def missing_assets(text: str, repo_root: Path = ASSET_ROOT) -> List[str]:
         rel = match.group(1)
         if rel in seen:
             continue
-        if not (repo_root / rel).is_file():
+        if locate_asset(rel, repo_root) is None:
             seen.append(rel)
     return seen
 
@@ -232,11 +237,12 @@ def inline_local_images(text: str, repo_root: Path = ASSET_ROOT) -> str:
 
     def repl(match: re.Match) -> str:
         rel = match.group(1)
-        asset = repo_root / rel
-        if not asset.is_file():
+        asset = locate_asset(rel, repo_root)
+        if asset is None:
             return match.group(0)
-        data = base64.b64encode(asset.read_bytes()).decode("ascii")
-        return f"image=data:{_mime_for(asset)},{data}"
+        raw = asset.read_bytes()
+        data = base64.b64encode(raw).decode("ascii")
+        return f"image=data:{_mime_for(asset, raw)},{data}"
 
     return _ASSET_IMAGE_RE.sub(repl, text)
 
