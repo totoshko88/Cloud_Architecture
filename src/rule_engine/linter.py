@@ -1534,9 +1534,16 @@ def _check_edge_crosses_label(a: Artifact):
     # 1.10.7: the linter measures each caption at its real text width (the
     # engine's scored objective keeps the icon-width band, so goldens hold).
     findings = _geo.check_edge_crosses_label(geo, caption_width=True)
-    if not findings:
-        return False
-    return RuleHit(offenders=_offender_ids(findings), reason="crosses-label-band")
+    # 1.10.12 WS2: an edge striking its OWN source/target caption (the bottom
+    # drop through the name under its icon) is reported too, under its own
+    # reason, instead of being exempt.
+    own = _geo.check_edge_crosses_own_label(geo)
+    hits = []
+    if findings:
+        hits.append(RuleHit(offenders=_offender_ids(findings), reason="crosses-label-band"))
+    if own:
+        hits.append(RuleHit(offenders=_offender_ids(own), reason="edge-crosses-own-label"))
+    return hits or False
 
 
 def _check_edge_crosses_container_label(a: Artifact):

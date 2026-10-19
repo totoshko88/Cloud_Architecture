@@ -14,6 +14,10 @@ bottom drop, ``hub→obj``), with ``hub→sql`` the bottom-left back-edge. The
 invariants are unchanged in spirit — the three branches never cross, and the
 targets that sit directly adjacent are reached by one straight segment — only
 which edge plays which role moved again, this time to the engine's own choice.
+
+**1.10.12 (WS2, Variant A).** The hub carries a caption under its icon, so its
+bottom drops (hub→obj, hub→sql) now leave the right face via the side corridor
+and never strike the caption; the no-crossing invariant is unchanged.
 """
 
 from __future__ import annotations
@@ -72,15 +76,21 @@ def test_hub_fanout_branches_do_not_cross():
                 )
 
 
-def test_hub_to_obj_is_a_straight_bottom_drop():
-    """1.10.6: the engine places ``obj`` (object store) directly below the hub, so
-    hub→obj keeps the bottom-CENTRE and drops straight with no interior waypoints
-    — the clean short vertical a directly-below target should have."""
+def _own_caption_cut(geo, edge_id):
+    from rule_engine.geometry import check_edge_crosses_own_label
+    return any(eid == edge_id for eid, _ in check_edge_crosses_own_label(geo))
+
+
+def test_hub_to_obj_takes_the_side_corridor():
+    """1.10.12 (Variant A, D3): ``obj`` sits directly below the hub, but the hub's
+    name is drawn under its icon, so hub→obj no longer drops straight through it.
+    It leaves the RIGHT face, descends in the side corridor and enters obj's TOP,
+    never crossing the hub's (or obj's) caption."""
     geo = _geo()
     obj = next(e for e in geo.edges if e.source == "hub" and e.target == "obj")
-    assert obj.exit[1] is not None and obj.exit[1] >= 1.0, f"not a bottom exit: {obj.exit}"
-    assert abs(obj.exit[0] - 0.5) < 0.05, f"not bottom-centre: {obj.exit}"
-    assert obj.points == [], f"straight drop should have no waypoints: {obj.points}"
+    assert obj.exit[0] is not None and obj.exit[0] >= 1.0, f"not a right exit: {obj.exit}"
+    assert obj.entry[1] is not None and obj.entry[1] <= 0.0, f"not a top entry: {obj.entry}"
+    assert not _own_caption_cut(geo, obj.id), "hub→obj strikes an own caption"
 
 
 def test_hub_to_sec_is_a_straight_level_hop():
@@ -94,10 +104,11 @@ def test_hub_to_sec_is_a_straight_level_hop():
     assert sec.points == [], f"straight level hop should have no waypoints: {sec.points}"
 
 
-def test_hub_to_sql_leaves_the_bottom_left_band():
-    """hub→sql (target far left) leaves the bottom-LEFT band so it diverges left
-    immediately rather than crossing the centre drop."""
+def test_hub_to_sql_clears_the_hub_caption():
+    """hub→sql (target far left) used to leave the bottom-LEFT band, dropping
+    through the hub's caption. 1.10.12 (Variant A): it leaves the right face like
+    its siblings and loops back below the caption, so it never strikes it."""
     geo = _geo()
     sql = next(e for e in geo.edges if e.source == "hub" and e.target == "sql")
-    assert sql.exit[1] is not None and sql.exit[1] >= 1.0, f"not a bottom exit: {sql.exit}"
-    assert sql.exit[0] is not None and sql.exit[0] < 0.5, f"not bottom-left: {sql.exit}"
+    assert sql.exit[0] is not None and sql.exit[0] >= 1.0, f"not a right exit: {sql.exit}"
+    assert not _own_caption_cut(geo, sql.id), "hub→sql strikes an own caption"

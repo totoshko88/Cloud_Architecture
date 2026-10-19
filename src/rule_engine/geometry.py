@@ -39,7 +39,7 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 # Container / text classification and the root-layer id are shared with
 # cli._parse_drawio via rule_engine.constants so the C4 boundary-detection rule
@@ -1161,6 +1161,126 @@ def check_edge_crosses_label(
     return sorted(set(out))
 
 
+def caption_text_box(box: Box, label: str, label_band: float = LABEL_BAND) -> Box:
+    """The rectangle the caption TEXT itself occupies (1.10.12 WS2).
+
+    Same estimator as :func:`node_caption_box` (7.0px/char, centred under the
+    icon, ``label_band`` or 16px per line tall) but WITHOUT the icon-width
+    floor: a short name ("app-az1") is narrower than its 78px icon, leaving a
+    corner band either side of the text that a bottom exit can use without
+    touching the letters. :func:`node_caption_box` stays the lint measure."""
+    lines = caption_lines(label)
+    longest = max((len(ln) for ln in lines), default=0)
+    w = longest * _CAPTION_TEXT_CHAR_W
+    h = max(label_band, 16.0 * len(lines))
+    return Box(box.id, box.x + box.w / 2.0 - w / 2.0, box.bottom, w, h)
+
+
+def check_edge_strikes_own_text(geo: DiagramGeometry) -> List[Tuple[str, str]]:
+    """Return ``(edge_id, node_id)`` for edges whose polyline crosses the real
+    text extent of their own source/target caption (:func:`caption_text_box`):
+    the VISIBLE strikes. A subset of :func:`check_edge_crosses_own_label`, which
+    also counts a line through the empty corner of a caption band."""
+    out: List[Tuple[str, str]] = []
+    for e in geo.edges:
+        poly = edge_polyline(geo, e)
+        if len(poly) < 2:
+            continue
+        for nid in dict.fromkeys((e.source, e.target)):
+            label = geo.node_labels.get(nid, "")
+            if nid not in geo.nodes or not caption_lines(label):
+                continue
+            txt = caption_text_box(geo.nodes[nid], label)
+            if any(segment_crosses_box(p, q, txt, inset=0.0) for p, q in zip(poly, poly[1:])):
+                out.append((e.id, nid))
+    return sorted(set(out))
+
+
+#: Collinear edges (1.10.12 WS0 metric, defect C5): parallel legs closer than
+#: this read as one line; shorter legs are stubs; an along-line gap up to
+#: ``COLLINEAR_GAP`` still reads as one broken line.
+COLLINEAR_OFFSET = 2 * GRID
+COLLINEAR_MIN_LEN = 2 * GRID
+COLLINEAR_GAP = 120.0
+
+
+def collinear_edge_pairs(
+    geo: DiagramGeometry, polys: Optional[Dict[str, List[Point]]] = None,
+) -> Set[Tuple[str, str]]:
+    """Return the ``(edge_a, edge_b)`` pairs (ids sorted) whose parallel legs (each at
+    least ``COLLINEAR_MIN_LEN``) are under ``COLLINEAR_OFFSET`` apart with
+    overlapping extents or a gap of at most ``COLLINEAR_GAP`` along the line, so
+    the two edges read as one (``scripts/canvas_metrics.py`` ``col``). Two legs
+    meeting at a shared point of edges sharing an endpoint (a trunk junction)
+    are exempt, and so is a gap a node icon visibly terminates."""
+    if polys is None:
+        polys = {e.id: p for e in geo.edges if len(p := edge_polyline(geo, e)) >= 2}
+    ends = {e.id: {e.source, e.target} for e in geo.edges}
+    legs: List[Tuple[str, str, float, float, float, Point, Point]] = []
+    for eid, poly in polys.items():
+        for p, q in zip(poly, poly[1:]):
+            ax = leg_axis(p, q)
+            if ax == "H" and abs(q[0] - p[0]) >= COLLINEAR_MIN_LEN:
+                lo, hi = sorted((p[0], q[0]))
+                legs.append((eid, "H", p[1], lo, hi, p, q))
+            elif ax == "V" and abs(q[1] - p[1]) >= COLLINEAR_MIN_LEN:
+                lo, hi = sorted((p[1], q[1]))
+                legs.append((eid, "V", p[0], lo, hi, p, q))
+    found: Set[Tuple[str, str]] = set()
+    for i, a in enumerate(legs):
+        for b in legs[i + 1:]:
+            if a[0] == b[0] or a[1] != b[1]:
+                continue
+            if abs(a[2] - b[2]) >= COLLINEAR_OFFSET:
+                continue
+            gap = max(a[3], b[3]) - min(a[4], b[4])  # > 0 gap, <= 0 overlap
+            if gap > COLLINEAR_GAP:
+                continue
+            if ends[a[0]] & ends[b[0]]:
+                pts_a, pts_b = {a[5], a[6]}, {b[5], b[6]}
+                if any(abs(pa[0] - pb[0]) < AXIS_EPS and abs(pa[1] - pb[1]) < AXIS_EPS
+                       for pa in pts_a for pb in pts_b):
+                    continue  # trunk junction of two branches of one node
+            if gap > 0:
+                # A node icon in the gap terminates both lines visibly (a chain
+                # running straight through a node), so they do not read as one.
+                mid = (a[2] + b[2]) / 2.0
+                lo, hi = min(a[4], b[4]), max(a[3], b[3])
+                g0, g1 = ((lo, mid), (hi, mid)) if a[1] == "H" else ((mid, lo), (mid, hi))
+                if any(segment_crosses_box(g0, g1, nb, inset=0.0) for nb in geo.nodes.values()):
+                    continue
+            found.add(tuple(sorted((a[0], b[0]))))
+    return found
+
+
+def check_edge_crosses_own_label(geo: DiagramGeometry) -> List[Tuple[str, str]]:
+    """Return ``(edge_id, node_id)`` for edges whose polyline crosses the caption
+    of their OWN source or target (1.10.12 WS2, defect C1).
+
+    :func:`check_edge_crosses_label` exempts an edge's endpoints, so the commonest
+    caption strike of all went unreported: a bottom exit drops straight through
+    the service name centred under its own icon (``lb-pr|imary``). The caption is
+    measured at its real text width (:func:`node_caption_box`) and only when the
+    node's label is known and non-empty, so a programmatic geometry without
+    labels yields nothing. Same :func:`segment_crosses_box` predicate as every
+    other routing check. Advisory (WARNING), reported by the linter as
+    ``edge-crosses-label`` reason ``edge-crosses-own-label``."""
+    out: List[Tuple[str, str]] = []
+    nodes = geo.nodes
+    for e in geo.edges:
+        poly = edge_polyline(geo, e)
+        if len(poly) < 2:
+            continue
+        for nid in dict.fromkeys((e.source, e.target)):
+            label = geo.node_labels.get(nid, "")
+            if nid not in nodes or not caption_lines(label):
+                continue
+            cap = node_caption_box(nodes[nid], label)
+            if any(segment_crosses_box(p, q, cap) for p, q in zip(poly, poly[1:])):
+                out.append((e.id, nid))
+    return sorted(set(out))
+
+
 #: The label band a BOUNDARY container draws INSIDE its top edge. Unlike a node
 #: (caption below the icon), a container renders its name inside the top-left of
 #: the group box (``verticalAlign=top;align=left``), so the strip that a routed
@@ -1277,6 +1397,65 @@ def free_caption_x0(
     return None
 
 
+def container_caption_geom(
+    label: str, style: Optional[str], c: Box, band: float = CONTAINER_LABEL_BAND
+) -> Tuple[Box, Optional[Tuple[float, float]]]:
+    """The caption geometry :func:`check_edge_crosses_container_label` judges:
+    the caption band box (left-aligned, as wide as the caption text) and, when
+    the real style is known, the text's x extent. Precomputable per container."""
+    # The caption is left-aligned: size its width from the real caption text
+    # so a corridor RIGHT of the (short) text does not false-flag, while a run
+    # slicing a LONG caption still trips.
+    label_w = _container_caption_width(label, c.w)
+    box = Box(c.id, c.x, c.y, label_w, band)  # top-left .. +one line
+    extent = caption_text_extent(label, style, c) if style is not None else None
+    return box, extent
+
+
+def polyline_cuts_container_caption(
+    polyline: Sequence[Point], c: Box,
+    caption: Tuple[Box, Optional[Tuple[float, float]]], band: float = CONTAINER_LABEL_BAND,
+) -> bool:
+    """Whether ``polyline`` cuts container ``c``'s caption (see
+    :func:`check_edge_crosses_container_label` for the two conditions)."""
+    label, extent = caption
+    # A run only defects the caption when a HORIZONTAL segment runs along it.
+    # A near-VERTICAL segment that crosses the band is an edge dropping IN
+    # through the container's top edge to reach a target inside it (the
+    # sanctioned top entry) — not a run along the caption — so it is not
+    # flagged. The discriminator is the segment's direction, not which
+    # container the endpoints belong to. A run defects the caption only when a
+    # HORIZONTAL segment travels ALONG it for a meaningful distance — its
+    # overlap with the caption band's x-extent exceeds a short-step threshold:
+    # a short final entry-approach step that only grazes the caption's right
+    # edge (l4/l9 clipping ~7px) is below it; a long run laid along the
+    # caption (edge 2, or a cross-region rep line at the caption's y — l11)
+    # exceeds it.
+    lab_x0, lab_x1 = label.x, label.right
+    lab_y0, lab_y1 = label.y, label.bottom
+    for p, q in zip(polyline, polyline[1:]):
+        if abs(q[0] - p[0]) <= abs(q[1] - p[1]):
+            continue  # not a horizontal segment
+        seg_y = (p[1] + q[1]) / 2.0
+        if not (lab_y0 <= seg_y <= lab_y1):
+            continue  # not within the caption's vertical band
+        seg_lo, seg_hi = min(p[0], q[0]), max(p[0], q[0])
+        if min(seg_hi, lab_x1) - max(seg_lo, lab_x0) > 2 * GRID:
+            return True
+    # 1.10.3: a VERTICAL leg through the caption TEXT cuts it too. The
+    # sanctioned top entry drops through the container's top edge, but it must
+    # do so beside the caption, not through its letters (edges 1/15 slicing the
+    # left-aligned ``vpc-primary …`` caption on the OCI landscape). Needs the
+    # real style to locate the text, so it applies only to a parsed diagram.
+    if extent is not None:
+        tx0, tx1 = extent
+        return any(
+            tx0 - _CAPTION_CLEARANCE < cx < tx1 + _CAPTION_CLEARANCE
+            for cx in vertical_caption_cuts([polyline], c, band)
+        )
+    return False
+
+
 def check_edge_crosses_container_label(
     geo: DiagramGeometry, band: float = CONTAINER_LABEL_BAND
 ) -> List[Tuple[str, str]]:
@@ -1309,57 +1488,10 @@ def check_edge_crosses_container_label(
         polyline += list(e.points)
         polyline += [(t.x + nx * t.w, t.y + ny * t.h)]
         for cid, c in geo.containers.items():
-            # The caption is left-aligned: size its width from the real caption
-            # text so a corridor RIGHT of the (short) text does not false-flag,
-            # while a run slicing a LONG caption still trips.
-            label_w = _container_caption_width(geo.container_labels.get(cid, ""), c.w)
-            label = Box(cid, c.x, c.y, label_w, band)  # top-left .. +one line
-            # A run only defects the caption when a HORIZONTAL segment runs along
-            # it. A near-VERTICAL segment that crosses the band is an edge
-            # dropping IN through the container's top edge to reach a target
-            # inside it (the sanctioned top entry) — not a run along the caption —
-            # so it is not flagged. This replaces a membership exemption (which
-            # wrongly let a horizontal run along the TARGET's own VPC caption
-            # slip): the discriminator is the segment's direction, not which
-            # container the endpoints belong to.
-            # A run defects the caption only when a HORIZONTAL segment travels
-            # ALONG it for a meaningful distance — i.e. the segment's overlap
-            # with the caption band's x-extent exceeds a short-step threshold.
-            # A near-vertical drop through the top edge (a sanctioned top entry)
-            # has ~zero horizontal overlap; a short final entry-approach step that
-            # only grazes the caption's right edge (l4/l9 clipping ~7px) is below
-            # the threshold; a long run laid along the caption (edge 2, or a
-            # cross-region rep line at the caption's y — l11) exceeds it.
-            lab_x0, lab_x1 = label.x, label.right
-            lab_y0, lab_y1 = label.y, label.bottom
-            crossed = False
-            for p, q in zip(polyline, polyline[1:]):
-                if abs(q[0] - p[0]) <= abs(q[1] - p[1]):
-                    continue  # not a horizontal segment
-                seg_y = (p[1] + q[1]) / 2.0
-                if not (lab_y0 <= seg_y <= lab_y1):
-                    continue  # not within the caption's vertical band
-                # horizontal overlap of [min,max] segment x with the caption x-extent
-                seg_lo, seg_hi = min(p[0], q[0]), max(p[0], q[0])
-                overlap = min(seg_hi, lab_x1) - max(seg_lo, lab_x0)
-                if overlap > 2 * GRID:
-                    crossed = True
-                    break
-            # 1.10.3: a VERTICAL leg through the caption TEXT cuts it too. The
-            # sanctioned top entry drops through the container's top edge, but it
-            # must do so beside the caption, not through its letters (edges 1/15
-            # slicing the left-aligned ``vpc-primary …`` caption on the OCI
-            # landscape). Needs the real style to locate the text, so it applies
-            # only to a parsed diagram.
-            style = geo.container_styles.get(cid)
-            if not crossed and style is not None:
-                tx0, tx1 = caption_text_extent(
-                    geo.container_labels.get(cid, ""), style, c
-                )
-                crossed = any(
-                    tx0 - _CAPTION_CLEARANCE < cx < tx1 + _CAPTION_CLEARANCE
-                    for cx in vertical_caption_cuts([polyline], c, band)
-                )
+            caption = container_caption_geom(
+                geo.container_labels.get(cid, ""), geo.container_styles.get(cid), c, band
+            )
+            crossed = polyline_cuts_container_caption(polyline, c, caption, band)
             if crossed:
                 out.append((e.id, cid))
     return sorted(set(out))

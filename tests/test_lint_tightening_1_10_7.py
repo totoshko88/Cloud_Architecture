@@ -46,8 +46,14 @@ def _lint(path):
     return out
 
 
+#: 1.10.12 WS2 added ``edge-crosses-label`` reason ``edge-crosses-own-label``
+#: (a line through its OWN node's caption). The 1.10.7 tightening this module
+#: pins is the unrelated-caption reason, so the own-caption hit is set aside.
+OWN_LABEL = "edge-crosses-own-label"
+
+
 def _one(findings, rule):
-    hits = [f for f in findings if f["rule"] == rule]
+    hits = [f for f in findings if f["rule"] == rule and f.get("reason") != OWN_LABEL]
     assert len(hits) == 1, (rule, hits)
     return hits[0]
 
@@ -226,5 +232,23 @@ def test_marker_label_collision_unit():
 
 @pytest.mark.parametrize("path", CORPUS, ids=lambda p: str(Path(p).relative_to(REPO_ROOT)))
 def test_corpus_has_no_tightened_finding(path):
-    found = [f for f in _lint(path) if f["rule"] in TIGHTENED]
+    found = [f for f in _lint(path)
+             if f["rule"] in TIGHTENED and f.get("reason") != OWN_LABEL]
     assert found == [], found
+
+
+@pytest.mark.parametrize("path", CORPUS, ids=lambda p: str(Path(p).relative_to(REPO_ROOT)))
+def test_corpus_own_caption_strikes_only_on_overloaded_faces(path):
+    """1.10.12 WS2: an edge still crossing its own node's caption is allowed only
+    where ``exit-thirds`` leaves it the bottom face — its source's right face
+    already holds three other exits (the residual is masked by z-order)."""
+    from rule_engine.drawio_model import parse_drawio
+
+    g = geo.build_geometry(parse_drawio(Path(path).read_text(encoding="utf-8"), path=path)[0])
+    by_id = {e.id: e for e in g.edges}
+    for eid, nid in geo.check_edge_crosses_own_label(g):
+        e = by_id[eid]
+        assert nid == e.source, (eid, nid)
+        right = [o for o in g.edges if o.source == e.source and o.id != eid
+                 and None not in o.exit and "right" in geo.contact_faces(*o.exit)]
+        assert len(right) >= 3, (eid, nid, [o.id for o in right])

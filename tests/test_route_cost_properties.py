@@ -232,6 +232,13 @@ def test_property7_landscape_graded_penalty_strictly_below_binary_count(rel: str
     """
     cost = _measure(rel)
 
+    # 1.10.12 WS2: the Variant A re-route moved the tier-skip's left-gap corridor
+    # off the app column, so the landscape is now rail-free. The strictly-lower
+    # comparison is then vacuous (0 == 0); a rail-free diagram must still carry a
+    # zero penalty.
+    if cost.rails == 0:
+        assert round(cost.rail_penalty, 3) == 0.0, cost.rail_penalty
+        return
     # These diagrams DO carry rail runs — that is the precondition for the
     # strictly-lower comparison to be meaningful (a rail-free diagram has 0 == 0).
     assert cost.rails >= 1, (

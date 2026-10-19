@@ -48,6 +48,10 @@ Metrics (one row per diagram page)
                    source's or target's caption rectangle (defect C1). Purely
                    geometric: a line masked by ``labelBackgroundColor`` still
                    counts.
+``vis``            Visible own-caption strikes (1.10.12 WS2): the subset of
+                   ``own`` whose polyline crosses the caption's real TEXT
+                   extent (:func:`geometry.caption_text_box`, no icon-width
+                   floor), not merely the empty corner of the caption band.
 ``col``            Collinear pairs (defect C5): two edges with parallel legs
                    (each >= 2 grid steps long) whose lines are < 2 grid steps
                    apart and whose extents overlap or leave a gap of at most
@@ -104,6 +108,8 @@ from rule_engine.geometry import (  # noqa: E402
     _tightest_enclosing,
     build_geometry,
     caption_lines,
+    check_edge_strikes_own_text,
+    collinear_edge_pairs,
     collapse_collinear,
     contact_faces,
     edge_polyline,
@@ -118,12 +124,6 @@ Point = Tuple[float, float]
 #: Default corpus: committed goldens + SEP regression fixtures.
 DEFAULT_GLOBS = ("examples/**/*.drawio", "tests/fixtures/sep/**/*.drawio")
 
-#: Collinear: lines closer than this read as one (plan WS8: < 2 grid steps).
-COLLINEAR_OFFSET = 2 * GRID
-#: Collinear: a leg shorter than this is a stub, not a line.
-COLLINEAR_MIN_LEN = 2 * GRID
-#: Collinear: an along-line gap up to this still reads as one broken line.
-COLLINEAR_GAP = 120.0
 #: Avoidable crossings: stub length out of a face before the first turn.
 STUB = 2 * GRID
 #: Container caption: per-char advance and draw.io default label spacing,
@@ -167,6 +167,7 @@ class Metrics:
     avoidable: int = 0
     back_edges: int = 0
     own_caption_cuts: int = 0
+    own_text_strikes: int = 0
     collinear_pairs: int = 0
     caption_overflows: int = 0
     undrawn_steps: int = 0
@@ -396,42 +397,7 @@ def own_caption_cuts(geo: DiagramGeometry, polys: Dict[str, List[Point]]) -> Lis
 
 
 def collinear_pairs(geo: DiagramGeometry, polys: Dict[str, List[Point]]) -> List[str]:
-    ends = {e.id: {e.source, e.target} for e in geo.edges}
-    legs: List[Tuple[str, str, float, float, float, Point, Point]] = []
-    for eid, poly in polys.items():
-        for p, q in zip(poly, poly[1:]):
-            ax = leg_axis(p, q)
-            if ax == "H" and abs(q[0] - p[0]) >= COLLINEAR_MIN_LEN:
-                lo, hi = sorted((p[0], q[0]))
-                legs.append((eid, "H", p[1], lo, hi, p, q))
-            elif ax == "V" and abs(q[1] - p[1]) >= COLLINEAR_MIN_LEN:
-                lo, hi = sorted((p[1], q[1]))
-                legs.append((eid, "V", p[0], lo, hi, p, q))
-    found: Set[Tuple[str, str]] = set()
-    for i, a in enumerate(legs):
-        for b in legs[i + 1:]:
-            if a[0] == b[0] or a[1] != b[1]:
-                continue
-            if abs(a[2] - b[2]) >= COLLINEAR_OFFSET:
-                continue
-            gap = max(a[3], b[3]) - min(a[4], b[4])  # > 0 gap, <= 0 overlap
-            if gap > COLLINEAR_GAP:
-                continue
-            if ends[a[0]] & ends[b[0]]:
-                pts_a, pts_b = {a[5], a[6]}, {b[5], b[6]}
-                if any(abs(pa[0] - pb[0]) < AXIS_EPS and abs(pa[1] - pb[1]) < AXIS_EPS
-                       for pa in pts_a for pb in pts_b):
-                    continue  # trunk junction of two branches of one node
-            if gap > 0:
-                # A node icon in the gap terminates both lines visibly (a chain
-                # running straight through a node), so they do not read as one.
-                mid = (a[2] + b[2]) / 2.0
-                lo, hi = min(a[4], b[4]), max(a[3], b[3])
-                g0, g1 = ((lo, mid), (hi, mid)) if a[1] == "H" else ((mid, lo), (mid, hi))
-                if any(segment_crosses_box(g0, g1, nb, inset=0.0) for nb in geo.nodes.values()):
-                    continue
-            found.add(tuple(sorted((a[0], b[0]))))
-    return sorted(f"{x}~{y}" for x, y in found)
+    return sorted(f"{x}~{y}" for x, y in collinear_edge_pairs(geo, polys))
 
 
 def caption_overflows(geo: DiagramGeometry) -> List[str]:
@@ -617,6 +583,8 @@ def measure_page(label: str, page, page_size, diagram_class: str) -> Metrics:
 
     m.detail["own_caption_cuts"] = own_caption_cuts(geo, polys)
     m.own_caption_cuts = len(m.detail["own_caption_cuts"])
+    m.detail["own_text_strikes"] = sorted(f"{e}@{n}" for e, n in check_edge_strikes_own_text(geo))
+    m.own_text_strikes = len(m.detail["own_text_strikes"])
     m.detail["collinear"] = collinear_pairs(geo, polys)
     m.collinear_pairs = len(m.detail["collinear"])
     m.detail["caption_overflows"] = caption_overflows(geo)
@@ -657,18 +625,18 @@ def measure_file(path: Path) -> List[Metrics]:
 # --------------------------------------------------------------------------- #
 
 HEADER = ("| diagram | class | N/E | bbox | page | util | ler_out | ler_in | X | Xav | back "
-          "| own | col | capovf | undrawn | comp/orph | sib same/raw |")
-RULE = "|" + "---|" * 17
+          "| own | vis | col | capovf | undrawn | comp/orph | sib same/raw |")
+RULE = "|" + "---|" * 18
 
 
 def table_row(m: Metrics) -> str:
     if m.error:
-        return f"| `{m.diagram}` | {m.error} |" + " |" * 15
+        return f"| `{m.diagram}` | {m.error} |" + " |" * 16
     return (
         f"| `{m.diagram}` | {m.diagram_class} | {m.nodes}/{m.edges} | {m.bbox_w}x{m.bbox_h} "
         f"| {'ok' if m.page_ok else 'SHORT'} | {m.utilisation * 100:.0f}% "
         f"| {m.ler_out_w}x{m.ler_out_h} ({m.ler_out_pct:.0f}%) | {m.ler_in_w}x{m.ler_in_h} "
-        f"| {m.crossings} | {m.avoidable} | {m.back_edges} | {m.own_caption_cuts} "
+        f"| {m.crossings} | {m.avoidable} | {m.back_edges} | {m.own_caption_cuts} | {m.own_text_strikes} "
         f"| {m.collinear_pairs} | {m.caption_overflows} | {m.undrawn_steps} "
         f"| {m.components}/{m.orphans} | {m.sibling_spread_same}/{m.sibling_spread_raw} |"
     )

@@ -275,6 +275,9 @@ def _serialize_candidate(cand: "PlacedDiagram") -> str:
         flow_lines=cand.spec.flow_lines,
         legend_x=cand.legend_x,
         legend_w=cand.legend_w,
+        # The oracle judges the geometry the engine routed; the Variant A
+        # re-route is the shared builder's finishing pass on the real document.
+        caption_safe=False,
     )
 
 

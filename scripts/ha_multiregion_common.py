@@ -48,6 +48,8 @@ from rule_engine.diagram_layout import (  # noqa: E402
     Edge,
     Node,
     build_diagram,
+    builtin_icon,
+    caption_safe_plan,
     image_icon,
     OciStencilIcon,
     CONTAINER_PAD,
@@ -325,6 +327,66 @@ def _presented(spec, style_kind: Optional[Dict[str, str]] = None):
     )
 
 
+#: The providers sharing the HA geometry.
+_HA_PROVIDERS = ("aws", "azure", "gcp", "oci")
+
+
+def _caption_plan(placed: PlacedDiagram, style_kind: Optional[Dict[str, str]] = None, **legend):
+    """1.10.12 WS2: the Variant A caption plan, computed ONCE for all four skins.
+
+    ``build_diagram`` re-routes an edge that strikes its own node caption, and
+    the four providers' captions differ (``app-az1`` / ``app-zone1`` /
+    ``app-ad1``), so planning per skin would fork the geometry the parity test
+    pins. The plan is computed on the representative presentation instead: the
+    widest node labels any skin draws (the longest zone term), the
+    representative container captions and the AWS caption styles the layout is
+    already scored against. A route that clears the widest caption clears every
+    skin's caption; every skin then applies the same plan."""
+    from rule_engine.layout.repair import _STUB_ICON_STYLE
+
+    key = (
+        tuple(sorted((k, b.x, b.y, b.w, b.h) for k, b in placed.nodes.items())),
+        tuple(sorted((k, b.x, b.y, b.w, b.h) for k, b in placed.containers.items())),
+        tuple((pe.spec.id, pe.exit, pe.entry, tuple(pe.points)) for pe in placed.edges),
+        tuple(sorted((style_kind or {}).items())), repr(sorted(legend.items())),
+    )
+    if key in _PLAN_CACHE:
+        return _PLAN_CACHE[key]
+    zones = load_terminology().get("zone_label") or {}
+    widest = max(_HA_PROVIDERS, key=lambda prov: (len(zones.get(prov, "AZ")), prov))
+    _net, zone = native_terms(widest)
+    stub = builtin_icon(_STUB_ICON_STYLE)
+    nodes = [
+        Node(id=n.id, label=_skinned_label(n, zone), x=int(placed.nodes[n.id].x),
+             y=int(placed.nodes[n.id].y), render=stub, overlay=getattr(n, "overlay", None))
+        for n in placed.spec.nodes
+    ]
+    styles = mapping_container_styles("aws")
+    boundaries = []
+    for c in placed.spec.containers:
+        box = placed.containers.get(c.id)
+        if box is None:
+            continue
+        kind = (style_kind or {}).get(c.kind, c.kind)
+        boundaries.append(Boundary(
+            id=c.id, label=_REPRESENTATIVE_CAPTIONS.get(c.id, c.id),
+            x=int(box.x), y=int(box.y), w=int(box.w), h=int(box.h),
+            style=styles[kind], kind=kind,
+        ))
+    plan = caption_safe_plan(
+        boundaries=boundaries, nodes=nodes, edges=_edges_from(placed),
+        flow_lines=_skinned_flow(placed.spec.flow_lines, widest),
+        legend_x=placed.legend_x, legend_w=placed.legend_w, **legend,
+    )
+    _PLAN_CACHE[key] = plan
+    return plan
+
+
+#: The representative plan depends only on the placed geometry, which is the
+#: same for every skin; computed once per diagram per process.
+_PLAN_CACHE: Dict[tuple, object] = {}
+
+
 def build_summary(skin: ProviderSkin, legacy: bool = False) -> str:
     """Build the <=12-node flow summary .drawio for ``skin``.
 
@@ -353,6 +415,7 @@ def build_summary(skin: ProviderSkin, legacy: bool = False) -> str:
         flow_lines=_skinned_flow(placed.spec.flow_lines, skin.provider),
         legend_x=placed.legend_x, legend_w=placed.legend_w,
         page_w=page_w, page_h=page_h,
+        caption_plan=_caption_plan(placed, {"vpc": "region"}),
     )
 
 
@@ -391,6 +454,9 @@ def build_landscape(skin: ProviderSkin, legacy: bool = False) -> str:
         # it (overlay-legend-coverage).
         legend_lines=STANDARD_LEGEND_LINES + LANDSCAPE_LEGEND_EXTRA,
         page_w=page_w, page_h=page_h,
+        caption_plan=_caption_plan(
+            placed, legend_y_flow=120, legend_y_legend=460,
+            legend_lines=STANDARD_LEGEND_LINES + LANDSCAPE_LEGEND_EXTRA),
     )
 
 

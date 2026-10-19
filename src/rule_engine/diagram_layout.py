@@ -153,7 +153,7 @@ class Node:
     #: machine-readable ``overlay=<term>`` token the linter reads.
     overlay: Optional[str] = None
     #: Caption background colour; set by ``build_diagram`` only for a node whose
-    #: own bottom-exit edge runs through its caption (see ``_own_caption_cuts``).
+    #: caption an edge painted beneath it crosses (see ``_edge_slots``).
     label_bg: Optional[str] = None
 
 
@@ -181,9 +181,9 @@ def overlay_suffix(node: "Node") -> str:
         shape = _OVERLAY_SHAPE.get(node.overlay, "dashed=1")
         out = f";{shape};overlay={node.overlay}"
     if node.label_bg:
-        # Set by ``build_diagram`` for a node whose own bottom-exit edge drops
-        # through its caption: the caption is painted on the local background so
-        # the line passes BEHIND the text instead of striking it through.
+        # Set by ``build_diagram`` for a node whose caption an edge drawn beneath
+        # it crosses: the caption is painted on the local background so the line
+        # passes BEHIND the text instead of striking it through.
         out += f";labelBackgroundColor={node.label_bg}"
     return out
 
@@ -756,37 +756,6 @@ def _clear_container_captions(
     return out
 
 
-#: Approximate advance of a 12px node-caption glyph and the clearance kept
-#: from either end of the text (matches ``geometry.caption_text_extent``).
-_NODE_CAPTION_CHAR_W = 7.0
-_NODE_CAPTION_CLEARANCE = 4.0
-
-
-def _own_caption_cuts(nodes: Sequence[Node], edges: Sequence[Edge]) -> set:
-    """Return the ids of edges whose bottom-exit stub drops through the SOURCE
-    node's own caption text.
-
-    A bottom exit is the sanctioned straight drop to a target directly below
-    (diagram-standards → fan-out bottom branch), but the service name is drawn
-    directly under the icon, centred, so the stub strikes it through
-    (``lb-pr|imary``). Geometry stays as routed; ``build_diagram`` instead draws
-    these edges BEHIND the nodes and gives the node's caption an opaque
-    background, so the line passes under the text.
-    """
-    by_id = {n.id: n for n in nodes}
-    out = set()
-    for e in edges:
-        n = by_id.get(e.source)
-        if n is None or e.exit[1] < 1.0:
-            continue
-        half = min(ICON_SIZE * 2, len(n.label) * _NODE_CAPTION_CHAR_W) / 2.0
-        mid = n.x + ICON_SIZE / 2.0
-        x = n.x + e.exit[0] * ICON_SIZE
-        if mid - half - _NODE_CAPTION_CLEARANCE < x < mid + half + _NODE_CAPTION_CLEARANCE:
-            out.add(e.id)
-    return out
-
-
 def _local_background(n: Node, boundaries: Sequence[Boundary]) -> str:
     """The fill of the innermost FILLED container holding ``n`` (else white)."""
     best: Optional[Boundary] = None
@@ -870,7 +839,10 @@ def _orthogonalised(
     return out
 
 
-def edge_cell(e: Edge) -> str:
+def edge_cell(e: Edge, parent: str = "1", origin: Tuple[float, float] = (0, 0)) -> str:
+    """Emit one edge cell. ``parent`` / ``origin``: the cell the edge is a child
+    of and that cell's absolute origin — draw.io stores an edge's waypoints
+    relative to its parent, so they are written as ``point - origin``."""
     dash = "dashed=1;" if (e.dashed or e.peering) else ""
     ex, ey = e.exit
     nx, ny = e.entry
@@ -895,11 +867,13 @@ def edge_cell(e: Edge) -> str:
     )
     head = (
         f'        <mxCell id="{e.id}" value="{_xml_escape(e.marker)}" style="{style}" '
-        f'edge="1" parent="1" source="{e.source}" target="{e.target}">\n'
+        f'edge="1" parent="{parent}" source="{e.source}" target="{e.target}">\n'
     )
     if e.points:
+        ox, oy = origin
         pts = "".join(
-            f'              <mxPoint x="{px:.2f}" y="{py:.2f}" />\n' for px, py in e.points
+            f'              <mxPoint x="{px - ox:.2f}" y="{py - oy:.2f}" />\n'
+            for px, py in e.points
         )
         return (
             head
@@ -1090,14 +1064,225 @@ def build_diagram(
     legend_mode: str = "stack",
     page_w: int = 1850,
     page_h: int = 950,
+    caption_safe: bool = True,
+    caption_plan=None,
 ) -> str:
     """Assemble a full ``.drawio`` document from the standard building blocks.
+
+    Every route is orthogonalised (:func:`_orthogonalised`). Then, with
+    ``caption_safe`` (the default), every edge whose route strikes its OWN
+    source or target caption is re-routed via the side corridor (Variant A,
+    :func:`rule_engine.caption_routing.plan_caption_safe_routes`, 1.10.12 WS2),
+    judged on the finished document so the caption widths and obstacles are the
+    linter's; a re-route is kept only when it adds no crossing and no routing
+    finding. A container whose right-edge node needs a side corridor grows
+    right/down to hold it (with its ancestors and the right-margin Flow/Legend). The layout engine's oracle serializes candidates with
+    ``caption_safe=False`` so it keeps judging the geometry it routed.
+
+    ``caption_plan`` (from :func:`caption_safe_plan`) applies a precomputed
+    plan instead of planning on this document.
+
+    Edges are drawn beneath the vertices (:func:`_edge_slots`), so a node's
+    caption background masks any line that still passes under its name.
 
     Numbered flow markers are de-collided from each other and slid along their
     own edge off any foreign edge's line (``orthogonalise.marker_hygiene_text``,
     1.10.7). The pass is idempotent and leaves the document byte-identical when
     no marker collides.
     """
+    kwargs = dict(
+        diagram_id=diagram_id, diagram_name=diagram_name, title=title,
+        boundaries=boundaries, nodes=nodes, flow_lines=flow_lines,
+        legend_x=legend_x, legend_y_flow=legend_y_flow,
+        legend_y_legend=legend_y_legend, legend_w=legend_w,
+        legend_lines=legend_lines, legend_mode=legend_mode,
+        page_w=page_w, page_h=page_h,
+    )
+    routed = _orthogonalised(edges, nodes)
+    text = _assemble_document(routed=routed, **kwargs)
+    if caption_safe:
+        plan = caption_plan if caption_plan is not None else _plan_from_text(text)
+        safe = _apply_plan(plan, routed, boundaries, legend_x)
+        if safe is not None:
+            routed, kwargs["boundaries"], kwargs["legend_x"] = safe
+            text = _assemble_document(routed=routed, **kwargs)
+    # Flow-marker hygiene (1.10.7 D37): markers are de-collided from each other
+    # and slid along their own edge off any foreign edge's line, so every
+    # builder (rule-engine-draw, the HA builders, hand-written layout() +
+    # build_diagram scripts) gets it. Idempotent; a no-op when nothing collides.
+    # Function-local import: geometry imports this module at load time.
+    from rule_engine.orthogonalise import marker_hygiene_text
+
+    return _cover_page(marker_hygiene_text(text)[0], page_w, page_h)
+
+
+def _plan_from_text(text: str):
+    """The Variant A plan for an assembled document (None when unparsable).
+    Function-local imports: geometry imports this module."""
+    from rule_engine.caption_routing import plan_caption_safe
+    from rule_engine.drawio_model import DrawioParseError, parse_drawio
+    from rule_engine.geometry import build_geometry
+
+    try:
+        pages = parse_drawio(text.encode("utf-8"), path="<build_diagram>")
+    except DrawioParseError:
+        return None
+    if not pages:
+        return None
+    return plan_caption_safe(build_geometry(pages[0]))
+
+
+def _apply_plan(
+    plan, routed: Sequence[Edge], boundaries: Sequence[Boundary], legend_x: int,
+) -> Optional[Tuple[List[Edge], List[Boundary], int]]:
+    """``(edges, boundaries, legend_x)`` with ``plan``'s re-routes, grown
+    containers and right-margin legend shift applied; None when it changes
+    nothing."""
+    if plan is None or not plan.routes:
+        return None
+    out: List[Edge] = []
+    for e in routed:
+        if e.id in plan.routes:
+            exit_frac, entry_frac, pts = plan.routes[e.id]
+            e = replace(e, exit=tuple(exit_frac), entry=tuple(entry_frac), points=tuple(pts))
+        out.append(e)
+    bounds: List[Boundary] = []
+    for b in boundaries:
+        g = plan.containers.get(b.id)
+        if g is not None and b.parent == "1":
+            b = replace(b, w=int(math.ceil(g.right - b.x)), h=int(math.ceil(g.bottom - b.y)))
+        bounds.append(b)
+    return out, bounds, int(math.ceil(legend_x + plan.text_dx))
+
+
+def caption_safe_plan(
+    *,
+    boundaries: Sequence[Boundary],
+    nodes: Sequence[Node],
+    edges: Sequence[Edge],
+    flow_lines: Sequence[str],
+    legend_x: int,
+    legend_y_flow: int = 120,
+    legend_y_legend: int = 360,
+    legend_w: int | None = None,
+    legend_lines: Sequence[str] | None = None,
+    legend_mode: str = "stack",
+):
+    """Compute the Variant A plan (:class:`rule_engine.caption_routing.CaptionPlan`)
+    for a diagram without emitting it.
+
+    A builder that renders ONE geometry under several skins (the HA examples,
+    whose four providers must stay geometry-identical) computes the plan once
+    on a representative presentation — the widest node labels and container
+    captions any skin draws — and passes it to every :func:`build_diagram` call
+    as ``caption_plan``. A route that clears the widest caption clears every
+    skin's caption."""
+    routed = _orthogonalised(edges, nodes)
+    text = _assemble_document(
+        diagram_id="plan", diagram_name="plan", title="plan",
+        boundaries=boundaries, nodes=nodes, routed=routed, flow_lines=flow_lines,
+        legend_x=legend_x, legend_y_flow=legend_y_flow, legend_y_legend=legend_y_legend,
+        legend_w=legend_w, legend_lines=legend_lines, legend_mode=legend_mode,
+        page_w=0, page_h=0,
+    )
+    return _plan_from_text(text)
+
+
+def _is_filled(style: str) -> bool:
+    """True when a boundary style paints an opaque fill (absent ``fillColor`` is
+    draw.io's default white)."""
+    m = re.search(r"(?:^|;)fillColor=([^;]*)", style)
+    return m is None or m.group(1).strip().lower() not in ("none", "")
+
+
+def _edge_polyline(e: Edge, boxes: Dict[str, Tuple[float, float]]) -> List[Tuple[float, float]]:
+    s, t = boxes.get(e.source), boxes.get(e.target)
+    if s is None or t is None:
+        return []
+    return (
+        [(s[0] + e.exit[0] * ICON_SIZE, s[1] + e.exit[1] * ICON_SIZE)]
+        + [tuple(p) for p in e.points]
+        + [(t[0] + e.entry[0] * ICON_SIZE, t[1] + e.entry[1] * ICON_SIZE)]
+    )
+
+
+def _segment_meets_rect(p, q, x0: float, y0: float, x1: float, y1: float) -> bool:
+    """True when the axis-aligned segment ``p``-``q`` touches the closed rectangle."""
+    lo_x, hi_x = sorted((p[0], q[0]))
+    lo_y, hi_y = sorted((p[1], q[1]))
+    return lo_x <= x1 and hi_x >= x0 and lo_y <= y1 and hi_y >= y0
+
+
+def _edge_slots(
+    boundaries: Sequence[Boundary], nodes: Sequence[Node], edges: Sequence[Edge]
+) -> Tuple[Dict[str, int], set]:
+    """Choose where each edge sits in draw order so it renders BENEATH vertices.
+
+    draw.io paints the model depth-first in document order. Boundaries are flat
+    on the root layer and each node is a child of its tightest boundary (Wave C),
+    so a node paints right after its boundary's fill, and an edge listed after
+    the boundaries paints above every node — which is why the caption background
+    (``labelBackgroundColor``) never masked a line (1.10.12 WS2, defect C1).
+
+    Each edge gets the EARLIEST slot that is still above every filled boundary
+    its polyline touches: slot ``-1`` (root layer, before every boundary) when it
+    touches no filled one, else slot ``k`` — the first child of the last such
+    boundary ``k`` in emission order, so it paints over that fill but beneath
+    that boundary's nodes and every node painted after it. Unfilled boundaries
+    (``fillColor=none``) may paint over an edge: only their border and caption.
+
+    Returns ``({edge_id: slot}, masked_node_ids)``: the masked nodes are those
+    painted after an edge that crosses their caption, whose caption background
+    is set to the local fill so the line passes behind the name."""
+    from rule_engine.geometry import Box, caption_lines, node_caption_box, segment_crosses_box
+
+    boxes = {n.id: (n.x, n.y) for n in nodes}
+    filled = [
+        (i, b) for i, b in enumerate(boundaries) if _is_filled(_boundary_style(b))
+    ]
+    index = {b.id: i for i, b in enumerate(boundaries)}
+    host = {nid: index[h[0]] for nid, h in _node_membership(nodes, boundaries).items()}
+    captions = {
+        n.id: node_caption_box(Box(n.id, n.x, n.y, ICON_SIZE, ICON_SIZE), n.label)
+        for n in nodes if caption_lines(n.label)
+    }
+    slots: Dict[str, int] = {}
+    masked: set = set()
+    for e in edges:
+        poly = _edge_polyline(e, boxes)
+        slot = -1
+        for i, b in filled:
+            if any(_segment_meets_rect(p, q, b.x, b.y, b.x + b.w, b.y + b.h)
+                   for p, q in zip(poly, poly[1:])):
+                slot = max(slot, i)
+        slots[e.id] = slot
+        for nid, cap in captions.items():
+            if host.get(nid, len(boundaries)) < slot:
+                continue  # painted before the edge: it cannot mask it
+            if any(segment_crosses_box(p, q, cap) for p, q in zip(poly, poly[1:])):
+                masked.add(nid)
+    return slots, masked
+
+
+def _assemble_document(
+    *,
+    diagram_id: str,
+    diagram_name: str,
+    title: str,
+    boundaries: Sequence[Boundary],
+    nodes: Sequence[Node],
+    routed: Sequence[Edge],
+    flow_lines: Sequence[str],
+    legend_x: int,
+    legend_y_flow: int,
+    legend_y_legend: int,
+    legend_w: int | None,
+    legend_lines: Sequence[str] | None,
+    legend_mode: str,
+    page_w: int,
+    page_h: int,
+) -> str:
+    """Emit the ``.drawio`` document for already-routed edges (no hygiene)."""
     parts: List[str] = []
     parts.append(
         f'<mxfile host="app.diagrams.net" agent="rule-engine golden-example" version="24.0.0">\n'
@@ -1111,31 +1296,37 @@ def build_diagram(
     )
     parts.append(title_cell(title))
     parts.append("\n")
-    routed = _orthogonalised(edges, nodes)
-    for b in _clear_container_captions(boundaries, nodes, routed):
-        parts.append(boundary_cell(b))
-    parts.append("\n")
-    # Edges whose bottom stub drops through their source's caption are drawn
-    # BEFORE the nodes (draw.io paints in document order), and that source's
-    # caption gets an opaque background in the local container fill — the line
-    # then passes behind the service name instead of striking it through.
-    under = _own_caption_cuts(nodes, routed)
-    if under:
-        masked = {e.source for e in routed if e.id in under}
+    # Edges beneath vertices (1.10.12 WS2): each edge is emitted either on the
+    # root layer BEFORE every boundary (slot -1) or as the FIRST child of the
+    # last filled boundary it touches (listed after the boundary cells, before
+    # the node cells, with boundary-relative waypoints). A node painted after an
+    # edge that crosses its caption gets the local fill as caption background,
+    # so the line passes behind the service name instead of striking it.
+    slots, masked = _edge_slots(boundaries, nodes, routed)
+    if masked:
         nodes = [
             replace(n, label_bg=_local_background(n, boundaries)) if n.id in masked else n
             for n in nodes
         ]
-        for e in routed:
-            if e.id in under:
-                parts.append(edge_cell(e))
-        parts.append("\n")
+    for e in routed:
+        if slots.get(e.id, -1) < 0:
+            parts.append(edge_cell(e))
+    parts.append("\n")
+    for b in _clear_container_captions(boundaries, nodes, routed):
+        parts.append(boundary_cell(b))
+    parts.append("\n")
+    for e in routed:
+        k = slots.get(e.id, -1)
+        if k >= 0:
+            b = boundaries[k]
+            parts.append(edge_cell(e, parent=b.id, origin=(b.x, b.y)))
+    parts.append("\n")
     # Wave C: emit each node as a structural child of its tightest enclosing
     # boundary (``parent=<id>`` + geometry relative to the host origin), so
     # membership is checkable (Theme 27). A node contained by no boundary keeps
     # parent="1". Absolute positions are unchanged — draw.io resolves a child's
     # relative geometry back to the same pixels — so render and lint are identical
-    # (proven by the Wave C spike). Edges stay flat on the root layer.
+    # (proven by the Wave C spike).
     _host = _node_membership(nodes, boundaries)
     for n in nodes:
         hb = _host.get(n.id)
@@ -1145,10 +1336,6 @@ def build_diagram(
             host_id, hx, hy = hb
             rel = replace(n, x=n.x - hx, y=n.y - hy)
             parts.append(rel.render(rel, host_id))
-    parts.append("\n")
-    for e in routed:
-        if e.id not in under:
-            parts.append(edge_cell(e))
     parts.append("\n")
     # Size each text box from its content plus uniform padding so no line is
     # clipped or abuts the border. Height: one 12px line ~= 16px of leading, plus
@@ -1215,14 +1402,7 @@ def build_diagram(
     parts.append(
         "      </root>\n    </mxGraphModel>\n  </diagram>\n</mxfile>\n"
     )
-    # Flow-marker hygiene (1.10.7 D37): markers are de-collided from each other
-    # and slid along their own edge off any foreign edge's line, so every
-    # builder (rule-engine-draw, the HA builders, hand-written layout() +
-    # build_diagram scripts) gets it. Idempotent; a no-op when nothing collides.
-    # Function-local import: geometry imports this module at load time.
-    from rule_engine.orthogonalise import marker_hygiene_text
-
-    return _cover_page(marker_hygiene_text("".join(parts))[0], page_w, page_h)
+    return "".join(parts)
 
 
 _PAGE_SIZE_RE = re.compile(r'pageWidth="(\d+)" pageHeight="(\d+)"')
@@ -1272,5 +1452,5 @@ __all__ = [
     "Node", "Edge", "Boundary", "IconRenderer",
     "builtin_icon", "embed_oci_stencil", "OciStencilIcon", "OciStencilError",
     "title_cell", "boundary_cell", "edge_cell", "text_cell",
-    "STANDARD_LEGEND_LINES", "legend_lines_for", "build_diagram",
+    "STANDARD_LEGEND_LINES", "legend_lines_for", "build_diagram", "caption_safe_plan",
 ]
