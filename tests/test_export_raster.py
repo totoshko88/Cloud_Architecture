@@ -374,14 +374,13 @@ def _drawio_with_vertex(width: float, x: float = 0.0) -> str:
 
 
 def test_compute_scale_never_below_one_for_small_canvas(tmp_path: Path) -> None:
-    """A canvas narrower than the flow target scales UP to the target, never
-    below 1."""
+    """A canvas well inside the flow budget exports at the 1.5 cap (decision 1),
+    never below 1 and never inflated toward the budget."""
     src = tmp_path / "01.drawio"
     _write(src, _drawio_with_vertex(width=200))
     scale, width = er.compute_scale(src, "flow")
     assert width == 200
-    # 1600 / 200 = 8, clamped by the max-width upper bound too, but well above 1.
-    assert scale >= 1.0
+    assert scale == er.MAX_EXPORT_SCALE == 1.5
 
 
 def test_compute_scale_stays_at_or_above_one_near_budget(tmp_path: Path) -> None:
@@ -396,15 +395,27 @@ def test_compute_scale_stays_at_or_above_one_near_budget(tmp_path: Path) -> None
     assert width * scale + 2 * int(er.EXPORT_BORDER) <= er.FLOW_MAX_WIDTH + 0.5
 
 
-def test_compute_scale_rejects_over_budget_flow_canvas(tmp_path: Path) -> None:
-    """R8.4/D8: a flow canvas wider than 1600px (accounting for borders) cannot
-    fit at scale 1, so compute_scale raises the split-the-diagram signal."""
+def test_compute_scale_fits_an_over_budget_flow_down(tmp_path: Path) -> None:
+    """1.10.12 decision 1: a flow canvas over 1600px is fitted down
+    automatically (no --max-width), landing exactly on the budget."""
     src = tmp_path / "01.drawio"
     _write(src, _drawio_with_vertex(width=1750))  # the aws/01 case
+    scale, width = er.compute_scale(src, "flow")
+    border = 2 * int(er.EXPORT_BORDER)
+    assert scale == pytest.approx((er.FLOW_MAX_WIDTH - border) / 1750)
+    assert scale < 1.0
+    assert width * scale + border <= er.FLOW_MAX_WIDTH + 0.5
+
+
+def test_compute_scale_rejects_a_flow_below_the_legibility_floor(tmp_path: Path) -> None:
+    """A canvas that would need less than the 0.5 floor still raises the
+    split-the-diagram signal."""
+    src = tmp_path / "01.drawio"
+    _write(src, _drawio_with_vertex(width=4000))
     with pytest.raises(er.CanvasTooWideError) as exc:
         er.compute_scale(src, "flow")
     assert "split the diagram" in str(exc.value)
-    assert "1750px" in str(exc.value)
+    assert "4000px" in str(exc.value)
 
 
 def test_compute_scale_allows_wider_landscape(tmp_path: Path) -> None:
@@ -418,11 +429,28 @@ def test_compute_scale_allows_wider_landscape(tmp_path: Path) -> None:
     assert width * scale + 2 * int(er.EXPORT_BORDER) <= er.LANDSCAPE_MAX_WIDTH + 0.5
 
 
+@pytest.mark.parametrize("width, expected", [
+    (1360, 1.5),            # SEP 03: ~2040px, not ~3336px (C11)
+    (1610, 1.5),            # SEP 08: ~2415px
+    (1990, 1.5),            # SEP 09: ~2985px
+    (2970, 3584 / 2970),    # HA landscapes: budget-capped below 1.5
+])
+def test_compute_scale_landscape_caps_at_one_and_a_half(
+    tmp_path: Path, width: int, expected: float
+) -> None:
+    """C11: a landscape is no longer inflated toward 3400px; it exports at 1.5
+    unless the 3600px budget caps it lower."""
+    src = tmp_path / "01.drawio"
+    _write(src, _drawio_with_vertex(width=width))
+    scale, _ = er.compute_scale(src, "landscape")
+    assert scale == pytest.approx(expected)
+
+
 def test_export_one_rejects_over_budget_canvas_and_writes_no_png(tmp_path: Path) -> None:
-    """R8.4: export_one refuses a too-wide canvas (writes no PNG) rather than
-    silently downscaling it."""
+    """R8.4: export_one refuses a canvas that cannot fit even at the floor
+    (writes no PNG)."""
     src = tmp_path / "examples" / "aws" / "01.drawio"
-    _write(src, _drawio_with_vertex(width=1750))
+    _write(src, _drawio_with_vertex(width=4000))
     drawio = _make_fake_drawio(tmp_path)
     with pytest.raises(er.CanvasTooWideError):
         er.export_one(src, repo_root=tmp_path, drawio=str(drawio))
@@ -506,9 +534,10 @@ def test_main_reports_failed_on_missing_asset(tmp_path: Path) -> None:
 
 
 def test_main_reports_failed_on_over_budget_canvas(tmp_path: Path) -> None:
-    """R8.4: a too-wide flow canvas fails at the CLI level (exit 1, no PNG)."""
+    """R8.4: a flow canvas too wide even for the floor fails at the CLI level
+    (exit 1, no PNG)."""
     src = tmp_path / "examples" / "aws" / "01.drawio"
-    _write(src, _drawio_with_vertex(width=1750))
+    _write(src, _drawio_with_vertex(width=4000))
     drawio = _make_fake_drawio(tmp_path)
 
     rc = er.main([str(src), "--repo-root", str(tmp_path), "--drawio", str(drawio)])
@@ -516,35 +545,30 @@ def test_main_reports_failed_on_over_budget_canvas(tmp_path: Path) -> None:
     assert not Path(str(src) + ".png").exists()
 
 
-# --- Property 30: export scale is at least 1 or the export fails (R8.4) -----
+# --- Property 30 (1.10.12 decision 1): scale = min(1.5, fit), floor 0.5 ----
 #
-# The property-based counterpart to the compute_scale example tests above. It
-# exercises the whole input space of (canvas width W, diagram class) and asserts
-# the two outcomes partition it exactly (design.md -> Correctness Properties,
-# Property 30): compute_scale either returns a scale s >= 1 with
-# W*s + 2*border <= the class max width, OR raises CanvasTooWideError, and it
-# raises exactly when W + 2*border > the class max width.
+# The property-based counterpart to the compute_scale example tests above. For
+# any (canvas width W, diagram class), compute_scale returns
+# ``min(1.5, (max_width - 2*border) / W)``, which is >= 1 exactly when the
+# canvas fits its class budget, and the scaled canvas always fits the budget;
+# it raises CanvasTooWideError exactly when the fit falls below the 0.5 floor.
 
 from hypothesis import given  # noqa: E402
 from hypothesis import strategies as st  # noqa: E402
 
 #: Canvas widths spanning well below, around, and well above both class budgets
-#: (flow 1600 / landscape 3600), on the 10px grid so the serialized geometry is
-#: exact. The extremes on either side of each budget guarantee both outcomes
-#: (scale-up and split-signal) are hit for each class.
-_CANVAS_WIDTHS = st.integers(min_value=1, max_value=400).map(lambda n: n * 10)
+#: (flow 1600 / landscape 3600) and both floors (3184 / 7184), on the 10px grid
+#: so the serialized geometry is exact.
+_CANVAS_WIDTHS = st.integers(min_value=1, max_value=800).map(lambda n: n * 10)
 
 _DIAGRAM_CLASSES = st.sampled_from(["flow", "landscape"])
 
 
-# Feature: honest-gates, Property 30: Export scale is at least 1 or the export fails
+# Feature: honest-gates, Property 30 (rev. 1.10.12): export scale policy
 @given(width=_CANVAS_WIDTHS, diagram_class=_DIAGRAM_CLASSES)
 def test_compute_scale_partitions_scale_up_and_split_signal(
     tmp_path_factory, width: int, diagram_class: str
 ) -> None:
-    """For any canvas width W and class, compute_scale scales up (>= 1, within
-    budget) or raises the split signal, and raises exactly when W + 2*border
-    exceeds the class max width — the two outcomes partition the input space."""
     src = tmp_path_factory.mktemp("scale") / "01.drawio"
     src.write_text(_drawio_with_vertex(width=width), encoding="utf-8")
 
@@ -552,41 +576,21 @@ def test_compute_scale_partitions_scale_up_and_split_signal(
         er.LANDSCAPE_MAX_WIDTH if diagram_class == "landscape" else er.FLOW_MAX_WIDTH
     )
     border = int(er.EXPORT_BORDER) * 2
-    over_budget = width + border > max_width
+    fit = (max_width - border) / width
 
-    if over_budget:
-        if diagram_class == "landscape":
-            # Theme 23: a landscape over budget DOWNSCALES to fit (to a floor),
-            # or raises only when even the floor cannot fit.
-            fit = (max_width - border) / width
-            if fit < er.LANDSCAPE_MIN_SCALE:
-                with pytest.raises(er.CanvasTooWideError):
-                    er.compute_scale(src, diagram_class)
-            else:
-                scale, measured = er.compute_scale(src, diagram_class)
-                assert scale < 1.0
-                assert measured * scale + border <= max_width + 0.5
-        else:
-            # A flow MARGINALLY over (within the wrapped-legend overshoot + border)
-            # is absorbed by a hair of downscale; a flow genuinely bigger still
-            # raises the split signal.
-            margin = er._WRAPPED_TEXT_RENDER_OVERSHOOT + border
-            if width + border <= max_width + margin:
-                scale, measured = er.compute_scale(src, diagram_class)
-                assert scale <= 1.0
-                assert measured * scale + border <= max_width + 0.5
-            else:
-                with pytest.raises(er.CanvasTooWideError):
-                    er.compute_scale(src, diagram_class)
-    else:
-        scale, measured = er.compute_scale(src, diagram_class)
-        # The measured width is exactly the vertex box width W.
-        assert measured == float(width)
-        # Never downscales.
+    if fit < er.MIN_EXPORT_SCALE:
+        with pytest.raises(er.CanvasTooWideError):
+            er.compute_scale(src, diagram_class)
+        return
+    scale, measured = er.compute_scale(src, diagram_class)
+    assert measured == float(width)
+    assert scale == pytest.approx(min(er.MAX_EXPORT_SCALE, fit))
+    assert scale <= er.MAX_EXPORT_SCALE
+    # Never downscales a canvas that fits its budget.
+    if width + border <= max_width:
         assert scale >= 1.0
-        # The scaled canvas plus both borders fits the class budget (allow a
-        # sub-pixel rounding slack on the clamp).
-        assert measured * scale + border <= max_width + 0.5
+    # The scaled canvas plus both borders always fits the class budget.
+    assert measured * scale + border <= max_width + 0.5
 
 
 # --- caption-aware canvas width (1.10.7, M5) --------------------------------
@@ -740,12 +744,15 @@ def _wide_flow_drawio(path: Path, right_edge: int) -> None:
     )
 
 
-def test_default_still_refuses_a_too_wide_flow(tmp_path: Path) -> None:
-    """Without --max-width, a canvas over the flow budget still raises (unchanged)."""
+def test_default_fits_a_too_wide_flow_without_the_flag(tmp_path: Path) -> None:
+    """1.10.12: without --max-width, a canvas over the flow budget is fitted
+    down automatically (SEP 02/07 no longer need the flag)."""
     src = tmp_path / "wide.drawio"
     _wide_flow_drawio(src, 1700)  # > 1600 flow budget
-    with pytest.raises(er.CanvasTooWideError):
-        er.compute_scale(src, "flow")
+    scale, width = er.compute_scale(src, "flow")
+    border = int(er.EXPORT_BORDER) * 2
+    assert scale < 1.0
+    assert width * scale + border <= er.FLOW_MAX_WIDTH + 0.5
 
 
 def test_override_downscales_a_too_wide_flow(tmp_path: Path) -> None:

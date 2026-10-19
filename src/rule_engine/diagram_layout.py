@@ -32,6 +32,7 @@ Both strategies emit a node that the Linter counts as exactly one top-level node
 from __future__ import annotations
 
 import base64
+import math
 import re
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -1212,7 +1213,48 @@ def build_diagram(
     # Function-local import: geometry imports this module at load time.
     from rule_engine.orthogonalise import marker_hygiene_text
 
-    return marker_hygiene_text("".join(parts))[0]
+    return _cover_page(marker_hygiene_text("".join(parts))[0], page_w, page_h)
+
+
+_PAGE_SIZE_RE = re.compile(r'pageWidth="(\d+)" pageHeight="(\d+)"')
+
+
+def _cover_page(text: str, page_w: int, page_h: int) -> str:
+    """Grow ``pageWidth`` / ``pageHeight`` so the page covers everything drawn.
+
+    1.10.12 WS1 (defect C14): a caller's page size is an estimate made before
+    the text boxes were sized and the edges routed, so a long Flow list or a
+    wide caption could end below / right of the page (SEP 05: pageHeight 602
+    vs a content bottom of 750). The finished document is measured with the
+    linter's own parser (:func:`rule_engine.geometry.content_bbox`) and each
+    axis is raised, never lowered, to the content edge plus one container pad,
+    rounded up to the grid. A page that already covers its content is left
+    byte-identical."""
+    from rule_engine.drawio_model import DrawioParseError, parse_drawio
+    from rule_engine.geometry import build_geometry, content_bbox
+
+    try:
+        pages = parse_drawio(text.encode("utf-8"), path="<build_diagram>")
+    except DrawioParseError:
+        return text
+    if not pages:
+        return text
+    bb = content_bbox(build_geometry(pages[0]))
+    if bb is None:
+        return text
+
+    def _cover(current: int, edge: float) -> int:
+        if current >= edge:
+            return current
+        need = math.ceil(edge) + CONTAINER_PAD
+        return int(-(-need // GRID) * GRID)
+
+    new_w, new_h = _cover(page_w, bb.right), _cover(page_h, bb.bottom)
+    if (new_w, new_h) == (page_w, page_h):
+        return text
+    return _PAGE_SIZE_RE.sub(
+        f'pageWidth="{new_w}" pageHeight="{new_h}"', text, count=1
+    )
 
 
 __all__ = [

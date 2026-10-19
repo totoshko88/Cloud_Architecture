@@ -1466,6 +1466,30 @@ def edge_polyline(geo: DiagramGeometry, edge: EdgeGeom) -> List[Point]:
     )
 
 
+def content_bbox(geo: DiagramGeometry) -> Optional[Box]:
+    """Return the model bounding box of everything the page draws, or None.
+
+    Every container, every text cell (title / Flow / Legend), every node icon
+    plus its caption (:func:`node_caption_box`) and every edge contact and
+    waypoint — the same definition ``scripts/canvas_metrics.py`` uses for its
+    ``bbox`` / ``page_ok`` columns. The shared builder sizes ``pageWidth`` /
+    ``pageHeight`` to cover it (1.10.12 WS1, defect C14)."""
+    boxes: List[Box] = list(geo.containers.values()) + list(geo.text_boxes.values())
+    for nid, box in geo.nodes.items():
+        boxes.append(box)
+        label = geo.node_labels.get(nid, "")
+        if caption_lines(label):
+            boxes.append(node_caption_box(box, label))
+    pts: List[Point] = [p for e in geo.edges for p in edge_polyline(geo, e)]
+    if not boxes and not pts:
+        return None
+    x0 = min([b.x for b in boxes] + [p[0] for p in pts])
+    y0 = min([b.y for b in boxes] + [p[1] for p in pts])
+    x1 = max([b.right for b in boxes] + [p[0] for p in pts])
+    y1 = max([b.bottom for b in boxes] + [p[1] for p in pts])
+    return Box("bbox", x0, y0, x1 - x0, y1 - y0)
+
+
 def segments_cross(s1: Tuple[Point, Point], s2: Tuple[Point, Point]) -> bool:
     """True when an H segment and a V segment intersect strictly inside both.
 
