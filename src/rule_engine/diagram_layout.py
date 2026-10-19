@@ -1105,6 +1105,7 @@ def build_diagram(
         safe = _apply_plan(plan, routed, boundaries, legend_x)
         if safe is not None:
             routed, kwargs["boundaries"], kwargs["legend_x"] = safe
+            kwargs["nodes"] = _apply_wraps(plan, nodes)
             text = _assemble_document(routed=routed, **kwargs)
     # Flow-marker hygiene (1.10.7 D37): markers are de-collided from each other
     # and slid along their own edge off any foreign edge's line, so every
@@ -1153,6 +1154,39 @@ def _apply_plan(
             b = replace(b, w=int(math.ceil(g.right - b.x)), h=int(math.ceil(g.bottom - b.y)))
         bounds.append(b)
     return out, bounds, int(math.ceil(legend_x + plan.text_dx))
+
+
+def _apply_wraps(plan, nodes: Sequence[Node]) -> List[Node]:
+    """``nodes`` with the plan's wrapped captions (1.10.12 WS2). Each node's
+    OWN label is wrapped (:func:`geometry.wrap_caption`, deterministic), so a
+    plan computed on a representative presentation (the HA skins) wraps every
+    skin at its own best break; a label with no break point stays as is."""
+    wraps = getattr(plan, "wraps", None) or {}
+    if not wraps:
+        return list(nodes)
+    from rule_engine.geometry import wrap_caption
+
+    out: List[Node] = []
+    for n in nodes:
+        if n.id in wraps:
+            w = wrap_caption(n.label)
+            if w is not None:
+                n = replace(n, label=w)
+        out.append(n)
+    return out
+
+
+def _render_node(n: Node, parent_id: str) -> str:
+    """``n``'s cell XML. A multi-line caption (a wrapped label) is written with
+    ``&#10;`` line breaks: a raw newline inside an XML attribute value is
+    normalised to a space by every XML parser (draw.io included), so the wrap
+    would silently vanish. Renderers that escape the label (or not) are all
+    covered; a one-line label is emitted byte-identically."""
+    out = n.render(n, parent_id)
+    if "\n" not in n.label:
+        return out
+    pat = re.compile(r'(<mxCell\b[^>]*?\bid="' + re.escape(n.id) + r'"[^>]*?\bvalue=")([^"]*)(")', re.S)
+    return pat.sub(lambda m: m.group(1) + m.group(2).replace("\n", "&#10;") + m.group(3), out, count=1)
 
 
 def caption_safe_plan(
@@ -1331,11 +1365,11 @@ def _assemble_document(
     for n in nodes:
         hb = _host.get(n.id)
         if hb is None:
-            parts.append(n.render(n, "1"))
+            parts.append(_render_node(n, "1"))
         else:
             host_id, hx, hy = hb
             rel = replace(n, x=n.x - hx, y=n.y - hy)
-            parts.append(rel.render(rel, host_id))
+            parts.append(_render_node(rel, host_id))
     parts.append("\n")
     # Size each text box from its content plus uniform padding so no line is
     # clipped or abuts the border. Height: one 12px line ~= 16px of leading, plus

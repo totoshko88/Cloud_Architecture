@@ -74,6 +74,10 @@ from rule_engine.geometry import (
     caption_text_box,
     check_container_dead_space,
     check_container_overlap,
+    check_container_padding,
+    check_legend_placement,
+    check_node_overlap,
+    wrap_caption,
     check_edge_crosses_container_label,
     container_caption_geom,
     polyline_cuts_container_caption,
@@ -184,11 +188,15 @@ class CaptionPlan:
 
     ``routes``: ``{edge_id: (exit, entry, interior points)}``; ``containers``:
     ``{container_id: grown Box}``; ``text_dx``: how far the right-margin text
-    boxes (Flow / Legend) move right to stay clear of a grown container."""
+    boxes (Flow / Legend) move right to stay clear of a grown container;
+    ``wraps``: ``{node_id: two-line caption}`` for an overloaded source whose
+    caption is wrapped (:func:`geometry.wrap_caption`) so its bottom exit
+    clears the text."""
 
     routes: Dict[str, Route]
     containers: Dict[str, Box]
     text_dx: float = 0.0
+    wraps: Dict[str, str] = field(default_factory=dict)
 
 
 def _polylines(geo: DiagramGeometry) -> Dict[str, List[Point]]:
@@ -1217,6 +1225,121 @@ def _overloaded(geo: DiagramGeometry, e: EdgeGeom) -> bool:
     return len(_face_fractions(geo, e, e.source, "right", exit=True)) >= 3
 
 
+def _layout_findings(geo: DiagramGeometry) -> int:
+    """Findings a taller (wrapped) caption footprint can add that the routing
+    score does not count: container padding, node overlap and a Flow/Legend
+    box over a node."""
+    return (len(check_container_padding(geo)) + len(check_node_overlap(geo))
+            + len(check_legend_placement(geo)))
+
+
+def _wrapped(geo: DiagramGeometry, e: EdgeGeom) -> Optional[Tuple[DiagramGeometry, str]]:
+    """``geo`` with ``e``'s source caption wrapped onto two lines, or None.
+
+    Only for the case decision 2 (amended, WS2) allows: the source is
+    overloaded (three other right exits, so the bottom exit is unavoidable)
+    and its one-line caption text is wider than the icon, so no bottom
+    position lies outside the text. None when the label has no break point or
+    the taller footprint adds a padding / overlap / legend finding (the node
+    then keeps its masked bottom exit, an accepted residual)."""
+    nid = e.source
+    label = geo.node_labels.get(nid, "")
+    if not _overloaded(geo, e) or len(caption_lines(label)) != 1:
+        return None
+    s = geo.nodes[nid]
+    if caption_text_box(s, label).w <= s.w:
+        return None
+    wrapped = wrap_caption(label)
+    if wrapped is None:
+        return None
+    trial = replace(geo, node_labels={**geo.node_labels, nid: wrapped})
+    if _layout_findings(trial) > _layout_findings(geo):
+        return None
+    return trial, wrapped
+
+
+def _find_move(work: DiagramGeometry, e: EdgeGeom, base: _Score) -> Optional[Move]:
+    """The best acceptable re-route of ``e`` (side corridor, then joint
+    moves, then — on an overloaded source whose caption TEXT it strikes — a
+    corner exit), or None."""
+    found = None
+    for start in (2 * GRID, GRID):
+        _CORRIDOR_START[0] = start
+        found = (_best_single(work, e, base, False)
+                 or _best_joint(work, e, base, False, 2)
+                 or _best_joint(work, e, base, False, 3))
+        if found is not None:
+            break
+    _CORRIDOR_START[0] = 2 * GRID
+    if found is None and _overloaded(work, e) and e.id in {
+            x for x, _ in check_edge_strikes_own_text(work)}:
+        found = (_best_single(work, e, base, True)
+                 or _best_joint(work, e, base, True, 2))
+    return found
+
+
+def _apply_move(
+    work: DiagramGeometry, found: Move, routes: Dict[str, Route],
+) -> Tuple[DiagramGeometry, Dict[str, Box], float]:
+    """``work`` with ``found`` applied (``routes`` updated in place), the
+    containers it grew and the right-margin shift."""
+    moved, grown, _dx, _ = found
+    for rid, route in moved.items():
+        work = _with_route(work, rid, route)
+        routes[rid] = route
+    out: Dict[str, Box] = {}
+    dx = 0.0
+    if grown:
+        work, dx = _with_growth(work, grown)
+        out = {cid: work.containers[cid] for cid in grown}
+    return work, out, dx
+
+
+def _wrap_move(
+    work: DiagramGeometry, e: EdgeGeom, base: _Score, order: Dict[str, int],
+) -> Optional[Tuple[DiagramGeometry, Dict[str, Route], Dict[str, Box], float, str]]:
+    """Wrap ``e``'s source caption (:func:`_wrapped`) and re-plan every edge
+    of that node that then crosses its caption — the overloaded bottom exits
+    take a corner past the narrower text, and a sibling run the taller caption
+    now meets moves off it. Kept only when the whole result is no worse than
+    ``base`` (the UNWRAPPED diagram) on every measure and has fewer own-caption
+    cuts or visible strikes; otherwise None and the node keeps its masked
+    bottom exit (an accepted residual)."""
+    w = _wrapped(work, e)
+    if w is None:
+        return None
+    trial, label = w
+    nid = e.source
+    routes: Dict[str, Route] = {}
+    grown_all: Dict[str, Box] = {}
+    text_dx = 0.0
+    for _ in range(_MAX_PASSES):
+        cut = sorted({eid for eid, n in check_edge_crosses_own_label(trial) if n == nid},
+                     key=order.get)
+        progressed = False
+        for eid in cut:
+            if eid not in {x for x, n in check_edge_crosses_own_label(trial) if n == nid}:
+                continue
+            o = next(x for x in trial.edges if x.id == eid)
+            found = _find_move(trial, o, _score(trial))
+            if found is None:
+                continue
+            trial, d_grown, d_dx = _apply_move(trial, found, routes)
+            grown_all.update(d_grown)
+            text_dx += d_dx
+            progressed = True
+        if not progressed:
+            break
+    if not routes:
+        return None
+    final = _score(trial)
+    if not final.no_worse(base, _COLLINEAR_CAP[0]) or (final.own, final.vis) >= (base.own, base.vis):
+        return None
+    if _layout_findings(trial) > _layout_findings(work):
+        return None
+    return trial, routes, grown_all, text_dx, label
+
+
 def _plan_once(geo: DiagramGeometry, reverse: bool) -> Tuple[CaptionPlan, DiagramGeometry]:
     """One greedy planning run over the offending edges in declared (or
     reverse) order; returns the plan and the geometry it produces."""
@@ -1225,6 +1348,7 @@ def _plan_once(geo: DiagramGeometry, reverse: bool) -> Tuple[CaptionPlan, Diagra
                    text_boxes=dict(geo.text_boxes))
     routes: Dict[str, Route] = {}
     grown_all: Dict[str, Box] = {}
+    wraps: Dict[str, str] = {}
     text_dx = 0.0
     order = {e.id: (-i if reverse else i) for i, e in enumerate(geo.edges)}
     for _ in range(_MAX_PASSES):
@@ -1239,34 +1363,31 @@ def _plan_once(geo: DiagramGeometry, reverse: bool) -> Tuple[CaptionPlan, Diagra
             if eid not in {x for x, _ in check_edge_crosses_own_label(work)}:
                 continue  # cleared by an earlier joint move
             base = _score(work)
-            found = None
-            for start in (2 * GRID, GRID):
-                _CORRIDOR_START[0] = start
-                found = (_best_single(work, e, base, False)
-                         or _best_joint(work, e, base, False, 2)
-                         or _best_joint(work, e, base, False, 3))
-                if found is not None:
-                    break
-            _CORRIDOR_START[0] = 2 * GRID
+            found = _find_move(work, e, base)
             if found is None and _overloaded(work, e) and eid in {
                     x for x, _ in check_edge_strikes_own_text(work)}:
-                found = (_best_single(work, e, base, True)
-                         or _best_joint(work, e, base, True, 2))
+                # No bottom position outside a caption wider than the icon:
+                # wrap the caption onto two lines and re-plan that node's
+                # edges, judged as a whole against the UNWRAPPED diagram.
+                macro = _wrap_move(work, e, base, order)
+                if macro is not None:
+                    work, m_routes, m_grown, m_dx, label = macro
+                    routes.update(m_routes)
+                    grown_all.update(m_grown)
+                    text_dx += m_dx
+                    wraps[e.source] = label
+                    progressed = True
+                    continue
             if found is None:
                 continue
-            moved, grown, dx, _ = found
-            for rid, route in moved.items():
-                work = _with_route(work, rid, route)
-                routes[rid] = route
-            if grown:
-                work, _dx = _with_growth(work, grown)
-                text_dx += _dx
-                grown_all.update({cid: work.containers[cid] for cid in grown})
+            work, d_grown, d_dx = _apply_move(work, found, routes)
+            text_dx += d_dx
+            grown_all.update(d_grown)
             progressed = True
         if not progressed:
             break
     _RANK_CACHE.clear()
-    return CaptionPlan(routes, grown_all, text_dx), work
+    return CaptionPlan(routes, grown_all, text_dx, wraps), work
 
 
 def _unexplained(geo: DiagramGeometry) -> int:

@@ -144,3 +144,68 @@ def test_text_extent_is_narrower_than_the_caption_band():
     box = geo.Box("n", 0, 0, 78, 78)
     assert geo.caption_text_box(box, "app-az1").w == 49.0
     assert geo.node_caption_box(box, "app-az1").w == 78.0
+
+
+def test_wrap_caption_breaks_at_space_or_hyphen_nearest_the_middle():
+    assert geo.wrap_caption("Lambda core (13 fns)") == "Lambda core\n(13 fns)"
+    assert geo.wrap_caption("Lambda VPC-attached") == "Lambda VPC-\nattached"
+    assert geo.wrap_caption("tool-invoker") == "tool-\ninvoker"
+    assert geo.wrap_caption("SEP platform") == "SEP\nplatform"
+    # Never inside a word; no break point, or already two lines -> None.
+    assert geo.wrap_caption("orchestrator") is None
+    assert geo.wrap_caption("a-") is None
+    assert geo.wrap_caption("a\nb") is None
+
+
+def test_wrapped_caption_footprint_is_one_line_taller():
+    """A second caption line adds ``CAPTION_LINE_H`` (16px) everywhere the
+    caption is measured: caption box, text box and node footprint."""
+    box = geo.Box("n", 0, 0, 78, 78)
+    assert geo.node_caption_box(box, "a\nb").h == geo.LABEL_BAND + 16.0
+    assert geo.caption_text_box(box, "a\nb").h == geo.LABEL_BAND + 16.0
+    g = geo.DiagramGeometry(nodes={"n": box}, node_labels={"n": "a\nb"})
+    assert geo.node_footprint(g, "n").h == 78 + geo.LABEL_BAND + 16.0
+    assert geo.node_footprint(g, "n", 0).h == 78  # the icon-only test is unchanged
+
+
+def _overloaded_wide(label: str):
+    nodes = [dl.Node("hub", label, 200, 300, render=_ICON),
+             dl.Node("t1", "t1", 500, 100, render=_ICON),
+             dl.Node("t2", "t2", 500, 300, render=_ICON),
+             dl.Node("t3", "t3", 500, 500, render=_ICON),
+             dl.Node("d", "d", 200, 600, render=_ICON)]
+    edges = [
+        dl.Edge("e1", "hub", "t1", "1", exit=(1.0, 0.25), entry=(0.0, 0.5),
+                points=((330, 320), (330, 140))),
+        dl.Edge("e2", "hub", "t2", "2", exit=(1.0, 0.5), entry=(0.0, 0.5)),
+        dl.Edge("e3", "hub", "t3", "3", exit=(1.0, 0.75), entry=(0.0, 0.5),
+                points=((330, 360), (330, 540))),
+        dl.Edge("e4", "hub", "d", "4", exit=(0.5, 1.0), entry=(0.5, 0.0)),
+    ]
+    return nodes, edges
+
+
+def test_overloaded_source_with_a_wide_caption_wraps_it():
+    """Decision 2 amended (WS2): three right exits, an unavoidable bottom exit
+    and a caption wider than the icon -> the caption wraps onto two lines and
+    the bottom exit leaves past the narrower text."""
+    nodes, edges = _overloaded_wide("Lambda core (13 fns)")
+    text = _build(nodes, edges)
+    assert 'value="Lambda core&#10;(13 fns)"' in text
+    g = _geo(text)
+    assert g.node_labels["hub"] == "Lambda core\n(13 fns)"
+    e4 = next(e for e in g.edges if e.id == "e4")
+    assert e4.exit[1] >= 1.0, e4.exit
+    assert geo.check_edge_strikes_own_text(g) == []
+    assert geo.check_exit_thirds(g) == []
+    assert geo.check_container_padding(g) == [] and geo.check_node_overlap(g) == []
+
+
+def test_overloaded_source_without_a_break_point_keeps_its_label():
+    """Fallback: no space or hyphen -> no wrap; the node keeps its masked
+    bottom exit (an accepted residual, still reported by the WARNING)."""
+    nodes, edges = _overloaded_wide("orchestratorservice")
+    text = _build(nodes, edges)
+    g = _geo(text)
+    assert g.node_labels["hub"] == "orchestratorservice"
+    assert 'value="orchestratorservice"' in text

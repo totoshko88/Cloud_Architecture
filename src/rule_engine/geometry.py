@@ -77,6 +77,11 @@ from rule_engine.diagram_layout import CONTAINER_PAD, STAIR_STEP
 # conservative floor, not a per-string measurement.
 LABEL_BAND = 30
 
+#: Leading of every caption line past the first (1.10.12 WS2): a wrapped
+#: two-line caption is ``LABEL_BAND + CAPTION_LINE_H`` tall, so the padding,
+#: overlap, label-band and legend checks measure the real wrapped footprint.
+CAPTION_LINE_H = 16.0
+
 # How far past a container border a node may spill and still be attributed to
 # THAT container (v1.5.3 spill detection in ``check_container_padding``). A node
 # that shares a container's column/row but has slid at most one row-step (the
@@ -359,7 +364,7 @@ def check_node_overlap(
     band), so two nodes whose icons clear each other but whose labels collide are
     still flagged — the defect a reader sees. Pass ``label_band=0`` for the
     legacy icon-only test."""
-    boxes = [b.footprint(label_band) for b in geo.nodes.values()]
+    boxes = [node_footprint(geo, nid, label_band) for nid in geo.nodes]
     out: List[Tuple[str, str]] = []
     for i in range(len(boxes)):
         for j in range(i + 1, len(boxes)):
@@ -402,7 +407,7 @@ def check_container_padding(
     # spill is reserved for genuinely orphaned nodes (in no container at all).
     housed: set = set()
     for ncid, node in geo.nodes.items():
-        n = node.footprint(label_band)
+        n = node_footprint(geo, ncid, label_band)
         for c in geo.containers.values():
             if c.x <= n.x and c.y <= n.y and n.right <= c.right and n.bottom <= c.bottom:
                 housed.add(ncid)
@@ -410,7 +415,7 @@ def check_container_padding(
 
     # --- node-in-container -------------------------------------------------- #
     for ncid, node in geo.nodes.items():
-        n = node.footprint(label_band)
+        n = node_footprint(geo, ncid, label_band)
         for ccid, c in geo.containers.items():
             inside = c.x <= n.x and c.y <= n.y and n.right <= c.right and n.bottom <= c.bottom
             if not inside:
@@ -1094,16 +1099,62 @@ def node_caption_box(box: Box, label: str, label_band: float = LABEL_BAND) -> Bo
     The caption (``verticalLabelPosition=bottom``) is centred on the icon and
     is as wide as its longest line — estimated at :data:`_CAPTION_TEXT_CHAR_W`
     (7.0px/char at the 12px font, a conservative ceiling) — but never narrower
-    than the icon. It starts at the icon bottom and is ``label_band`` tall, or
-    16px per line when the caption wraps to more lines than that holds. A wide
+    than the icon. It starts at the icon bottom and is ``label_band`` tall plus
+    16px for every further line (:func:`caption_band`, 1.10.12). A wide
     caption ("Amazon QuickSight dashboards") overhangs its 78px icon on both
     sides; the icon-width band (:func:`Box.footprint`) cannot see an edge
     cutting through that overhang (1.10.7)."""
     lines = caption_lines(label)
     longest = max((len(ln) for ln in lines), default=0)
     w = max(box.w, longest * _CAPTION_TEXT_CHAR_W)
-    h = max(label_band, 16.0 * len(lines))
+    h = caption_band(label, label_band)
     return Box(box.id, box.x + box.w / 2.0 - w / 2.0, box.bottom, w, h)
+
+
+def caption_band(label: str, label_band: float = LABEL_BAND) -> float:
+    """Height of a node's caption band: ``label_band`` for a one-line caption,
+    plus :data:`CAPTION_LINE_H` for every further line (1.10.12 WS2: a caption
+    wrapped onto two lines is measured at its real footprint everywhere).
+    ``label_band <= 0`` (the legacy icon-only tests) stays as given."""
+    if label_band <= 0:
+        return label_band
+    return label_band + CAPTION_LINE_H * max(0, len(caption_lines(label)) - 1)
+
+
+def node_footprint(geo: "DiagramGeometry", nid: str, label_band: float = LABEL_BAND) -> Box:
+    """``nid``'s icon box grown downward by its real caption band
+    (:func:`caption_band` of its parsed label)."""
+    return geo.nodes[nid].footprint(caption_band(geo.node_labels.get(nid, ""), label_band))
+
+
+def wrap_caption(label: str) -> Optional[str]:
+    """The one-line caption ``label`` wrapped onto two lines, or None.
+
+    1.10.12 WS2: an overloaded source (three right exits plus an unavoidable
+    bottom exit) whose caption is wider than its icon has no bottom position
+    outside the text; wrapping the caption opens one. The break is at a space
+    (dropped) or after a hyphen (kept on the first line), never inside a word,
+    and as close to the middle as possible: the most balanced pair of lines,
+    then the earlier break. None when the label is empty, already multi-line,
+    or has no break point."""
+    lines = caption_lines(label)
+    if len(lines) != 1:
+        return None
+    text = lines[0]
+    best = None
+    for i, ch in enumerate(text):
+        if ch == " ":
+            a, b = text[:i].rstrip(), text[i + 1:].lstrip()
+        elif ch == "-" and 0 < i < len(text) - 1:
+            a, b = text[:i + 1], text[i + 1:]
+        else:
+            continue
+        if not a or not b or a.endswith(" ") or b.startswith("-"):
+            continue
+        key = (abs(len(a) - len(b)), max(len(a), len(b)), i)
+        if best is None or key < best[0]:
+            best = (key, f"{a}\n{b}")
+    return best[1] if best else None
 
 
 def check_edge_crosses_label(
@@ -1151,7 +1202,9 @@ def check_edge_crosses_label(
             if labels.get(other):
                 band = node_caption_box(b, labels[other], label_band)
             else:
-                band = Box(other, b.x, b.bottom, b.w, label_band)
+                # Icon-wide, but as tall as the real (possibly wrapped) caption.
+                band = Box(other, b.x, b.bottom, b.w,
+                           caption_band(geo.node_labels.get(other, ""), label_band))
             crossed = any(
                 segment_crosses_box(p, q, band)
                 for p, q in zip(polyline, polyline[1:])
@@ -1165,14 +1218,14 @@ def caption_text_box(box: Box, label: str, label_band: float = LABEL_BAND) -> Bo
     """The rectangle the caption TEXT itself occupies (1.10.12 WS2).
 
     Same estimator as :func:`node_caption_box` (7.0px/char, centred under the
-    icon, ``label_band`` or 16px per line tall) but WITHOUT the icon-width
+    icon, :func:`caption_band` tall) but WITHOUT the icon-width
     floor: a short name ("app-az1") is narrower than its 78px icon, leaving a
     corner band either side of the text that a bottom exit can use without
     touching the letters. :func:`node_caption_box` stays the lint measure."""
     lines = caption_lines(label)
     longest = max((len(ln) for ln in lines), default=0)
     w = longest * _CAPTION_TEXT_CHAR_W
-    h = max(label_band, 16.0 * len(lines))
+    h = caption_band(label, label_band)
     return Box(box.id, box.x + box.w / 2.0 - w / 2.0, box.bottom, w, h)
 
 
@@ -2202,8 +2255,8 @@ def check_container_dead_space(
             limit = outer_threshold
         demand = 0.0
         # Nodes whose tightest enclosing container is this one (by footprint).
-        for node in geo.nodes.values():
-            fp = node.footprint(label_band)
+        for nid in geo.nodes:
+            fp = node_footprint(geo, nid, label_band)
             parent = _tightest_enclosing(fp, boxes)
             if parent is not None and parent.id == cbox.id:
                 demand += (fp.w + 2 * pad) * (fp.h + 2 * pad)

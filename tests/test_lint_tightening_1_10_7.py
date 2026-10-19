@@ -192,7 +192,7 @@ def test_node_caption_box_is_text_wide_and_centred():
     assert cap.x + cap.w / 2 == icon.x + icon.w / 2
     assert geo.node_caption_box(icon, "s3").w == 78.0  # never narrower than the icon
     two = geo.node_caption_box(icon, "a<br>b<br/>c")
-    assert two.h == 48.0  # three lines x 16px
+    assert two.h == geo.LABEL_BAND + 2 * 16.0  # one line + 16px per further line (1.10.12)
 
 
 def test_caption_width_is_lint_only():
