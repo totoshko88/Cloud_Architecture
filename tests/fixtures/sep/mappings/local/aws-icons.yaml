@@ -1,0 +1,90 @@
+# Workspace-local AWS icon overlay (merged per-key over the bundled mapping).
+# Restores the `lambda_vpc` presentation role (VPC-attached Lambda) that the
+# bundled 1.10.10 mapping does not ship, so build_08_network_crossaccount.py's
+# `_image_renderer("lambda_vpc")` resolves. Mirrors the bundled `serverless_fn`
+# entry (same AWS Lambda service icon, 78x78 aspect=fixed, label below).
+resources:
+  lambda_vpc:                # AWS Lambda, VPC-attached (same Lambda service icon)
+    icon_id: aws.lambda
+    icon_provenance: service
+    brand_hex: "#ED7100"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Compute/48/Arch_AWS-Lambda_48.svg"
+
+  # AWS License Manager (feedback 2026-10-17, owner item g). A real AWS
+  # architecture icon in the Management & Governance family (pink #E7157B) — a
+  # distinct service with its own glyph, not a look-alike. The bundled 1.10.11
+  # mapping does not ship a license_manager role, so it is added here in the
+  # workspace-local overlay (merged per-key over the bundled mapping). Same
+  # 78x78 aspect=fixed image shape, label below at 12px. Mirrored for the
+  # asset-path gate in mappings/aws-icons.yaml.
+  license_manager:           # AWS License Manager (service, Management & Governance family)
+    icon_id: aws.license_manager
+    icon_provenance: service
+    brand_hex: "#E7157B"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Management-Tools/48/Arch_AWS-License-Manager_48.svg"
+
+  # SEP brand mark (custom) — the Syndicate Education Platform system node on the
+  # 01 C4-context view. File-path image shape (NO base64 → base64 trips
+  # icon-resolved). The 168×168 square source scales undistorted into the 78×78
+  # node via aspect=fixed; label below at 12px (Accessibility floor).
+  # Path notes (two engine constraints, both worked around with file paths only
+  # — NO base64 in the mapping):
+  #  1. The raster exporter's inliner and _embed_asset_style only rewrite
+  #     `image=assets/vendor/...` tokens, so the mark lives under
+  #     assets/vendor/sep-brand/ (a copy also sits at the committed
+  #     assets/local/sep-logo-black.png).
+  #  2. _embed_asset_image hardcodes the `data:image/svg+xml` MIME for every
+  #     embedded asset, so a raw PNG embeds with the WRONG mime and renders as a
+  #     broken image. The mark is therefore an SVG wrapper (sep-logo-black.svg)
+  #     that embeds the 168×168 PNG via an <image> element — a valid SVG, so the
+  #     svg+xml MIME is correct and it renders in both the editor and the PNG.
+  #  Both are logged as RULE-ENGINE-FEEDBACK (inline assets/local/; sniff the
+  #  real MIME instead of hardcoding svg+xml).
+  sep_platform:
+    icon_id: sep.platform
+    icon_provenance: neutral
+    brand_hex: "#000000"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/sep-brand/sep-logo-black.svg"
+  # LMS mortarboard / graduation-cap (owner request 2026-10-17, regen9). The
+  # owner asked for a draw.io "Education" icon for the LMS. The installed draw.io
+  # ships NO generic mortarboard stencil (there is no mxgraph.education.* library;
+  # the only "Education" glyphs are Azure mscae PRODUCT images, a look-alike that
+  # Icon Fidelity forbids on an AWS/non-Azure diagram). A bare mxgraph.* flat
+  # stencil (e.g. mxgraph.ios7.icons.book) is ALSO not viable: verify_icon
+  # --strict reports it `unverified` (the generic-shape extractor only accepts the
+  # mxgraph.flowchart.*/networks.* neutral families), which FAILS the strict gate.
+  # The faithful, gate-passing, licence-clean answer is a hand-authored
+  # public-domain mortarboard SVG committed under assets/vendor/education/ and
+  # wired as an image role (same mechanism as license_manager / sep_platform), so
+  # it resolves as a real `image` ref and renders in the PNG. Neutral mark, so no
+  # vendor brand_hex — a legible education blue.
+  education:                 # LMS mortarboard / graduation cap (generic learning glyph)
+    icon_id: edu.mortarboard
+    icon_provenance: neutral
+    brand_hex: "#2D7FF9"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/education/mortarboard.svg"
+
+  # DIAL AI brand mark (owner-supplied asset 2026-10-17, regen9). The owner
+  # provided the real EPAM DIAL logo (dial.png, 160×160). No fetched pack ships
+  # the DIAL mark, so an owner-supplied brand asset is the clean path (not a
+  # look-alike). Same PNG-in-SVG wrapper the SEP logo uses (the embedded-asset
+  # inliner hardcodes the svg+xml MIME, so a raw PNG would render broken — wrap it
+  # in an <image> SVG). Used ONLY for the dedicated DIAL node on 09; the 01 "AI
+  # (Bedrock / DIAL)" node keeps the Bedrock icon (it represents both, and the
+  # owner's "AI → Bedrock" applied there).
+  dial:                      # EPAM DIAL AI proxy brand mark (owner-supplied)
+    icon_id: dial.brand
+    icon_provenance: neutral
+    brand_hex: "#D4157C"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/dial-brand/dial.svg"
+
+  # AWS Organizations SERVICE icon (owner request 2026-10-17, regen9). The
+  # ORGANIZATION-level service glyph (Arch_AWS-Organizations), DISTINCT from the
+  # single-account peer_account glyph (Res_AWS-Organizations_Account) used for a
+  # peer account node. The 09 "Sandbox-mgmt + Logging org" node is an org, so it
+  # carries the org-level service icon. Management & Governance family pink.
+  organizations:             # AWS Organizations (service, org-level — NOT a single account)
+    icon_id: aws.organizations
+    icon_provenance: service
+    brand_hex: "#E7157B"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Management-Tools/48/Arch_AWS-Organizations_48.svg"

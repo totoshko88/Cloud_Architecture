@@ -1,0 +1,124 @@
+# Generic (vendor-neutral) icon mapping table.
+#
+# The generic profile uses NO vendor icons, but it does use the STANDARDIZED
+# built-in draw.io stencils (the vendor-neutral ``mxgraph.flowchart.*`` /
+# ``mxgraph.networks.*`` shape libraries that ship inside draw.io) so a generic
+# node reads as a recognizable icon rather than a bare rectangle. Every
+# fill/stroke color stays restricted to grayscale (white #FFFFFF … black
+# #000000): the standardized shapes are line-art, drawn white-filled with a
+# black stroke, so the profile carries no vendor colour. The stencil ids below
+# are all confirmed to render (a non-resolving id draws an empty box, which is
+# an ``icon-resolved`` defect). See Requirement 2 AC7 and design section
+# "4b. Icon Mapping Data Model" (generic example row).
+provider: generic
+asset_pack: "draw.io built-in vendor-neutral stencils (mxgraph.flowchart.* / mxgraph.networks.*)"
+icon_source: builtin
+
+resources:
+  boundary:
+    icon_id: rectangle
+    brand_hex: "#333333"
+    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;dashed=1"
+  network_boundary:
+    icon_id: rectangle
+    brand_hex: "#666666"
+    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#666666;dashed=1"
+  serverless_fn:
+    icon_id: flowchart.predefined_process
+    brand_hex: "#000000"
+    style: "shape=mxgraph.flowchart.predefined_process;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000"
+  object_store:
+    icon_id: flowchart.internal_storage
+    brand_hex: "#000000"
+    style: "shape=mxgraph.flowchart.internal_storage;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000"
+  managed_sql:
+    icon_id: cylinder
+    brand_hex: "#000000"
+    style: "shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000;boundedLbl=1;backgroundOutline=1;size=15"
+  message_queue:
+    icon_id: flowchart.manual_input
+    brand_hex: "#333333"
+    style: "shape=mxgraph.flowchart.manual_input;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333"
+  secrets_store:
+    icon_id: flowchart.preparation
+    brand_hex: "#000000"
+    style: "shape=mxgraph.flowchart.preparation;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000"
+  managed_k8s:
+    icon_id: networks.server
+    brand_hex: "#333333"
+    style: "shape=mxgraph.networks.server;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333"
+  llm_platform:
+    icon_id: flowchart.multi-document
+    brand_hex: "#000000"
+    style: "shape=mxgraph.flowchart.multi-document;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#000000"
+
+  # --- External / third-party systems (Theme 1) ---
+  # A sanctioned, vendor-neutral node for an EXTERNAL (non-cloud / third-party)
+  # system, so a diagram no longer hand-draws anonymous grey boxes. It is a
+  # neutral dashed rounded box (grayscale) and belongs OUTSIDE every cloud
+  # boundary (it is not a cloud resource); not classified in ROLE_SCOPE on
+  # purpose. Carried on every profile with the same neutral style — an external
+  # system has no provider brand.
+  external_system:
+    icon_id: rectangle
+    brand_hex: "#333333"
+    style: "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;dashed=1;verticalAlign=middle;fontSize=12"
+
+  # MongoDB Atlas — a specific external SaaS. Per MongoDB's Trademark Standards
+  # (brandfolder.com/mongodb press kit, mongodb.com/legal/trademark-usage-guidelines)
+  # the leaf mark is MongoDB's property and may not be redistributed, so this is
+  # an IDENTIFICATION-use neutral labelled box with the service name — NOT the
+  # official leaf glyph (never committed/redistributed). The GENERIC profile
+  # carries no vendor colour (its own grayscale rule), so here the box is
+  # grayscale; the vendor profiles use MongoDB's forest-green (#13AA52).
+  # External SaaS → outside boundaries, unclassified in ROLE_SCOPE.
+  mongodb_atlas:
+    icon_id: rectangle
+    brand_hex: "#333333"
+    style: "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;verticalAlign=middle;fontSize=12"
+
+  # Open-source brand systems (feedback Theme 35) — the generic profile carries
+  # no brand identity, so these are neutral labelled boxes (the vendor profiles
+  # resolve them to the colorized brand leaf).
+  keycloak:
+    icon_id: rectangle
+    brand_hex: "#333333"
+    style: "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;verticalAlign=middle;fontSize=12"
+  redis:
+    icon_id: rectangle
+    brand_hex: "#333333"
+    style: "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;verticalAlign=middle;fontSize=12"
+  postgresql:
+    icon_id: rectangle
+    brand_hex: "#333333"
+    style: "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;verticalAlign=middle;fontSize=12"
+
+  # Fleet of N (Theme 22) — one box standing for a COUNT of like resources
+  # (e.g. "222 AWS accounts", "202 Azure subscriptions", a GCP org). A stacked
+  # rectangle glyph signals "many"; the count goes in the SHORT node label
+  # (e.g. "AWS accounts ×222" — 3 words / < 40 chars, within node-label-length).
+  # Vendor-neutral; carried on every profile.
+  fleet:
+    icon_id: flowchart.multiple_documents
+    brand_hex: "#333333"
+    style: "shape=mxgraph.flowchart.multiple_documents;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12"
+
+  # Peer account / peer cloud AS A NODE (feedback Theme 34). The generic profile
+  # has no provider identity, so a peer-cloud node is the neutral external box.
+  peer_account:
+    icon_id: rectangle
+    brand_hex: "#333333"
+    style: "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;dashed=1;verticalAlign=middle;fontSize=12"
+  external_cloud:
+    icon_id: rectangle
+    brand_hex: "#333333"
+    style: "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;dashed=1;verticalAlign=middle;fontSize=12"
+
+containers:
+  # fontSize=12 keeps the container caption at the 12px accessibility floor
+  # (draw.io's default is 11px); added in 1.10.7 when generic/01 switched from
+  # hand-written green/blue boxes to these mapping styles.
+  boundary:
+    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#333333;dashed=1;verticalAlign=top;fontColor=#333333;fontSize=12"
+  network_boundary:
+    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#666666;dashed=1;verticalAlign=top;fontColor=#666666;fontSize=12"
