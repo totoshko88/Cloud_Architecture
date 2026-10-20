@@ -2418,7 +2418,10 @@ def _four_below_left_spec():
     )
     edges = tuple(EdgeSpec(f"e{i + 1}", "hub", f"t{i}", str(i + 1)) for i in range(4))
     flow = ("Flow",) + tuple(f"{i + 1}. step" for i in range(4))
-    return DiagramSpec("spill", "spill", "north-south", nodes, edges, (), flow, "spill")
+    # order="manual": the shape under test IS the back-edge fan-out, which the
+    # 1.10.12 automatic ordering would otherwise remove (WS4).
+    return DiagramSpec("spill", "spill", "north-south", nodes, edges, (), flow, "spill",
+                       order="manual")
 
 
 def _oracle_geometry(placed):

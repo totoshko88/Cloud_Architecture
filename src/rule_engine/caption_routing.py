@@ -89,6 +89,7 @@ from rule_engine.geometry import (
     check_edge_crosses_own_label,
     check_marker_icon_collision,
     check_marker_label_collision,
+    resolve_marker_collisions,
     contact_faces,
     edge_polyline,
     grid_resolve_contact,
@@ -270,13 +271,27 @@ def _markers_on_container_captions(geo: DiagramGeometry) -> int:
     return n
 
 
+def _markers_slid(geo: DiagramGeometry) -> DiagramGeometry:
+    """``geo`` with every flow marker where the builder will print it: the
+    shared builder slides a marker off a foreign line, an icon or a caption
+    (:func:`geometry.resolve_marker_collisions`), so a marker that only
+    collides at its default anchor is not a finding of the route (1.10.12
+    WS4: the 08 Lambda drop under its wrapped caption)."""
+    moved = resolve_marker_collisions(geo)
+    if not moved:
+        return geo
+    return replace(geo, edges=[replace(e, label_pos=moved[e.id]) if e.id in moved else e
+                               for e in geo.edges])
+
+
 def _extras(geo: DiagramGeometry) -> int:
     """Advisory findings :func:`geometry.rule_violations` does not count."""
+    slid = _markers_slid(geo)
     return (len(check_edge_crosses_label(geo, caption_width=True))
             + len(check_detour_hook(geo))
-            + len(check_marker_label_collision(geo))
-            + len(check_marker_icon_collision(geo))
-            + _markers_on_container_captions(geo))
+            + len(check_marker_label_collision(slid))
+            + len(check_marker_icon_collision(slid))
+            + _markers_on_container_captions(slid))
 
 
 def _score(geo: DiagramGeometry) -> _Score:

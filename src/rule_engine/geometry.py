@@ -3417,7 +3417,12 @@ def resolve_marker_collisions(
         here = anchor_of(eid)
         if here is None:
             continue
-        if _dist_to_foreign_edges(here, eid, polys)[0] >= clearance - AXIS_EPS:
+        # 1.10.12 (WS4): a marker printed on a node icon or caption slides too
+        # (diagram-standards → Numbered Flow Legend: "slide the marker along
+        # its edge clear of every caption"); a short drop under a two-line
+        # (wrapped) caption otherwise keeps its number on the service name.
+        if (_dist_to_foreign_edges(here, eid, polys)[0] >= clearance - AXIS_EPS
+                and not (clearance > 0 and in_box(here))):
             continue
         start = pos[eid]
         for k in range(1, 5):

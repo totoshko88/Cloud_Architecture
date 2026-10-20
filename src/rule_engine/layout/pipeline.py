@@ -1146,7 +1146,15 @@ def layout(
                     from .solver import solve_placement as _solve_placement
                 except ImportError:  # pragma: no cover - flat-module fallback
                     from layout.solver import solve_placement as _solve_placement  # type: ignore[no-redef]
-                return _solve_placement(spec, strict=strict)
+                # 1.10.12 (WS4): automatic flow-aware ordering wraps the
+                # placement loop. It lays out the declared order and, when its
+                # proxy search finds a better order, that order too, and keeps
+                # the reorder only when the finished diagram has strictly fewer
+                # back-edges or crossings and no more of either
+                # (``order="manual"`` skips it).
+                from .ordering import order_and_place as _order_and_place
+                return _order_and_place(
+                    spec, lambda s: _solve_placement(s, strict=strict))
             # Inner scored route path (the placement loop's per-variant step, and the
             # 1.8.0 route-only path): no placement search, just place → size → centre
             # → scored solve → repair.

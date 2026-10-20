@@ -228,3 +228,12 @@ the Layout Engine (it emits a coordinate-free node set); the
   the same edge class. Also planned: align a lone external consumer with its
   producer's row automatically instead of through `sub`. 1.10.7 takes the spec
   path (D38).
+- **Peer-account rise through a stacked regional column (G20, 1.10.12 WS4).** →
+  **Open (router).** With `vpc_side: right` the automatic ordering removes the
+  SEP 03 back-edge `e13` (API Gateway → RDS), but every such order makes the
+  router run a peer-account edge straight up through a regional icon (`e8`
+  Batch → EPM-CMTR through EventBridge, `e7` ECR → CICD through CloudWatch), an
+  `edge-routing` ERROR, so the ordering guard rejects the order and 03 keeps
+  its declared one. The vertical rise has to take the free lane beside the
+  regional column (as the back-edge router's drop column already does) before
+  the ordering can use `vpc_side: right` there. The guard is not relaxed.
