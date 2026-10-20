@@ -29,6 +29,7 @@ solver leans on so it can never do worse than today):
 | back-edge     | loop-above, descend-near       | REVIEW.md experiment 2             |
 | spine         | straight-drop, side-corridor   | pass 1c / ``_box_directly_below``  |
 | corridor side | left-gap, right-gap            | ``_free_left_corridor_x`` / 1d     |
+| entry face    | <family>-top, <family>-left    | 1.10.12 WS3 (C7), ``_face_variants``|
 
 **Pure function.** :func:`generate` reads only ``(edge, placed, containers,
 kind)`` and returns descriptors — it lays no waypoints and touches no allocator.
@@ -127,6 +128,10 @@ class RouteVariant:
     entry: Contact
     plan: RoutePlan
     rank: int
+    #: 1.10.12 WS3: an entry-face alternative (:func:`_face_variants`). The
+    #: solver admits it only when it crosses strictly less than every other
+    #: variant of the edge, so a face swap is never taken for ink or turns.
+    face_swap: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -212,7 +217,7 @@ def _rule_based_contacts(
 # ---------------------------------------------------------------------------
 
 def _variant(edge_id: str, family: str, exit_pt: Contact, entry_pt: Contact,
-             plan: RoutePlan, rank: int) -> RouteVariant:
+             plan: RoutePlan, rank: int, face_swap: bool = False) -> RouteVariant:
     """Build one :class:`RouteVariant`, asserting contract-legality by
     construction (a family that ever emits an illegal face is a coding bug, not
     an input condition)."""
@@ -228,6 +233,7 @@ def _variant(edge_id: str, family: str, exit_pt: Contact, entry_pt: Contact,
         entry=entry_pt,
         plan=plan,
         rank=rank,
+        face_swap=face_swap,
     )
 
 
@@ -380,6 +386,59 @@ def _spine_variants(edge: "EdgeSpec", placed: Dict[str, "Box"],
     return variants
 
 
+def _face_variants(edge: "EdgeSpec", placed: Dict[str, "Box"], kind: str,
+                   rule_exit: Contact, rule_entry: Contact,
+                   start_rank: int) -> List[RouteVariant]:
+    """face family (1.10.12 WS3, C7): the same route shapes entering the OTHER
+    legal face of the target (left vs top).
+
+    The families above choose a corridor; each of them reuses the rule-based
+    entry face, so the scored search never saw a face alternative. SEP 09
+    ``e3`` (Route 53 → CloudFront) is the case: the back-edge entered the LEFT
+    face because the target had a left gap (Rule G), cut ``e1`` already
+    arriving there, and the TOP entry (legal, shorter, crossing-free) was never
+    generated. ``route_cost`` counts crossings, so generating the candidate is
+    enough for the argmin to pick it.
+
+    * ``back-edge`` → loop-above / descend-near with the other entry face;
+    * ``fan-out-row`` / ``cross-region`` (converging runs) → lane-above /
+      lane-below with the other entry face;
+    * ``spine`` → none here: the spine family already varies both faces
+      (straight-drop, right-gap, left-gap).
+
+    The exit keeps its rule-based face and band: a bottom exit from a captioned
+    source would strike its own caption (Variant A, WS2); the bottom face stays
+    with the straight-drop / left-gap spine and the Rule K back-edge shapes. A
+    new face takes its centre (:func:`_keep_band` keeps a same-face band), so
+    a slot shared with another arrival scores an ``entry-thirds`` finding and
+    loses. Every variant keeps a right/bottom exit and a left/top entry."""
+    face = _face(rule_entry)
+    if face not in ("left", "top"):
+        return []
+    alt_entry = _ENTRY_TOP if face == "left" else _ENTRY_LEFT
+    alt = _face(alt_entry)
+    if kind == "back-edge":
+        plans = (("loop-above", RoutePlan.LOOP_ABOVE), ("descend-near", RoutePlan.DESCEND_NEAR))
+    elif kind in ("fan-out-row", "cross-region"):
+        plans = (("lane-above", RoutePlan.LANE_ABOVE), ("lane-below", RoutePlan.LANE_BELOW))
+    else:
+        # ``spine`` already varies its faces (straight-drop: bottom→top;
+        # right-gap: right→top; left-gap: bottom→left). A right-corridor →
+        # left-entry spine was tried and dropped: on the HA summary the greedy
+        # search took it for ``s4`` and the repair loop could not separate the
+        # corridor it then shared with ``s9`` (strict layout raised). The
+        # finishing crossing-repair pass still tries that face pair on the
+        # finished document, where every finding is judged.
+        return []
+    out: List[RouteVariant] = []
+    rank = start_rank
+    for name, plan in plans:
+        out.append(_variant(edge.id, f"{name}-{alt}", rule_exit, alt_entry, plan, rank,
+                            face_swap=True))
+        rank += 1
+    return out
+
+
 def _left_gap_available(src: "Box", tgt: "Box", others: List["Box"],
                         containers: Dict[str, "Box"]) -> bool:
     """True when the column's LEFT gap is a usable vertical corridor for a spine
@@ -417,6 +476,7 @@ def generate(
     containers: Dict[str, "Box"],
     kind: str,
     global_contacts: "Dict[str, tuple] | None" = None,
+    faces: bool = True,
 ) -> List[RouteVariant]:
     """Return the sanctioned :class:`RouteVariant`\\ s for ``edge`` in rank order.
 
@@ -504,6 +564,13 @@ def generate(
     # kind == "straight": a directly-opposite adjacent target is a single centred
     # segment; there is no sanctioned alternative shape, so the rule-based variant
     # is the only one. The list is still non-empty.
+
+    # 1.10.12 WS3: the other legal entry face, ranked after every corridor
+    # family so it wins only on a strictly lower ``route_cost``. ``faces=False``
+    # (the most-constrained-first ordering key) keeps the routing order of
+    # every edge exactly what it was before the family existed.
+    if faces:
+        variants.extend(_face_variants(edge, placed, kind, rule_exit, rule_entry, rank))
 
     return _dedupe_by_id(variants)
 

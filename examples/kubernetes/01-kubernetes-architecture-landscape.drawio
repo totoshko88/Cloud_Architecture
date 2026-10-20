@@ -52,14 +52,13 @@
         <mxCell id="e6" value="6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="sts" target="pvc">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="e7" value="7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.7692307692307693;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="cm" target="deploy">
+        <mxCell id="e7" value="7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.7692307692307693;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.7692307692307693;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="cm" target="deploy">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="440.00" y="1000.00" />
-              <mxPoint x="440.00" y="1110.00" />
-              <mxPoint x="90.00" y="1110.00" />
-              <mxPoint x="90.00" y="760.00" />
-              <mxPoint x="160.00" y="760.00" />
+              <mxPoint x="420.00" y="1020.00" />
+              <mxPoint x="420.00" y="1110.00" />
+              <mxPoint x="80.00" y="1110.00" />
+              <mxPoint x="80.00" y="860.00" />
             </Array>
           </mxGeometry>
         </mxCell>

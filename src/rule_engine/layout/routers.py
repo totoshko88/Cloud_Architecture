@@ -698,7 +698,14 @@ def route_fan_out_row(
     # of every earlier run and no rise cuts a sibling's lane.
     if not (entry_pt[1] is not None and entry_pt[1] <= 0.0):
         claims = allocator._taken.setdefault(f"turn-left:{tgt.id}", set())
+        # 1.10.12 WS3: a converging group is nested by source position
+        # (:func:`decide_converging_turns`, set on the allocator by the
+        # pipeline), so the column does not depend on the routing order.
         k = 0
+        rank = getattr(allocator, "turn_rank", {}).get(edge.id)
+        if rank:
+            while k < rank and turn_x + (k + 1) * 2 * GRID < tgt.x - GRID:
+                k += 1
         while int(turn_x + k * 2 * GRID) in claims and turn_x + (k + 1) * 2 * GRID < tgt.x - GRID:
             k += 1
         turn_x = _snap(turn_x + k * 2 * GRID)
@@ -1117,6 +1124,54 @@ def decide_converging_corridors(
             y += 2 * GRID          # stride, matching CorridorAllocator default
     return out
 
+
+
+def decide_converging_turns(
+    spec: DiagramSpec,
+    placed: Dict[str, Box],
+    entries: Dict[str, Contact],
+) -> Dict[str, int]:
+    """Nest the turn columns of fan-outs that CONVERGE on one target's LEFT face
+    by source position (1.10.12 WS3, C7).
+
+    Several ``fan-out-row`` edges into one target's left face each turn in their
+    own column left of the target (:func:`route_fan_out_row`). The columns do not
+    cross only when the edge whose source is **farther** from its entry row turns
+    **nearer** the target: its long vertical then stands between the target and
+    every shorter one, and each shorter run's horizontal ends before it. Handing
+    the columns out in declared order nested them backwards whenever the farther
+    source was declared first (SEP 01 ``e4`` / ``e5``: one crossing, zero after
+    the swap).
+
+    Returns ``{edge_id: rank}`` for the edges of every such group of two or more
+    distinct sources: rank 0 (the centred column, farthest from the target) for
+    the source nearest its entry row, then outward. Ties keep declared order.
+    Edges absent from the result keep the declared-order claim."""
+    order_index = {e.id: i for i, e in enumerate(spec.edges)}
+    groups: Dict[str, List[str]] = {}
+    for edge in spec.edges:
+        if classify_edge(edge, placed) != "fan-out-row":
+            continue
+        fx, fy = entries[edge.id]
+        if fx is None or fx > 0.0 or (fy is not None and fy <= 0.0):
+            continue  # only LEFT-face arrivals turn in a column left of the target
+        groups.setdefault(edge.target, []).append(edge.id)
+    out: Dict[str, int] = {}
+    for target, eids in groups.items():
+        sources = {spec.edges[order_index[e]].source for e in eids}
+        if len(eids) < 2 or len(sources) < 2:
+            continue
+        tgt = placed[target]
+
+        def _distance(eid: str) -> float:
+            edge = spec.edges[order_index[eid]]
+            src = placed[edge.source]
+            entry_y = tgt.y + (entries[eid][1] if entries[eid][1] is not None else 0.5) * tgt.h
+            return abs((src.y + src.h / 2.0) - entry_y)
+
+        for rank, eid in enumerate(sorted(eids, key=lambda e: (_distance(e), order_index[e]))):
+            out[eid] = rank
+    return out
 
 
 def _assign_exit_bands(ranked: List[Tuple[str, int]]) -> Dict[str, float]:

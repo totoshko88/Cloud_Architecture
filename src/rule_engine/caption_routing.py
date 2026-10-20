@@ -1412,18 +1412,25 @@ def plan_caption_safe(geo: DiagramGeometry) -> CaptionPlan:
     that are not overloaded, then fewer visible strikes, then the lower
     :class:`_Score` (turns and ink break the tie). Deterministic: the declared
     order wins a full tie."""
+    return plan_caption_safe_geo(geo)[0]
+
+
+def plan_caption_safe_geo(geo: DiagramGeometry) -> Tuple[CaptionPlan, DiagramGeometry]:
+    """:func:`plan_caption_safe` plus the geometry the plan produces (``geo``
+    itself when the plan is empty), so a later finishing pass (the WS3
+    crossing repair, :mod:`rule_engine.crossing_repair`) plans on the result."""
     _COLLINEAR_CAP[0] = len(collinear_edge_pairs(geo))
     if not check_edge_crosses_own_label(geo):
-        return CaptionPlan({}, {}, 0.0)
+        return CaptionPlan({}, {}, 0.0), geo
 
     def rank(w: DiagramGeometry) -> Tuple:
         return (_unexplained(w), len(check_edge_strikes_own_text(w))) + _score(w).key()
 
     best, work = _plan_once(geo, reverse=False)
     if not _unexplained(work) and len(geo.edges) > _REVERSE_MAX_EDGES:
-        return best
+        return best, work
     alt, work2 = _plan_once(geo, reverse=True)
-    return alt if rank(work2) < rank(work) else best
+    return (alt, work2) if rank(work2) < rank(work) else (best, work)
 
 
 def plan_caption_safe_routes(geo: DiagramGeometry) -> Dict[str, Route]:

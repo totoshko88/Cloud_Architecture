@@ -166,7 +166,8 @@ def most_constrained_first(
     def _key(edge: "EdgeSpec") -> Tuple[int, float, int]:
         kind = classify_edge(edge, placed)
         n_variants = len(
-            _variants.generate(edge, placed, containers or {}, kind, seed_contacts)
+            _variants.generate(edge, placed, containers or {}, kind, seed_contacts,
+                               faces=False)
         )
         return (n_variants, -_manhattan_span(edge, placed), declared[edge.id])
 
@@ -433,6 +434,12 @@ def solve(
 
         best_key: Optional[Tuple] = None
         best_variant: Optional["RouteVariant"] = None
+        # 1.10.12 WS3: face-swap variants are judged after the others and win
+        # only on strictly fewer crossings (rule errors / warnings no worse),
+        # never on rails, turns or ink: an entry face exists to remove a
+        # crossing, and taking it for a shorter line moved SEP 03's routes
+        # into crossings the later finishing passes could not undo.
+        face_trials: List[Tuple[Tuple, "RouteVariant"]] = []
         for variant in edge_variants:
             # Snapshot → tentatively lay → score (accepted ∪ {variant}) →
             # restore, so this trial's lanes never persist (R3.6, Property 2).
@@ -460,7 +467,19 @@ def solve(
             # rank and id break every route_cost tie, so the winner is a pure,
             # reproducible function of the accepted set (R3.7, Decision D4).
             key = (cost.as_tuple(), variant.rank, variant.id)
+            if variant.face_swap:
+                face_trials.append((key, variant))
+                continue
             if best_key is None or key < best_key:
+                best_key = key
+                best_variant = variant
+        for key, variant in face_trials:
+            if best_key is None:
+                continue  # never commit a face swap without a baseline to beat
+            cost_t, base_t = key[0], best_key[0]
+            # (rule_errors, rule_warnings, crossings, ...): no new rule finding,
+            # strictly fewer crossings.
+            if cost_t[0] <= base_t[0] and cost_t[1] <= base_t[1] and cost_t[2] < base_t[2]:
                 best_key = key
                 best_variant = variant
 

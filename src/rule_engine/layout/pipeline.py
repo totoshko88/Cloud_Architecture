@@ -75,6 +75,7 @@ try:  # package-relative import when used as ``rule_engine.layout.pipeline``
         _free_left_corridor_x,
         decide_lane_sides,
         decide_converging_corridors,
+        decide_converging_turns,
         _exit_band_rank,
         _assign_exit_bands,
         _has_free_left_approach,
@@ -119,6 +120,7 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
         _free_left_corridor_x,
         decide_lane_sides,
         decide_converging_corridors,
+        decide_converging_turns,
         _exit_band_rank,
         _assign_exit_bands,
         _has_free_left_approach,
@@ -799,6 +801,9 @@ def _route_all_legacy(
     corridor_y = decide_converging_corridors(
         spec, placed, containers, exits, entries, lane_sides
     )
+    # 1.10.12 WS3: fan-outs converging on one target's LEFT face turn in
+    # columns nested by source position, not by declared order.
+    allocator.turn_rank = decide_converging_turns(spec, placed, entries)
     placed_edges: List[PlacedEdge] = []
     for edge in spec.edges:
         pts = route_edge(
@@ -910,6 +915,7 @@ def _place_and_route_scored(spec: DiagramSpec) -> "PlacedDiagram":
     )
 
     allocator = CorridorAllocator()
+    allocator.turn_rank = decide_converging_turns(spec, placed, entries)
     placed_edges = _solve(
         placed, containers, spec, allocator,
         (exits, entries, lane_sides), legacy_edges,

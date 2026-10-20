@@ -269,6 +269,14 @@ RULE_EDGE_JOG = "edge-jog"
 #                            WARNING, both classes.
 RULE_CONTAINER_STYLE = "container-style"
 RULE_MARKER_LABEL_COLLISION = "marker-label-collision"
+# 1.10.12 WS3 (C7). A crossing a single legal face swap removes:
+#   edge-crossing-avoidable — one edge re-routed onto another legal exit/entry
+#                             face pair (exit right/bottom, entry left/top)
+#                             lowers the crossing count without adding a
+#                             routing finding (``crossing_repair.avoidable_crossings``,
+#                             the same test the engine's repair pass and the
+#                             ``Xav`` metric use); WARNING, both classes.
+RULE_EDGE_CROSSING_AVOIDABLE = "edge-crossing-avoidable"
 
 # ``RULE_SEVERITIES`` and ``CLASS_ESCALATIONS`` are DERIVED from the ``RULES``
 # registry (defined near the end of this module, once every predicate exists) —
@@ -2040,6 +2048,27 @@ def _check_edge_crossing_excess(a: Artifact):
     return False
 
 
+def _check_edge_crossing_avoidable(a: Artifact):
+    """edge-crossing-avoidable: a crossing a single legal face swap would remove
+    (1.10.12 WS3). offenders = the edges whose swap lowers the crossing count;
+    reason ``avoidable:<removed>/<crossings>`` (WARNING, both classes)."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    crossings, _n_edges, _pairs = _geo.edge_crossing_stats(geo)
+    if not crossings:
+        return False
+    from rule_engine.crossing_repair import avoidable_crossings
+    removed, swaps = avoidable_crossings(geo)
+    if not removed:
+        return False
+    return RuleHit(
+        offenders=tuple(s.split(" ", 1)[0] for s in swaps),
+        reason=f"avoidable:{removed}/{crossings}",
+    )
+
+
 def _check_marker_label_collision(a: Artifact):
     """marker-label-collision: a numbered flow-marker renders on a node caption
     (``marker-on-caption``) or on a node icon (``marker-on-icon``, 1.10.12 WS7)
@@ -2254,6 +2283,11 @@ RULES: Tuple[Tuple[RuleSpec, Callable[[Artifact], _PredicateResult]], ...] = (
     (
         RuleSpec(RULE_EDGE_CROSSING_EXCESS, Severity.WARNING),
         _check_edge_crossing_excess,
+    ),
+    # edge-crossing-avoidable (1.10.12 WS3): WARNING on both classes.
+    (
+        RuleSpec(RULE_EDGE_CROSSING_AVOIDABLE, Severity.WARNING),
+        _check_edge_crossing_avoidable,
     ),
     (RuleSpec(RULE_DETOUR_HOOK, Severity.WARNING), _check_detour_hook),
     (

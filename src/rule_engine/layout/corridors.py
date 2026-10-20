@@ -121,6 +121,10 @@ class CorridorAllocator:
         self._free: Dict[str, list] = {}
         #: gap id -> set of lines already handed out (for occupancy queries).
         self._taken: Dict[str, set] = {}
+        #: edge id -> nesting rank of its turn column among fan-outs converging
+        #: on one target's left face (1.10.12 WS3; set by the pipeline from
+        #: ``routers.decide_converging_turns``). Read-only during routing.
+        self.turn_rank: Dict[str, int] = {}
 
     # -- gap construction helpers ------------------------------------------
 

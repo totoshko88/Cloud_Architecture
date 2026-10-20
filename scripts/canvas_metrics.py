@@ -32,8 +32,16 @@ Metrics (one row per diagram page)
 ``X``              Edge-edge crossings, counted exactly as
                    :func:`rule_engine.geometry.route_cost` does (H x V proper
                    intersections of the polylines).
-``Xav``            Avoidable crossings: how many crossings a greedy sequence of
-                   single-edge legal face swaps removes. A swap re-routes ONE
+``Xav``            Avoidable crossings (1.10.12 WS3): how many crossings a greedy
+                   sequence of single-edge legal face swaps removes WITHOUT adding
+                   a routing finding -- the shared definition of
+                   :func:`rule_engine.crossing_repair.avoidable_crossings`, which
+                   the ``edge-crossing-avoidable`` lint rule and the engine's final
+                   crossing-repair pass use too.
+``Xraw``           The WS0 definition of ``Xav`` (kept for comparison with the
+                   baseline): candidates are admitted on icon / caption / text-cell
+                   clearance only, so a swap that would add another finding (a
+                   shared corridor, a container crossed) still counts. A swap re-routes ONE
                    edge between face-centre contacts on a different legal face
                    pair (exit right/bottom, entry left/top, at least one face
                    changed), via a short stub + one lane (the edge's own stub
@@ -96,6 +104,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "src"))
 
+from rule_engine.crossing_repair import avoidable_crossings as _avoidable  # noqa: E402
 from rule_engine.drawio_model import DrawioParseError, parse_drawio  # noqa: E402
 from rule_engine.geometry import (  # noqa: E402
     AXIS_EPS,
@@ -165,6 +174,7 @@ class Metrics:
     ler_in_container: str = ""
     crossings: int = 0
     avoidable: int = 0
+    avoidable_raw: int = 0
     back_edges: int = 0
     own_caption_cuts: int = 0
     own_text_strikes: int = 0
@@ -336,7 +346,8 @@ def _route_admissible(geo: DiagramGeometry, route: List[Point], obstacles: Seque
     )
 
 
-def avoidable_crossings(geo: DiagramGeometry, polys: Dict[str, List[Point]]) -> Tuple[int, List[str]]:
+def avoidable_crossings_raw(geo: DiagramGeometry, polys: Dict[str, List[Point]]) -> Tuple[int, List[str]]:
+    """The WS0 ``Xav`` definition (now ``Xraw``), unchanged."""
     edges = {e.id: e for e in geo.edges if e.id in polys}
     obstacles: List[Box] = list(geo.text_boxes.values())
     for nid in geo.nodes:
@@ -570,7 +581,9 @@ def measure_page(label: str, page, page_size, diagram_class: str) -> Metrics:
                 m.crossings += n
                 pairs.append(f"{a}x{b}" + (f"({n})" if n > 1 else ""))
     m.detail["crossings"] = pairs
-    m.avoidable, m.detail["avoidable"] = avoidable_crossings(geo, polys) if m.crossings else (0, [])
+    m.avoidable, m.detail["avoidable"] = _avoidable(geo) if m.crossings else (0, [])
+    m.avoidable_raw, m.detail["avoidable_raw"] = (
+        avoidable_crossings_raw(geo, polys) if m.crossings else (0, []))
 
     # back-edges
     back = []
@@ -626,17 +639,17 @@ def measure_file(path: Path) -> List[Metrics]:
 
 HEADER = ("| diagram | class | N/E | bbox | page | util | ler_out | ler_in | X | Xav | back "
           "| own | vis | col | capovf | undrawn | comp/orph | sib same/raw |")
-RULE = "|" + "---|" * 18
+RULE = "|" + "---|" * 19
 
 
 def table_row(m: Metrics) -> str:
     if m.error:
-        return f"| `{m.diagram}` | {m.error} |" + " |" * 16
+        return f"| `{m.diagram}` | {m.error} |" + " |" * 17
     return (
         f"| `{m.diagram}` | {m.diagram_class} | {m.nodes}/{m.edges} | {m.bbox_w}x{m.bbox_h} "
         f"| {'ok' if m.page_ok else 'SHORT'} | {m.utilisation * 100:.0f}% "
         f"| {m.ler_out_w}x{m.ler_out_h} ({m.ler_out_pct:.0f}%) | {m.ler_in_w}x{m.ler_in_h} "
-        f"| {m.crossings} | {m.avoidable} | {m.back_edges} | {m.own_caption_cuts} | {m.own_text_strikes} "
+        f"| {m.crossings} | {m.avoidable} | {m.avoidable_raw} | {m.back_edges} | {m.own_caption_cuts} | {m.own_text_strikes} "
         f"| {m.collinear_pairs} | {m.caption_overflows} | {m.undrawn_steps} "
         f"| {m.components}/{m.orphans} | {m.sibling_spread_same}/{m.sibling_spread_raw} |"
     )

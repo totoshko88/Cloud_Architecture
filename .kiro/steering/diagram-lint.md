@@ -80,6 +80,7 @@ every applicable rule against every artifact.
 | `marker-collision` | Two edge flow-markers (the numbered labels) render closer than the merge threshold (`MARKER_MIN_SEP` = 24px) and overprint into one number. offenders = the colliding edge ids. Companion to the deterministic marker de-collision pass (`orthogonalise.resolve_marker_collisions`). **1.10.7:** a marker whose anchor lies within one grid step (`MARKER_EDGE_CLEARANCE` = 10px, strict) of a **different** edge's segment, so that edge's line strikes the number, is reported with reason `marker-on-edge-<id>`. | WARNING | diagram-standards Numbered Flow Legend / edge-hygiene 1.10.5 B1 |
 | `marker-label-collision` | A numbered flow-marker's rendered anchor falls inside a node's caption rectangle (centred under the icon, as wide as its text at 7.0px/char), so the number overprints the service name. offenders = the marker edge and the node. | WARNING | diagram-standards Numbered Flow Legend / hotfix 1.10.7 |
 | `edge-crossing-excess` | The diagram's edge-crossing count exceeds a per-diagram cap proportional to the edge count (`ceil(0.25 × E)`), reason `crossings-over-cap:X/E`. **Hard cap (1.10.7):** on a `landscape`, more than `0.5 × E` crossings is an **ERROR** (reason `crossings-over-hard-cap:X/E`) — the routing has collapsed. offenders = the crossing edge-id pairs. Uses the same crossing detection `route_cost` minimises. | WARNING/ERROR | diagram-standards Edge Routing (minimise crossings) / edge-hygiene 1.10.5 B2 |
+| `edge-crossing-avoidable` | A crossing that a **single legal face swap** removes: one edge of a crossing pair, re-routed onto another legal exit/entry face pair (exit right, or bottom from a source with no caption; entry left/top) with a stub + one-lane route, lowers the crossing count **without adding a routing finding** (no icon, caption, text box, foreign container or container caption crossed; no shared corridor, border ride, detour hook; no new oracle finding). Reason `avoidable:<removed>/<crossings>`; offenders = the edges whose swap removes it. The same test (`crossing_repair.avoidable_crossings`) the engine's final crossing-repair pass and the `Xav` metric use. New in 1.10.12 (WS3). | WARNING | diagram-standards Edge Routing (crossing-aware contact selection) |
 | `detour-hook` | An edge's routed (Manhattan) length exceeds `2.5 ×` the straight Manhattan distance between its contacts — it loops out and back instead of going where it is going. offenders = the edge id. | WARNING | diagram-standards Edge Routing (shortest sensible route) / edge-hygiene 1.10.5 B3 |
 | `structural-integrity` | An edge `source`/`target` id resolves to no placeable box (`edge-unresolved-source`/`-target`), or a node carries a non-positive-area geometry (`node-no-geometry`). A cross-check adapted from the awesome-copilot draw.io validator; unique-id and parent-chain checks are already enforced earlier (the single parser dedupes cell ids before geometry sees them; a parent cycle raises `parse-error`), so only the not-yet-covered checks are added here. | WARNING | R1 AC10 / awesome-copilot draw.io validator / edge-hygiene 1.10.5 B4 |
 
@@ -496,6 +497,27 @@ every applicable rule against every artifact.
   the HA landscapes 0.14 × E, while the 1.10.0 quick landscape crossed 28 times on
   28 edges (1.00 × E). A `flow` diagram stays WARNING-only — its ≤ 12-node cap
   already bounds the damage.
+- **`edge-crossing-avoidable` (WARNING)** — *New in 1.10.12 (WS3, C7).
+  Geometry-enforced.* The directional contract leaves an edge up to four legal
+  face pairs (exit right/bottom × entry left/top); choosing among them by a
+  geometric precondition instead of by crossings left crossings a different
+  legal face would remove (SEP 09 `e3`: a back-edge entering CloudFront's
+  LEFT face, where `e1` already arrived, when its TOP face was legal, shorter
+  and crossing-free). The rule greedily re-routes one edge of a crossing pair
+  at a time onto another legal face pair — a stub out of the exit face, one
+  lane, a stub into the entry face, entry slots kept distinct from the face's
+  other contacts — and counts the crossings such swaps remove. A swap counts
+  only when it lowers the total crossing count AND adds nothing: no icon,
+  node caption, text box, foreign container or container caption crossed, no
+  shared corridor or border ride, no detour hook, and no routing finding the
+  oracle did not already report. A bottom exit is offered only from a source
+  with no caption below its icon (Variant A). Each edge swaps at most once.
+  Reason `avoidable:<removed>/<crossings>`; offenders = the swapped edges.
+  The engine runs the same test as its final crossing-repair pass
+  (`crossing_repair.plan_crossing_repair`, after the caption-safe pass in
+  `build_diagram`), so engine output never trips it; it is published so a
+  hand-authored diagram is held to the same standard. Advisory (WARNING) on
+  both classes; `edge-crossing-excess` still caps the total.
 - **`min-font-size` (WARNING)** — Every piece of on-diagram text (node labels, edge
   labels, boundary captions, title cell, and the `Flow`/`Legend` cells) must render at
   **12px or larger**, the accessibility floor from published AWS diagram conventions. A

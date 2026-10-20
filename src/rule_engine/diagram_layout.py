@@ -1120,7 +1120,8 @@ def build_diagram(
 def _plan_from_text(text: str):
     """The Variant A plan for an assembled document (None when unparsable).
     Function-local imports: geometry imports this module."""
-    from rule_engine.caption_routing import plan_caption_safe
+    from rule_engine.caption_routing import CaptionPlan, plan_caption_safe_geo
+    from rule_engine.crossing_repair import plan_crossing_repair_geo
     from rule_engine.drawio_model import DrawioParseError, parse_drawio
     from rule_engine.geometry import build_geometry
 
@@ -1130,7 +1131,18 @@ def _plan_from_text(text: str):
         return None
     if not pages:
         return None
-    return plan_caption_safe(build_geometry(pages[0]))
+    caption, work = plan_caption_safe_geo(build_geometry(pages[0]))
+    # 1.10.12 WS3: the final crossing-repair pass plans on the caption-safe
+    # result, so a re-route it keeps never brings a caption strike back.
+    crossing, _ = plan_crossing_repair_geo(work)
+    if not crossing.routes:
+        return caption
+    return CaptionPlan(
+        routes={**caption.routes, **crossing.routes},
+        containers={**caption.containers, **crossing.containers},
+        text_dx=caption.text_dx + crossing.text_dx,
+        wraps=dict(caption.wraps),
+    )
 
 
 def _apply_plan(
