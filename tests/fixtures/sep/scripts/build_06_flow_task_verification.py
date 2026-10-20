@@ -205,38 +205,16 @@ EDGES = (
     EdgeSpec(id="e4", source="batch", target="ecr", marker="4"),
     EdgeSpec(id="e5", source="batch", target="s3", marker="5"),
     EdgeSpec(id="e6", source="batch", target="ext", marker="6"),
-    # e7 (batch -> lti, "7. Signed callback to lti") FOLDED into the Flow legend
-    # (Theme 36 edge-folding, 1.10.11). This dashed leftward callback back-edge
-    # raked across the whole flow and was the single most crossing-toxic edge
-    # (6 of the 23 baseline crossings). Its step is still named by legend line 7,
-    # so coverage is preserved; neither batch (e3/e4/e5/e6) nor lti
-    # (e2/e3/e8/e9/e10) is orphaned by dropping it. Folding e7 + e11 cuts
-    # edge-crossing-excess 23/12 -> 6/10 with no new findings (and removes the
-    # e11 edge-escapes-container WARNING), staying lint [OK].
-    # EdgeSpec(id="e7", source="batch", target="lti", marker="7", dashed=True,
-    #          kind_hint="cross-region"),
+    # 1.10.12 WS5: e7, e10 and e11 are drawn again (1.10.11 folded them into
+    # the Flow legend, leaving steps 7/10/11 undrawn and Bedrock orphaned); the
+    # engine lays the two dashed replies (e7, e11) on the return bus.
+    EdgeSpec(id="e7", source="batch", target="lti", marker="7", dashed=True,
+             kind_hint="cross-region"),
     EdgeSpec(id="e8", source="lti", target="atlas", marker="8"),
     EdgeSpec(id="e9", source="lti", target="s3", marker="9"),
-    # e10 (lti -> bedrock, "10. lti asks Bedrock summary") FOLDED into the Flow
-    # legend (Theme 36 edge-folding, owner request 2026-10-16). Unlike e7/e11
-    # (dashed back-edges) e10 is a SOLID primary data-flow, but it was the
-    # crossing HUB of the lti fan: three lti spines (e8/e9/e10) drop into the
-    # one narrow gap right of lti, and e10's x=620 vertical was crossed by both
-    # e9 (e9xe10 @ 620,330) and e8 (e8xe10 @ 620,360). Folding e10 removes those
-    # two under-cap crossings (edge-crossing-excess 4/10 -> 2/10) and separates
-    # the 6/9/10 marker stack the owner flagged. Step 10 stays named by legend
-    # line 10, so the Bedrock-summary step is still documented; bedrock is also
-    # reachable in the narrative, and lti keeps e2/e3/e8/e9 so no node is
-    # orphaned. The owner authorised folding a solid primary flow here.
-    # EdgeSpec(id="e10", source="lti", target="bedrock", marker="10"),
-    # e11 (lti -> socket, "11. lti pushes to WebSocket") FOLDED into the Flow
-    # legend (Theme 36 edge-folding). The second dashed leftward back-edge
-    # (5 baseline crossings), it looped from lti all the way back to the socket
-    # front door and also tripped edge-escapes-container. Marker 11 keeps its
-    # legend line; socket still carries e1/e2/e12 and lti is richly connected, so
-    # no node is orphaned.
-    # EdgeSpec(id="e11", source="lti", target="socket", marker="11", dashed=True,
-    #          kind_hint="cross-region"),
+    EdgeSpec(id="e10", source="lti", target="bedrock", marker="10"),
+    EdgeSpec(id="e11", source="lti", target="socket", marker="11", dashed=True,
+             kind_hint="cross-region"),
     EdgeSpec(id="e12", source="socket", target="student", marker="12", dashed=True,
              kind_hint="cross-region"),
 )

@@ -242,6 +242,7 @@ def _lay_variant(
         containers,
         lane_above,
         turn_near_target=variant.plan is RoutePlan.TURN_NEAR_TARGET,
+        bus=_BUS_SIDE.get(variant.plan),
     )
     src_box = placed[edge.source]
     tgt_box = placed[edge.target]
@@ -255,6 +256,13 @@ def _lay_variant(
     return PlacedEdge(
         spec=edge, exit=variant.exit, entry=variant.entry, points=list(pts)
     )
+
+
+#: 1.10.12 WS5: the return-bus plans and the bus side the router lays them on.
+_BUS_SIDE = {
+    _variants.RoutePlan.RETURN_BUS_ABOVE: "above",
+    _variants.RoutePlan.RETURN_BUS_BELOW: "below",
+}
 
 
 def _lane_above_for_plan(plan) -> Optional[bool]:

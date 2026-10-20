@@ -162,6 +162,69 @@ def face_shapes(geo: DiagramGeometry, e: EdgeGeom) -> List[_cr.Shape]:
     return out
 
 
+#: Return-bus lanes tried outside the content rows (grid steps out).
+_BUS_K = (1, 2, 3, 4, 5, 6)
+#: Rise / drop columns tried beyond the exit stub (grid steps out).
+_BUS_COL_K = (0, 1, 2, 3, 4)
+
+
+def is_return_edge(geo: DiagramGeometry, e: EdgeGeom) -> bool:
+    """A leftward / response edge: the target centre sits left of the source."""
+    s, t = geo.nodes.get(e.source), geo.nodes.get(e.target)
+    return s is not None and t is not None and t.x + t.w / 2.0 < s.x
+
+
+def bus_shapes(geo: DiagramGeometry, e: EdgeGeom) -> List[_cr.Shape]:
+    """Return-bus shapes for a leftward / response edge (1.10.12 WS5, C2).
+
+    The finishing-pass mirror of the layout router's return bus
+    (:func:`rule_engine.layout.routers._route_return_bus`): exit right, step
+    out to a rise column (the stub's own line or a few grid steps further out),
+    run on a lane OUTSIDE every content row the edge spans (above the topmost
+    icon or below the lowest caption in its x-span), and arrive on the
+    target's top (from the upper bus) or its left face via a lane in the gap
+    left of it. Two replies leaving one node can then nest (the wider span
+    outermost) instead of crossing (SEP 05 ``e3`` / ``e7``), which the
+    stub + one-lane family cannot express. Admissibility (no icon, caption,
+    container caption, shared corridor or border ride) is the caller's."""
+    if not is_return_edge(geo, e):
+        return []
+    s, t = geo.nodes[e.source], geo.nodes[e.target]
+    x_lo, x_hi = min(s.x, t.x), max(s.right, t.right)
+    top, bottom = min(s.y, t.y), max(s.bottom, t.bottom)
+    for nid, b in geo.nodes.items():
+        if b.right < x_lo or b.x > x_hi:
+            continue
+        top = min(top, b.y)
+        cap = _cr._caption(geo, nid)
+        bottom = max(bottom, b.bottom, cap.bottom if cap else 0.0)
+    above = [_cr._floor_grid(top) - k * GRID for k in _BUS_K]
+    below = [_cr._ceil_grid(bottom) + k * GRID for k in _BUS_K]
+    out: List[_cr.Shape] = []
+    exits = [x for x in _exits(geo, e) if x[2] == "right"][:2]
+    entries = _cr._entry_options(geo, e)
+    for P, pf, _fx in exits:
+        A = (P[0] + STUB, P[1])
+        cols = [_cr._ceil_grid(A[0]) + k * GRID for k in _BUS_COL_K]
+        for Q, qf in entries:
+            top_entry = "top" in contact_faces(*qf)
+            if top_entry:
+                # One grid step of head-on approach (the edge-approach floor):
+                # the bus lane closest to the row can then still drop in.
+                B = (Q[0], Q[1] - GRID)
+                for x in cols:
+                    for y in above:
+                        if y <= B[1]:
+                            out.append((P, pf, Q, qf, [A, (x, A[1]), (x, y), (B[0], y), B]))
+            else:
+                lxs = [_cr._floor_grid(Q[0] - GRID) - k * GRID for k in (0, 1, 2, 3)]
+                for x in cols:
+                    for y in above + below:
+                        for lx in lxs:
+                            out.append((P, pf, Q, qf, [A, (x, A[1]), (x, y), (lx, y), (lx, Q[1])]))
+    return out
+
+
 def _route_of(e: EdgeGeom) -> Route:
     return (tuple(e.exit), tuple(e.entry), tuple(tuple(p) for p in e.points))
 
@@ -183,6 +246,9 @@ def _ranked(
     shapes = face_shapes(view, e_view)
     if side:
         shapes += _cr._side_shapes(view, e_view)
+        # 1.10.12 WS5: the return bus (a repair move only; ``Xav`` measures
+        # single face swaps and stays on the face family).
+        shapes += bus_shapes(view, e_view)
     out: List[_cr.Cand] = []
     seen: Set[tuple] = set()
     for order, (P, pf, Q, qf, pts) in enumerate(shapes):
@@ -400,7 +466,8 @@ def _best_group(geo: DiagramGeometry, eids: Sequence[str], base: _Base) -> Optio
     for m in members:
         cands = _ranked(geo, m, free=sorted(ids - {m.id}))
         keep = _cr._keep(geo, m, rest)
-        lists.append(([keep] if keep is not None else []) + cands[:pool])
+        lists.append(([keep] if keep is not None else []) + cands[:pool]
+                     + _diverse(cands[pool:], cands[:pool]))
     if not all(lists):
         return None
     segs = [[_cr._segs(c[2]) for c in lst] for lst in lists]
@@ -433,6 +500,46 @@ def _best_group(geo: DiagramGeometry, eids: Sequence[str], base: _Base) -> Optio
         if best is not None:
             break
     return best
+
+
+#: Extra joint-search candidates per member: the best of each route shape the
+#: ink-ranked pool left out (1.10.12 WS5).
+_DIVERSE_POOL = 40
+
+
+def _shape_key(c: _cr.Cand) -> tuple:
+    """A candidate's route shape: entry face, its horizontal lanes and its last
+    vertical column. Two nested return-bus routes differ here even when the
+    shorter one of each shape fills the ink-ranked pool."""
+    pf, qf, interior = c[1]
+    poly = c[2]
+    lanes = tuple(sorted({round(p[1]) for p, q in zip(poly, poly[1:])
+                          if abs(p[1] - q[1]) < AXIS_EPS and abs(p[0] - q[0]) >= GRID}))
+    cols = [round(p[0]) for p, q in zip(poly, poly[1:])
+            if abs(p[0] - q[0]) < AXIS_EPS and abs(p[1] - q[1]) >= GRID]
+    face = "top" if "top" in contact_faces(*qf) else "left"
+    return face, lanes, cols[-1] if cols else None
+
+
+def _diverse(tail: Sequence[_cr.Cand], head: Sequence[_cr.Cand]) -> List[_cr.Cand]:
+    """The best candidate of each route shape in ``tail`` that ``head`` lacks.
+
+    The joint search keeps the ``_JOINT_POOL`` lowest-ink candidates per
+    member, so two replies that must NEST (outer lane + outer column for the
+    wider span) were never paired: the longer outer route of each shape ranked
+    past the pool. Adding one candidate per missing shape keeps the search
+    small and lets it find the nesting."""
+    seen = {_shape_key(c) for c in head}
+    out: List[_cr.Cand] = []
+    for c in tail:
+        k = _shape_key(c)
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(c)
+        if len(out) >= _DIVERSE_POOL:
+            break
+    return out
 
 
 def _thirds(geo: DiagramGeometry, a: str, b: str) -> List[str]:

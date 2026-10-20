@@ -89,24 +89,11 @@ EDGES = (
     EdgeSpec(id="e5", source="req-queue", target="syndi", marker="5", dashed=True),
     EdgeSpec(id="e6", source="syndi", target="dial", marker="6"),
     EdgeSpec(id="e7", source="syndi", target="resp-queue", marker="7", dashed=True),
-    # e8 (resp-queue -> processor, "8. processor consumes response (ESM)")
-    # FOLDED into the Flow legend (Theme 36 edge-folding, owner request
-    # 2026-10-16). e8 is a dashed secondary queue flow that hopped row 2 -> row 1
-    # through the gap where e4 (y=240) and e7 (y=250) run their horizontals, so
-    # its x=820 vertical crossed BOTH (e4xe8 @ 820,240 and e7xe8 @ 820,250) with
-    # e8's own marker sitting on the crossing. Folding e8 removes both under-cap
-    # crossings (edge-crossing-excess 3/8 -> under cap). Marker 8 keeps its
-    # legend line, so the ESM-consume step is still named.
-    # EdgeSpec(id="e8", source="resp-queue", target="processor", marker="8", dashed=True),
-    # e9 (processor -> socket-api, "9. processor pushes reply to WebSocket")
-    # FOLDED into the Flow legend (Theme 36 edge-folding, 1.10.11). This leftward
-    # return-to-WebSocket back-edge raked across the whole left->right flow and
-    # was the diagram's most crossing-toxic edge; folding it CLEARS
-    # edge-crossing-excess entirely (4/9 -> under cap) and the diagram stays lint
-    # [OK] with no new findings. Marker 9 keeps its legend line, so the step is
-    # still named; socket-api still carries e1/e2 and processor still carries e8,
-    # so no node is orphaned.
-    # EdgeSpec(id="e9", source="processor", target="socket-api", marker="9"),
+    # 1.10.12 WS5: e8 and e9 are drawn again (1.10.11 folded them into the Flow
+    # legend, leaving steps 8/9 undrawn and the processor orphaned); the engine
+    # lays the reply to the WebSocket (e9) on the return bus.
+    EdgeSpec(id="e8", source="resp-queue", target="processor", marker="8", dashed=True),
+    EdgeSpec(id="e9", source="processor", target="socket-api", marker="9"),
 )
 
 CONTAINERS = (

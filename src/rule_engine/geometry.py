@@ -2112,6 +2112,38 @@ def check_node_connectivity(geo: DiagramGeometry) -> List[str]:
     )
 
 
+def graph_components(geo: DiagramGeometry) -> List[List[str]]:
+    """Connected components of the drawn node graph, largest first (1.10.12 WS5).
+
+    Only nodes with at least one incident edge take part: an edge-less node is
+    ``node-connectivity``'s finding, not an island. Overlay-marked nodes
+    (``standby``, ``supporting``) are left out too: they declare why they are
+    not part of the flow. Each component is a sorted id list; components are
+    ordered by size (descending), then by their first id, so the result is
+    deterministic."""
+    members = {
+        n for e in geo.edges for n in (e.source, e.target)
+        if n in geo.nodes and n not in geo.overlay_nodes
+    }
+    parent = {n: n for n in members}
+
+    def find(x: str) -> str:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for e in geo.edges:
+        if e.source in parent and e.target in parent:
+            parent[find(e.source)] = find(e.target)
+    groups: Dict[str, List[str]] = {}
+    for n in members:
+        groups.setdefault(find(n), []).append(n)
+    comps = [sorted(g) for g in groups.values()]
+    comps.sort(key=lambda c: (-len(c), c[0]))
+    return comps
+
+
 # Calibrated dead-space threshold (placement-and-gates task 8). Measured across
 # the 57 shipped corpus containers: the sparsest legitimate container packs at a
 # ratio of 4.536 (container area / summed direct-child footprint+padding demand).

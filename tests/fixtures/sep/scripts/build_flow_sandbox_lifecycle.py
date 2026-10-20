@@ -181,18 +181,10 @@ EDGES = (
     EdgeSpec(id="e5", source="mgmt", target="del-q", marker="5", dashed=True),
     # 6. Syndicate Server consumes deletion-queue, runs AWS Nuke.
     EdgeSpec(id="e6", source="del-q", target="syndicate", marker="6", dashed=True),
-    # e7 (syndicate -> deln-q, "7. Server confirms teardown via
-    # deletion-notification-queue") FOLDED into the Flow legend (Theme 36
-    # edge-folding, 1.10.11). It was the most crossing-toxic edge of this SQS
-    # lifecycle "dance" (3 of the 5 baseline crossings), raking across the
-    # forward queue chain; folding it CLEARS edge-crossing-excess (5/9 -> under
-    # cap) and the diagram stays lint [OK] with no new findings. Marker 7 keeps
-    # its legend line so the teardown-confirmation step is still named; deln-q
-    # still carries its consume edge e8 (-> mgmt), so no node is orphaned.
-    # (This supersedes the earlier atlas sub=2 corridor tweak as the crossing
-    # fix — e9/atlas is untouched and stays drawn; folding e9 instead would
-    # orphan the external Atlas datastore, so e7 is the honest fold.)
-    # EdgeSpec(id="e7", source="syndicate", target="deln-q", marker="7", dashed=True),
+    # 7. Server confirms teardown via deletion-notification-queue (Server -> SEP).
+    # 1.10.12 WS5: drawn again (1.10.11 folded it into the Flow legend, which
+    # left step 7 undrawn); the engine lays this reply on the return bus.
+    EdgeSpec(id="e7", source="syndicate", target="deln-q", marker="7", dashed=True),
     # 8. management-api-handler consumes deletion-notification-queue (event-source mapping).
     EdgeSpec(id="e8", source="deln-q", target="mgmt", marker="8", dashed=True),
     # 9. Lambda persists sandbox / application state in MongoDB Atlas.

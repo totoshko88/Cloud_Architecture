@@ -277,6 +277,14 @@ RULE_MARKER_LABEL_COLLISION = "marker-label-collision"
 #                             the same test the engine's repair pass and the
 #                             ``Xav`` metric use); WARNING, both classes.
 RULE_EDGE_CROSSING_AVOIDABLE = "edge-crossing-avoidable"
+# 1.10.12 WS5 (C2, C3). Dropped steps and disconnected islands:
+#   flow-step-undrawn — a numbered ``Flow`` step no edge carries as its marker,
+#                       unless the line says ``(not drawn)``; WARNING, both
+#                       classes.
+#   graph-islands     — a landscape whose connected nodes split into more than
+#                       one connected component; WARNING, landscape only.
+RULE_FLOW_STEP_UNDRAWN = "flow-step-undrawn"
+RULE_GRAPH_ISLANDS = "graph-islands"
 
 # ``RULE_SEVERITIES`` and ``CLASS_ESCALATIONS`` are DERIVED from the ``RULES``
 # registry (defined near the end of this module, once every predicate exists) —
@@ -1771,6 +1779,78 @@ def _check_flow_legend(a: Artifact) -> bool:
     return not set(markers).issubset(covered)
 
 
+#: A Flow step line ``N. <text>`` / ``N) <text>``.
+_FLOW_STEP_RE = re.compile(r"^\s*(\d+)\s*[.)]")
+#: An edge label that is only marker numbers (``7``, ``7, 8``, ``7/8``).
+_MARKER_LIST_RE = re.compile(r"^[\d\s,/&+-]+$")
+#: The explicit opt-out a Flow line carries when its step is deliberately not
+#: drawn as an edge (a step described for context only).
+NOT_DRAWN_TOKEN = "(not drawn)"
+
+
+def _drawn_markers(a: Artifact) -> set:
+    """Every marker number an edge label carries (single or listed)."""
+    out = set()
+    for e in a.edges:
+        label = str(getattr(e, "label", None) or "").strip()
+        if label and _MARKER_LIST_RE.match(label):
+            out.update(int(n) for n in re.findall(r"\d+", label))
+    return out
+
+
+def _check_flow_step_undrawn(a: Artifact):
+    """flow-step-undrawn: a numbered Flow step no edge draws (WARNING).
+
+    1.10.12 WS5 (C2). ``flow-legend`` checks the other direction (every edge
+    marker has a Flow line), so a step whose edge was folded into the legend
+    linted clean while its node lost its only relationship (SEP 05 #7, 06
+    #7/#10/#11 leaving Bedrock orphaned, 07 #8/#9, 09 #17). A step that is
+    deliberately context-only says so: its line carries ``(not drawn)``.
+    offenders = ``step-<N>``; reason ``undrawn-steps:<N,...>``."""
+    if not _is_diagram(a) or not a.flow_legend_lines:
+        return False
+    drawn = _drawn_markers(a)
+    missing: List[int] = []
+    for line in list(a.flow_legend_lines)[1:]:
+        text = str(line)
+        m = _FLOW_STEP_RE.match(text)
+        if not m or NOT_DRAWN_TOKEN in text.lower():
+            continue
+        n = int(m.group(1))
+        if n not in drawn and n not in missing:
+            missing.append(n)
+    if not missing:
+        return False
+    missing.sort()
+    return RuleHit(
+        offenders=tuple(f"step-{n}" for n in missing),
+        reason="undrawn-steps:" + ",".join(str(n) for n in missing),
+    )
+
+
+def _check_graph_islands(a: Artifact):
+    """graph-islands: a landscape split into disconnected islands (WARNING).
+
+    1.10.12 WS5 (C3). A landscape shows how everything relates at once; when
+    its connected nodes fall into two or more components (SEP 09: no edge
+    between the SEP account and any external band) the reader sees several
+    unrelated pictures on one canvas. Nodes with no edge at all are
+    ``node-connectivity``'s, and are left out here, as is every
+    overlay-marked node (``standby``, ``supporting``). offenders = the nodes
+    outside the largest component; reason ``islands:<components>``."""
+    if (a.diagram_class or DIAGRAM_CLASS_FLOW).lower() != DIAGRAM_CLASS_LANDSCAPE:
+        return False
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    comps = _geo.graph_components(geo)
+    if len(comps) <= 1:
+        return False
+    rest = sorted(n for c in comps[1:] for n in c)
+    return RuleHit(offenders=tuple(rest), reason=f"islands:{len(comps)}")
+
+
 def _check_edge_approach(a: Artifact):
     """edge-approach: a route leg is not axis-aligned, or misses its face (WARNING).
 
@@ -2254,6 +2334,9 @@ RULES: Tuple[Tuple[RuleSpec, Callable[[Artifact], _PredicateResult]], ...] = (
     (RuleSpec(RULE_LEGEND_PLACEMENT, Severity.WARNING), _check_legend_placement),
     (RuleSpec(RULE_FLOW_LEGEND, Severity.WARNING), _check_flow_legend),
     (RuleSpec(RULE_NODE_CONNECTIVITY, Severity.WARNING), _check_node_connectivity),
+    # 1.10.12 WS5: dropped Flow steps (both classes) and landscape islands.
+    (RuleSpec(RULE_FLOW_STEP_UNDRAWN, Severity.WARNING), _check_flow_step_undrawn),
+    (RuleSpec(RULE_GRAPH_ISLANDS, Severity.WARNING), _check_graph_islands),
     (RuleSpec(RULE_EDGE_APPROACH, Severity.WARNING), _check_edge_approach),
     (RuleSpec(RULE_ORPHAN_LANDSCAPE, Severity.ERROR), _check_orphan_landscape),
     (

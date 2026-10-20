@@ -135,7 +135,9 @@ def test_back_edge_gets_a_face_swap_variant_but_not_in_the_order_key():
     edge = EdgeSpec(id="e3", source="dns", target="cf", marker="3")
     seed = {"e3": ((1.0, 0.5), (0.0, 0.5))}
     vs = variants.generate(edge, placed, {}, "back-edge", seed)
-    faces = [v for v in vs if v.face_swap]
+    # The WS5 return-bus family is judged like a face swap too (``face_swap``)
+    # and offers both entry faces; the WS3 face family is the rest.
+    faces = [v for v in vs if v.face_swap and "/return-bus-" not in v.id]
     assert faces, [v.id for v in vs]
     assert all(v.entry == (0.5, 0.0) for v in faces)     # the other face: TOP
     assert all(v.rank > max(w.rank for w in vs if not w.face_swap) for v in faces)

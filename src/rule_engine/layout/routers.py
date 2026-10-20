@@ -1672,8 +1672,14 @@ def route_back_edge(
     lane_above: Optional[bool] = None,
     corridor_y: Optional[float] = None,
     turn_near_target: bool = False,
+    bus: Optional[str] = None,
 ) -> List[Point]:
     """Route a ``back-edge`` (target left of source) out the right and back (Req 7.6).
+
+    ``bus`` (1.10.12 WS5, ``"above"`` / ``"below"``) lays the run on the
+    **return bus** instead (:func:`_route_return_bus`): a lane outside every
+    content row the run spans, so a leftward / response edge does not rake
+    through the rows of the forward flow it returns across.
 
     Shape: exit the source's **right** (never the side it enters), step into the
     gap (the stair moves both axes), rise into a dedicated loop corridor above
@@ -1691,6 +1697,9 @@ def route_back_edge(
     others = _relevant_obstacles(edge, obstacles)
 
     entry = _contact_point(tgt, entry_pt)
+    if bus is not None:
+        return _route_return_bus(edge, src, tgt, exit_pt, entry_pt, allocator,
+                                 obstacles, others, containers, bus == "above")
     if exit_pt[1] is not None and exit_pt[1] >= 1.0:
         return _route_back_edge_down(edge, src, tgt, exit_pt, entry_pt, allocator,
                                      others, containers)
@@ -1772,6 +1781,121 @@ def route_back_edge(
         ]
     waypoints = _dedupe_axis_collapse(waypoints, first)
     route = [_contact_point(src, exit_pt)] + waypoints + [entry]
+    route = _detour_clockwise_if_blocked(route, others)
+    return _interior_waypoints(route)
+
+
+def _shared_container(
+    src: Box, tgt: Box, containers: Optional[Dict[str, Box]]
+) -> Optional[Box]:
+    """The innermost container holding BOTH ``src`` and ``tgt`` (or None)."""
+    best: Optional[Box] = None
+    for c in (containers or {}).values():
+        if _box_contains(c, src) and _box_contains(c, tgt):
+            if best is None or (c.w * c.h) < (best.w * best.h):
+                best = c
+    return best
+
+
+def _route_return_bus(
+    edge: EdgeSpec,
+    src: Box,
+    tgt: Box,
+    exit_pt: Contact,
+    entry_pt: Contact,
+    allocator: "CorridorAllocator",
+    obstacles: List[Box],
+    others: List[Box],
+    containers: Optional[Dict[str, Box]],
+    above: bool,
+) -> List[Point]:
+    """1.10.12 WS5 (C2): lay a leftward / response edge on the RETURN BUS.
+
+    The ordinary back-edge loops in the row gap next to its SOURCE, so a reply
+    leaving a lower row (or one whose span holds a taller column) runs its long
+    horizontal between content rows and cuts every forward edge that crosses
+    that gap (SEP 05 ``e7``: four crossings). The return bus is a dedicated lane
+    OUTSIDE every content row the run spans: the band above the topmost node in
+    the run's x-span (``above``) or below the bottommost footprint (``below``).
+    It stays inside the innermost container that holds both endpoints (below
+    its caption strip, above its bottom border), so the run never escapes it.
+
+    Shape: exit right (stair step), rise / drop in the gap right of the source
+    to the bus lane, run left along it, then
+
+    * ``above`` + top entry — drop into the target's top (a free drop column
+      when the target's own column is stacked);
+    * left entry — descend / rise in a free lane in the gap left of the target
+      column (off every container border) and step right into its left face.
+
+    The bus lanes share the ``hcorr-<side>:<row>`` namespace of that band, so a
+    bus run and an ordinary loop there get distinct lines. Contract-legal by
+    construction (right exit, left/top entry)."""
+    ex = _contact_point(src, exit_pt)
+    entry = _contact_point(tgt, entry_pt)
+    gap_w = col_step() - ICON_SIZE
+    x_lo = min(src.x, tgt.x) - GRID
+    x_hi = max(src.right, tgt.right) + gap_w
+    span = [b for b in obstacles if not (b.right < x_lo or b.x > x_hi)] or [src, tgt]
+    shared = _shared_container(src, tgt, containers)
+    if shared is not None:
+        span = [b for b in span if _box_contains(shared, b)] or [src, tgt]
+    if above:
+        edge_box = min(span, key=lambda b: (b.y, b.x))
+        low = (edge_box.y - row_step()) + ICON_SIZE + LABEL_BAND + GRID
+        high = edge_box.y - GRID
+        low, high = _caption_free_band(low, high, containers, src)
+        gap = f"hcorr-above:{int(edge_box.y)}"
+    else:
+        edge_box = max(span, key=lambda b: (b.bottom, -b.x))
+        low = edge_box.y + ICON_SIZE + LABEL_BAND + GRID
+        high = edge_box.y + row_step()
+        if shared is not None:
+            high = min(high, shared.bottom - GRID)
+        gap = f"hcorr-below:{int(edge_box.y)}"
+    if high - low < GRID:
+        high = low + GRID
+    bus_y = _snap(_allocate_or_first(allocator, gap, low, high))
+
+    first = _stair_first_waypoint(src, exit_pt, toward_down=not above)
+    rise_x = _gap_column_x(allocator, src, edge.id)
+    first = (rise_x, first[1])
+    waypoints: List[Point] = [first, (rise_x, bus_y)]
+    if above and entry_pt[1] is not None and entry_pt[1] <= 0.0:
+        across = _snap(entry[0])
+        drop_x = _free_drop_column(tgt, across, bus_y, others, containers)
+        if drop_x == across:
+            waypoints += [(across, bus_y), (across, _snap(entry[1]))]
+        else:
+            band_lo, band_hi = _hcorridor_band(edge, tgt, tgt, False, containers)
+            approach_y = _snap(_allocate_or_first(
+                allocator, f"hcorr-above:{int(tgt.y)}", band_lo, band_hi
+            ))
+            waypoints += [(drop_x, bus_y), (drop_x, approach_y),
+                          (across, approach_y), (across, _snap(entry[1]))]
+    else:
+        host = _enclosing_container(tgt, containers)
+        left_bound = tgt.x - gap_w
+        if host is not None:
+            left_bound = max(left_bound, host.x + GRID)
+        lo_y, hi_y = sorted((bus_y, entry[1]))
+        borders = [
+            bx for c in (containers or {}).values()
+            if not (c.bottom < lo_y or c.y > hi_y) for bx in (c.x, c.right)
+        ]
+        cands = [
+            x for x in range(int(_snap(left_bound)), int(tgt.x - GRID) + 1, GRID)
+            if x >= left_bound
+            and all(abs(x - b) >= GRID for b in borders)
+            and not any(b.x <= x <= b.right and not (b.bottom < lo_y or b.y > hi_y)
+                        for b in others)
+        ]
+        centre = (left_bound + tgt.x) / 2.0
+        left_x = (min(cands, key=lambda x: (abs(x - centre), x)) if cands
+                  else _snap(max(tgt.x - gap_w // 2, CONTAINER_PAD)))
+        waypoints += [(left_x, bus_y), (left_x, _snap(entry[1]))]
+    waypoints = _dedupe_axis_collapse(waypoints, first)
+    route = [ex] + waypoints + [entry]
     route = _detour_clockwise_if_blocked(route, others)
     return _interior_waypoints(route)
 
@@ -1865,8 +1989,14 @@ def route_edge(
     lane_above: Optional[bool] = None,
     corridor_y: Optional[float] = None,
     turn_near_target: bool = False,
+    bus: Optional[str] = None,
 ) -> List[Point]:
     """Classify ``edge`` and dispatch to the matching ``route_<kind>`` router.
+
+    ``bus`` (1.10.12 WS5) routes a leftward / response edge on the return bus
+    (:func:`_route_return_bus`) whatever its class: the variant generator only
+    offers it for an edge whose target sits left of its source.
+
 
     A thin convenience over :func:`classify_edge` + :data:`ROUTERS`. Raises
     :class:`UnclassifiableEdgeError` (via :func:`classify_edge`) for an edge that
@@ -1884,6 +2014,9 @@ def route_edge(
     converging cross-region / back-edge hop (:func:`decide_converging_corridors`
     in the pipeline). Forwarded only to those two routers; the others ignore it,
     so a router called directly is unchanged."""
+    if bus is not None:
+        return route_back_edge(edge, exit_pt, entry_pt, allocator, obstacles,
+                               containers, bus=bus)
     placed = {b.id: b for b in obstacles}
     kind = classify_edge(edge, placed)
     if kind in ("cross-region", "back-edge"):

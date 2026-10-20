@@ -339,6 +339,7 @@ WARNING). The canonical vocabulary:
 | Spec requires, not deployed | dashed rectangle overlay | red `#D64550` | `spec-required-not-deployed` |
 | Observability overlay | stroked box | blue `#0062AD` | `observability-overlay` |
 | Passive peer, edges omitted | dashed node outline | — (never repaint a pack glyph) | `standby` |
+| Ops / observability service, not a data-flow step | dotted node outline | — (never repaint a pack glyph) | `supporting` |
 | Explanatory annotation | text callout box | — | `callout` |
 | New in version N | badge on node | — | 🆕 |
 | Changed in version N | badge on node | — | 🔄 |
@@ -363,6 +364,17 @@ deliberately declares **no colour**: *Icon Fidelity* forbids recolouring a pack
 glyph, so the marker is additive only. Use it for a genuine symmetric mirror — a
 passive region, a standby AZ — never to excuse a node the author simply forgot to
 connect.
+
+**`supporting` (1.10.12).** A monitoring, CI-state or configuration service that
+supports the workload but is not a step of its data flow (CloudWatch, a
+Terraform state-lock table, a parameter store) is drawn and marked
+`overlay=supporting`: a **dotted node outline** (`dashed=1;dashPattern=1 3`,
+distinct from the dashed `standby` ring) plus a **Legend entry**
+(`diagram_layout.overlay_legend_lines` emits the standard one). It is the
+sanctioned `node-connectivity` exemption for such a node and is left out of
+`graph-islands`; it replaces the anti-pattern of fabricating an edge chain
+(SQS → CloudWatch → DynamoDB → SSM) only to keep every node connected. Like
+`standby`, it never recolours the glyph.
 
 **CRITICAL: standby overlay MUST NOT change the icon's fillColor.** The `standby`
 marker is applied by adding `dashed=1;dashPattern=6 6;` to the node's style and
@@ -445,6 +457,22 @@ A fourth, related rule: **collapse an overshoot.** A run that passes the contact
 **Contacts are grid-resolved along the face they sit on.** A fraction such as `exitY=0.25` on a 78px icon resolves to `y0 + 19.5` — half a pixel off the 10-grid every waypoint snaps to — which leaves a permanent kink that reads as a bent arrowhead. Nudge the *fraction* until the absolute contact lands on the grid, but snap **only the along-face coordinate**: for a right face only the y, for a top face only the x. Snapping the face coordinate would pull the contact *inside* the glyph whenever the icon is not grid-commensurate (a 64px icon at `x=540` has its right edge at 604; rounding to 600 moves the contact off its own face and silently breaks the directional contract).
 
 Generated diagrams get all of this for free — the layout engine re-aligns every route after each repair pass, and the shared builder aligns at render time — so these rules bite on hand-authored sources and on edges dragged in the draw.io GUI. `scripts/orthogonalise_drawio.py` applies the same rewrite to a `.drawio` in place. (Distilled from a reviewer's hand-edit of the AWS landscape, 2026-09-26: three edges, all three instances of this one defect.)
+
+**Return flows ride the return bus (1.10.12).** A leftward / response edge (a
+reply queue, a signed callback, the response to an external actor on the left)
+must not rake back across the forward flow between content rows. The engine
+offers it a **return bus**: a lane OUTSIDE every content row the run spans
+(above the topmost icon or below the lowest caption in its x-span, inside the
+innermost container holding both ends), reached by a rise in the gap right of
+the source and left by a top drop or a lane in the gap left of the target.
+Contract-legal by construction (right exit, left/top entry), it is taken only
+when it removes crossings without adding a finding: as `return-bus-*` variants
+in the scored search (judged like a face swap) and as bus shapes in the final
+crossing-repair pass, where two replies leaving one node nest (the wider span
+outermost) instead of crossing. For the Theme 11 callback to an external actor
+on the left this replaces the left-face exit. Draw every reply step; do not
+fold it into the Flow legend (`flow-step-undrawn`). A step that is genuinely
+context-only says `(not drawn)` in its Flow line.
 
 **No double-headed arrows (draw a two-way relationship as two edges).** An edge carries a **single** arrowhead showing the direction of the flow. A two-way relationship is drawn as **two single-ended edges** (preferred — one per direction, each with its own label), or as one edge annotated with the request/response it represents; it is **never** a single double-headed arrow. A double head (a non-`none` `startArrow` *and* a non-`none` `endArrow`) hides which side depends on which and reads as an ambiguous dependency (AWS `diagram-as-code`). This is the `edge-bidirectional` lint rule (WARNING, both classes): the common single-head edge — start `none`, end set — is never flagged; only an edge with a head explicitly placed on both ends trips it.
 

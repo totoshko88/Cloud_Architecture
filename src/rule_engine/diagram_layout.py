@@ -165,7 +165,31 @@ class Node:
 # survives grayscale printing and colour-vision deficiency.
 _OVERLAY_SHAPE = {
     "standby": "dashed=1;dashPattern=6 4",
+    # 1.10.12 WS5 (C13): an ops / observability service (monitoring, CI state,
+    # a config store) that supports the workload but is not a step of its
+    # data flow. A dotted outline, distinct from the dashed ``standby`` ring.
+    "supporting": "dashed=1;dashPattern=1 3",
 }
+
+#: The standard Legend line for each overlay term a builder can emit
+#: (:func:`overlay_legend_lines`). Each names the term as a whole token, which
+#: is what ``overlay-legend-coverage`` checks.
+OVERLAY_LEGEND_LINES = {
+    "standby": "standby = passive peer (dashed outline); edges mirror the active side",
+    "supporting": "supporting = ops / observability service (dotted outline); not a data-flow step",
+}
+
+
+def overlay_legend_lines(nodes: Sequence["Node"]) -> Tuple[str, ...]:
+    """The standard Legend lines for the overlay terms ``nodes`` carry, in
+    first-use order (1.10.12 WS5). A term with no standard line is left to the
+    builder's own Legend text."""
+    out: List[str] = []
+    for n in nodes:
+        line = OVERLAY_LEGEND_LINES.get(n.overlay or "")
+        if line and line not in out:
+            out.append(line)
+    return tuple(out)
 
 
 def overlay_suffix(node: "Node") -> str:
@@ -1499,4 +1523,5 @@ __all__ = [
     "builtin_icon", "embed_oci_stencil", "OciStencilIcon", "OciStencilError",
     "title_cell", "boundary_cell", "edge_cell", "text_cell",
     "STANDARD_LEGEND_LINES", "legend_lines_for", "build_diagram", "caption_safe_plan",
+    "OVERLAY_LEGEND_LINES", "overlay_legend_lines",
 ]

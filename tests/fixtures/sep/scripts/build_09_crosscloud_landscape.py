@@ -174,10 +174,10 @@ NODES = (
     _n("eks-dev", "peer_account", "actors", "", 5, "KTM EKS dev (183631338639)", kind="peeracct", container="ext-peeracct"),
     _n("cicd", "peer_account", "actors", "", 6, "CICD acct (884218299410)", kind="peeracct", container="ext-peeracct"),
     # identity that also reaches the APIs (documented in Flow)
-    _n("keycloak", "keycloak", "actors", "", 7, "Keycloak SSO", kind="keycloak", container="ext-identity"),
+    _n("keycloak", "keycloak", "actors", "", 8, "Keycloak SSO", kind="keycloak", container="ext-identity"),
     # LMS -> the mortarboard / graduation-cap education glyph (regen9, owner
     # request). Hand-authored public-domain SVG wired as the `education` role.
-    _n("lms", "education", "actors", "", 8, "LMS learn.epam.com", kind="edu", container="ext-identity"),
+    _n("lms", "education", "actors", "", 7, "LMS learn.epam.com", kind="edu", container="ext-identity"),
     # ---- external-to-external integration cluster (Syndi + DIAL + LM) -----
     # Syndicate Server is an external EC2 host drawn as its own node -> the real
     # EC2 service icon (compute_instance), owner feedback 2026-10-17 (e). DIAL AI
@@ -281,7 +281,10 @@ EDGES = (
     EdgeSpec(id="e1", source="actorsbox", target="cloudfront", marker="1"),
     EdgeSpec(id="e2", source="cloudfront", target="apigw", marker="2"),
     EdgeSpec(id="e3", source="dns", target="cloudfront", marker="3", dashed=True),
-    EdgeSpec(id="e4", source="keycloak", target="lms", marker="4", dashed=True),
+    # 1.10.12 WS5: LMS left of Keycloak (LMS signs users in through Keycloak),
+    # so LMS, which also launches on the REST API (e24), is not stacked in the
+    # CloudFront -> API Gateway column.
+    EdgeSpec(id="e4", source="lms", target="keycloak", marker="4", dashed=True),
 
     # --- SEP internal data-flow (clean, mostly-vertical skeleton; the full
     #     internal wiring is diagram 03. cloudwatch/dynamodb/ssm stack under sqs
@@ -307,6 +310,15 @@ EDGES = (
     #     "one representative edge per external system" pattern) keeps marker
     #     coverage 16-18 while the drawn graph stays under the cap. ---
     EdgeSpec(id="e16", source="lambda", target="atlas", marker="16", kind_hint="cross-region"),
+    # 1.10.12 WS5: step 17 drawn (it was the one undrawn step) and one edge per
+    # external band into the SEP account or the integration it serves, so the
+    # landscape is one connected graph instead of five islands (graph-islands).
+    EdgeSpec(id="e17", source="batch", target="cmtr", marker="17", kind_hint="cross-region"),
+    EdgeSpec(id="e24", source="lms", target="apigw", marker="24", kind_hint="cross-region"),
+    EdgeSpec(id="e25", source="sqs", target="syndicate-server", marker="25", dashed=True,
+             kind_hint="cross-region"),
+    EdgeSpec(id="e26", source="syndicate-server", target="sbfleets", marker="26", dashed=True,
+             kind_hint="cross-region"),
     # Intra-group peer-account link (both in ext-peeracct): keeps cicd incident
     # without a cross-band leg. CMTR's CI control plane drives the CICD account.
     EdgeSpec(id="e18", source="cmtr", target="cicd", marker="18", dashed=True, kind_hint="cross-region"),
@@ -337,7 +349,7 @@ FLOW = (
     "1. Students / Operators reach syndicate.education via CloudFront (4 distributions)",
     "2. CloudFront fronts the REST + WebSocket API Gateways (4 REST + 1 WS)",
     "3. Route 53 (acct 323549576358) resolves syndicate.education to CloudFront",
-    "4. Keycloak SSO federates identity; LMS (learn.epam.com) launches tasks via LTI to the REST API",
+    "4. LMS (learn.epam.com) signs users in through Keycloak SSO (federated identity)",
     "SEP internal data-flow (5-15)",
     "5. API Gateway invokes the SEP Lambda handlers (13 functions)",
     "6. Lambda enqueues work on SQS (14 queues) — async",
@@ -356,10 +368,14 @@ FLOW = (
     "18. ECR / CI sync with the CICD account over peering pcx-0754f6dee2f5bf2fd (884218299410, .254.0/24)",
     "19. KTM also reaches the EKS student cluster development-dev over the PUBLIC endpoint (183631338639)",
     "20. Syndicate Server (Syndi) calls the EPAM DIAL AI proxy ai-proxy.lab.epam.com",
-    "21. License Manager (652063929809) sends to the CMTR sep-lm-synchronization-queue — draft assumption; Syndi consumes SEP SQS lifecycle queues over peering",
+    "21. License Manager (652063929809) sends to the CMTR sep-lm-synchronization-queue — draft assumption",
     "Sandbox-management context (22-23)",
     "22. Sandbox-mgmt org (533267139808) runs the nuke fleet on AWS Batch (eu-west-1); org members forward events to central Logging (650251687330) EventBridge to SQS FIFO",
     "23. Nuke fleet purges the sandbox fleets — AWS (222 accts) / Azure (202 subs) / GCP (org 1090110766254)",
+    "Cross-band links (24-26)",
+    "24. LMS launches tasks via LTI on the REST API Gateway",
+    "25. Syndicate Server consumes the SEP SQS lifecycle queues over peering",
+    "26. Syndicate Server provisions sandbox accounts in the sandbox fleets",
 )
 
 LEGEND_EXTRA = (
@@ -486,7 +502,15 @@ def _build() -> str:
     # content x is untouched (icons stay on the grid, inside each box).
     _STACKED = ("ext-peeracct", "ext-identity", "ext-integrations", "ext-sandbox")
     _frame = [b for b in boundaries if b.id in _STACKED]
-    if len(_frame) == len(_STACKED):
+    # 1.10.12 WS5: only when the engine really stacked them in one column (no
+    # two bands share a row); once the bands are linked to the account the
+    # engine may lay them side by side, and a common left edge would then pull
+    # each box over its left neighbour.
+    _rows_disjoint = all(
+        a.y + a.h <= b.y or b.y + b.h <= a.y
+        for i, a in enumerate(_frame) for b in _frame[i + 1:]
+    )
+    if len(_frame) == len(_STACKED) and _rows_disjoint:
         _left = min(b.x for b in _frame)
         for b in _frame:
             # keep right edge fixed, extend left to the common edge

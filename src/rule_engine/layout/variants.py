@@ -102,6 +102,9 @@ class RoutePlan(str, Enum):
     TURN_NEAR_TARGET = "turn-near-target"  # long haul: run horizontal first,
     #                                        put the long vertical at the TARGET's
     #                                        approach column (Theme 38b)
+    RETURN_BUS_ABOVE = "return-bus-above"  # 1.10.12 WS5: leftward / response
+    RETURN_BUS_BELOW = "return-bus-below"  # edge on a lane outside every content
+    #                                        row it spans (the return bus)
 
 
 @dataclass(frozen=True)
@@ -306,6 +309,48 @@ def _back_edge_variants(edge: "EdgeSpec", rule_exit: Contact,
         _variant(edge.id, "descend-near", rule_exit, rule_entry,
                  RoutePlan.DESCEND_NEAR, start_rank + 1),
     ]
+
+
+def _is_return(edge: "EdgeSpec", placed: Dict[str, "Box"]) -> bool:
+    """True for a leftward / response edge: the target's centre sits left of
+    the source's left edge (a back-edge, a reply queue, an actor callback)."""
+    src = placed.get(edge.source)
+    tgt = placed.get(edge.target)
+    if src is None or tgt is None:
+        return False
+    return tgt.x + tgt.w / 2.0 < src.x
+
+
+def _return_bus_variants(edge: "EdgeSpec", placed: Dict[str, "Box"], kind: str,
+                         rule_exit: Contact, rule_entry: Contact,
+                         start_rank: int) -> List[RouteVariant]:
+    """return-bus family (1.10.12 WS5, C2): a leftward / response edge laid on a
+    dedicated lane OUTSIDE every content row it spans
+    (:func:`rule_engine.layout.routers._route_return_bus`).
+
+    Offered for a return edge of either long-haul class (``back-edge`` /
+    ``cross-region``, incl. the Theme 11 callback to an external actor on the
+    left): bus above -> top or left entry, bus below -> left entry (a bottom
+    arrival from the lower bus would break the contract). The exit is the right
+    face (rule band kept when the rule already exits right): a bottom exit from a
+    captioned source would strike its own caption (Variant A). Flagged
+    ``face_swap`` so the solver takes a bus only on strictly fewer crossings with
+    no new rule finding: a bus exists to remove crossings, never for ink."""
+    if kind not in ("back-edge", "cross-region") or not _is_return(edge, placed):
+        return []
+    exit_pt = _keep_band(rule_exit, _EXIT_RIGHT)
+    out: List[RouteVariant] = []
+    rank = start_rank
+    for name, plan, entries in (
+        ("return-bus-above", RoutePlan.RETURN_BUS_ABOVE, (_ENTRY_TOP, _ENTRY_LEFT)),
+        ("return-bus-below", RoutePlan.RETURN_BUS_BELOW, (_ENTRY_LEFT,)),
+    ):
+        for entry in entries:
+            out.append(_variant(edge.id, f"{name}-{_face(entry)}", exit_pt,
+                                _keep_band(rule_entry, entry), plan, rank,
+                                face_swap=True))
+            rank += 1
+    return out
 
 
 def _face(pt: Contact) -> str:
@@ -570,7 +615,13 @@ def generate(
     # (the most-constrained-first ordering key) keeps the routing order of
     # every edge exactly what it was before the family existed.
     if faces:
-        variants.extend(_face_variants(edge, placed, kind, rule_exit, rule_entry, rank))
+        fv = _face_variants(edge, placed, kind, rule_exit, rule_entry, rank)
+        variants.extend(fv)
+        rank += len(fv)
+        # 1.10.12 WS5: the return bus, judged like a face swap (strictly fewer
+        # crossings) and likewise left out of the ordering key.
+        variants.extend(_return_bus_variants(edge, placed, kind, rule_exit,
+                                             rule_entry, rank))
 
     return _dedupe_by_id(variants)
 

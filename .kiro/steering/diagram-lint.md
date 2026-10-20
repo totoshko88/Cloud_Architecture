@@ -81,6 +81,8 @@ every applicable rule against every artifact.
 | `marker-label-collision` | A numbered flow-marker's rendered anchor falls inside a node's caption rectangle (centred under the icon, as wide as its text at 7.0px/char), so the number overprints the service name. offenders = the marker edge and the node. | WARNING | diagram-standards Numbered Flow Legend / hotfix 1.10.7 |
 | `edge-crossing-excess` | The diagram's edge-crossing count exceeds a per-diagram cap proportional to the edge count (`ceil(0.25 × E)`), reason `crossings-over-cap:X/E`. **Hard cap (1.10.7):** on a `landscape`, more than `0.5 × E` crossings is an **ERROR** (reason `crossings-over-hard-cap:X/E`) — the routing has collapsed. offenders = the crossing edge-id pairs. Uses the same crossing detection `route_cost` minimises. | WARNING/ERROR | diagram-standards Edge Routing (minimise crossings) / edge-hygiene 1.10.5 B2 |
 | `edge-crossing-avoidable` | A crossing that a **single legal face swap** removes: one edge of a crossing pair, re-routed onto another legal exit/entry face pair (exit right, or bottom from a source with no caption; entry left/top) with a stub + one-lane route, lowers the crossing count **without adding a routing finding** (no icon, caption, text box, foreign container or container caption crossed; no shared corridor, border ride, detour hook; no new oracle finding). Reason `avoidable:<removed>/<crossings>`; offenders = the edges whose swap removes it. The same test (`crossing_repair.avoidable_crossings`) the engine's final crossing-repair pass and the `Xav` metric use. New in 1.10.12 (WS3). | WARNING | diagram-standards Edge Routing (crossing-aware contact selection) |
+| `flow-step-undrawn` | A numbered `Flow` step (`N.` / `N)`) is carried by **no edge** as its marker, so the step is described but not drawn and its node may lose its only relationship. A step that is deliberately context-only carries `(not drawn)` in its Flow line and is exempt. Reason `undrawn-steps:<N,...>`; offenders = `step-<N>`. The reverse of `flow-legend`. New in 1.10.12 (WS5). | WARNING | diagram-standards Numbered Flow Legend / Inventory completeness → diagram |
+| `graph-islands` | A `landscape` whose connected nodes split into **more than one connected component** (islands with no edge between them). Edge-less nodes (`node-connectivity`'s) and overlay-marked nodes (`standby`, `supporting`) are left out. Reason `islands:<components>`; offenders = the nodes outside the largest component. Landscape only. New in 1.10.12 (WS5). | WARNING | diagram-standards Inventory completeness → diagram (drawing is not relating) |
 | `detour-hook` | An edge's routed (Manhattan) length exceeds `2.5 ×` the straight Manhattan distance between its contacts — it loops out and back instead of going where it is going. offenders = the edge id. | WARNING | diagram-standards Edge Routing (shortest sensible route) / edge-hygiene 1.10.5 B3 |
 | `structural-integrity` | An edge `source`/`target` id resolves to no placeable box (`edge-unresolved-source`/`-target`), or a node carries a non-positive-area geometry (`node-no-geometry`). A cross-check adapted from the awesome-copilot draw.io validator; unique-id and parent-chain checks are already enforced earlier (the single parser dedupes cell ids before geometry sees them; a parent cycle raises `parse-error`), so only the not-yet-covered checks are added here. | WARNING | R1 AC10 / awesome-copilot draw.io validator / edge-hygiene 1.10.5 B4 |
 
@@ -184,6 +186,10 @@ every applicable rule against every artifact.
   `overlay=<term>` (e.g. a `standby` passive peer) is *declaring* why it has no
   edges, double-encoded and documented in the Legend, which is the sanctioned way
   to draw a symmetric mirror tier without duplicating every edge into it.
+  **1.10.12 (WS5, C13):** an ops / observability service (monitoring, CI state,
+  a config store) marked `overlay=supporting` is the sanctioned exemption for a
+  node that supports the workload but is not a step of its data flow; it is
+  the honest alternative to fabricating an edge chain to satisfy this rule.
   WARNING on both classes: it surfaces the defect without blocking publication,
   because "connected enough" is a judgement the author makes.
 - **`edge-approach` (WARNING)** — *Geometry-enforced.* An `orthogonalEdgeStyle`
@@ -518,6 +524,26 @@ every applicable rule against every artifact.
   `build_diagram`), so engine output never trips it; it is published so a
   hand-authored diagram is held to the same standard. Advisory (WARNING) on
   both classes; `edge-crossing-excess` still caps the total.
+- **`flow-step-undrawn` (WARNING)** — *New in 1.10.12 (WS5, C2).* `flow-legend`
+  checks that every edge marker has a Flow line; nothing checked the other
+  direction, so a step whose edge was folded into the legend (the 1.10.11
+  edge-folding lever) linted clean while its node lost its only relationship:
+  SEP 05 step 7, 06 steps 7/10/11 (Bedrock orphaned), 07 steps 8/9 (the
+  processor orphaned), 09 step 17. The rule reads the parsed `Flow` cell and
+  the edge labels (a single marker `7` or a list `7, 8`); a step line that says
+  `(not drawn)` is a declared context-only step and is exempt. Section
+  headers (`Ingest (1-4)`) are not steps. WARNING on both classes; the engine's
+  return bus (diagram-standards → *Return flows ride the return bus*) is the
+  sanctioned alternative to folding a reply.
+- **`graph-islands` (WARNING)** — *New in 1.10.12 (WS5, C3). Topology-enforced,
+  landscape only.* A landscape exists to show how everything relates at once;
+  when its connected nodes fall into several components (SEP 09: no edge
+  between the SEP account and any of the four external bands) the canvas holds
+  several unrelated pictures. Components are computed over nodes with at least
+  one edge, minus overlay-marked nodes, so a lone edge-less node stays
+  `node-connectivity`'s finding and is not double-reported. offenders = the
+  nodes outside the largest component; reason `islands:<n>`. A `flow` is not
+  judged (a narrative view may legitimately hold two short paths).
 - **`min-font-size` (WARNING)** — Every piece of on-diagram text (node labels, edge
   labels, boundary captions, title cell, and the `Flow`/`Legend` cells) must render at
   **12px or larger**, the accessibility floor from published AWS diagram conventions. A
@@ -620,6 +646,7 @@ keeps its exact behavior.
 | `geometric-containment` | WARNING | **ERROR** (a hidden non-membership is a correctness failure; also ERROR on a network diagram) |
 | `orphan-landscape` | n/a | ERROR unless `summary_of` names a `flow` summary |
 | `node-connectivity` | WARNING | WARNING (an overlay marker is the sanctioned exemption) |
+| `graph-islands` | n/a | WARNING (the connected nodes form one graph; `supporting` / `standby` nodes left out) |
 | `legend-placement` | WARNING; **ERROR** for `overlaps-node-*` | WARNING; **ERROR** for `overlaps-node-*` |
 | numbered flow markers | expected | optional (a landscape has no single path) |
 | `overlay-legend-coverage` | WARNING when overlay markers are used | WARNING when overlay markers are used |
