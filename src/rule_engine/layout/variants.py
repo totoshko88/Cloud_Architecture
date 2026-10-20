@@ -323,7 +323,8 @@ def _is_return(edge: "EdgeSpec", placed: Dict[str, "Box"]) -> bool:
 
 def _return_bus_variants(edge: "EdgeSpec", placed: Dict[str, "Box"], kind: str,
                          rule_exit: Contact, rule_entry: Contact,
-                         start_rank: int) -> List[RouteVariant]:
+                         start_rank: int,
+                         nest: "Dict[str, tuple] | None" = None) -> List[RouteVariant]:
     """return-bus family (1.10.12 WS5, C2): a leftward / response edge laid on a
     dedicated lane OUTSIDE every content row it spans
     (:func:`rule_engine.layout.routers._route_return_bus`).
@@ -335,22 +336,43 @@ def _return_bus_variants(edge: "EdgeSpec", placed: Dict[str, "Box"], kind: str,
     face (rule band kept when the rule already exits right): a bottom exit from a
     captioned source would strike its own caption (Variant A). Flagged
     ``face_swap`` so the solver takes a bus only on strictly fewer crossings with
-    no new rule finding: a bus exists to remove crossings, never for ink."""
+    no new rule finding: a bus exists to remove crossings, never for ink.
+
+    ``nest`` (the edge's entry of :func:`routers.decide_return_bus_nesting`)
+    sets the exit band of a reply that shares its source with other replies,
+    so the nested runs leave the face in nesting order (WS5 review F1)."""
     if kind not in ("back-edge", "cross-region") or not _is_return(edge, placed):
         return []
-    exit_pt = _keep_band(rule_exit, _EXIT_RIGHT)
     out: List[RouteVariant] = []
     rank = start_rank
     for name, plan, entries in (
         ("return-bus-above", RoutePlan.RETURN_BUS_ABOVE, (_ENTRY_TOP, _ENTRY_LEFT)),
         ("return-bus-below", RoutePlan.RETURN_BUS_BELOW, (_ENTRY_LEFT,)),
     ):
+        if nest is not None:
+            side = "above" if plan is RoutePlan.RETURN_BUS_ABOVE else "below"
+            exit_pt = (1.0, _bus_exit_band(nest, side))
+        else:
+            exit_pt = _keep_band(rule_exit, _EXIT_RIGHT)
         for entry in entries:
             out.append(_variant(edge.id, f"{name}-{_face(entry)}", exit_pt,
                                 _keep_band(rule_entry, entry), plan, rank,
                                 face_swap=True))
             rank += 1
     return out
+
+
+def _bus_exit_band(nest: "Dict[str, tuple]", side: str) -> float:
+    """The right-face exit y-fraction of a nested return-bus run on ``side``.
+
+    The inner run (rank ``count - 1``) leaves from the band nearest its bus: on
+    the upper bus that is the UPPER band, so the outer run's stub passes below
+    the inner rise; on the lower bus the mirror."""
+    rank, count = nest[side]
+    bands = nest["bands"]
+    depth = count - 1 - rank  # 0 = innermost
+    idx = depth if side == "above" else count - 1 - depth
+    return bands[max(0, min(idx, len(bands) - 1))]
 
 
 def _face(pt: Contact) -> str:
@@ -522,6 +544,7 @@ def generate(
     kind: str,
     global_contacts: "Dict[str, tuple] | None" = None,
     faces: bool = True,
+    bus_nest: "Dict[str, dict] | None" = None,
 ) -> List[RouteVariant]:
     """Return the sanctioned :class:`RouteVariant`\\ s for ``edge`` in rank order.
 
@@ -621,7 +644,8 @@ def generate(
         # 1.10.12 WS5: the return bus, judged like a face swap (strictly fewer
         # crossings) and likewise left out of the ordering key.
         variants.extend(_return_bus_variants(edge, placed, kind, rule_exit,
-                                             rule_entry, rank))
+                                             rule_entry, rank,
+                                             (bus_nest or {}).get(edge.id)))
 
     return _dedupe_by_id(variants)
 

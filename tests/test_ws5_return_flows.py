@@ -139,6 +139,111 @@ def test_return_bus_variants_are_offered_for_a_return_edge_only():
                    for v in variants.generate(fwd, placed, {}, "cross-region"))
 
 
+def _nest_case():
+    """Two replies from ``s`` to targets stacked in one column (SEP 05 ``e3`` /
+    ``e7`` in miniature): ``hi`` on the top row, ``lo`` one row below it. The
+    reply to ``lo`` has to detour past ``hi``, so it reaches farther."""
+    placed = {
+        "hi": Box("hi", 100, 280, 78, 78),
+        "lo": Box("lo", 100, 440, 78, 78),
+        "mid": Box("mid", 320, 280, 78, 78),
+        "s": Box("s", 540, 280, 78, 78),
+    }
+    edges = (EdgeSpec(id="r1", source="s", target="hi", marker="1"),
+             EdgeSpec(id="r2", source="s", target="lo", marker="2"))
+    return placed, edges
+
+
+def _spec(edges, placed):
+    from rule_engine.layout.model import DiagramSpec, NodeSpec
+    nodes = tuple(NodeSpec(id=n, role="serverless_fn", lane="edge", region="", slot=i)
+                  for i, n in enumerate(placed))
+    return DiagramSpec(diagram_id="t", diagram_name="t", axis="left-right",
+                       nodes=nodes, edges=edges, containers=(), flow_lines=("Flow",),
+                       title=_TITLE)
+
+
+def test_return_bus_nesting_ranks_the_farther_reply_outermost():
+    placed, edges = _nest_case()
+    nest = routers.decide_return_bus_nesting(
+        _spec(edges, placed), placed, {"r1": (1.0, 0.5), "r2": (1.0, 0.5)})
+    # Upper bus: the reply to the LOWER target detours past the upper one, so
+    # it is the outer run (rank 0); the lower bus mirrors it.
+    assert nest["r2"]["above"] == (0, 2) and nest["r1"]["above"] == (1, 2)
+    assert nest["r1"]["below"] == (0, 2) and nest["r2"]["below"] == (1, 2)
+    # Two merged centre exits are spread so the runs leave in nesting order:
+    # the outer run's stub passes beyond the inner rise, so on the upper bus
+    # the inner run (r1) takes the upper band, and on the lower bus the outer
+    # run (r1 there) does.
+    assert variants._bus_exit_band(nest["r1"], "above") < variants._bus_exit_band(nest["r2"], "above")
+    assert variants._bus_exit_band(nest["r1"], "below") < variants._bus_exit_band(nest["r2"], "below")
+    # A single reply per source is not ranked.
+    assert routers.decide_return_bus_nesting(_spec(edges[:1], placed), placed) == {}
+
+
+def _lay_nested(order):
+    placed, edges = _nest_case()
+    nest = routers.decide_return_bus_nesting(_spec(edges, placed), placed)
+    alloc = CorridorAllocator()
+    alloc.bus_rank = nest
+    by_id = {e.id: e for e in edges}
+    out = {}
+    for eid in order:
+        exit_pt = (1.0, variants._bus_exit_band(nest[eid], "above"))
+        pts = routers.route_back_edge(by_id[eid], exit_pt, (0.5, 0.0), alloc,
+                                      list(placed.values()), {}, bus="above")
+        s, t = placed["s"], placed[by_id[eid].target]
+        out[eid] = [routers._contact_point(s, exit_pt)] + list(pts) + [
+            routers._contact_point(t, (0.5, 0.0))]
+    return out
+
+
+def test_nested_bus_runs_do_not_depend_on_routing_order_and_never_cross():
+    a, b = _lay_nested(("r1", "r2")), _lay_nested(("r2", "r1"))
+    assert a == b                                   # rank, not routing order
+    r1, r2 = a["r1"], a["r2"]
+    lane = {k: min(p[1] for p in v) for k, v in a.items()}
+    rise = {k: v[1][0] for k, v in a.items()}
+    assert lane["r2"] < lane["r1"]                  # outer lane farther from the rows
+    assert rise["r2"] > rise["r1"]                  # outer rise farther from the source
+    assert not any(geo.segments_cross(p, q) for p in zip(r1, r1[1:]) for q in zip(r2, r2[1:]))
+
+
+def _sep05_text() -> str:
+    import importlib.util
+    from pathlib import Path
+    path = (Path(__file__).parent / "fixtures" / "sep" / "scripts"
+            / "build_flow_sandbox_lifecycle.py")
+    spec = importlib.util.spec_from_file_location("_sep05_builder", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod._build()
+
+
+def test_sep05_replies_nest_on_the_upper_bus_with_no_crossing():
+    """WS5 review F1: SEP 05 ``e3`` (Syndicate -> activation-queue) and ``e7``
+    (Syndicate -> deletion-notification-queue) both ride the upper bus. ``e7``
+    reaches farther left (it detours past activation-queue), so it is the
+    outer run: higher lane, rise column farther right, lower exit band. Before
+    the fix the lanes came out of routing order and ``e3``'s drop cut ``e7``'s
+    lane (one crossing)."""
+    g = _geo(_sep05_text())
+    assert cr.crossing_pairs(g) == []
+    polys = {e.id: geo.edge_polyline(g, e) for e in g.edges if e.id in ("e3", "e7")}
+
+    def long_lane(poly):
+        return min(p[1] for p, q in zip(poly, poly[1:])
+                   if abs(p[1] - q[1]) < 1 and abs(p[0] - q[0]) > 300)
+
+    def rise_x(poly):
+        return next(p[0] for p, q in zip(poly, poly[1:]) if abs(p[0] - q[0]) < 1)
+
+    assert long_lane(polys["e7"]) < long_lane(polys["e3"])
+    assert rise_x(polys["e7"]) > rise_x(polys["e3"])
+    exits = {e.id: e.exit for e in g.edges if e.id in ("e3", "e7")}
+    assert exits["e7"][1] > exits["e3"][1]
+
+
 def test_router_lays_the_bus_outside_the_content_rows():
     placed = _boxes()
     obstacles = list(placed.values())

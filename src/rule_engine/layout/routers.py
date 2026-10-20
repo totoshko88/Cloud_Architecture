@@ -1174,6 +1174,130 @@ def decide_converging_turns(
     return out
 
 
+#: Two return-bus exits on one face closer than this merge into one line
+#: (``check_exit_thirds``' near-merge floor, ~1/5 of the face).
+_BUS_EXIT_MERGE = 0.2
+
+
+def decide_return_bus_nesting(
+    spec: DiagramSpec,
+    placed: Dict[str, Box],
+    exits: Optional[Dict[str, Contact]] = None,
+) -> Dict[str, Dict[str, Tuple]]:
+    """Nest the return-bus runs of replies that leave ONE source (1.10.12 WS5, F1).
+
+    Two leftward / response edges from one node that both ride the return bus
+    cross unless they nest: the run that reaches **farther left** takes the
+    OUTER bus lane (farthest from the content rows) and the OUTER rise column
+    (farthest from the source), and the inner run stays inside it. Handing the
+    lanes out in routing order nested them backwards on SEP 05 (``e3`` outer,
+    ``e7`` inner; ``e3``'s drop cut ``e7``'s lane: one crossing).
+
+    The left extent is the target's x. On a tie (targets stacked in one column)
+    the target farther from the bus is the outer one: its arrival must detour
+    past the nearer target, so it reaches farther. That is the lower target for
+    the upper bus and the higher one for the lower bus, so the rank is kept per
+    side. The exit bands follow the same nesting: on the upper bus the inner run
+    leaves from the upper band, so the outer run's stub passes below the inner
+    rise (mirrored on the lower bus).
+
+    Returns ``{edge_id: {"above": (rank, count), "below": (rank, count),
+    "bands": (y-fractions, ascending)}}`` for every group of two or more return
+    edges (back-edge / cross-region, target centre left of the source) sharing
+    a source; rank 0 is the outermost run. ``bands`` are the group's right-face
+    exit fractions from ``exits`` (centre when absent), spread to quarters when
+    two would merge and no other edge leaves that face. Ties keep declared order;
+    edges absent from the result keep the routing-order allocation."""
+    order_index = {e.id: i for i, e in enumerate(spec.edges)}
+    groups: Dict[str, List[EdgeSpec]] = {}
+    for edge in spec.edges:
+        src, tgt = placed.get(edge.source), placed.get(edge.target)
+        if src is None or tgt is None or not (tgt.x + tgt.w / 2.0 < src.x):
+            continue
+        if classify_edge(edge, placed) not in ("back-edge", "cross-region"):
+            continue
+        groups.setdefault(edge.source, []).append(edge)
+    out: Dict[str, Dict[str, Tuple]] = {}
+    for source, members in groups.items():
+        if len(members) < 2:
+            continue
+        n = len(members)
+
+        def _key(e: EdgeSpec, upper: bool) -> Tuple[float, float, int]:
+            t = placed[e.target]
+            return (t.x, -t.y if upper else t.y, order_index[e.id])
+
+        above = {e.id: r for r, e in enumerate(sorted(members, key=lambda e: _key(e, True)))}
+        below = {e.id: r for r, e in enumerate(sorted(members, key=lambda e: _key(e, False)))}
+
+        def _band(e: EdgeSpec) -> float:
+            pt = (exits or {}).get(e.id)
+            if pt is None or pt[0] is None or pt[0] < 1.0 or pt[1] is None:
+                return 0.5
+            return float(pt[1])
+
+        bands = sorted(_band(e) for e in members)
+        merged = any(b - a < _BUS_EXIT_MERGE for a, b in zip(bands, bands[1:]))
+        ids = {e.id for e in members}
+        face_busy = any(
+            e.source == source and e.id not in ids
+            and (exits or {}).get(e.id, (None, None))[0] is not None
+            and (exits or {})[e.id][0] >= 1.0
+            for e in spec.edges
+        )
+        if merged and not face_busy and n <= 3:
+            bands = [0.5] if n == 1 else (
+                [_UPPER_QUARTER, _LOWER_QUARTER] if n == 2
+                else [_UPPER_QUARTER, 0.5, _LOWER_QUARTER])
+        for e in members:
+            out[e.id] = {"above": (above[e.id], n), "below": (below[e.id], n),
+                         "bands": tuple(bands)}
+    return out
+
+
+def _allocate_nested(
+    allocator: "CorridorAllocator",
+    gap_id: str,
+    low: float,
+    high: float,
+    depth: int,
+    count: int,
+    from_high: bool,
+    inclusive: bool = False,
+) -> float:
+    """Claim the ``depth``-th corridor line of a gap counted from one side.
+
+    The return-bus nesting (:func:`decide_return_bus_nesting`) needs the lane
+    fixed by rank, not by routing order: depth 0 is the line nearest the
+    content (``from_high`` counts from ``high``), the next one outward, and so
+    on. Strided lines when the gap holds ``count`` of them, else grid-dense
+    lines (still distinct). ``inclusive`` admits the content-side bound itself
+    as a dense line when it lies on the grid (a bus band whose bound is already
+    one grid step off the icons), so a band one caption strip tall still holds
+    two nested runs. A taken line steps outward; an exhausted gap falls back to
+    :func:`_allocate_or_first`."""
+    allocator.register_gap(gap_id, low, high)
+    taken = allocator._taken.setdefault(gap_id, set())
+    lines = allocator._grid_lines(low, high)
+    if len(lines) < count:
+        edge_lo = inclusive and not from_high and abs(low / GRID - round(low / GRID)) < 1e-9
+        edge_hi = inclusive and from_high and abs(high / GRID - round(high / GRID)) < 1e-9
+        k = int(round(low / GRID)) if edge_lo else int(math.floor(low / GRID)) + 1
+        lines = []
+        while k * GRID < high or (edge_hi and abs(k * GRID - high) < 1e-9):
+            lines.append(int(k * GRID))
+            k += 1
+    if from_high:
+        lines = lines[::-1]
+    for line in lines[min(depth, max(len(lines) - 1, 0)):]:
+        if line not in taken:
+            taken.add(line)
+            if gap_id in allocator._free:
+                allocator._free[gap_id] = [ln for ln in allocator._free[gap_id] if ln != line]
+            return float(line)
+    return _allocate_or_first(allocator, gap_id, low, high)
+
+
 def _assign_exit_bands(ranked: List[Tuple[str, int]]) -> Dict[str, float]:
     """Hand out distinct bands on ONE exit face, top to bottom, honouring ranks.
 
@@ -1855,10 +1979,24 @@ def _route_return_bus(
         gap = f"hcorr-below:{int(edge_box.y)}"
     if high - low < GRID:
         high = low + GRID
-    bus_y = _snap(_allocate_or_first(allocator, gap, low, high))
+    # Replies leaving one source nest by rank (:func:`decide_return_bus_nesting`):
+    # the inner run takes the lane nearest the content and the rise column
+    # nearest the source, the outer run the next ones out, whatever the routing
+    # order. An unranked run keeps the routing-order allocation.
+    nest = getattr(allocator, "bus_rank", {}).get(edge.id)
+    side_rank = nest["above" if above else "below"] if nest else None
+    if side_rank is not None:
+        depth = side_rank[1] - 1 - side_rank[0]
+        bus_y = _snap(_allocate_nested(allocator, gap, low, high, depth, side_rank[1],
+                                       from_high=above, inclusive=True))
+        gap_lo, gap_hi = allocator.column_gap(src.x, src.x + col_step())
+        rise_x = _snap(_allocate_nested(allocator, f"vcol:{int(src.right)}", gap_lo,
+                                        gap_hi, depth, side_rank[1], from_high=False))
+    else:
+        bus_y = _snap(_allocate_or_first(allocator, gap, low, high))
+        rise_x = _gap_column_x(allocator, src, edge.id)
 
     first = _stair_first_waypoint(src, exit_pt, toward_down=not above)
-    rise_x = _gap_column_x(allocator, src, edge.id)
     first = (rise_x, first[1])
     waypoints: List[Point] = [first, (rise_x, bus_y)]
     if above and entry_pt[1] is not None and entry_pt[1] <= 0.0:

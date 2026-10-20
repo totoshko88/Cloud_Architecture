@@ -468,8 +468,12 @@ the source and left by a top drop or a lane in the gap left of the target.
 Contract-legal by construction (right exit, left/top entry), it is taken only
 when it removes crossings without adding a finding: as `return-bus-*` variants
 in the scored search (judged like a face swap) and as bus shapes in the final
-crossing-repair pass, where two replies leaving one node nest (the wider span
-outermost) instead of crossing. For the Theme 11 callback to an external actor
+crossing-repair pass. Two replies leaving one node **nest** instead of
+crossing: the run that reaches farther left (on a tie, the one whose target
+sits farther from the bus, since it detours past the nearer one) takes the
+outer lane, the outer rise column and the exit band on the far side of the
+inner rise. The engine fixes that nesting by rank before routing, so it does
+not depend on the order the edges are routed in. For the Theme 11 callback to an external actor
 on the left this replaces the left-face exit. Draw every reply step; do not
 fold it into the Flow legend (`flow-step-undrawn`). A step that is genuinely
 context-only says `(not drawn)` in its Flow line.

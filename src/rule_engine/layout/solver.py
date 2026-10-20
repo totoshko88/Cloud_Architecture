@@ -70,7 +70,7 @@ try:  # package-relative import when used as ``rule_engine.layout.solver``
     from ..drawio_model import parse_drawio
     from .model import Contact, DiagramSpec, EdgeSpec, PlacedDiagram, PlacedEdge
     from .corridors import CorridorAllocator, CorridorExhaustedError
-    from .routers import classify_edge, route_edge, _contact_point
+    from .routers import classify_edge, decide_return_bus_nesting, route_edge, _contact_point
     from .repair import _serialize_candidate, place_legend, place_legend_for
     from . import variants as _variants
 except ImportError:  # pragma: no cover - fallback for flat-module execution
@@ -84,7 +84,7 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
     from drawio_model import parse_drawio  # type: ignore[no-redef]
     from layout.model import Contact, DiagramSpec, EdgeSpec, PlacedDiagram, PlacedEdge  # type: ignore[no-redef]
     from layout.corridors import CorridorAllocator, CorridorExhaustedError  # type: ignore[no-redef]
-    from layout.routers import classify_edge, route_edge, _contact_point  # type: ignore[no-redef]
+    from layout.routers import classify_edge, decide_return_bus_nesting, route_edge, _contact_point  # type: ignore[no-redef]
     from layout.repair import _serialize_candidate, place_legend, place_legend_for  # type: ignore[no-redef]
     from layout import variants as _variants  # type: ignore[no-redef]
 
@@ -428,10 +428,17 @@ def solve(
     committed: Dict[str, "PlacedEdge"] = {}
     accepted: List["PlacedEdge"] = []
 
+    # 1.10.12 WS5 (review F1): replies leaving one source nest on the return bus
+    # by rank (lane, rise column and exit band), not by routing order.
+    bus_nest = decide_return_bus_nesting(
+        spec, placed, {eid: c[0] for eid, c in (seed_contacts or {}).items()}
+    )
+    alloc.bus_rank = bus_nest
+
     for edge in order:
         kind = classify_edge(edge, placed)
         edge_variants = _variants.generate(
-            edge, placed, containers, kind, seed_contacts
+            edge, placed, containers, kind, seed_contacts, bus_nest=bus_nest
         )
         # An empty variant list is a generator contract violation: the rule-based
         # variant is always present, so ``generate`` is never empty (R3.3). Raise
