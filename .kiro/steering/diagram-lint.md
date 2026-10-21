@@ -45,7 +45,9 @@ every applicable rule against every artifact.
 | `edge-routing` | A diagram edge is not orthogonally routed, crosses a node icon, shares a corridor with a parallel edge, overlaps a label/legend, or two edges leave/enter one node side on the same contact point. **Raised to ERROR** when an edge's run cuts through a node icon — an unrelated node (`*-through-*`) or its own target reached from the wrong side (`pierces-target-*`). | WARNING/ERROR | diagram-standards Edge Routing |
 | `container-padding` | A container border sits flush against or straddles a child node (no grid-step padding). Raised to ERROR for `landscape`. | WARNING/ERROR | diagram-standards Container Padding |
 | `container-dead-space` | A Boundary container is sized far larger than its direct children: its area exceeds the summed child footprint-plus-padding demand by more than a calibrated ratio: **2.5** for an outer (top-level) Boundary that no other container encloses (reason `outer-dead-space`), **5.0** for a nested one (reason `dead-space`), each set above the sparsest legitimate corpus tier. The mirror of `container-padding` (which checks the minimum clearance). Advisory on both classes; a childless container is skipped. | WARNING | diagram-standards Container Padding |
-| `canvas-quality` | A lint-clean diagram that nonetheless wastes the canvas or runs a wild aspect (Theme 25). `aspect-ratio:<w>x<h>=<r>` when the canvas bounding box is wider/taller than **2.6**:1 (above the widest shipped golden, 2.45); `canvas-utilization:<pct>` when content (summed outer boundaries + nodes outside every boundary) covers less than **25%** of the canvas bbox (> 75% dead space; the sparsest golden covers 28%). Separate from relationship lint — it asks "is the canvas used, is the aspect sane". Pure canvas geometry; advisory on both classes. | WARNING | diagram-standards Canvas quality (Theme 25) |
+| `canvas-quality` | A lint-clean diagram that nonetheless wastes the canvas or runs a wild aspect (Theme 25). `aspect-ratio:<w>x<h>=<r>` when the canvas bounding box is wider/taller than **2.6**:1 (above the widest shipped golden, 2.45); `empty-rectangle:<w>x<h>=<pct>%` when the **largest empty rectangle** on the canvas (obstacles: every node icon + caption, every outer container, every text cell) covers more than **25%** of the canvas bbox (every shipped golden is at most 21%). Recalibrated in 1.10.12 (WS6): the old `canvas-utilization` coverage test (summed outer-boundary + uncontained icon area under 25%) flagged an evenly spread context diagram of bare icons and passed a canvas with one large void. Separate from relationship lint: it asks "is there a hole a reader takes for missing content, is the aspect sane". Pure canvas geometry; advisory on both classes. | WARNING | diagram-standards Canvas quality (Theme 25) |
+| `container-caption-overflow` | A Boundary container's caption (longest line x 7.0px/char + the style's `spacingLeft` + `spacingRight` + 2 x `spacing`) is **wider than the box**, so the text runs past the border (reason `caption-overflow:+<px>`). **ERROR on both classes** when the part outside the box prints over a node's icon or caption (reason `caption-overprints-node:+<px>`; offenders = the container, then the nodes). New in 1.10.12 (WS6, C4). | WARNING/ERROR | diagram-standards Container Padding (a container holds its caption) |
+| `sibling-size-uniformity` | Sibling Boundary containers (same tightest parent) aligned in a column (left edges within one grid step) or a row (tops within one grid step) that hold the **same number of node columns** differ in width, or the **same number of node rows** differ in height, by more than one grid step. Reason `<col or row>@<x or y>:<width or height>-spread:<px>`. New in 1.10.12 (WS6, C8). | WARNING | diagram-standards Container Nesting (one slot pitch per sibling group) |
 | `min-font-size` | A diagram carries on-diagram text below the 12px minimum font size. | WARNING | diagram-standards Accessibility & Contrast |
 | `grid-alignment` | A diagram node's absolute x or y is not a whole multiple of the grid step (default 10). | WARNING | diagram-standards Layout Geometry |
 | `node-overlap` | Two diagram node icon boxes overlap (intersecting rectangles). | WARNING | diagram-standards Layout Geometry |
@@ -72,7 +74,7 @@ every applicable rule against every artifact.
 | `edge-crosses-title` | A routed edge runs **through, or along within one grid step of, the reserved title band** at the top of the canvas (the `title` text cell). A run routed above the top node row overdraws the title and makes it hard to read. New in 1.10.10 (Theme 26). | WARNING | diagram-standards Edge Routing (title keep-out band) |
 | `edge-jog` | An edge between two **directly facing** nodes (the next node on the same row, or directly below in the same column, with nothing between) is drawn with a **jog** instead of one straight segment (`level-jog` / `drop-jog`). A straight line is the most readable route, so a directly-opposite target keeps it and the siblings spread around it. New in 1.10.6. | WARNING | diagram-standards Edge Routing (straight line keeps the centre) |
 | `node-connectivity` | A role-bearing node is drawn with **zero incident edges** and carries no overlay marker explaining why. Boundary containers and text cells are not nodes and are exempt. | WARNING | diagram-standards Inventory completeness → diagram |
-| `legend-placement` | A `Flow` / `Legend` box does not sit in the **right margin**, at least one grid step past the outermost container's right edge, or overlaps a Boundary container, or is drawn over any node's icon or caption (`overlaps-node-<id>`). **Raised to ERROR on both classes** for `overlaps-node-<id>`. | WARNING/ERROR | diagram-standards Reserve the right margin for Flow/Legend |
+| `legend-placement` | A `Flow` / `Legend` box does not sit in the **right margin**, at least one grid step past the outermost container's right edge, or overlaps a Boundary container, or is drawn over any node's icon or caption (`overlaps-node-<id>`). A box whose top is at least one grid step below every container and node footprint (the below-body block, 1.10.12 WS6) is not judged against the right margin. **Raised to ERROR on both classes** for `overlaps-node-<id>`. | WARNING/ERROR | diagram-standards Reserve the right margin for Flow/Legend |
 | `edge-approach` | Two consecutive points of a route are not axis-aligned (`diagonal-leg`), or the leg touching a contact does not meet its face head-on (`exit-leg-…` / `entry-leg-…`). | WARNING | diagram-standards Every leg is explicitly axis-aligned |
 | `parse-error` | A `.drawio` file does not parse as XML, a Diagram_Page cannot be decompressed, geometry construction raises, or the document declares a DTD / entity. All other rules are skipped for that artifact. | ERROR | R1 AC8 / R1 AC9 |
 | `edge-endpoint` | An edge references a non-existent `source`/`target`, or has neither (`missing-source`, `missing-target`, `dangling-source:<id>`, `dangling-target:<id>`). Raised to ERROR for `landscape`. | WARNING/ERROR | R1 AC10 / diagram-standards Never leave an edge endpoint detached |
@@ -244,7 +246,41 @@ every applicable rule against every artifact.
   `node-overlap` skips text cells, and `edge-crosses-legend` fires only when an
   edge runs through the box. The layout engine now places the boxes past every
   node footprint too (`layout.repair.place_legend_for`); a hand-authored diagram
-  must do the same.
+  must do the same. **Below-body mode (1.10.12 WS6):** a wide-and-short diagram may
+  put both boxes in one block BELOW the body, left-aligned with it
+  (`diagram_layout.theme43_legend_placement`, Mode B). A box whose top sits at
+  least one grid step below every container and every node footprint (icon +
+  caption) is in that mode: `left-of-diagram-body` and `overlaps-<container-id>`
+  do not apply to it, `overlaps-node-<id>` still does.
+- **`container-caption-overflow` (WARNING/ERROR)** — *New in 1.10.12 (WS6, C4).
+  Geometry-enforced.* A container is sized from its children, so a one-node VPC
+  under a long caption (`se vpc-05cd5663a70d3a65c (192.168.128.0/20)`, SEP 03 /
+  09) was 138px wide under a 335px caption and the text printed across the next
+  column's icon and name. The caption's need is its longest line x 7.0px/char
+  (the conservative 12px estimator the caption checks share) plus the style's
+  `spacingLeft` + `spacingRight` + 2 x `spacing` (draw.io default 2); a need above
+  the box width is `caption-overflow:+<px>` (WARNING). The text is located where
+  draw.io draws it (`align`, the spacings) and NOT capped at the box: when the
+  part outside the box intersects a node's icon or caption rectangle the hit is
+  `caption-overprints-node:+<px>`, an **ERROR on both classes** (a name printed
+  over another name is unreadable, not a style nit). The engine sizes every
+  container it lays out to its caption (`layout.place.fit_container_captions`)
+  and the shared builder grows a hand-placed boundary into free space or wraps
+  its caption onto two lines (`diagram_layout.fit_boundary_captions`), so the
+  rule bites on hand-authored geometry. The `capovf` column of
+  `scripts/canvas_metrics.py` uses the same need.
+- **`sibling-size-uniformity` (WARNING)** — *New in 1.10.12 (WS6, C8).
+  Geometry-enforced.* diagram-standards: sibling containers in one column share a
+  left edge and a width, in one row a top and a height, and a sibling group uses
+  one slot pitch, so bands with the same slot count are identical. Siblings are
+  containers with the same tightest enclosing container (or none). They are
+  compared only when aligned (left edges, or tops, within one grid step), and only
+  with siblings holding the same number of slots along the compared axis: node
+  COLUMNS for a width, node ROWS for a height (distinct node x / y within one grid
+  step), so a two-node stack is never compared with a two-node row. A spread
+  above one grid step is a finding. The case that added it: SEP 09's three-node
+  external bands measured 618, 660 and 618 because each was sized from its own
+  caption footprint. Advisory on both classes.
 - **`edge-routing` (WARNING/ERROR)** — *Geometry-enforced from the parsed `.drawio` model.* The check is conservative to avoid false positives on validly routed diagrams. It flags: (a) a **non-orthogonal** edge; (b) a **waypoint-free** edge whose straight run between its real contact points passes through an unrelated node (`straight-through-<node>`); and (c) — **new in v1.5.1** — an edge whose **final approach leg reaches its own target's pinned entry contact from the wrong side**, so the leg pierces the target's glyph to reach the contact (`pierces-target-<node>`). Case (c) catches the canonical defect where an edge pins a *top* entry but its corridor sits *below* the icon, so the arrow enters up through the icon body instead of from above (or the mirror on any face). A waypointed edge is **not** blindly trusted: while its raw diagonal is not sampled (draw.io routes orthogonally, so the diagonal would false-flag a validly routed edge), its real **orthogonal knee** path — the horizontal-first axis-aligned segments draw.io actually draws between consecutive points — **is** sampled (case (d), **new in v1.5.4**), so a knee leg that slices an unrelated icon is flagged (`knee-through-<node>`). This closes the gap where a waypointed edge's L-shaped leg (the devoxx `e8` horizontal stub cutting the RDS glyph) stepped cleanly between diagonal samples yet rendered straight through the icon. The self-pierce criterion (c) is checked on every edge regardless of waypoints, because a wrong-side approach is a defect even when the rest of the route was deliberate. **Severity: an icon-crossing finding — `*-through-*` (b) or `pierces-target-*` (c) — is raised to ERROR on any class** (a line drawn over an icon it does not connect, or into its target from the wrong side, is a correctness failure, not a style nit); a bare non-orthogonal edge with no crossing stays a WARNING. Beyond the enforced core, edges should be orthogonally routed
   (`edgeStyle=orthogonalEdgeStyle` for `.drawio`), must not cross through a node icon,
   and must enter a node on its left/top and exit on its right/bottom. When one node
@@ -648,6 +684,7 @@ keeps its exact behavior.
 | `node-connectivity` | WARNING | WARNING (an overlay marker is the sanctioned exemption) |
 | `graph-islands` | n/a | WARNING (the connected nodes form one graph; `supporting` / `standby` nodes left out) |
 | `legend-placement` | WARNING; **ERROR** for `overlaps-node-*` | WARNING; **ERROR** for `overlaps-node-*` |
+| `container-caption-overflow` | WARNING; **ERROR** for `caption-overprints-node` | WARNING; **ERROR** for `caption-overprints-node` |
 | numbered flow markers | expected | optional (a landscape has no single path) |
 | `overlay-legend-coverage` | WARNING when overlay markers are used | WARNING when overlay markers are used |
 | raster budget (export guidance) | ≤ 1600px / < 500KB | ≤ 3600px / < 2MB (a wide as-built stays legible) |

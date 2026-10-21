@@ -1,4 +1,5 @@
-"""Theme 25: canvas-quality gate — aspect-ratio and canvas-utilization.
+"""Theme 25: canvas-quality gate — aspect-ratio and the largest empty rectangle
+(1.10.12 WS6, which replaced the canvas-utilization coverage test).
 
 Calibrated against the shipped corpus (0 golden false-positives); these unit
 tests pin the two advisory findings on synthetic geometry.
@@ -34,12 +35,12 @@ def test_wild_aspect_is_flagged():
 
 def test_mostly_dead_canvas_is_flagged():
     # A small subject boundary parked in the corner of a huge canvas: a far node
-    # stretches the bbox so content covers < 25%.
+    # stretches the bbox and leaves one large void (largest empty rectangle).
     acct = Box("acct", 0, 0, 400, 300)          # 120k area
     far = Box("x", 1800, 1400, 78, 78)           # pushes bbox to ~1878x1478
     g = _geo(nodes=[far], containers=[acct])
     reasons = [r for _s, r in check_canvas_quality(g)]
-    assert any(r.startswith("canvas-utilization:") for r in reasons)
+    assert any(r.startswith("empty-rectangle:") for r in reasons)
 
 
 def test_empty_geometry_is_noop():

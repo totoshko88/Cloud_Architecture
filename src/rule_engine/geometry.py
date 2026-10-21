@@ -2180,35 +2180,114 @@ OUTER_DEAD_SPACE_RATIO = 2.5
 #     space — the 09 negative sat at ~0.15) is flagged while every golden passes.
 CANVAS_ASPECT_MAX = 2.6
 CANVAS_MIN_COVERAGE = 0.25
+#: 1.10.12 WS6: the largest empty rectangle on the canvas, as a share of the
+#: canvas bbox, above which ``canvas-quality`` reports ``empty-rectangle``. It
+#: replaces the ``canvas-utilization`` coverage test, which counted only outer
+#: boundary + uncontained icon AREA: a context diagram of bare icons around a
+#: small account (SEP 01) measured 8% "coverage" while its canvas was evenly
+#: used, and a diagram with one huge void (SEP 09 after WS5, 39% of the canvas
+#: empty in one block) measured a passing 31%. The largest empty rectangle names
+#: the void itself. Calibrated on the shipped corpus: every golden is <= 21%
+#: (the HA summaries); see ``.agents/tasks/1.10.12-metrics.md`` WS6.
+CANVAS_MAX_EMPTY_RECT = 0.25
+#: Raster cell of the largest-empty-rectangle search (one grid step).
+EMPTY_RECT_CELL = GRID
+
+
+def largest_empty_rect(
+    area: Box, obstacles: Sequence[Box], cell: int = EMPTY_RECT_CELL
+) -> Tuple[int, int]:
+    """Return ``(w, h)`` of the largest obstacle-free rectangle inside ``area``.
+
+    ``area`` is rasterised into ``cell``-sized squares; a square is blocked when
+    any obstacle overlaps it. Classic maximal-rectangle-in-histogram, O(cells).
+    Moved here from ``scripts/canvas_metrics.py`` (1.10.12 WS6) so the lint rule
+    and the metrics script measure the same rectangle."""
+    cols = max(0, int(area.w // cell))
+    rows = max(0, int(area.h // cell))
+    if not cols or not rows:
+        return (0, 0)
+    blocked = [bytearray(cols) for _ in range(rows)]
+    for o in obstacles:
+        c0 = max(0, int((o.x - area.x) // cell))
+        c1 = min(cols, int(-(-(o.right - area.x) // cell)))
+        r0 = max(0, int((o.y - area.y) // cell))
+        r1 = min(rows, int(-(-(o.bottom - area.y) // cell)))
+        for r in range(r0, r1):
+            row = blocked[r]
+            for c in range(c0, c1):
+                row[c] = 1
+    heights = [0] * cols
+    best = (0, 0, 0)  # area, w, h
+    for r in range(rows):
+        row = blocked[r]
+        for c in range(cols):
+            heights[c] = 0 if row[c] else heights[c] + 1
+        stack: List[int] = []
+        for c in range(cols + 1):
+            h = heights[c] if c < cols else 0
+            while stack and heights[stack[-1]] >= h:
+                top = stack.pop()
+                height = heights[top]
+                left = stack[-1] + 1 if stack else 0
+                width = c - left
+                if width * height > best[0]:
+                    best = (width * height, width, height)
+            stack.append(c)
+    return (best[1] * cell, best[2] * cell)
+
+
+def canvas_empty_rect(geo: DiagramGeometry) -> Optional[Tuple[int, int, float]]:
+    """``(w, h, share)`` of the largest empty rectangle on the canvas (WS6).
+
+    The canvas is :func:`content_bbox`; the obstacles are every text cell, every
+    OUTER container (a container no other container encloses) and every node
+    footprint (icon + caption, :func:`node_caption_box`). ``share`` is the
+    rectangle's area over the canvas area. ``None`` for an empty page. This is
+    the ``ler_out`` column of ``scripts/canvas_metrics.py``."""
+    bb = content_bbox(geo)
+    if bb is None or bb.w <= 0 or bb.h <= 0:
+        return None
+    conts = sorted(geo.containers.values(), key=lambda b: b.id)
+    obst: List[Box] = list(geo.text_boxes.values())
+    obst += [c for c in conts if _tightest_enclosing(c, conts) is None]
+    for nid, box in geo.nodes.items():
+        obst.append(box)
+        label = geo.node_labels.get(nid, "")
+        if caption_lines(label):
+            obst.append(node_caption_box(box, label))
+    w, h = largest_empty_rect(bb, obst)
+    return w, h, (w * h) / (bb.w * bb.h)
 
 
 def check_canvas_quality(
     geo: DiagramGeometry,
     aspect_max: float = CANVAS_ASPECT_MAX,
-    min_coverage: float = CANVAS_MIN_COVERAGE,
+    max_empty: float = CANVAS_MAX_EMPTY_RECT,
 ) -> List[Tuple[str, str]]:
     """Return ``(subject, reason)`` for canvas-quality defects (Theme 25).
 
     Separate from relationship lint: it asks "is the canvas used, is the aspect
-    sane, is the primary subject prominent" — the questions 09-crosscloud-landscape
-    passed every relationship rule yet failed (subject 15% of canvas, parked in a
-    corner, half the canvas dead).
+    sane" — the questions 09-crosscloud-landscape passed every relationship rule
+    yet failed.
 
     Two advisory findings, both pure canvas geometry (no membership needed, so
     independent of the container model):
 
     * ``aspect-ratio:<w>x<h>`` — the canvas bounding box is wider/taller than
       ``aspect_max`` : 1.
-    * ``canvas-utilization:<pct>`` — content (summed outer boundaries + nodes
-      outside every boundary) covers less than ``min_coverage`` of the canvas
-      bbox, i.e. more than ``1 - min_coverage`` dead space.
+    * ``empty-rectangle:<w>x<h>=<pct>%`` (1.10.12 WS6) — the largest empty
+      rectangle on the canvas (:func:`canvas_empty_rect`) covers more than
+      ``max_empty`` of the canvas bbox: one void a reader sees as missing
+      content. It replaces the 1.10.10 ``canvas-utilization`` coverage test,
+      which summed icon and outer-boundary AREA and so flagged a well-spread
+      context diagram of bare icons while passing a canvas with a single huge
+      hole.
 
     A ``primary-boundary-prominence`` sub-check is deliberately NOT implemented
     here: it needs to know WHICH boundary is the titled subject, and a
     multi-region / multi-cloud diagram legitimately has several peer outer
-    boundaries (the HA summaries sit at 0.20 single-outer prominence). It is
-    folded into the container-model work where boundary membership becomes
-    structural. Advisory (WARNING) on both classes."""
+    boundaries. Advisory (WARNING) on both classes."""
     out: List[Tuple[str, str]] = []
     allb = (
         list(geo.nodes.values())
@@ -2229,15 +2308,176 @@ def check_canvas_quality(
     if aspect > aspect_max:
         out.append(("canvas", f"aspect-ratio:{int(cw)}x{int(ch)}={aspect:.2f}"))
 
-    conts = list(geo.containers.values())
-    outers = [c for c in conts if _tightest_enclosing(c, conts) is None]
-    content = sum(c.w * c.h for c in outers)
-    for n in geo.nodes.values():
-        if _tightest_enclosing(n, conts) is None:
-            content += n.w * n.h
-    coverage = content / (cw * ch)
-    if coverage < min_coverage:
-        out.append(("canvas", f"canvas-utilization:{coverage * 100:.0f}%"))
+    ler = canvas_empty_rect(geo)
+    if ler is not None and ler[2] > max_empty:
+        w, h, share = ler
+        out.append(("canvas", f"empty-rectangle:{w}x{h}={share * 100:.0f}%"))
+    return out
+
+
+# --- Container captions (1.10.12 WS6, defect C4) --------------------------- #
+
+
+def container_caption_need(label: str, style: Optional[str]) -> float:
+    """Width a container needs to hold its caption on its widest line.
+
+    Longest rendered line x :data:`_CAPTION_TEXT_CHAR_W` plus the style's
+    ``spacingLeft`` + ``spacingRight`` + ``2 x spacing`` (draw.io default 2).
+    0 for an empty caption. The ``capovf`` column of ``canvas_metrics`` and the
+    engine's caption fit (``layout.place.fit_container_captions``) both use it."""
+    lines = caption_lines(label)
+    if not lines:
+        return 0.0
+    spacing = float(_style_value(style or "", "spacing") or _DRAWIO_LABEL_SPACING)
+    sl = float(_style_value(style or "", "spacingLeft") or 0.0)
+    sr = float(_style_value(style or "", "spacingRight") or 0.0)
+    return max(len(ln) for ln in lines) * _CAPTION_TEXT_CHAR_W + sl + sr + 2 * spacing
+
+
+def container_caption_rect(label: str, style: Optional[str], box: Box) -> Optional[Box]:
+    """The rectangle a container caption's TEXT occupies, NOT capped at the box.
+
+    Placed where draw.io draws it (``align`` default ``center``, the style's
+    spacings) along the top edge, one caption strip tall plus one line per
+    further line. ``None`` for an empty caption."""
+    lines = caption_lines(label)
+    if not lines:
+        return None
+    text_w = max(len(ln) for ln in lines) * _CAPTION_TEXT_CHAR_W
+    st = style or ""
+    spacing = float(_style_value(st, "spacing") or _DRAWIO_LABEL_SPACING)
+    sl = float(_style_value(st, "spacingLeft") or 0.0) + spacing
+    sr = float(_style_value(st, "spacingRight") or 0.0) + spacing
+    align = (_style_value(st, "align") or "center").lower()
+    if align == "left":
+        x0 = box.x + sl
+    elif align == "right":
+        x0 = box.right - sr - text_w
+    else:
+        x0 = box.x + sl + (box.w - sl - sr) / 2.0 - text_w / 2.0
+    h = CONTAINER_LABEL_BAND + CAPTION_LINE_H * (len(lines) - 1)
+    return Box(box.id, x0, box.y, text_w, h)
+
+
+def check_container_caption_overflow(
+    geo: DiagramGeometry,
+) -> List[Tuple[str, int, Tuple[str, ...]]]:
+    """Return ``(container_id, overflow_px, overprinted_node_ids)`` (WS6, C4).
+
+    A container whose caption (:func:`container_caption_need`) is wider than the
+    box spills its text past the border, where a line or a neighbour's name can
+    strike it (SEP 09: the ``se vpc-…`` caption ran 197px past its one-node VPC
+    and printed over "API Gateway (5 APIs)"). ``overprinted_node_ids`` lists the
+    nodes whose icon or caption the OUTSIDE part of the caption text overlaps;
+    the linter reports those as an ERROR. Sorted by container id."""
+    out: List[Tuple[str, int, Tuple[str, ...]]] = []
+    for cid in sorted(geo.containers):
+        box = geo.containers[cid]
+        label = geo.container_labels.get(cid, "")
+        style = geo.container_styles.get(cid, "")
+        need = container_caption_need(label, style)
+        if need <= box.w + 0.5:
+            continue
+        rect = container_caption_rect(label, style, box)
+        strips: List[Box] = []
+        if rect is not None and rect.right > box.right:
+            strips.append(Box("r", box.right, rect.y, rect.right - box.right, rect.h))
+        if rect is not None and rect.x < box.x:
+            strips.append(Box("l", rect.x, rect.y, box.x - rect.x, rect.h))
+        hit: List[str] = []
+        for nid in sorted(geo.nodes):
+            icon = geo.nodes[nid]
+            targets = [icon, node_caption_box(icon, geo.node_labels.get(nid, ""))]
+            if any(_boxes_intersect(s, t) for s in strips for t in targets):
+                hit.append(nid)
+        out.append((cid, int(math.ceil(need - box.w)), tuple(hit)))
+    return out
+
+
+def _boxes_intersect(a: Box, b: Box) -> bool:
+    return a.x < b.right and b.x < a.right and a.y < b.bottom and b.y < a.bottom
+
+
+# --- Sibling size uniformity (1.10.12 WS6, defect C8) ---------------------- #
+
+
+def _distinct(values: Sequence[float], tol: float) -> int:
+    """How many clusters ``values`` form when values within ``tol`` merge."""
+    n, last = 0, None
+    for v in sorted(values):
+        if last is None or v - last > tol:
+            n += 1
+        last = v
+    return n
+
+
+def check_sibling_size_uniformity(
+    geo: DiagramGeometry, grid: int = GRID
+) -> List[Tuple[Tuple[str, ...], str]]:
+    """Return ``(container_ids, reason)`` for sibling boxes of unequal size (WS6).
+
+    diagram-standards (*Container Nesting*): sibling containers in one column
+    share a left edge AND a width, in one row a top edge AND a height; and
+    sibling bands of one group use one slot pitch, so bands holding the same
+    number of slots are identical. Siblings are containers with the same
+    tightest enclosing container (or none). They are aligned when their left
+    edges (a column) or their tops (a row) agree within one grid step.
+
+    The dimension checked is the one the standard ties to each alignment: a
+    **column** cluster (shared left edge) must share a **width**, a **row**
+    cluster (shared top) a **height** — a row of bands legitimately differs in
+    width per content, and a column of bands in height, so only the shared
+    dimension is compared. Among aligned siblings only those with the same slot
+    count ALONG THE COMPARED AXIS are compared (node COLUMNS for a width, node
+    ROWS for a height), so a 2-node stack and a 2-node row are never compared.
+    A spread above one grid step is a finding, reason
+    ``<col|row>@<x|y>:width|height-spread:<px>``. WARNING, both classes."""
+    conts = sorted(geo.containers.values(), key=lambda b: b.id)
+    parent = {c.id: _tightest_enclosing(c, conts) for c in conts}
+    xs: Dict[str, List[float]] = {c.id: [] for c in conts}
+    ys: Dict[str, List[float]] = {c.id: [] for c in conts}
+    for b in geo.nodes.values():
+        p = _tightest_enclosing(b, conts)
+        if p is not None:
+            xs[p.id].append(b.x)
+            ys[p.id].append(b.y)
+    groups: Dict[str, List[Box]] = {}
+    for c in conts:
+        groups.setdefault(parent[c.id].id if parent[c.id] else "", []).append(c)
+    out: List[Tuple[Tuple[str, ...], str]] = []
+    for sibs in groups.values():
+        if len(sibs) < 2:
+            continue
+        # A column cluster shares a left edge → compare WIDTH (grouped by node
+        # columns); a row cluster shares a top → compare HEIGHT (by node rows).
+        for axis, key, dim, slots in (
+            ("col", lambda b: b.x, "width", xs),
+            ("row", lambda b: b.y, "height", ys),
+        ):
+            pool = sorted(sibs, key=lambda b: (key(b), b.id))
+            clusters: List[List[Box]] = []
+            for b in pool:
+                if clusters and abs(key(b) - key(clusters[-1][0])) <= grid:
+                    clusters[-1].append(b)
+                else:
+                    clusters.append([b])
+            for cl in clusters:
+                if len(cl) < 2:
+                    continue
+                by_slots: Dict[int, List[Box]] = {}
+                for b in cl:
+                    if slots[b.id]:
+                        by_slots.setdefault(_distinct(slots[b.id], grid), []).append(b)
+                for same in by_slots.values():
+                    if len(same) < 2:
+                        continue
+                    sizes = [b.w if dim == "width" else b.h for b in same]
+                    spread = max(sizes) - min(sizes)
+                    if spread > grid:
+                        out.append((
+                            tuple(sorted(b.id for b in same)),
+                            f"{axis}@{int(key(cl[0]))}:{dim}-spread:{int(spread)}",
+                        ))
     return out
 
 
@@ -2805,18 +3045,47 @@ def check_legend_placement(
     The two container conditions are skipped for a diagram with no boundary
     containers (a bare flow sketch has no body to reserve a margin against); the
     node condition is checked regardless.
+
+    **Below-body mode (1.10.12 WS6).** A wide-and-short diagram may put the two
+    boxes in one block BELOW the body, LEFT-ALIGNED with it, instead of in the
+    right margin (``diagram_layout.theme43_legend_placement``, ``row-below``). A
+    box whose top sits at least one grid step below every container and every
+    node footprint (icon + caption), AND whose left edge is at or past the
+    body's left edge (so it is genuinely under the body, not parked in the left
+    margin below it), is in that mode and is not judged against the right
+    margin; it still may not cover a node.
     """
     if not geo.text_boxes:
         return []
     outer_right = (
         max(c.right for c in geo.containers.values()) if geo.containers else None
     )
+    bottoms = [c.bottom for c in geo.containers.values()]
+    lefts = [c.x for c in geo.containers.values()]
+    rights = [c.right for c in geo.containers.values()]
+    for nid, icon in geo.nodes.items():
+        bottoms.append(node_caption_box(icon, geo.node_labels.get(nid, "")).bottom)
+        lefts.append(icon.x)
+        rights.append(icon.right)
+    body_bottom = max(bottoms, default=None)
+    body_left = min(lefts, default=None)
+    body_right = max(rights, default=None)
     out: List[Tuple[str, str]] = []
     for cid, box in sorted(geo.text_boxes.items()):
         heading = geo.text_headings.get(cid, "").strip().lower()
         if heading not in LEGEND_HEADINGS:
             continue
-        if outer_right is not None:
+        # Below-body (Mode B): the box sits below the whole body AND its left
+        # edge falls within the body's horizontal span — genuinely under the
+        # body, not parked in the left margin or flush against the right edge.
+        below_body = (
+            body_bottom is not None
+            and box.y >= body_bottom + grid
+            and body_left is not None
+            and body_right is not None
+            and body_left - grid <= box.x < body_right
+        )
+        if outer_right is not None and not below_body:
             if box.x < outer_right + grid:
                 out.append((cid, "left-of-diagram-body"))
             for kid, container in sorted(geo.containers.items()):

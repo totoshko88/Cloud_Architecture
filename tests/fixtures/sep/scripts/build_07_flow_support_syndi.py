@@ -243,6 +243,7 @@ def build() -> str:
     legend_w = placed.legend_w
     legend_x, legend_y_flow, legend_mode, page_w, page_h = theme43_legend_placement(
         nodes, boundaries, spec.flow_lines, _legend_lines, legend_w,
+        edges=edges,  # 1.10.12 WS6: Mode B clears the lowest route too
     )
 
     return build_diagram(

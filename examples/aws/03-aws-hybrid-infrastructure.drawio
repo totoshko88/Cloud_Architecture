@@ -93,7 +93,7 @@
         <mxCell id="boundary-az-b" value="az-eu-central-1b" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;fillColor=none;strokeColor=#147EBA;verticalAlign=top;align=center;fontStyle=0;fontColor=#0F6FA8;fontSize=12" vertex="1" parent="1">
           <mxGeometry x="640" y="530" width="258" height="360" as="geometry" />
         </mxCell>
-        <mxCell id="boundary-onprem" value="on-premises datacenter" style="shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_corporate_data_center;grStroke=1;whiteSpace=wrap;fillColor=none;strokeColor=#7D8998;dashed=0;verticalAlign=top;align=left;spacingLeft=30;fontColor=#5A6C86;fontSize=12;html=1" vertex="1" parent="1">
+        <mxCell id="boundary-onprem" value="on-premises&lt;br&gt;datacenter" style="shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_corporate_data_center;grStroke=1;whiteSpace=wrap;fillColor=none;strokeColor=#7D8998;dashed=0;verticalAlign=top;align=left;spacingLeft=30;fontColor=#5A6C86;fontSize=12;html=1" vertex="1" parent="1">
           <mxGeometry x="1150" y="650" width="150" height="300" as="geometry" />
         </mxCell>
 

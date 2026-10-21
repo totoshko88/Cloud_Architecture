@@ -118,6 +118,8 @@ from rule_engine.geometry import (  # noqa: E402
     build_geometry,
     caption_lines,
     check_edge_strikes_own_text,
+    container_caption_need,
+    largest_empty_rect as _largest_empty_rect,
     collinear_edge_pairs,
     collapse_collinear,
     contact_faces,
@@ -255,43 +257,8 @@ def _bbox(boxes: Iterable[Box], points: Iterable[Point] = ()) -> Optional[Box]:
 # --------------------------------------------------------------------------- #
 
 
-def largest_empty_rect(area: Box, obstacles: Sequence[Box], cell: int = LER_CELL) -> Tuple[int, int]:
-    """Return ``(w, h)`` of the largest obstacle-free rectangle inside ``area``.
-
-    ``area`` is rasterised into ``cell``-sized squares; a square is blocked when
-    any obstacle overlaps it. Classic histogram method, O(cells)."""
-    cols = max(0, int(area.w // cell))
-    rows = max(0, int(area.h // cell))
-    if not cols or not rows:
-        return (0, 0)
-    blocked = [bytearray(cols) for _ in range(rows)]
-    for o in obstacles:
-        c0 = max(0, int((o.x - area.x) // cell))
-        c1 = min(cols, int(-(-(o.right - area.x) // cell)))
-        r0 = max(0, int((o.y - area.y) // cell))
-        r1 = min(rows, int(-(-(o.bottom - area.y) // cell)))
-        for r in range(r0, r1):
-            row = blocked[r]
-            for c in range(c0, c1):
-                row[c] = 1
-    heights = [0] * cols
-    best = (0, 0, 0)  # area, w, h
-    for r in range(rows):
-        row = blocked[r]
-        for c in range(cols):
-            heights[c] = 0 if row[c] else heights[c] + 1
-        stack: List[int] = []
-        for c in range(cols + 1):
-            h = heights[c] if c < cols else 0
-            while stack and heights[stack[-1]] >= h:
-                top = stack.pop()
-                height = heights[top]
-                left = stack[-1] + 1 if stack else 0
-                width = c - left
-                if width * height > best[0]:
-                    best = (width * height, width, height)
-            stack.append(c)
-    return (best[1] * cell, best[2] * cell)
+# Shared with the ``canvas-quality`` lint rule (1.10.12 WS6): one definition.
+largest_empty_rect = _largest_empty_rect
 
 
 # --------------------------------------------------------------------------- #
@@ -412,20 +379,12 @@ def collinear_pairs(geo: DiagramGeometry, polys: Dict[str, List[Point]]) -> List
 
 
 def caption_overflows(geo: DiagramGeometry) -> List[str]:
+    """Containers whose caption is wider than the box (shared with the
+    ``container-caption-overflow`` lint rule, 1.10.12 WS6)."""
     out = []
     for cid, box in geo.containers.items():
-        lines = caption_lines(geo.container_labels.get(cid, ""))
-        if not lines:
-            continue
-        style = geo.container_styles.get(cid, "")
-
-        def sv(key: str, default: float) -> float:
-            m = re.search(rf"(?:^|;){key}=([-\d.]+)", style)
-            return float(m.group(1)) if m else default
-
-        spacing = sv("spacing", DRAWIO_SPACING)
-        need = (max(len(ln) for ln in lines) * CAPTION_CHAR_W
-                + sv("spacingLeft", 0.0) + sv("spacingRight", 0.0) + 2 * spacing)
+        need = container_caption_need(geo.container_labels.get(cid, ""),
+                                      geo.container_styles.get(cid, ""))
         if need > box.w:
             out.append(f"{cid}(+{int(need - box.w)})")
     return sorted(out)

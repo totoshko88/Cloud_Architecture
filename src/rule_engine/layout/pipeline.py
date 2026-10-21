@@ -67,7 +67,7 @@ try:  # package-relative import when used as ``rule_engine.layout.pipeline``
         spread_contacts,
         spill_over_connected_faces,
     )
-    from .place import place_nodes, size_containers, centre_block_in_vpc, lift_subject_over_external_lane
+    from .place import place_nodes, size_containers, centre_block_in_vpc, lift_subject_over_external_lane, place_and_size
     from .routers import (
         classify_edge,
         _contact_point,
@@ -112,7 +112,7 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
         spread_contacts,
         spill_over_connected_faces,
     )
-    from layout.place import place_nodes, size_containers, centre_block_in_vpc, lift_subject_over_external_lane  # type: ignore[no-redef]
+    from layout.place import place_nodes, size_containers, centre_block_in_vpc, lift_subject_over_external_lane, place_and_size  # type: ignore[no-redef]
     from layout.routers import (  # type: ignore[no-redef]
         classify_edge,
         _contact_point,
@@ -841,10 +841,7 @@ def _place_and_route(spec: DiagramSpec) -> "PlacedDiagram":
     extraction that does not change this path's output — byte-identical on
     ``--legacy``, R1.5); this function then routes every edge greedily from that
     global result, exactly as before."""
-    placed = place_nodes(spec)
-    containers = size_containers(placed, spec)
-    placed, containers = lift_subject_over_external_lane(placed, containers, spec)
-    placed = centre_block_in_vpc(placed, containers, spec)
+    placed, containers = place_and_size(spec)
 
     exits, entries, lane_sides = _global_contacts(spec, placed, containers)
 
@@ -889,10 +886,7 @@ def _place_and_route_scored(spec: DiagramSpec) -> "PlacedDiagram":
     unchanged: the result is the same :class:`PlacedDiagram` the legacy path
     produces, so serialization, the repair loop, and every lint rule see an
     identical shape (R4.2, R4.3) — only *how* the waypoints are chosen differs."""
-    placed = place_nodes(spec)
-    containers = size_containers(placed, spec)
-    placed, containers = lift_subject_over_external_lane(placed, containers, spec)
-    placed = centre_block_in_vpc(placed, containers, spec)
+    placed, containers = place_and_size(spec)
 
     # Contacts + route: the scored per-edge solver replaces the ten-pass global
     # contact ladder + greedy route. The solver owns the corridor allocator (it

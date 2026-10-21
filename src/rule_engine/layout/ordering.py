@@ -178,17 +178,12 @@ def _current_group(spec: DiagramSpec, g: _Group) -> _Group:
 
 def _positions(spec: DiagramSpec) -> Optional[Dict[str, Box]]:
     try:
-        from .place import (place_nodes, size_containers,
-                            lift_subject_over_external_lane, centre_block_in_vpc)
+        from .place import place_and_size
     except ImportError:  # pragma: no cover - flat-module fallback
-        from layout.place import (place_nodes, size_containers,  # type: ignore[no-redef]
-                                  lift_subject_over_external_lane, centre_block_in_vpc)
+        from layout.place import place_and_size  # type: ignore[no-redef]
     try:
         _validate_spec(spec)
-        placed = place_nodes(spec)
-        containers = size_containers(placed, spec)
-        placed, containers = lift_subject_over_external_lane(placed, containers, spec)
-        return centre_block_in_vpc(placed, containers, spec)
+        return place_and_size(spec)[0]
     except (SpecError, KeyError, ValueError):
         return None
 

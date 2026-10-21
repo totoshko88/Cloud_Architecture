@@ -449,6 +449,7 @@ def _build() -> str:
     from rule_engine.diagram_layout import theme43_legend_placement
     legend_x, legend_y_flow, legend_mode, page_w, page_h = theme43_legend_placement(
         nodes, boundaries, FLOW, LEGEND_LINES, legend_w,
+        edges=edges,  # 1.10.12 WS6: Mode B clears the lowest route too
     )
 
     return build_diagram(

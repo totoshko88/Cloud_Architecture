@@ -371,9 +371,10 @@ def test_theme43_wide_body_selects_mode_b_row_below():
     legend = ("Legend", "x", "y")
     lx, ly, mode, pw, ph = dl.theme43_legend_placement(nodes, boundaries, flow, legend, 300)
     assert mode == "row-below"
-    # row right edge aligns to body right (1400); row width = 2*300 + GRID
-    assert lx + (2 * 300 + dl.GRID) == 1400 or lx == max(0, 1400 - (2 * 300 + dl.GRID))
-    assert ly > 400  # below the body
+    # 1.10.12 WS6: the row is left-aligned with the body (no empty lower-left
+    # quadrant) and starts one pad below the lowest caption (322 + 78 + 30).
+    assert lx == 0
+    assert ly == 322 + 78 + 30 + dl.CONTAINER_PAD
 
 
 def test_theme43_tall_body_selects_mode_a_stack():

@@ -285,6 +285,15 @@ RULE_EDGE_CROSSING_AVOIDABLE = "edge-crossing-avoidable"
 #                       one connected component; WARNING, landscape only.
 RULE_FLOW_STEP_UNDRAWN = "flow-step-undrawn"
 RULE_GRAPH_ISLANDS = "graph-islands"
+# 1.10.12 WS6 (C4, C8). Container geometry:
+#   container-caption-overflow — a container caption wider than its box;
+#                                WARNING, ERROR when the overflowing text
+#                                prints over a node icon or caption.
+#   sibling-size-uniformity    — aligned sibling containers holding the same
+#                                number of slots differ in width / height;
+#                                WARNING, both classes.
+RULE_CONTAINER_CAPTION_OVERFLOW = "container-caption-overflow"
+RULE_SIBLING_SIZE_UNIFORMITY = "sibling-size-uniformity"
 
 # ``RULE_SEVERITIES`` and ``CLASS_ESCALATIONS`` are DERIVED from the ``RULES``
 # registry (defined near the end of this module, once every predicate exists) —
@@ -1206,7 +1215,8 @@ def _check_canvas_quality(a: Artifact):
     Separate from relationship lint — it asks "is the canvas used, is the aspect
     sane", the questions 09-crosscloud-landscape passed every relationship rule
     yet failed. Thresholds are calibrated against the shipped corpus so no golden
-    false-positives (aspect > 2.6, content coverage < 25%)."""
+    false-positives (aspect > 2.6; 1.10.12 WS6: largest empty rectangle > 25% of
+    the canvas, replacing the content-coverage test)."""
     geo = _geometry_of(a)
     if geo is None:
         return False
@@ -1215,6 +1225,45 @@ def _check_canvas_quality(a: Artifact):
     if not findings:
         return False
     return [RuleHit(offenders=(subject,), reason=reason) for subject, reason in findings]
+
+
+def _check_container_caption_overflow(a: Artifact):
+    """container-caption-overflow: a container caption wider than its box (WS6).
+
+    WARNING; a hit whose overflowing text prints over a node's icon or caption
+    is reported separately as an ERROR on both classes (the SEP 09 VPC caption
+    over "API Gateway (5 APIs)"). Reason ``caption-overflow:+<px>`` /
+    ``caption-overprints-node:+<px>``; offenders = the container, then the
+    overprinted nodes."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    findings = _geo.check_container_caption_overflow(geo)
+    if not findings:
+        return False
+    hits: List[RuleHit] = []
+    for cid, over, nodes in findings:
+        if nodes:
+            hits.append(RuleHit(offenders=(cid,) + tuple(nodes),
+                                reason=f"caption-overprints-node:+{over}",
+                                severity=Severity.ERROR))
+        else:
+            hits.append(RuleHit(offenders=(cid,), reason=f"caption-overflow:+{over}"))
+    return hits
+
+
+def _check_sibling_size_uniformity(a: Artifact):
+    """sibling-size-uniformity: aligned siblings with the same slot count differ
+    in size (WS6, C8; WARNING, both classes)."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    findings = _geo.check_sibling_size_uniformity(geo)
+    if not findings:
+        return False
+    return [RuleHit(offenders=ids, reason=reason) for ids, reason in findings]
 
 
 def _container_style_providers(a: Artifact) -> List[str]:
@@ -2245,6 +2294,16 @@ RULES: Tuple[Tuple[RuleSpec, Callable[[Artifact], _PredicateResult]], ...] = (
     (
         RuleSpec(RULE_CANVAS_QUALITY, Severity.WARNING),
         _check_canvas_quality,
+    ),
+    # 1.10.12 WS6: container caption wider than its box (WARNING; a hit that
+    # prints over a node is an ERROR carried on the hit) and unequal siblings.
+    (
+        RuleSpec(RULE_CONTAINER_CAPTION_OVERFLOW, Severity.WARNING),
+        _check_container_caption_overflow,
+    ),
+    (
+        RuleSpec(RULE_SIBLING_SIZE_UNIFORMITY, Severity.WARNING),
+        _check_sibling_size_uniformity,
     ),
     # edge-routing: a bare non-orthogonal edge is a WARNING, but a run cutting
     # through an icon it does not connect (``*-through-*``) or into its own

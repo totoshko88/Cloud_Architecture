@@ -24,13 +24,16 @@ imported those names already exist on the partially-initialised
 
 from __future__ import annotations
 
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 from dataclasses import replace
 
 try:  # package-relative import when used as ``rule_engine.layout.place``
-    from ..diagram_layout import CONTAINER_PAD, ICON_SIZE, COL_STEP, ROW_STEP
-    from ..geometry import Box, LABEL_BAND, CONTAINER_LABEL_BAND
+    from ..diagram_layout import CONTAINER_PAD, GRID, ICON_SIZE, COL_STEP, ROW_STEP
+    from ..geometry import (
+        Box, LABEL_BAND, CONTAINER_LABEL_BAND, _CAPTION_TEXT_CHAR_W, _CONTAINER_LABEL_INSET, caption_lines,
+        container_caption_need,
+    )
     from .model import DiagramSpec
     from .base import (
         SpecError,
@@ -56,8 +59,11 @@ try:  # package-relative import when used as ``rule_engine.layout.place``
         _size_account,
     )
 except ImportError:  # pragma: no cover - fallback for flat-module execution
-    from diagram_layout import CONTAINER_PAD, ICON_SIZE, COL_STEP, ROW_STEP  # type: ignore[no-redef]
-    from geometry import Box, LABEL_BAND, CONTAINER_LABEL_BAND  # type: ignore[no-redef]
+    from diagram_layout import CONTAINER_PAD, GRID, ICON_SIZE, COL_STEP, ROW_STEP  # type: ignore[no-redef]
+    from geometry import (  # type: ignore[no-redef]
+        Box, LABEL_BAND, CONTAINER_LABEL_BAND, _CAPTION_TEXT_CHAR_W, _CONTAINER_LABEL_INSET, caption_lines,
+        container_caption_need,
+    )
     from layout.model import DiagramSpec  # type: ignore[no-redef]
     from layout.base import (  # type: ignore[no-redef]
         SpecError,
@@ -100,6 +106,60 @@ def _external_band_gap() -> int:
     return _grid_ceil(col_step())
 
 
+def _external_groups(spec: DiagramSpec) -> Dict[str, list]:
+    """``boundary id -> member node ids`` (declared order) of the external
+    sibling bands (peer_account / external_cloud), or ``{}`` when the spec
+    declares fewer than two: one band is not a sibling group."""
+    kind_of = {c.id: c.kind for c in spec.containers}
+    groups: Dict[str, list] = {}
+    for n in spec.nodes:
+        if n.container is not None and kind_of.get(n.container) in _EXTERNAL_BAND_KINDS:
+            groups.setdefault(n.container, []).append(n.id)
+    return groups if len(groups) >= 2 else {}
+
+
+def external_band_pitch(spec: DiagramSpec) -> int:
+    """The one slot pitch every external sibling band uses (1.10.12 WS6, C8).
+
+    Each band used to be sized from its own caption-aware footprint, so two
+    3-node bands came out 618 and 660 wide (SEP 09) and their node columns did
+    not line up. The group now shares one pitch: the widest node caption across
+    ALL its bands (never narrower than the icon) plus two grid steps of air
+    between neighbouring captions, never tighter than the live column step.
+    A band is then ``n_slots x pitch + 2 x pad`` wide (:func:`size_containers`),
+    so bands with the same slot count are identical, a band with fewer slots is
+    proportionally narrower, and slot columns line up across bands. ``0`` when
+    the spec has no external sibling group."""
+    groups = _external_groups(spec)
+    if not groups:
+        return 0
+    labels = dict(getattr(spec, "node_labels", ()) or ())
+    widest = float(ICON_SIZE)
+    for ids in groups.values():
+        for nid in ids:
+            lines = caption_lines(labels.get(nid, ""))
+            if lines:
+                widest = max(widest, max(len(ln) for ln in lines) * _CAPTION_TEXT_CHAR_W)
+    return max(_grid_ceil(col_step()), _grid_ceil(widest + 2 * GRID))
+
+
+def _repitch_external_bands(placed: Dict[str, Box], spec: DiagramSpec) -> Dict[str, Box]:
+    """Re-space each external band's slot columns at :func:`external_band_pitch`,
+    keeping its first column where it is (relative order and rows unchanged)."""
+    groups = _external_groups(spec)
+    pitch = external_band_pitch(spec)
+    if not groups or not pitch:
+        return placed
+    out = dict(placed)
+    for ids in groups.values():
+        xs = sorted({placed[i].x for i in ids})
+        rank = {x: k for k, x in enumerate(xs)}
+        for i in ids:
+            b = placed[i]
+            out[i] = replace(b, x=_snap(xs[0] + rank[b.x] * pitch))
+    return out
+
+
 def _wrap_external_bands(placed: Dict[str, Box], spec: DiagramSpec) -> Dict[str, Box]:
     """Stack external sibling boxes (peer_account / external_cloud) into rows.
 
@@ -121,18 +181,19 @@ def _wrap_external_bands(placed: Dict[str, Box], spec: DiagramSpec) -> Dict[str,
     Scoped strictly to the two external-band kinds, so no diagram without a
     peer_account / external_cloud boundary (every shipped golden) is touched.
     """
-    kind_of = {c.id: c.kind for c in spec.containers}
     # Group external nodes by their boundary id, in a stable declared order.
-    groups: Dict[str, list] = {}
-    for n in spec.nodes:
-        if n.container is not None and kind_of.get(n.container) in _EXTERNAL_BAND_KINDS:
-            groups.setdefault(n.container, []).append(n.id)
-    if len(groups) < 2:
+    groups = _external_groups(spec)
+    if not groups:
         return placed  # 0 or 1 external box never needs wrapping
+    # 1.10.12 WS6: one shared slot pitch across the group (C8).
+    placed = _repitch_external_bands(placed, spec)
+    half = external_band_pitch(spec) / 2.0
 
-    # Footprint bbox of each group (icon + caption band), ordered by current x.
+    # Band extent of each group: its slot cells (pitch-wide, centred on each
+    # column) across, icon + caption band down.
     def _footprint(box: Box) -> Tuple[int, int, int, int]:
-        return (box.x, box.y, box.x + box.w, box.y + box.h + LABEL_BAND)
+        cx = box.x + box.w / 2.0
+        return (cx - half, box.y, cx + half, box.y + box.h + LABEL_BAND)
 
     group_bbox: Dict[str, Tuple[int, int, int, int]] = {}
     for gid, ids in groups.items():
@@ -508,7 +569,10 @@ def place_nodes(spec: DiagramSpec) -> Dict[str, Box]:
 
 
 def size_containers(
-    placed: Dict[str, Box], spec: DiagramSpec, pad: int = CONTAINER_PAD
+    placed: Dict[str, Box],
+    spec: DiagramSpec,
+    pad: int = CONTAINER_PAD,
+    min_w: Optional[Dict[str, int]] = None,
 ) -> Dict[str, Box]:
     """Size every container bottom-up, returning ``id -> Box`` (Req 4).
 
@@ -537,6 +601,14 @@ def size_containers(
       restores ``pad`` as real clearance and gives every container an entry
       corridor below its caption.
 
+    * **Shared slot pitch (1.10.12 WS6)** — an external sibling band
+      (peer_account / external_cloud, two or more declared) is ``n_slots x
+      pitch + 2 x pad`` wide, centred on its slot columns
+      (:func:`external_band_pitch`), not its own caption-aware footprint.
+    * **Caption fit (1.10.12 WS6)** — ``min_w`` (from
+      :func:`fit_container_captions`) widens a container to the right to hold
+      its caption.
+
     The result passes ``check_container_padding`` and ``check_container_overlap``.
     """
     primary, secondary = _container_axes(spec)
@@ -546,6 +618,9 @@ def size_containers(
     # 1.10.6: containers whose first row is entered from the side reserve one
     # corridor lane below their caption strip (``_top_lane_containers``).
     lane_containers = _top_lane_containers(spec)
+    bands = _external_groups(spec)
+    pitch = external_band_pitch(spec)
+    min_w = min_w or {}
 
     boxes: Dict[str, Box] = {}
 
@@ -566,6 +641,13 @@ def size_containers(
         if cid in lane_containers:
             top += TOP_LANE
         box = Box(cid, x0 - pad, y0 - top, (x1 - x0) + 2 * pad, (y1 - y0) + top + pad)
+        members = bands.get(cid)
+        if members and pitch and not child_containers.get(cid):
+            xs = sorted({placed[i].x for i in members})
+            left = _snap(xs[0] + ICON_SIZE / 2.0 - pitch / 2.0 - pad)
+            box = Box(cid, left, box.y, len(xs) * pitch + 2 * pad, box.h)
+        if box.w < min_w.get(cid, 0):
+            box = Box(cid, box.x, box.y, min_w[cid], box.h)
         boxes[cid] = box
         return box
 
@@ -597,8 +679,212 @@ def size_containers(
     for c in spec.containers:
         if c.kind == "account":
             _size_account(c.id, child_containers, leaf_nodes, placed, boxes, pad)
+            if boxes[c.id].w < min_w.get(c.id, 0):
+                b = boxes[c.id]
+                boxes[c.id] = Box(c.id, b.x, b.y, min_w[c.id], b.h)
 
     return boxes
+
+
+#: Bound on the caption-fit passes (each pass widens at least one container).
+_CAPTION_FIT_PASSES = 8
+
+
+def fit_container_captions(
+    placed: Dict[str, Box], spec: DiagramSpec, pad: int = CONTAINER_PAD
+) -> Tuple[Dict[str, Box], Dict[str, Box]]:
+    """Size the containers so every caption fits its box (1.10.12 WS6, C4).
+
+    A container is sized from its children, so a one-node VPC with a long
+    caption (``se vpc-05cd5663a70d3a65c (192.168.128.0/20)`` on SEP 03 / 09) is
+    138px wide under a 335px caption, and the text runs across the next
+    column's icons and names. Each pass finds the narrowest container whose
+    caption (:func:`rule_engine.geometry.container_caption_need`, from
+    ``spec.container_captions`` / ``container_styles``) does not fit, inserts
+    the missing width as a column to the right of it (every node whose left
+    edge is at or past the box's right edge moves right by that amount, a
+    whole grid multiple, so the columns stay aligned) and widens the box to
+    the right; the parents then wrap it. Containers with no declared caption
+    are never touched, so a spec without captions is byte-identical.
+
+    Returns ``(placed, containers)``."""
+    captions = dict(getattr(spec, "container_captions", ()) or ())
+    styles = dict(getattr(spec, "container_styles", ()) or ())
+    min_w: Dict[str, int] = {}
+    containers = size_containers(placed, spec, pad, min_w)
+    if not captions:
+        return placed, containers
+    for _ in range(_CAPTION_FIT_PASSES):
+        short = []
+        for c in spec.containers:
+            box = containers.get(c.id)
+            label = captions.get(c.id, "")
+            if box is None or not label:
+                continue
+            style = styles.get(c.id)
+            if style is None:
+                # The skin's style is unknown: budget the group badge +
+                # spacingLeft every provider caption carries (geometry's
+                # conservative caption inset) instead of a bare text width.
+                style = f"spacingLeft={int(_CONTAINER_LABEL_INSET)}"
+            need = _grid_ceil(container_caption_need(label, style))
+            if need > box.w:
+                short.append((box.w * box.h, c.id, need))
+        if not short:
+            break
+        _, cid, need = min(short)
+        box = containers[cid]
+        delta = _grid_ceil(need - box.w)
+        edge = box.x + box.w
+        placed = {
+            nid: (replace(b, x=_snap(b.x + delta)) if b.x >= edge else b)
+            for nid, b in placed.items()
+        }
+        min_w[cid] = need
+        containers = size_containers(placed, spec, pad, min_w)
+    return placed, containers
+
+
+def _translate(box: Box, dx: float, dy: float) -> Box:
+    return replace(box, x=_snap(box.x + dx), y=_snap(box.y + dy))
+
+
+def compact_external_bands(
+    placed: Dict[str, Box], containers: Dict[str, Box], spec: DiagramSpec,
+    pad: int = CONTAINER_PAD,
+) -> Tuple[Dict[str, Box], Dict[str, Box]]:
+    """Pull the external bands to one pad from the account (1.10.12 WS6, C9).
+
+    Two cases, both pure translations of whole bands (box + member nodes), so
+    no band's inner layout changes:
+
+    * **Bands above the account** (members in the ``actors`` lane, and no
+      plain node in that lane). The Theme 21/37/41 wrap packed them by a
+      subject-width budget with a column-step gap and spilled the overflow
+      into far-right columns, which on SEP 09 left a 1710x1250 void. Now: the
+      first band in edge-affinity order, plus any that still fit the account
+      width, form ONE row one pad above the account, left-aligned with it,
+      one pad apart; the rest stack in ONE column one pad right of the account,
+      top-aligned with it, one pad apart, ordered by the mean y of the account
+      nodes they link to (bands with no account edge last, declared order).
+    * **Bands below the account** (members in the ``on-premises`` lane, and
+      no plain node in that lane): rows one pad below the account,
+      left-aligned with it, one pad apart, wrapped at the account width (or
+      the widest band), in edge-affinity order.
+
+    A plain external row (actors / on-premises nodes in no band) is not moved:
+    an orphan node closer than one row step to a container it lines up with is
+    a ``container-padding`` spill, so its clearance stays the Theme 44 one.
+    Inert for every spec without an external band."""
+    from .base import EXTERNAL_LANES
+    band_ids = [c.id for c in spec.containers
+                if c.kind in _EXTERNAL_BAND_KINDS and c.id in containers]
+    acct_id = next((c.id for c in spec.containers
+                    if c.kind == "account" and c.id in containers), None)
+    if not band_ids or acct_id is None:
+        return placed, containers
+    acct = containers[acct_id]
+    members: Dict[str, list] = {b: [] for b in band_ids}
+    for n in spec.nodes:
+        if n.container in members:
+            members[n.container].append(n.id)
+    ext_free = [n.id for n in spec.nodes
+                if n.lane in EXTERNAL_LANES and n.container not in members]
+    out_n, out_c = dict(placed), dict(containers)
+
+    def _move(bid: str, dx: float, dy: float) -> None:
+        out_c[bid] = _translate(out_c[bid], dx, dy)
+        for nid in members[bid]:
+            out_n[nid] = _translate(out_n[nid], dx, dy)
+
+    lane_of = {n.id: n.lane for n in spec.nodes}
+
+    def _side(bid: str) -> str:
+        lanes = {lane_of[i] for i in members[bid]}
+        if lanes == {"actors"}:
+            return "above"
+        if lanes == {"on-premises"}:
+            return "below"
+        return ""
+
+    above = [b for b in band_ids if _side(b) == "above"]
+    below = [b for b in band_ids if _side(b) == "below"]
+    free_lanes = {lane_of[i] for i in ext_free}
+    inner = {n.id for n in spec.nodes if n.container not in members}
+    declared = {b: k for k, b in enumerate(band_ids)}
+
+    def _targets(bid: str) -> list:
+        mine = set(members[bid])
+        out = []
+        for e in spec.edges:
+            if e.source in mine and e.target in inner:
+                out.append(placed[e.target])
+            elif e.target in mine and e.source in inner:
+                out.append(placed[e.source])
+        return out
+
+    def _key(bid: str, axis: str):
+        t = _targets(bid)
+        if t:
+            return (0, sum(getattr(b, axis) for b in t) / len(t), declared[bid])
+        return (1, 0.0, declared[bid])
+
+    def _rows(order: list, budget: float) -> list:
+        rows, cur, used = [], [], 0.0
+        for bid in order:
+            w = containers[bid].w
+            if cur and used + pad + w > budget:
+                rows.append(cur)
+                cur, used = [], 0.0
+            used += (pad if cur else 0) + w
+            cur.append(bid)
+        if cur:
+            rows.append(cur)
+        return rows
+
+    # --- bands below the account: rows one pad below it, left-aligned ------ #
+    if below and "on-premises" not in free_lanes:
+        order = sorted(below, key=lambda b: _key(b, "x"))
+        budget = max([acct.w] + [containers[b].w for b in below])
+        y = acct.y + acct.h + pad
+        for row in _rows(order, budget):
+            x = acct.x
+            for bid in row:
+                c = containers[bid]
+                _move(bid, x - c.x, y - c.y)
+                x += c.w + pad
+            y += max(containers[b].h for b in row) + pad
+
+    # --- bands above the account: one row + one side column ---------------- #
+    if above and "actors" not in free_lanes:
+        order = sorted(above, key=lambda b: _key(b, "x"))
+        row = _rows(order, max(acct.w, containers[order[0]].w))[0]
+        column = sorted((b for b in above if b not in row), key=lambda b: _key(b, "y"))
+        row_h = max(containers[b].h for b in row)
+        x = acct.x
+        for bid in row:
+            c = containers[bid]
+            _move(bid, x - c.x, (acct.y - pad - row_h) - c.y)
+            x += c.w + pad
+        y = acct.y
+        col_x = acct.x + acct.w + pad
+        for bid in column:
+            c = containers[bid]
+            _move(bid, col_x - c.x, y - c.y)
+            y += c.h + pad
+    return out_n, out_c
+
+
+def place_and_size(spec: DiagramSpec) -> Tuple[Dict[str, Box], Dict[str, Box]]:
+    """``place → size (+ caption fit) → Theme 44 lift → external-band
+    compaction → in-VPC centring``: the placement stage every layout path shares
+    (the scored and legacy pipelines and the ordering proxy)."""
+    placed = place_nodes(spec)
+    placed, containers = fit_container_captions(placed, spec)
+    placed, containers = lift_subject_over_external_lane(placed, containers, spec)
+    placed, containers = compact_external_bands(placed, containers, spec)
+    placed = centre_block_in_vpc(placed, containers, spec)
+    return placed, containers
 
 
 def centre_block_in_vpc(

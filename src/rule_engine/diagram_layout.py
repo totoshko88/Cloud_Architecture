@@ -780,6 +780,129 @@ def _clear_container_captions(
     return out
 
 
+def _wrap_caption_two_lines(label: str) -> Optional[str]:
+    """Split a one-line caption at the space nearest its middle (``<br>``)."""
+    if "<br" in label or " " not in label.strip():
+        return None
+    words = label.split(" ")
+    best = None
+    for k in range(1, len(words)):
+        a, b = " ".join(words[:k]), " ".join(words[k:])
+        cost = max(len(a), len(b))
+        if best is None or cost < best[0]:
+            best = (cost, f"{a}<br>{b}")
+    return best[1] if best else None
+
+
+def fit_boundary_captions(
+    boundaries: Sequence[Boundary],
+    nodes: Sequence[Node],
+    edges: Sequence[Edge],
+    legend_x: Optional[int] = None,
+) -> List[Boundary]:
+    """Make every boundary hold its caption (1.10.12 WS6, C4) — builder side.
+
+    The layout engine sizes containers to their captions itself
+    (``layout.place.fit_container_captions``); this pass covers geometry that
+    did not come from ``layout()`` (a hand-placed context diagram, SEP 01) and
+    is a no-op on engine output. For each boundary whose caption
+    (:func:`rule_engine.geometry.container_caption_need`) is wider than the box,
+    innermost first:
+
+    1. **grow right** by the missing width when the added strip is free: no
+       node icon or caption, no boundary other than an ancestor, no edge whose
+       two ends are both outside the box, and clear of a right-margin
+       Flow/Legend at ``legend_x``; ancestors grow with it when needed and they
+       pass the same test;
+    2. else **wrap** the caption onto two lines (``<br>`` at the space nearest
+       the middle) when the two lines fit the box;
+    3. else leave it (``container-caption-overflow`` reports it).
+    """
+    from rule_engine.geometry import (
+        Box, caption_lines, container_caption_need, node_caption_box,
+    )
+
+    out = list(boundaries)
+    blocks = []
+    for n in nodes:
+        icon = Box(n.id, n.x, n.y, ICON_SIZE, ICON_SIZE)
+        blocks.append(icon)
+        if caption_lines(n.label):
+            blocks.append(node_caption_box(icon, n.label))
+    pos = {n.id: (n.x, n.y) for n in nodes}
+
+    def _box(b: Boundary) -> "Box":
+        return Box(b.id, b.x, b.y, b.w, b.h)
+
+    def _inside(p, b: Boundary) -> bool:
+        return b.x <= p[0] <= b.x + b.w and b.y <= p[1] <= b.y + b.h
+
+    def _hits(a: "Box", c: "Box") -> bool:
+        return a.x < c.right and c.x < a.right and a.y < c.bottom and c.y < a.bottom
+
+    def _encloses(a: Boundary, b: Boundary) -> bool:
+        return (a.id != b.id and a.x <= b.x and a.y <= b.y
+                and b.x + b.w <= a.x + a.w and b.y + b.h <= a.y + a.h)
+
+    def _strip_free(k: int, new_right: int) -> bool:
+        b = out[k]
+        if new_right <= b.x + b.w:
+            return True
+        strip = Box("s", b.x + b.w, b.y, new_right - (b.x + b.w), b.h)
+        if legend_x is not None and new_right + GRID > legend_x:
+            return False
+        if any(_hits(strip, o) for o in blocks):
+            return False
+        for j, o in enumerate(out):
+            if j != k and not _encloses(o, b) and _hits(strip, _box(o)):
+                return False
+        for e in edges:
+            s, t = pos.get(e.source), pos.get(e.target)
+            if s is None or t is None:
+                continue
+            sc = (s[0] + ICON_SIZE / 2, s[1] + ICON_SIZE / 2)
+            tc = (t[0] + ICON_SIZE / 2, t[1] + ICON_SIZE / 2)
+            if _inside(sc, b) or _inside(tc, b):
+                continue
+            pts = [sc] + [tuple(p) for p in e.points] + [tc]
+            for p, q in zip(pts, pts[1:]):
+                seg = Box("e", min(p[0], q[0]), min(p[1], q[1]),
+                          max(abs(q[0] - p[0]), 1), max(abs(q[1] - p[1]), 1))
+                if _hits(strip, seg):
+                    return False
+        return True
+
+    order = sorted(range(len(out)), key=lambda i: out[i].w * out[i].h)
+    for k in order:
+        b = out[k]
+        need = container_caption_need(b.label, _boundary_style(b))
+        if need <= b.w:
+            continue
+        new_right = b.x + int(-(-need // GRID) * GRID)
+        chain = [k] + [j for j in order if _encloses(out[j], b)]
+        plan = {}
+        ok = True
+        right = new_right
+        for j in chain:
+            box = out[j]
+            target = max(box.x + box.w, right + (0 if j == k else CONTAINER_PAD))
+            if not _strip_free(j, target):
+                ok = False
+                break
+            plan[j] = target
+            right = target
+        if ok:
+            for j, target in plan.items():
+                o = out[j]
+                out[j] = replace(o, w=int(target - o.x))
+            continue
+        wrapped = _wrap_caption_two_lines(b.label)
+        if (wrapped and "html=1" in _boundary_style(b)
+                and container_caption_need(wrapped, _boundary_style(b)) <= b.w):
+            out[k] = replace(b, label=wrapped)
+    return out
+
+
 def _local_background(n: Node, boundaries: Sequence[Boundary]) -> str:
     """The fill of the innermost FILLED container holding ``n`` (else white)."""
     best: Optional[Boundary] = None
@@ -1014,6 +1137,7 @@ def theme43_legend_placement(
     *,
     pad: int = CONTAINER_PAD,
     engine_legend_x: int | None = None,
+    edges: Sequence["Edge"] = (),
 ):
     """Aspect-driven Flow/Legend placement (Theme 43).
 
@@ -1024,13 +1148,25 @@ def theme43_legend_placement(
     two boxes stack in the right margin, their shared left edge one pad past the
     body's right edge, TOP-aligned to the body top. When the body is physically
     wide-and-short (``aspect >= ASPECT_LEGEND_BELOW``) use **Mode B**: the two
-    boxes sit side-by-side BELOW the body, as a horizontal row whose RIGHT edge
-    aligns to the body's right edge — kept below (not right of) the body so the
-    legend never drives the canvas width (the flow 1600px raster budget holds)."""
+    boxes sit side-by-side BELOW the body — kept below (not right of) the body so
+    the legend never drives the canvas width (the flow 1600px raster budget holds).
+
+    Mode B, 1.10.12 WS6 (C9): the row is LEFT-aligned with the body and starts
+    one pad below the body's lowest node caption, container or edge waypoint
+    (``edges``, optional). Before, it was right-aligned and a full row step
+    below the bare icons, which left the lower-left quadrant of SEP 02/06/07
+    empty (the largest empty rectangle of the canvas). ``legend-placement``
+    accepts a box that sits below the whole body."""
+    from rule_engine.geometry import caption_band
+
     rights = [b.x + b.w for b in boundaries] + [n.x + ICON_SIZE for n in nodes]
     lefts = [b.x for b in boundaries] + [n.x for n in nodes]
     tops = [b.y for b in boundaries] + [n.y for n in nodes]
     bottoms = [b.y + b.h for b in boundaries] + [n.y + ICON_SIZE for n in nodes]
+    # Mode B clears the real body bottom: node captions and edge waypoints too.
+    low = list(bottoms)
+    low += [n.y + ICON_SIZE + caption_band(n.label) for n in nodes]
+    low += [p[1] for e in edges for p in (e.points or ())]
     body_left = min(lefts, default=0)
     body_right = max(rights, default=0)
     body_top = min(tops, default=0)
@@ -1048,13 +1184,13 @@ def theme43_legend_placement(
     legend_h = len(tuple(legend_lines)) * _LINE + 2 * pad
 
     if aspect >= ASPECT_LEGEND_BELOW:
-        # Mode B — side-by-side row below the body, right edge = body right.
+        # Mode B — side-by-side row below the body, left edge = body left.
         row_w = 2 * legend_w + GRID
-        legend_x = int(max(body_left, body_right - row_w))
-        legend_y_flow = int(body_bottom) + ROW_STEP
+        legend_x = int(body_left)
+        legend_y_flow = int(-(-(max(low, default=body_bottom) + pad) // GRID) * GRID)
         legend_mode = "row-below"
         row_bottom = legend_y_flow + max(flow_h, legend_h)
-        page_w = int(body_right) + 2 * pad
+        page_w = int(max(body_right, legend_x + row_w)) + 2 * pad
         page_h = int(row_bottom) + 2 * pad
     else:
         # Mode A — right-margin vertical stack, top-aligned to the body top.
@@ -1114,6 +1250,10 @@ def build_diagram(
     1.10.7). The pass is idempotent and leaves the document byte-identical when
     no marker collides.
     """
+    # 1.10.12 WS6: a boundary narrower than its caption grows right into free
+    # space or wraps the caption (a no-op on layout() output, which is fitted).
+    boundaries = fit_boundary_captions(
+        boundaries, nodes, edges, legend_x if legend_mode != "row-below" else None)
     kwargs = dict(
         diagram_id=diagram_id, diagram_name=diagram_name, title=title,
         boundaries=boundaries, nodes=nodes, flow_lines=flow_lines,
@@ -1523,5 +1663,6 @@ __all__ = [
     "builtin_icon", "embed_oci_stencil", "OciStencilIcon", "OciStencilError",
     "title_cell", "boundary_cell", "edge_cell", "text_cell",
     "STANDARD_LEGEND_LINES", "legend_lines_for", "build_diagram", "caption_safe_plan",
+    "fit_boundary_captions",
     "OVERLAY_LEGEND_LINES", "overlay_legend_lines",
 ]
