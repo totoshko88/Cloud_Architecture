@@ -50,8 +50,8 @@
         <mxCell id="e4" value="4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=1.0256410256410255;exitY=0.7692307692307693;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.7692307692307693;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="boundary-region-a" source="queue" target="ingest">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="680.00" y="120.00" />
-              <mxPoint x="680.00" y="330.00" />
+              <mxPoint x="690.00" y="120.00" />
+              <mxPoint x="690.00" y="330.00" />
               <mxPoint x="530.00" y="330.00" />
               <mxPoint x="530.00" y="280.00" />
             </Array>

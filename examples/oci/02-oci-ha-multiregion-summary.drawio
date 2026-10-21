@@ -29,9 +29,9 @@
         <mxCell id="s2" value="2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.7692307692307693;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.7692307692307693;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="boundary-region-a" source="lb_a" target="app_a">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="130.00" y="140.00" />
-              <mxPoint x="130.00" y="190.00" />
-              <mxPoint x="90.00" y="190.00" />
+              <mxPoint x="150.00" y="140.00" />
+              <mxPoint x="150.00" y="220.00" />
+              <mxPoint x="90.00" y="220.00" />
             </Array>
           </mxGeometry>
         </mxCell>

@@ -294,6 +294,12 @@ RULE_GRAPH_ISLANDS = "graph-islands"
 #                                WARNING, both classes.
 RULE_CONTAINER_CAPTION_OVERFLOW = "container-caption-overflow"
 RULE_SIBLING_SIZE_UNIFORMITY = "sibling-size-uniformity"
+# 1.10.12 WS8 (C5). Two unrelated edges that read as one line:
+#   collinear-edges — two unrelated edges whose parallel legs sit under two
+#                     grid steps apart with overlapping extents (the one-line
+#                     illusion, ``geometry.collinear_edge_pairs``); WARNING,
+#                     both classes. offenders = the two edge ids.
+RULE_COLLINEAR_EDGES = "collinear-edges"
 
 # ``RULE_SEVERITIES`` and ``CLASS_ESCALATIONS`` are DERIVED from the ``RULES``
 # registry (defined near the end of this module, once every predicate exists) —
@@ -2198,6 +2204,25 @@ def _check_edge_crossing_avoidable(a: Artifact):
     )
 
 
+def _check_collinear_edges(a: Artifact):
+    """collinear-edges: two unrelated edges whose parallel legs sit under two
+    grid steps apart with overlapping extents read as one line (1.10.12 WS8,
+    defect C5). offenders = the two edge ids of each pair; reason
+    ``collinear:<pairs>`` (WARNING, both classes). The same
+    ``geometry.collinear_edge_pairs`` the ``col`` metric and the engine's
+    collinear-shift pass use, so what lint flags is what the engine tries to
+    separate."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    pairs = sorted(_geo.collinear_edge_pairs(geo))
+    if not pairs:
+        return False
+    offenders = tuple(eid for pair in pairs for eid in pair)
+    return RuleHit(offenders=offenders, reason=f"collinear:{len(pairs)}")
+
+
 def _check_marker_label_collision(a: Artifact):
     """marker-label-collision: a numbered flow-marker renders on a node caption
     (``marker-on-caption``) or on a node icon (``marker-on-icon``, 1.10.12 WS7)
@@ -2430,6 +2455,11 @@ RULES: Tuple[Tuple[RuleSpec, Callable[[Artifact], _PredicateResult]], ...] = (
     (
         RuleSpec(RULE_EDGE_CROSSING_AVOIDABLE, Severity.WARNING),
         _check_edge_crossing_avoidable,
+    ),
+    # collinear-edges (1.10.12 WS8): WARNING on both classes.
+    (
+        RuleSpec(RULE_COLLINEAR_EDGES, Severity.WARNING),
+        _check_collinear_edges,
     ),
     (RuleSpec(RULE_DETOUR_HOOK, Severity.WARNING), _check_detour_hook),
     (

@@ -87,13 +87,12 @@
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="l10" value="10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="db_a1" target="db_b1">
+        <mxCell id="l10" value="10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=1.0256410256410255;exitY=0.2564102564102564;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.2564102564102564;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="db_a1" target="db_b1">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="720.00" y="640.00" />
-              <mxPoint x="720.00" y="590.00" />
-              <mxPoint x="2020.00" y="590.00" />
-              <mxPoint x="2020.00" y="640.00" />
+              <mxPoint x="690.00" y="620.00" />
+              <mxPoint x="690.00" y="580.00" />
+              <mxPoint x="2070.00" y="580.00" />
             </Array>
           </mxGeometry>
         </mxCell>

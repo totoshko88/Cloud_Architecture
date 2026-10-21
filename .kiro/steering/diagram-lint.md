@@ -83,6 +83,7 @@ every applicable rule against every artifact.
 | `marker-label-collision` | A numbered flow-marker's rendered anchor falls inside a node's caption rectangle (centred under the icon, as wide as its text at 7.0px/char), so the number overprints the service name. offenders = the marker edge and the node. | WARNING | diagram-standards Numbered Flow Legend / hotfix 1.10.7 |
 | `edge-crossing-excess` | The diagram's edge-crossing count exceeds a per-diagram cap proportional to the edge count (`ceil(0.25 × E)`), reason `crossings-over-cap:X/E`. **Hard cap (1.10.7):** on a `landscape`, more than `0.5 × E` crossings is an **ERROR** (reason `crossings-over-hard-cap:X/E`) — the routing has collapsed. offenders = the crossing edge-id pairs. Uses the same crossing detection `route_cost` minimises. | WARNING/ERROR | diagram-standards Edge Routing (minimise crossings) / edge-hygiene 1.10.5 B2 |
 | `edge-crossing-avoidable` | A crossing that a **single legal face swap** removes: one edge of a crossing pair, re-routed onto another legal exit/entry face pair (exit right, or bottom from a source with no caption; entry left/top) with a stub + one-lane route, lowers the crossing count **without adding a routing finding** (no icon, caption, text box, foreign container or container caption crossed; no shared corridor, border ride, detour hook; no new oracle finding). Reason `avoidable:<removed>/<crossings>`; offenders = the edges whose swap removes it. The same test (`crossing_repair.avoidable_crossings`) the engine's final crossing-repair pass and the `Xav` metric use. New in 1.10.12 (WS3). | WARNING | diagram-standards Edge Routing (crossing-aware contact selection) |
+| `collinear-edges` | Two **unrelated** edges whose parallel legs (each at least two grid steps long) sit **under two grid steps apart** with overlapping extents, so the two lines read as **one** (the one-line illusion, defect C5). Two legs meeting at a shared point of edges sharing an endpoint (a sanctioned trunk junction), and a gap a node icon visibly terminates, are exempt. Reason `collinear:<pairs>`; offenders = the two edge ids of each pair. The same `geometry.collinear_edge_pairs` the `col` metric and the engine's collinear-shift pass (`collinear_repair`) use, so what lint flags is what the engine tries to separate. New in 1.10.12 (WS8). | WARNING | diagram-standards Edge Routing (one edge per corridor) |
 | `flow-step-undrawn` | A numbered `Flow` step (`N.` / `N)`) is carried by **no edge** as its marker, so the step is described but not drawn and its node may lose its only relationship. A step that is deliberately context-only carries `(not drawn)` in its Flow line and is exempt. Reason `undrawn-steps:<N,...>`; offenders = `step-<N>`. The reverse of `flow-legend`. New in 1.10.12 (WS5). | WARNING | diagram-standards Numbered Flow Legend / Inventory completeness → diagram |
 | `graph-islands` | A `landscape` whose connected nodes split into **more than one connected component** (islands with no edge between them). Edge-less nodes (`node-connectivity`'s) and overlay-marked nodes (`standby`, `supporting`) are left out. Reason `islands:<components>`; offenders = the nodes outside the largest component. Landscape only. New in 1.10.12 (WS5). | WARNING | diagram-standards Inventory completeness → diagram (drawing is not relating) |
 | `detour-hook` | An edge's routed (Manhattan) length exceeds `2.5 ×` the straight Manhattan distance between its contacts — it loops out and back instead of going where it is going. offenders = the edge id. | WARNING | diagram-standards Edge Routing (shortest sensible route) / edge-hygiene 1.10.5 B3 |
@@ -560,6 +561,24 @@ every applicable rule against every artifact.
   `build_diagram`), so engine output never trips it; it is published so a
   hand-authored diagram is held to the same standard. Advisory (WARNING) on
   both classes; `edge-crossing-excess` still caps the total.
+- **`collinear-edges` (WARNING)** — *New in 1.10.12 (WS8, C5).
+  Geometry-enforced.* Two **unrelated** edges whose parallel legs sit on (or
+  within two grid steps of) the same grid line with overlapping extents read
+  as **one line**: the viewer cannot tell there are two flows (SEP 03 `e2` +
+  `e11` at model y=127; SEP 08 `e4` / `e5` / `e10` at y=789). The rule is pure
+  geometry (`geometry.collinear_edge_pairs`): a leg is counted only when it is
+  at least two grid steps long, the two legs are under two grid steps apart,
+  and their extents overlap or leave a gap of at most `COLLINEAR_GAP` along the
+  line. Two legs meeting at a shared point of edges that share an endpoint node
+  (a sanctioned trunk junction) are exempt, and so is a gap a node icon
+  visibly terminates (a chain running straight through a node). Reason
+  `collinear:<pairs>`; offenders = the two edge ids of each pair. The engine's
+  collinear-shift pass (`collinear_repair.plan_collinear_shift`, after the
+  crossing-repair pass in `build_diagram`) re-routes one edge of each pair onto
+  another legal route — keeping the move only when the pair count drops and no
+  other finding (crossing, back-edge, caption strike, …) is added — so engine
+  output never trips it; it is published so a hand-authored diagram is held to
+  the same standard. Advisory (WARNING) on both classes.
 - **`flow-step-undrawn` (WARNING)** — *New in 1.10.12 (WS5, C2).* `flow-legend`
   checks that every edge marker has a Flow line; nothing checked the other
   direction, so a step whose edge was folded into the legend (the 1.10.11
