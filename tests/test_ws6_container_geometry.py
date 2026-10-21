@@ -164,11 +164,21 @@ def test_an_evenly_spread_icon_canvas_passes_canvas_quality(tmp_path):
 def test_canvas_empty_rect_matches_the_metrics_script():
     import importlib.util
     import pathlib
+    import sys
 
     root = pathlib.Path(__file__).resolve().parents[1]
     spec = importlib.util.spec_from_file_location("cm", root / "scripts" / "canvas_metrics.py")
     cm = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(cm)
+    # Register the module in sys.modules BEFORE exec_module: on Python 3.11 the
+    # @dataclass decorator resolves ``sys.modules.get(cls.__module__)`` while
+    # processing the class, and an unregistered module makes that ``None``
+    # (AttributeError in dataclasses.py). importlib's own docs prescribe this.
+    sys.modules[spec.name] = cm
+    try:
+        spec.loader.exec_module(cm)
+    except BaseException:
+        del sys.modules[spec.name]
+        raise
     page = root / "examples" / "aws" / "02-aws-ha-multiregion-summary.drawio"
     m = cm.measure_file(page)[0]
     w, h, _share = geo.canvas_empty_rect(_geo(page.read_text(encoding="utf-8")))
