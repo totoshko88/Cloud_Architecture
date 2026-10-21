@@ -242,3 +242,67 @@ the Layout Engine (it emits a coordinate-free node set); the
   its declared one. The vertical rise has to take the free lane beside the
   regional column (as the back-edge router's drop column already does) before
   the ordering can use `vpc_side: right` there. The guard is not relaxed.
+
+- **`layout()` hangs on a dense landscape — unbounded caption-safe planning in
+  auto-ordering (G21, 1.10.12 WS4/WS2).** → **Open (performance regression).**
+  `layout()` does not return (observed > 5 min, effectively a hang) on the SEP
+  cross-cloud landscape `scripts/build_09_crosscloud_landscape.py` (27 nodes,
+  24 edges, 8 containers) after two cross-cluster edges were added and the
+  Flow/Legend captions widened. It built in seconds on 1.10.11.
+
+  **Root cause (faulthandler stack dump).** The WS4 automatic ordering
+  (`layout/ordering.py:order_and_place`) measures each finished candidate with
+  `measure_finished(cand, finishing=True)`, which runs the full
+  `caption_routing.plan_caption_safe_geo` (+ `crossing_repair`) on the candidate
+  geometry. The hang is inside the caption-safe planner's search:
+  `plan_caption_safe_geo → _plan_once → _wrap_move → _find_move → _best_joint →
+  _ranked → _ranked_uncached → _admissible` (`caption_routing.py` lines
+  1444→1387→1339→1284→1198→903→934→759). On a dense landscape with many
+  overloaded faces this combinatorial move search explodes. The existing guards
+  do not bound it in wall-clock terms: `FINISH_BUDGET = 20` raw crossings skips
+  auto-ordering only when the *base* is already over budget (09's base is under
+  it, so the loop proceeds); `MAX_FINISHED = 2`, `_MAX_PASSES = 3`,
+  `_ORACLE_BUDGET = 24`, `_MAX_PARTNERS = 4`, `_MAX_TRIPLES = 6` cap individual
+  steps but give no global time/work ceiling, and the planner runs once per base
+  plus once per surviving candidate (`search_candidates(09)` = 4), each a full
+  caption plan on 27 nodes.
+
+  **Repro.** On 1.10.12 (commit `00f071e`), from the SEP workspace:
+  `python scripts/build_09_crosscloud_landscape.py` never returns; a
+  `faulthandler.dump_traceback_later(25, exit=True)` around `layout(_spec())`
+  prints the stack above. 07 and the flow diagrams are unaffected (small
+  node/face counts). Isolation confirms the cost is entirely in
+  `measure_finished`'s `finishing=True` caption planning, not in
+  `search_candidates` (which returns 4 candidates instantly) nor in node
+  placement.
+
+  **Impact.** A workspace cannot regenerate a dense `landscape` on 1.10.12 at
+  all — the build hangs. This blocks three cosmetic SEP-09 edits (grid-snap a
+  node, widen + top-align the Flow/Legend, add an org caption) that are pure
+  post-`layout()` builder changes; they are written and correct but cannot run
+  because `layout()` itself does not return.
+
+  **Proposed fix (any one, or a combination).**
+  1. Put a **wall-clock / work budget** on `plan_caption_safe_geo` (and the
+     per-candidate `measure_finished(finishing=True)` loop): bound total admissible-
+     move evaluations and fall back to the pre-finishing geometry when the budget
+     is spent, so a dense landscape degrades to "good order, un-finished caption
+     routing" instead of hanging.
+  2. **Scale the auto-ordering effort to diagram size** — skip the
+     `finishing=True` candidate measurement (or reduce `MAX_FINISHED` to 0, i.e.
+     keep the declared order) above a node/face-count threshold, mirroring the
+     existing `FINISH_BUDGET` crossing guard but keyed on node/overloaded-face
+     count, which is what actually drives the caption-planner cost.
+  3. Add an opt-out: honour `DiagramSpec.order == "manual"` as a documented
+     escape (it already short-circuits `order_and_place`), and/or an
+     `order="declared-no-finish"` mode, so a known-dense landscape can request
+     the fast path explicitly.
+  4. Memoise / prune `_admissible` across candidates (the four candidates share
+     most of their geometry) so the planner is not re-run from scratch per
+     candidate.
+
+  **Regression test to add.** A landscape fixture of ~27 nodes / ~24 edges / 8
+  containers (the SEP 09 shape) must complete `layout()` within a bounded time
+  (e.g. a few seconds) in CI — there is currently no large-landscape timing
+  guard, so this regression shipped in WS4 undetected. The four shipped goldens
+  are smaller and fast, which is why the release gate passed.
