@@ -25,7 +25,7 @@ from rule_engine.diagram_layout import (
     Boundary,
     Edge,
     Node,
-    STANDARD_LEGEND_LINES,
+    legend_lines_for,
     build_diagram,
 )
 from rule_engine.icon_resolver import resolve_icon, resolve_container
@@ -229,8 +229,10 @@ flow_lines = [
     "10. SEP calls AI providers (Bedrock / DIAL) for Syndi / Angry EdA",
 ]
 
-# Legend: standard lines + the draft-assumption callout term documented.
-legend_lines = list(STANDARD_LEGEND_LINES) + [
+# Legend: only the boundaries actually drawn (legend_lines_for, WS11/C10 — this
+# diagram draws the SEP account box but NO VPC, so no "Inner boundary" line) plus
+# the draft-assumption callout term documented.
+legend_lines = list(legend_lines_for([account])) + [
     "callout 'draft-assumption' = unconfirmed path, first-draft assumption",
 ]
 

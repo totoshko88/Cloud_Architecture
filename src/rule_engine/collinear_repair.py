@@ -46,6 +46,7 @@ from rule_engine.geometry import (
     Box,
     DiagramGeometry,
     collinear_edge_pairs,
+    is_node_edge,
 )
 
 #: Candidates per edge (fewest crossings first) that reach the full oracle.
@@ -158,6 +159,10 @@ def plan_collinear_shift_geo(geo: DiagramGeometry) -> Tuple[CaptionPlan, Diagram
                 continue  # separated by an earlier move
             ea, eb = _xr._edge(work, a), _xr._edge(work, b)
             if None in ea.exit or None in ea.entry or None in eb.exit or None in eb.entry:
+                continue
+            # WS10: neither end of a container-endpoint edge is a node to
+            # re-anchor, so the collinear-shift pass never reroutes such a pair.
+            if not is_node_edge(work, ea) or not is_node_edge(work, eb):
                 continue
             key = (a, b, len(routes))
             if key in tried:

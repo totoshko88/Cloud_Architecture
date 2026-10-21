@@ -64,6 +64,7 @@ from rule_engine.geometry import (
     contact_faces,
     edge_polyline,
     grid_resolve_contact,
+    is_node_edge,
     leg_axis,
     node_caption_box,
     segment_crosses_box,
@@ -592,6 +593,11 @@ def plan_crossing_repair_geo(geo: DiagramGeometry) -> Tuple[CaptionPlan, Diagram
             ea, eb = _edge(work, a), _edge(work, b)
             if None in ea.exit or None in ea.entry or None in eb.exit or None in eb.entry:
                 continue
+            # WS10: a boundary-to-boundary edge (container endpoint) is routed
+            # deterministically on its container faces and has no node caption /
+            # node route to swap, so the crossing-repair pass never reroutes it.
+            if not is_node_edge(work, ea) or not is_node_edge(work, eb):
+                continue
             key = (a, b, len(routes))
             if key in tried:
                 continue
@@ -663,6 +669,10 @@ def avoidable_crossings(geo: DiagramGeometry) -> Tuple[int, List[str]]:
         best = None
         for eid in ids:
             if eid in swapped or eid not in by_id:
+                continue
+            # WS10: a container-endpoint edge is not face-swappable (no node to
+            # re-anchor); its crossings are counted but never "avoidable".
+            if not is_node_edge(work, by_id[eid]):
                 continue
             cur = _edge_x(polys, eid, polys[eid])
             if cur == 0:

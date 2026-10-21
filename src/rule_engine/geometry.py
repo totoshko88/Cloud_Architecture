@@ -1705,8 +1705,14 @@ class RouteCost:
 
 
 def edge_polyline(geo: DiagramGeometry, edge: EdgeGeom) -> List[Point]:
-    """Return an edge's full polyline: exit contact, waypoints, entry contact."""
-    src, tgt = geo.nodes.get(edge.source), geo.nodes.get(edge.target)
+    """Return an edge's full polyline: exit contact, waypoints, entry contact.
+
+    An endpoint may be a **container** id (a boundary-to-boundary peering edge,
+    WS10/C15), so each endpoint resolves against ``geo.nodes`` first and then
+    ``geo.containers`` — the contact fraction is a unit-square face fraction, so
+    it applies to a container box exactly as to a node box."""
+    src = geo.nodes.get(edge.source) or geo.containers.get(edge.source)
+    tgt = geo.nodes.get(edge.target) or geo.containers.get(edge.target)
     if src is None or tgt is None or None in edge.exit or None in edge.entry:
         return []
     return (
@@ -1714,6 +1720,17 @@ def edge_polyline(geo: DiagramGeometry, edge: EdgeGeom) -> List[Point]:
         + [(x, y) for x, y in edge.points]
         + [(tgt.x + edge.entry[0] * tgt.w, tgt.y + edge.entry[1] * tgt.h)]
     )
+
+
+def is_node_edge(geo: DiagramGeometry, edge: EdgeGeom) -> bool:
+    """True when BOTH endpoints are node boxes (not container boxes).
+
+    A boundary-to-boundary edge (container endpoint, WS10/C15) is anchored on a
+    container face and routed deterministically; the node-facing repair passes
+    (caption-safety, crossing repair, collinear shift) reason about node
+    captions and node-to-node routes, so they SKIP a non-node edge rather than
+    try to reroute it (and KeyError on the missing node box)."""
+    return edge.source in geo.nodes and edge.target in geo.nodes
 
 
 def content_bbox(geo: DiagramGeometry) -> Optional[Box]:
@@ -2681,6 +2698,74 @@ def check_container_style(
             # first in declaration order on a tie) — several providers share
             # one dashed-rectangle signature on a multi-cloud diagram.
             out.append((cid, min(failures, key=lambda f: f.count(" expected "))))
+    return out
+
+
+def _container_nesting(geo: DiagramGeometry) -> Tuple[bool, bool]:
+    """Return ``(has_outer, has_inner)`` for the drawn Boundary containers.
+
+    Structural, provider-neutral (WS11, C10): the parsed ``.drawio`` carries no
+    semantic ``kind`` (``account`` / ``vpc``), but nesting is a reliable proxy
+    for the outer/inner distinction the Legend names.
+
+    * ``has_outer`` — at least one Boundary container is drawn, so a stack
+      Boundary ("Outer boundary") exists on the canvas.
+    * ``has_inner`` — at least one Boundary container is drawn strictly INSIDE
+      another Boundary container, so a Network Boundary ("Inner boundary") is on
+      the canvas. An account that wraps a VPC (``account ⊃ vpc``) has one; an
+      account-only context diagram, or a set of sibling region boxes (the HA
+      summaries), has none.
+
+    A box is "strictly inside" another when it is contained and the two are not
+    the same box (equal boxes are not nesting). Containment is border-inclusive,
+    matching :func:`_box_inside`.
+    """
+    boxes = list(geo.containers.items())
+    has_outer = len(boxes) > 0
+    has_inner = False
+    for cid, inner in boxes:
+        for oid, outer in boxes:
+            if cid == oid:
+                continue
+            if (outer.x <= inner.x and inner.right <= outer.right
+                    and outer.y <= inner.y and inner.bottom <= outer.bottom
+                    and (outer.w * outer.h) > (inner.w * inner.h)):
+                has_inner = True
+                break
+        if has_inner:
+            break
+    return has_outer, has_inner
+
+
+def check_legend_boundary_coverage(
+    geo: DiagramGeometry, legend_lines: Sequence[str]
+) -> List[str]:
+    """Return the Legend boundary lines that name a boundary NOT drawn (WS11, C10).
+
+    The Mandatory Legend Block names the outer/inner boundary only when that
+    boundary is actually on the canvas (diagram-standards →
+    ``legend_lines_for``). A Legend that lists ``Inner boundary = Network
+    Boundary …`` on a diagram that draws no nested (network) boundary — e.g. an
+    account-only context diagram — describes something the reader cannot find
+    (SEP 01/04 before this fix). The mirror holds for ``Outer boundary``.
+
+    Pure, provider-neutral and structural: the drawn boundaries are read from
+    the nesting of the parsed container boxes (:func:`_container_nesting`), and a
+    legend line is an outer/inner-boundary line when its text before ``=``,
+    casefolded and stripped, starts with ``outer boundary`` / ``inner
+    boundary``. Returns the offending legend line(s), empty when the Legend is
+    consistent with what is drawn. WARNING in the ruleset."""
+    if not legend_lines:
+        return []
+    has_outer, has_inner = _container_nesting(geo)
+    out: List[str] = []
+    for raw in legend_lines:
+        line = str(raw).strip()
+        head = line.split("=", 1)[0].strip().casefold()
+        if head.startswith("outer boundary") and not has_outer:
+            out.append(line)
+        elif head.startswith("inner boundary") and not has_inner:
+            out.append(line)
     return out
 
 
@@ -4123,6 +4208,11 @@ def check_edge_escapes_container(geo: DiagramGeometry) -> List[Tuple[str, str]]:
     judged."""
     out: List[Tuple[str, str]] = []
     for e in geo.edges:
+        # A boundary-to-boundary edge (container endpoint, WS10) is anchored on
+        # a container face by design, so "leaves the common container of its two
+        # nodes" does not apply — it has a container AS an endpoint.
+        if e.source not in geo.nodes or e.target not in geo.nodes:
+            continue
         poly = edge_polyline(geo, e)
         if len(poly) < 3:
             continue
@@ -4205,6 +4295,10 @@ def check_edge_jog(geo: DiagramGeometry) -> List[Tuple[str, str]]:
     exit, top entry, shared column)."""
     out: List[Tuple[str, str]] = []
     for e in geo.edges:
+        # A boundary-to-boundary edge (container endpoint, WS10) is not a
+        # node-facing jog: the "directly facing nodes" test does not apply.
+        if e.source not in geo.nodes or e.target not in geo.nodes:
+            continue
         contacts = _edge_contacts(geo, e)
         if contacts is None:
             continue

@@ -300,6 +300,16 @@ RULE_SIBLING_SIZE_UNIFORMITY = "sibling-size-uniformity"
 #                     illusion, ``geometry.collinear_edge_pairs``); WARNING,
 #                     both classes. offenders = the two edge ids.
 RULE_COLLINEAR_EDGES = "collinear-edges"
+# 1.10.12 WS11 (C10). The Legend lists a boundary that is not drawn:
+#   legend-boundary-coverage — a Legend ``Outer boundary`` / ``Inner boundary``
+#                              line names a stack / network boundary that is not
+#                              on the canvas (an account-only context diagram
+#                              that still lists an inner boundary — SEP 01/04);
+#                              WARNING, both classes. offenders = the offending
+#                              legend line(s). The mirror of ``legend-present``:
+#                              that checks the Legend exists, this checks it does
+#                              not describe a boundary the reader cannot find.
+RULE_LEGEND_BOUNDARY_COVERAGE = "legend-boundary-coverage"
 
 # ``RULE_SEVERITIES`` and ``CLASS_ESCALATIONS`` are DERIVED from the ``RULES``
 # registry (defined near the end of this module, once every predicate exists) —
@@ -738,6 +748,29 @@ def _check_legend_present(a: Artifact) -> bool:
     directly.
     """
     return _is_diagram(a) and not a.has_legend
+
+
+def _check_legend_boundary_coverage(a: Artifact):
+    """legend-boundary-coverage: the Legend names a boundary not drawn (WARNING).
+
+    WS11 (C10): the Mandatory Legend Block lists the outer/inner boundary only
+    when that boundary is on the canvas (``diagram_layout.legend_lines_for``). A
+    Legend that lists ``Inner boundary = Network Boundary …`` on an account-only
+    diagram (no nested network boundary) describes something the reader cannot
+    find. The drawn boundaries are read structurally from the parsed container
+    nesting (``geometry.check_legend_boundary_coverage``), so the rule is
+    provider-neutral and needs no mapping.
+    """
+    if not _is_diagram(a) or not a.legend_lines:
+        return False
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    offenders = _geo.check_legend_boundary_coverage(geo, a.legend_lines)
+    if not offenders:
+        return False
+    return RuleHit(offenders=tuple(offenders), reason="legend-names-undrawn-boundary")
 
 
 def _check_companion_doc(a: Artifact) -> bool:
@@ -2465,6 +2498,11 @@ RULES: Tuple[Tuple[RuleSpec, Callable[[Artifact], _PredicateResult]], ...] = (
     (
         RuleSpec(RULE_STRUCTURAL_INTEGRITY, Severity.WARNING),
         _check_structural_integrity,
+    ),
+    # legend-boundary-coverage (1.10.12 WS11): WARNING on both classes.
+    (
+        RuleSpec(RULE_LEGEND_BOUNDARY_COVERAGE, Severity.WARNING),
+        _check_legend_boundary_coverage,
     ),
 )
 

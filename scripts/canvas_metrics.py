@@ -338,10 +338,17 @@ def avoidable_crossings_raw(geo: DiagramGeometry, polys: Dict[str, List[Point]])
             if cur == 0:
                 continue
             if eid not in cand_cache:
-                cand_cache[eid] = [
-                    (tag, r) for tag, r in _candidate_routes(geo, edges[eid])
-                    if _route_admissible(geo, r, obstacles)
-                ]
+                e = edges[eid]
+                # WS10: a boundary-to-boundary edge (container endpoint) is not
+                # face-swappable (no node box to re-anchor); it has no avoidable
+                # candidates.
+                if e.source not in geo.nodes or e.target not in geo.nodes:
+                    cand_cache[eid] = []
+                else:
+                    cand_cache[eid] = [
+                        (tag, r) for tag, r in _candidate_routes(geo, e)
+                        if _route_admissible(geo, r, obstacles)
+                    ]
             for tag, route in cand_cache[eid]:
                 gain = cur - edge_x(eid, route)
                 if gain > 0 and (best is None or gain > best[0]):

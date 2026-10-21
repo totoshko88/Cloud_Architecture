@@ -88,6 +88,7 @@ every applicable rule against every artifact.
 | `graph-islands` | A `landscape` whose connected nodes split into **more than one connected component** (islands with no edge between them). Edge-less nodes (`node-connectivity`'s) and overlay-marked nodes (`standby`, `supporting`) are left out. Reason `islands:<components>`; offenders = the nodes outside the largest component. Landscape only. New in 1.10.12 (WS5). | WARNING | diagram-standards Inventory completeness → diagram (drawing is not relating) |
 | `detour-hook` | An edge's routed (Manhattan) length exceeds `2.5 ×` the straight Manhattan distance between its contacts — it loops out and back instead of going where it is going. offenders = the edge id. | WARNING | diagram-standards Edge Routing (shortest sensible route) / edge-hygiene 1.10.5 B3 |
 | `structural-integrity` | An edge `source`/`target` id resolves to no placeable box (`edge-unresolved-source`/`-target`), or a node carries a non-positive-area geometry (`node-no-geometry`). A cross-check adapted from the awesome-copilot draw.io validator; unique-id and parent-chain checks are already enforced earlier (the single parser dedupes cell ids before geometry sees them; a parent cycle raises `parse-error`), so only the not-yet-covered checks are added here. | WARNING | R1 AC10 / awesome-copilot draw.io validator / edge-hygiene 1.10.5 B4 |
+| `legend-boundary-coverage` | A Legend names a boundary that is **not drawn**: an `Outer boundary = …` line with no Boundary container on the canvas, or an `Inner boundary = …` line with no **nested** (network) boundary — the account-only context diagram that still lists an inner boundary (SEP 01/04, defect C10). The drawn boundaries are read **structurally** from the nesting of the parsed container boxes (`geometry.check_legend_boundary_coverage`), so the rule is provider-neutral and needs no mapping. The mirror of `legend-present`: that checks the Legend exists; this checks it does not describe a boundary the reader cannot find. Reason `legend-names-undrawn-boundary`; offenders = the offending legend line(s). New in 1.10.12 (WS11). | WARNING | diagram-standards Mandatory Legend Block / `legend_lines_for` |
 
 ### Rule Detail
 
@@ -579,6 +580,28 @@ every applicable rule against every artifact.
   other finding (crossing, back-edge, caption strike, …) is added — so engine
   output never trips it; it is published so a hand-authored diagram is held to
   the same standard. Advisory (WARNING) on both classes.
+- **`legend-boundary-coverage` (WARNING)** — *New in 1.10.12 (WS11, C10).
+  Geometry-enforced.* The Mandatory Legend Block names the outer/inner boundary
+  only when that boundary is actually on the canvas
+  (`diagram_layout.legend_lines_for`, 1.10.7). A Legend that still lists `Inner
+  boundary = Network Boundary …` on a diagram that draws **no nested (network)
+  boundary** — an account-only context diagram — describes something the reader
+  cannot find; the mirror holds for `Outer boundary`. This was the C10 defect:
+  SEP 01 and 04 draw only the SEP account box but assembled their Legend from
+  `STANDARD_LEGEND_LINES`, so both listed an inner boundary. The drawn
+  boundaries are read **structurally** from the nesting of the parsed container
+  boxes (`geometry.check_legend_boundary_coverage` /
+  `geometry._container_nesting`): `has_outer` is "≥ 1 Boundary container
+  drawn", `has_inner` is "≥ 1 Boundary container nested strictly inside
+  another". So an `account ⊃ vpc` stack passes, a lone account box fails the
+  inner line, and a set of sibling region boxes (the HA summaries, which the
+  builder already omits both lines for) raises nothing. Provider-neutral — it
+  reads geometry, not a mapping. The engine applies `legend_lines_for` on every
+  build path (`build_diagram` when `legend_lines is None`; the SEP scripts call
+  it explicitly), so generated diagrams never trip it; it is published so a
+  hand-authored Legend is held to the same standard. Reason
+  `legend-names-undrawn-boundary`; offenders = the offending legend line(s).
+  Advisory (WARNING) on both classes.
 - **`flow-step-undrawn` (WARNING)** — *New in 1.10.12 (WS5, C2).* `flow-legend`
   checks that every edge marker has a Flow line; nothing checked the other
   direction, so a step whose edge was folded into the legend (the 1.10.11

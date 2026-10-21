@@ -2171,6 +2171,76 @@ def route_edge(
     return ROUTERS[kind](edge, exit_pt, entry_pt, allocator, obstacles)
 
 
+# -- boundary-to-boundary edges (1.10.12 WS10, C15) -------------------------
+
+
+def container_edge_contacts(src: Box, tgt: Box) -> Tuple[Contact, Contact]:
+    """Return ``(exit, entry)`` faces for an edge anchored on container boxes.
+
+    A boundary-to-boundary relationship (VPC/VCN peering, a transit-gateway
+    attachment) is drawn between two container FACES, under the SAME directional
+    contract every node edge obeys (diagram-standards → *The directional
+    contract*): the edge **exits** the source container on its **right or
+    bottom** face and **enters** the target container on its **left or top**
+    face. The face is chosen from the relative placement of the two boxes, so a
+    peer to the right is reached right→left and a peer below is reached
+    bottom→top — never a left exit or a right entry.
+
+    An endpoint may also be a NODE box (a node ↔ container peering); the same
+    rule applies, since the contract is a property of the two boxes, not of what
+    they represent."""
+    # The two boxes are either side-by-side (columns disjoint), stacked (rows
+    # disjoint, columns overlap), or diagonally offset. The dominant axis picks
+    # the face pair; the contract then fixes which face.
+    cols_disjoint = tgt.x >= src.right or src.x >= tgt.right
+    rows_disjoint = tgt.y >= src.bottom or src.y >= tgt.bottom
+    below = tgt.y >= src.bottom          # target clearly below the source
+    right = tgt.x >= src.x               # target not to the left of the source
+    if rows_disjoint and not cols_disjoint and below:
+        # Stacked with overlapping columns → a clean vertical: bottom → top.
+        return (0.5, 1.0), (0.5, 0.0)
+    # Otherwise prefer the horizontal pair (right → left), which is the default
+    # contract exit; fall back to a bottom exit only when the target is below
+    # AND to the left (no contract-legal right route without a long loop).
+    if right or not below:
+        return (1.0, 0.5), (0.0, 0.5)
+    return (0.5, 1.0), (0.0, 0.5)         # below-left: bottom exit, left entry
+
+
+def route_container_edge(src: Box, tgt: Box, exit_pt: Contact, entry_pt: Contact) -> List[Point]:
+    """Route a boundary-to-boundary edge as one orthogonal L between two faces.
+
+    Deterministic and contract-legal: the exit contact leaves the source face
+    along its outward normal (right → horizontal first, bottom → vertical first)
+    and the entry contact meets the target face head-on (left → horizontal last,
+    top → vertical last). The single corner between the two legs is emitted
+    explicitly so draw.io never inserts one of its own
+    (diagram-standards → *Every leg is explicitly axis-aligned*); when the two
+    contacts already share a row or column no corner is needed. The waypoints
+    are the interior corner(s); :func:`orthogonalise_route` in the pipeline then
+    reconciles them with the grid-snapped contact points, exactly as for a node
+    edge."""
+    ex, ey = _contact_point(src, exit_pt)
+    nx, ny = _contact_point(tgt, entry_pt)
+    if abs(ex - nx) < 1e-9 or abs(ey - ny) < 1e-9:
+        return []  # already aligned on one axis → one straight segment
+    exit_horizontal = exit_pt[0] in (0.0, 1.0)    # right/left face → leave H
+    entry_horizontal = entry_pt[0] in (0.0, 1.0)  # left/right face → arrive H
+    if exit_horizontal and entry_horizontal:
+        # right → left: H out, drop/rise in a mid corridor, H into the target.
+        midx = _snap((ex + nx) / 2.0)
+        return [(midx, ey), (midx, ny)]
+    if (not exit_horizontal) and (not entry_horizontal):
+        # bottom → top: V out, across in a mid corridor, V into the target.
+        midy = _snap((ey + ny) / 2.0)
+        return [(ex, midy), (nx, midy)]
+    if exit_horizontal and not entry_horizontal:
+        # right → top: H out to the target's column, then V down into its top.
+        return [(nx, ey)]
+    # bottom → left: V out to the target's row, then H into its left face.
+    return [(ex, ny)]
+
+
 # -- small shared router utilities ------------------------------------------
 
 

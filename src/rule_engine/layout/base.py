@@ -245,16 +245,26 @@ def _validate_spec(spec: DiagramSpec) -> None:
                     "declared container must be in the node's own region"
                 )
 
+    # 1.10.12 (WS10): an edge endpoint MAY be a container id — a
+    # boundary-to-boundary relationship (VPC/VCN peering, a transit-gateway
+    # attachment) drawn between two container FACES rather than attached to a
+    # proxy node (RDS/Lambda) inside the boundary (defect C15). The router
+    # anchors such an edge on the container face under the same directional
+    # contract (exit right/bottom, enter left/top), and the lint/geometry treat
+    # the container as the endpoint. So a valid endpoint is a node id OR a
+    # container id; only an id that is neither is a dangling reference.
+    container_ids = {c.id for c in spec.containers}
+    valid_endpoints = node_ids | container_ids
     for edge in spec.edges:
-        if edge.source not in node_ids:
+        if edge.source not in valid_endpoints:
             raise SpecError(
                 f"edge {edge.id!r} has dangling source {edge.source!r} "
-                "(not a declared node id)"
+                "(not a declared node or container id)"
             )
-        if edge.target not in node_ids:
+        if edge.target not in valid_endpoints:
             raise SpecError(
                 f"edge {edge.id!r} has dangling target {edge.target!r} "
-                "(not a declared node id)"
+                "(not a declared node or container id)"
             )
 
 

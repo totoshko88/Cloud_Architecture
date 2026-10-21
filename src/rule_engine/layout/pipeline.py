@@ -1112,6 +1112,35 @@ def layout(
     re-entering the placement loop, keeping the ``layout`` / ``solve_placement``
     load- and call-time graph acyclic.
     """
+    # WS10 (1.10.12, C15): an edge endpoint may be a CONTAINER id — a
+    # boundary-to-boundary relationship (VPC/VCN peering, a TGW attachment)
+    # drawn between two container faces, not attached to a proxy node. The whole
+    # node-routing pipeline below (placement search, scored solver, ordering,
+    # repair, oracle) is nodes-only, so a container-endpoint edge is routed
+    # SEPARATELY on the finished diagram and merged back in declared order. This
+    # keeps every node edge — and so every corpus golden and synthetic spec,
+    # none of which declare a container edge — byte-identical. ``_validate_spec``
+    # has already confirmed every endpoint is a real node or container id.
+    container_ids = {c.id for c in spec.containers}
+    node_ids = {n.id for n in spec.nodes}
+    container_edges = tuple(
+        e for e in spec.edges
+        if e.source in container_ids or e.target in container_ids
+    )
+    if container_edges and not legacy and _placement:
+        # Validate the FULL spec first: the node-only sub-layout below never
+        # sees the container edges, so an unknown endpoint on one of them (a
+        # dangling id that is neither a node nor a container) would otherwise go
+        # unchecked. ``_validate_spec`` accepts a container endpoint and raises
+        # SpecError on a genuinely dangling one.
+        from .base import _validate_spec
+        _validate_spec(spec)
+        node_spec = replace(
+            spec, edges=tuple(e for e in spec.edges if e not in container_edges)
+        )
+        placed = layout(node_spec, legacy=legacy, strict=strict, _placement=_placement)
+        return _route_container_edges(spec, placed, container_edges)
+
     # Contacts + route stage: (placement-loop | scored inner | legacy). The
     # scored PLACEMENT loop is the DEFAULT (1.9.0 Part A, task 3); ``--legacy``
     # retains the rule-driven ten-pass :func:`_place_and_route`; the private
@@ -1179,6 +1208,63 @@ def _annotate_edge_regions(spec: DiagramSpec) -> DiagramSpec:
             changed = True
         edges.append(e)
     return _replace(spec, edges=tuple(edges)) if changed else spec
+
+
+def _route_container_edges(
+    full_spec: DiagramSpec,
+    placed: "PlacedDiagram",
+    container_edges: Tuple["EdgeSpec", ...],
+) -> "PlacedDiagram":
+    """Route the boundary-to-boundary edges and merge them into ``placed`` (WS10).
+
+    ``placed`` is the finished node-only diagram (final node AND container
+    boxes). Each container-endpoint edge anchors on its endpoint boxes
+    (:func:`routers.container_edge_contacts` / :func:`routers.route_container_edge`),
+    orthogonalised exactly like a node edge so every leg is axis-aligned, and the
+    merged edge list is returned in ``full_spec``'s declared order. The returned
+    diagram carries ``full_spec`` so downstream (serialize / lint / reconcile)
+    sees every edge, container ones included."""
+    from .routers import container_edge_contacts, route_container_edge
+
+    boxes: Dict[str, "Box"] = dict(placed.nodes)
+    boxes.update(placed.containers)
+
+    routed: Dict[str, PlacedEdge] = {}
+    for e in container_edges:
+        src, tgt = boxes.get(e.source), boxes.get(e.target)
+        if src is None or tgt is None:  # a dropped node (degraded) — skip it
+            continue
+        exit_pt, entry_pt = container_edge_contacts(src, tgt)
+        pts = route_container_edge(src, tgt, exit_pt, entry_pt)
+        pts = orthogonalise_route(
+            _contact_point(src, exit_pt),
+            pts,
+            _contact_point(tgt, entry_pt),
+            contact_faces(*exit_pt),
+            contact_faces(*entry_pt),
+        )
+        routed[e.id] = PlacedEdge(
+            spec=e, exit=exit_pt, entry=entry_pt, points=[(int(x), int(y)) for x, y in pts]
+        )
+
+    node_edges = {pe.spec.id: pe for pe in placed.edges}
+    merged: List[PlacedEdge] = []
+    for e in full_spec.edges:
+        if e.id in routed:
+            merged.append(routed[e.id])
+        elif e.id in node_edges:
+            merged.append(node_edges[e.id])
+    return PlacedDiagram(
+        spec=full_spec,
+        nodes=placed.nodes,
+        containers=placed.containers,
+        edges=merged,
+        legend_x=placed.legend_x,
+        legend_w=placed.legend_w,
+        layout_warnings=placed.layout_warnings,
+        degraded=placed.degraded,
+        order_report=placed.order_report,
+    )
 
 
 def _layout_scored_with_guard(

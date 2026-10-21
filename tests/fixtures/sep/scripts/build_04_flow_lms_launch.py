@@ -27,7 +27,7 @@ from rule_engine.diagram_layout import (
     Boundary,
     Edge,
     Node,
-    STANDARD_LEGEND_LINES,
+    legend_lines_for,
     build_diagram,
 )
 from rule_engine.icon_resolver import resolve_icon, resolve_container
@@ -186,9 +186,10 @@ flow_lines = [
     "7. lti-adapter returns the grade / score to the LMS (async callback)",
 ]
 
-# Legend: standard lines (asset-generated boundary lines) are enough here; no
+# Legend: only the boundaries actually drawn (legend_lines_for, WS11/C10 — this
+# flow draws the SEP account box but NO VPC, so no "Inner boundary" line). No
 # optional overlay vocabulary is used on this draft.
-legend_lines = list(STANDARD_LEGEND_LINES)
+legend_lines = list(legend_lines_for([account]))
 
 title = "aws SEP LMS launch — 870325637521 / eu-central-1 | 2026-10-17 | v5"
 
