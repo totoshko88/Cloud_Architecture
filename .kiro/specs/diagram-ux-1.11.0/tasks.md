@@ -117,26 +117,42 @@ workstream to ship; property tests name the design property they validate.
     - **Property 6: C4 style off is byte-inert**
     - **Validates: Requirement 4.7**
 
-- [ ] 7. WS6 — `network` diagram type (ships as its own release)
-  - [ ] 7.1 Add `mappings/diagram-types.yaml` and resolve a `TypeProfile` where
+- [x] 7. WS6 — `network` diagram type (ships as its own release)
+  - [x] 7.1 Add `mappings/diagram-types.yaml` and resolve a `TypeProfile` where
     `cli.py` reads `diagram_type`.
     - _Requirements: 6.1_
-  - [ ] 7.2 Add extended network roles (`transit_gateway`, `vpn_gateway`,
+    - _Done: `diagram-types.yaml` (`network` profile) + `diagram_profiles.py`
+      `TypeProfile` reader; `network` lint_profile wired into the linter's
+      Network_Diagram recognition (`6d73206`)._
+  - [x] 7.2 Add extended network roles (`transit_gateway`, `vpn_gateway`,
     `direct_connect`, `route_table`, `network_firewall`) to `roles.yaml`, the
     four icon mappings, and `ROLE_SCOPE`.
     - _Requirements: 6.2, 6.4_
-  - [ ] 7.3 Add `security_group` to `CONTAINER_KINDS` as a leaf boundary + a
+    - _Done: 5 roles × 4 profiles (all 20 resolve), `roles.yaml` native types,
+      icon-index rebuilt 68→73, `ROLE_SCOPE` network-scoped (`cd28dc8`,
+      `a394477`)._
+  - [x] 7.3 Add `security_group` to `CONTAINER_KINDS` as a leaf boundary + a
     per-provider container style.
     - _Requirements: 6.3_
+    - _Done: `security_group` leaf-boundary kind + per-provider dashed-rect
+      styles ×4 (`cd28dc8`, `a394477`)._
   - [ ] 7.4 Promote `08-network-crossaccount` into `examples/` and author its
     `flow` summary partner.
     - _Requirements: 6.6_
-  - [ ] 7.5 *Property test — core role invariant holds
+    - _Deferred: raster export is unavailable in the dev sandbox, so the golden
+      pair cannot be authored/verified here. Code side (profile, roles,
+      container, linter) is complete._
+  - [x] 7.5 *Property test — core role invariant holds
     - **Property 8: the core role invariant holds**
     - **Validates: Requirement 6.4**
-  - [ ] 7.6 *Property test — no diagram-type declaration byte-inert
+    - _Satisfied: `tests/test_resource_types.py` asserts `RESOURCE_TYPES` stays
+      the 16-value set; the 5 network roles are extended-only._
+  - [x] 7.6 *Property test — no diagram-type declaration byte-inert
     - **Property 9: no diagram-type declaration is byte-inert**
     - **Validates: Requirements 6.5, 7.5**
+    - _Satisfied: `tests/test_diagram_profiles_1_11_0.py` — a non-network / empty
+      `diagram_type` resolves to no profile and is byte-inert; `regen --check`
+      clean, all 13 goldens byte-identical._
 
 - [ ] 8. WS7 — `access` diagram type (following release)
   - [ ] 8.1 Add the `access` TypeProfile with a mandatory aggregation key and a
