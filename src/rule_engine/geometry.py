@@ -256,6 +256,20 @@ def build_geometry(page: Page) -> DiagramGeometry:
         if not cell.vertex or cid in boundary_ids:
             continue
         g = cell.geom
+        if (cid or "").startswith("flowgroup-"):
+            # A 1.11.0 WS2 flow-group box (``flow_group_cells``) is a purely
+            # DECORATIVE grey context box drawn BEHIND its member nodes with no
+            # node shift. It is neither a node (it must not be counted by
+            # node-count, nor read as pierced by its members' own edges ->
+            # ``straight-through``/``knee-through`` ERRORs) nor a Boundary
+            # container (its members are parented to the root layer, not to it,
+            # so promoting it would raise spurious ``geometric-containment`` /
+            # ``container-padding`` findings on an intentional overlap). It has
+            # ``fillColor=none`` and carries a non-Flow/Legend caption, so it is
+            # not Flow/Legend furniture either. Skip it from every geometry set.
+            # Mirrors the CLI-side skip in ``cli._parse_drawio_page`` so the two
+            # parsers cannot drift.
+            continue
         if _is_text_style(cell.style.lower()):
             # A text cell is NOT a node (it must never be counted by node-count),
             # but its box is recorded separately so the Flow/Legend furniture can

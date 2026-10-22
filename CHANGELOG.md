@@ -18,6 +18,7 @@ All notable changes to the Rule Engine are recorded here, per released version, 
 
 ### Changed
 - **Native presentation skin (WS1).** Presentation-skin style channels (furniture stroke colour + edge colour) and a marker-badge (`circle` / `square`) rendered as an HTML edge label, per the owner's fixed `diagram-ux-1.11.0` decisions (furniture `#B3B3B3`, edge-grey `#5A6B7B`, number badge = black circle `#1A1A1A` with a white numeral).
+- **`flowgroup-*` cells classified as decorative furniture in both parsers (ENG-0, REVIEW.md G24).** The WS2 flow-group box (`flow_group_cells`) is now skipped by BOTH the geometry parser (`geometry.build_geometry`) and the CLI parser (`cli._parse_drawio_page`), so an intra-group member edge that geometrically crosses the group box no longer trips `edge-routing` (`straight-through-flowgroup-*` / `knee-through-flowgroup-*`). This fix previously lived only in the installed package and a reinstall wiped it; it is now in source, in lockstep across the two parsers, with a regression test. Byte-inert for every shipped golden (no golden uses `flow_groups`).
 - **Icon coverage (WS9).** Data-only role fill-in across all four provider profiles, with `mappings/icon-index.json` rebuilt.
 
 ### Notes

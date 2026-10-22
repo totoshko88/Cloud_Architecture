@@ -280,6 +280,14 @@ def _parse_drawio_page(path: str, page: Page, text: str) -> Artifact:
             continue
         if cid in boundary_ids:
             continue
+        if (cid or "").startswith("flowgroup-"):
+            # 1.11.0 WS2 flow-group box: a decorative grey context box behind the
+            # member nodes (``flow_group_cells``), not a service node. It must not
+            # inflate node-count, be read as an unresolved ``icon-resolved``
+            # placeholder (it names no icon), or trip ``node-connectivity`` (it
+            # carries no edge by design). Matches the geometry-side skip in
+            # ``geometry.build_geometry`` so the two parsers cannot drift.
+            continue
         if _is_text_cell_style(cell.style) or cid == title_cell_id:
             continue
         if cell.parent not in node_container_parents:
