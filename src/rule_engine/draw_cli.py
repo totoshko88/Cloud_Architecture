@@ -82,7 +82,14 @@ _PAGE_MARGIN = 2 * CONTAINER_PAD  # 60, a whole grid multiple
 
 #: The user-facing diagram types → the lint ``diagram_class`` they carry.
 #: ``context`` is the C4 Context level (feedback Theme 2), a ``flow`` class.
-_CLASS_OF = {"context": "flow", "simple": "flow", "summary": "flow", "landscape": "landscape"}
+#: ``c4-context`` / ``c4-container`` (1.11.0 WS4) are first-class C4 type names,
+#: both mapping to the ``flow`` geometry class — C4 is a STYLE mode over flow,
+#: not a new enforced diagram_class. ``context`` stays as an accepted alias of
+#: ``c4-context`` (keeps the shipped --type context CLI contract).
+_CLASS_OF = {
+    "context": "flow", "simple": "flow", "summary": "flow", "landscape": "landscape",
+    "c4-context": "flow", "c4-container": "flow",
+}
 
 #: A fixed date used for the companion frontmatter dates and the title, so the
 #: generated triple is byte-identical across runs (Requirement 10.6 — no
@@ -120,6 +127,33 @@ def _node_renderer(style_string: str):
     return render
 
 
+#: C4 box style (1.11.0 WS4) — reuses the sanctioned neutral external_system
+#: look (dashed white box, grey stroke) so C4 diagrams carry no provider icon.
+_C4_BOX_STYLE = (
+    "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;"
+    "fontColor=#333333;fontSize=12;verticalAlign=middle;align=center"
+)
+
+
+def _c4_box_renderer(tech: str):
+    """Return a C4 renderer: a box labelled ``<name>\\n[Container: <tech>]`` with
+    no provider icon (C4 Container grammar). ``tech`` is the node's role/tech
+    shown in the stereotype line. The box reuses the neutral external_system
+    style, so the diagram reads as C4 boxes, not cloud glyphs."""
+
+    def render(node: Node, parent_id: str) -> str:
+        label = f"{node.label}&#10;[Container: {tech}]" if tech else node.label
+        return (
+            f'        <mxCell id="{node.id}" value="{label}" style="{_C4_BOX_STYLE}" '
+            f'vertex="1" parent="{parent_id}">\n'
+            f'          <mxGeometry x="{node.x}" y="{node.y}" '
+            f'width="{ICON_SIZE}" height="{ICON_SIZE}" as="geometry" />\n'
+            f"        </mxCell>\n"
+        )
+
+    return render
+
+
 def _label_of(node_spec) -> str:
     """A short, quote-free display label for a node (its slugged node id).
 
@@ -134,17 +168,21 @@ def _label_of(node_spec) -> str:
     return label
 
 
-def _skin_renderers(provider: str, roles: Sequence[str]) -> Dict[str, Any]:
+def _skin_renderers(provider: str, roles: Sequence[str], style: str = "icon") -> Dict[str, Any]:
     """Resolve one icon renderer per distinct ``role`` used, via the mappings.
 
-    Raises :class:`DrawError` (naming the role) when the provider's mapping has
-    no resolved icon for a role — fail-honest rather than draw a look-alike
-    (Icon Fidelity). Each style comes from the committed
-    ``mappings/<provider>-icons.yaml``, so the resolution is offline.
+    ``style='icon'`` (default) resolves each role to its provider glyph via the
+    committed mapping — fail-honest (raises :class:`DrawError` naming the role)
+    rather than drawing a look-alike. ``style='c4'`` (1.11.0 WS4) ignores the
+    provider icon and returns a C4 box renderer per role (``[Container: role]``),
+    so a C4 diagram reads as boxes with no cloud glyphs.
     """
     renderers: Dict[str, Any] = {}
     for role in sorted(set(roles)):
         if role in renderers:
+            continue
+        if style == "c4":
+            renderers[role] = _c4_box_renderer(role)
             continue
         try:
             resolved = resolve_icon(role, provider)
@@ -301,6 +339,7 @@ def build_drawio(
     relationships: Optional[Sequence[Mapping[str, Any]]] = None,
     assume: str = "auto",
     assumption_sink: Optional[list] = None,
+    style: str = "icon",
 ) -> str:
     """Build the ``.drawio`` text for a Snapshot (spec → layout → build_diagram).
 
@@ -336,7 +375,7 @@ def build_drawio(
     for warning in placed.layout_warnings:
         print(f"rule-engine-draw: layout WARNING: {warning}", file=sys.stderr)
 
-    renderers = _skin_renderers(provider, [n.role for n in spec.nodes])
+    renderers = _skin_renderers(provider, [n.role for n in spec.nodes], style=style)
     nodes = _nodes_from(placed, renderers)
     edges = _edges_from(placed)
 
@@ -621,6 +660,7 @@ def generate(
     export: bool = True,
     drawio: str = "drawio",
     assume: str = "auto",
+    style: str = "icon",
 ) -> Dict[str, Any]:
     """Write the ``.drawio`` + companion (+ best-effort raster) for a Snapshot.
 
@@ -637,7 +677,7 @@ def generate(
     _assumptions: list = []
     drawio_text = build_drawio(
         snapshot_dir, provider, diagram_type, basename, relationships,
-        assume=assume, assumption_sink=_assumptions,
+        assume=assume, assumption_sink=_assumptions, style=style,
     )
     companion_text = build_companion(provider, diagram_type, basename)
     # 1.11.0 WS5: record applied assumptions as a structured companion section.
@@ -701,9 +741,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--provider", required=True, choices=sorted(PROVIDERS),
                     help="provider profile of the Snapshot")
     ap.add_argument("--type", required=True, dest="diagram_type",
-                    choices=("context", "simple", "summary", "landscape"),
-                    help="diagram type: context (C4 Context) / simple / summary "
-                    "are flow-class, landscape is landscape-class")
+                    choices=("context", "simple", "summary", "landscape",
+                             "c4-context", "c4-container"),
+                    help="diagram type: context / c4-context (C4 Context) and "
+                    "c4-container are flow-class; simple / summary are flow; "
+                    "landscape is landscape-class")
     ap.add_argument("--out", required=True, dest="out_basename",
                     help="output path stem; writes <out>.drawio and "
                     "<out>.diagram.md")
@@ -720,6 +762,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     help="clarify-gate policy (1.11.0 WS5): ask halts and lists "
                     "the spec's assumptions; auto (default) records them and "
                     "proceeds; error fails the build if any assumption exists")
+    ap.add_argument("--style", default="icon", choices=("icon", "c4"),
+                    help="render style (1.11.0 WS4): icon (default) draws "
+                    "provider glyphs; c4 draws C4 boxes ([Container: role]) with "
+                    "no provider icon")
     args = ap.parse_args(list(sys.argv[1:] if argv is None else argv))
 
     relationships: Optional[List[Mapping[str, Any]]] = None
@@ -740,6 +786,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             export=not args.no_export,
             drawio=args.drawio,
             assume=args.assume,
+            style=args.style,
         )
     except SnapshotSplitRequired as exc:
         print(f"rule-engine-draw: {exc}", file=sys.stderr)

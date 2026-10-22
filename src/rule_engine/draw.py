@@ -178,7 +178,9 @@ def lane_of(role: str) -> str:
 #: class; ``landscape`` is the ``landscape`` class. ``context`` is the C4
 #: Context level (feedback Theme 2): the widest single view — external actors
 #: around ONE system block — also the ``flow`` class.
-DIAGRAM_TYPES: Tuple[str, ...] = ("context", "simple", "summary", "landscape")
+DIAGRAM_TYPES: Tuple[str, ...] = (
+    "context", "simple", "summary", "landscape", "c4-context", "c4-container",
+)
 
 #: The ``flow`` node budget (diagram-standards → Node Limit). A ``simple`` /
 #: ``summary`` diagram shows the in-scope subset up to this many nodes.
@@ -334,6 +336,12 @@ def spec_from_snapshot(
 ) -> DiagramSpec:
     """Build a coordinate-free :class:`DiagramSpec` from a committed Snapshot.
 
+    1.11.0 WS4: ``c4-context`` is an alias of ``context`` (one system black-box
+    + external actors), and ``c4-container`` reuses the ``summary`` geometry;
+    the C4 LOOK is applied separately by ``--style c4`` at render time, so the
+    GEOMETRY of a C4 diagram is the same flow geometry — C4 is a style mode, not
+    a new geometry class.
+
     This is the design's J4/J5 assembly, reusing J2 (``reconcile.role_of``) and
     J3 (:func:`lane_of`):
 
@@ -371,6 +379,11 @@ def spec_from_snapshot(
         raise DrawError(
             f"unknown diagram type {diagram_type!r} (expected one of {DIAGRAM_TYPES})"
         )
+    # 1.11.0 WS4: C4 type names reuse an existing flow geometry; the C4 LOOK is
+    # applied by --style c4 at render time, not by a different spec shape.
+    diagram_type = {"c4-context": "context", "c4-container": "summary"}.get(
+        diagram_type, diagram_type
+    )
 
     snap = Path(snapshot_dir)
     if not snap.is_dir():
