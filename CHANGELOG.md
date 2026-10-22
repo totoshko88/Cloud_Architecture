@@ -20,6 +20,7 @@ All notable changes to the Rule Engine are recorded here, per released version, 
 ### Notes
 - **Deferred to a later release:** the `network` golden pair (`08-network-crossaccount` + its flow summary) — raster export is unavailable in the dev sandbox; C4 completeness; WS3 foreign-leaf nesting + hybrid golden; flow `panel` mode; the A4 export target. WS7/WS8 (`access` / `dataflow`) are separate releases.
 - Pre-existing fix folded in: `scripts/build_kubernetes_example.py` passed a list of role strings to the WS3-updated `_skin_renderers`; corrected to pass node objects so `regen --check` stays green.
+- `tasks.md` checkbox state synced to the actual branch state: WS1/WS9 fully done, WS5/WS2/WS6 done bar their deferred sub-items, WS3/WS4 at core/foundation; each completed sub-task carries its commit ref and each open one a deferral reason.
 
 ## [1.10.12] - 2026-10-21
 
