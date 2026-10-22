@@ -129,3 +129,87 @@ def test_hybrid_container_box_is_not_falsely_flagged_by_lint():
             pass
     # judged against aws only (hybrid title names the primary) → no false finding
     assert check_container_style(geo, ["aws"], maps) == []
+
+
+# --------------------------------------------------------------------------- #
+# WS3.1 — foreign leaf boundary nesting is EXPLICITLY accepted in _validate_spec.
+#
+# Req 3.1/3.4: a Kubernetes `namespace` or a `security_group` that declares a
+# `parent` must name a real region-network container (vpc/network_boundary/subnet
+# /az) in its OWN region — fail-honest. A foreign leaf with parent=None keeps the
+# pre-1.11.0 sibling-leaf behaviour (byte-inert for every shipped spec).
+# --------------------------------------------------------------------------- #
+
+import pytest  # noqa: E402
+
+from rule_engine.layout.base import SpecError, _validate_spec  # noqa: E402
+
+
+def _vspec(containers, nodes=()):
+    return DiagramSpec(
+        diagram_id="d", diagram_name="D", axis="north-south",
+        nodes=tuple(nodes), edges=(), containers=tuple(containers),
+        flow_lines=(), title="D",
+    )
+
+
+_ACCT = ContainerSpec(id="acct", kind="account", region="", parent=None, label_key="acct")
+_VPC_A = ContainerSpec(id="vpc-a", kind="vpc", region="a", parent="acct", label_key="vpc")
+
+
+def test_namespace_nested_in_vpc_is_accepted():
+    ns = ContainerSpec(id="ns", kind="namespace", region="a", parent="vpc-a",
+                       label_key="ns", provider="kubernetes")
+    n = NodeSpec(id="w", role="serverless_fn", lane="workers", region="a",
+                 slot=0, container="ns")
+    _validate_spec(_vspec([_ACCT, _VPC_A, ns], [n]))  # no raise
+
+
+def test_security_group_nested_in_subnet_is_accepted():
+    sub = ContainerSpec(id="sub-a", kind="subnet", region="a", parent="vpc-a",
+                        label_key="subnet")
+    sg = ContainerSpec(id="sg", kind="security_group", region="a", parent="sub-a",
+                       label_key="sg", provider="aws")
+    _validate_spec(_vspec([_ACCT, _VPC_A, sub, sg]))  # no raise
+
+
+def test_foreign_leaf_with_unknown_parent_is_rejected():
+    ns = ContainerSpec(id="ns", kind="namespace", region="a", parent="typo",
+                       label_key="ns")
+    with pytest.raises(SpecError, match="unknown parent"):
+        _validate_spec(_vspec([_ACCT, _VPC_A, ns]))
+
+
+def test_namespace_nested_in_cluster_account_is_accepted():
+    # Native Kubernetes: the Cluster boundary is an account-kind envelope and its
+    # namespaces nest directly inside it (1.10.11) — the region-less account host
+    # is a legal parent, and its empty region does not clash with the namespace's.
+    cluster = ContainerSpec(id="cluster", kind="account", region="", parent=None,
+                            label_key="cluster")
+    ns = ContainerSpec(id="ns", kind="namespace", region="a", parent="cluster",
+                       label_key="ns", provider="kubernetes")
+    _validate_spec(_vspec([cluster, ns]))  # no raise
+
+
+def test_foreign_leaf_parented_to_non_container_kind_is_rejected():
+    # A namespace cannot nest inside another leaf boundary (e.g. a namespace).
+    inner = ContainerSpec(id="inner", kind="namespace", region="a", parent="vpc-a",
+                          label_key="inner")
+    bad = ContainerSpec(id="bad", kind="security_group", region="a", parent="inner",
+                        label_key="bad")
+    with pytest.raises(SpecError, match="may only nest"):
+        _validate_spec(_vspec([_ACCT, _VPC_A, inner, bad]))
+
+
+def test_foreign_leaf_in_wrong_region_is_rejected():
+    ns = ContainerSpec(id="ns", kind="namespace", region="b", parent="vpc-a",
+                       label_key="ns")
+    with pytest.raises(SpecError, match="own region"):
+        _validate_spec(_vspec([_ACCT, _VPC_A, ns]))
+
+
+def test_foreign_leaf_parent_none_is_unchanged():
+    # A sibling leaf (parent=None) keeps the pre-1.11.0 behaviour — accepted.
+    ns = ContainerSpec(id="ns", kind="namespace", region="a", parent=None,
+                       label_key="ns")
+    _validate_spec(_vspec([_ACCT, _VPC_A, ns]))  # no raise

@@ -104,13 +104,17 @@ workstream to ship; property tests name the design property they validate.
     - _Deferred with 4.4 (panel mode)._
 
 - [ ] 5. WS3 — hybrid diagrams
-  - [ ] 5.1 Add `NodeSpec.provider` / `ContainerSpec.provider` (optional,
+  - [x] 5.1 Add `NodeSpec.provider` / `ContainerSpec.provider` (optional,
     default unset) and accept a foreign leaf boundary parented to a
     `vpc`/`network_boundary` in `_validate_spec`.
     - _Requirements: 3.1, 3.4_
-    - _Partial: `provider` field added to both specs, default `None`, byte-inert
-      (`c371425`). Explicit foreign-leaf accept in `_validate_spec` is deferred
-      (5.3/5.5)._
+    - _Done: `provider` field on both specs, default `None`, byte-inert
+      (`c371425`); `_validate_spec` now explicitly accepts a foreign leaf
+      (`namespace`/`security_group`) parented to a cluster envelope or a
+      region-network container (`vpc`/`network_boundary`/`subnet`/`az`) in its
+      own region, fail-honest on unknown/mis-kinded/wrong-region parent; native
+      k8s `cluster ⊃ namespace` preserved (account host exempt from region
+      match); `parent=None` sibling leaf unchanged._
   - [x] 5.2 Make `_skin_renderers` / `_boundaries_from` / `_container_style`
     resolve each cell under `cell.provider or primary`.
     - _Requirements: 3.2, 3.3_
