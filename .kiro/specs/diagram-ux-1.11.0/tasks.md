@@ -238,9 +238,14 @@ workstream to ship; property tests name the design property they validate.
       `node_cap` (default 12); WARNING flow / ERROR landscape; scoped to access
       diagrams only (byte-inert elsewhere). Documented in `diagram-lint.md` rule
       table + Diagram Class escalation table (ruleset-sync green)._
-  - [ ] 8.4 Render `principal -> policy -> resource` left-to-right; ship an
+  - [x] 8.4 Render `principal -> policy -> resource` left-to-right; ship an
     access golden pair.
     - _Requirements: 7.4_
+    - _Done (render): `_access_spec` aggregates resolved resources into the three
+      access roles by original lane and lays them out left→right (principal in
+      `actors`, policy in `router`, resource in `data` — ascending lane ordinals),
+      capped at the flow node budget; `access` is a first-class `--type`. Deferred
+      (golden): raster export unavailable in the sandbox._
 
 - [x] 9. WS9 — icon coverage, data-only role fill-in (ships in 1.11.0)
   - [x] 9.1 Add the 9 missing AWS roles (CloudTrail, ECS/Fargate, KMS, Kinesis,

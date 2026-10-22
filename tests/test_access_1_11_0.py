@@ -77,3 +77,46 @@ def test_non_access_diagram_is_not_evaluated():
     # a network / plain diagram with many nodes never trips access-aggregation.
     assert _agg(_access_art("flow", 20, diagram_type="network")) == []
     assert _agg(_access_art("flow", 20, diagram_type=None)) == []
+
+
+# --------------------------------------------------------------------------- #
+# WS7.4 — _access_spec renders principal -> policy -> resource left-to-right.
+# --------------------------------------------------------------------------- #
+
+from rule_engine.draw import _access_spec, _ACCESS_ROLE_LANE  # noqa: E402
+from rule_engine.layout import layout  # noqa: E402
+from rule_engine.layout.base import LANE_INDEX  # noqa: E402
+
+
+def _r(name):
+    return {"id": name, "name": name}
+
+
+def test_access_spec_is_left_right_with_only_access_roles():
+    spec = _access_spec("aws", "acct", "r", [
+        (_r("gw"), "lb"), (_r("db"), "managed_sql"), (_r("fn"), "serverless_fn"),
+    ], None)
+    assert spec.axis == "left-right"
+    assert {n.role for n in spec.nodes} <= {"principal", "policy", "resource"}
+
+
+def test_access_role_lanes_ascend_left_to_right():
+    # principal lane is left of policy, which is left of resource.
+    assert (LANE_INDEX[_ACCESS_ROLE_LANE["principal"]]
+            < LANE_INDEX[_ACCESS_ROLE_LANE["policy"]]
+            < LANE_INDEX[_ACCESS_ROLE_LANE["resource"]])
+
+
+def test_access_spec_layout_succeeds():
+    spec = _access_spec("aws", "acct", "r", [
+        (_r("u"), "compute_instance"), (_r("gw"), "lb"), (_r("db"), "managed_sql"),
+    ], None)
+    placed = layout(spec)   # must not raise
+    assert len(placed.nodes) == 3
+
+
+def test_access_spec_caps_at_flow_budget():
+    # 20 resources collapse to at most the flow node budget (12).
+    many = [(_r(f"svc{i}"), "managed_sql") for i in range(20)]
+    spec = _access_spec("aws", "acct", "r", many, None)
+    assert len(spec.nodes) <= 12

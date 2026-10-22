@@ -180,6 +180,7 @@ def lane_of(role: str) -> str:
 #: around ONE system block — also the ``flow`` class.
 DIAGRAM_TYPES: Tuple[str, ...] = (
     "context", "simple", "summary", "landscape", "c4-context", "c4-container",
+    "access",
 )
 
 #: The ``flow`` node budget (diagram-standards → Node Limit). A ``simple`` /
@@ -417,6 +418,12 @@ def spec_from_snapshot(
         return _c4_container_spec(
             provider, boundary_id, region, resolved, relationships
         )
+
+    # 1.11.0 WS7: access diagram type — aggregate the account into a small
+    # principal → policy → resource graph read left-to-right. Built separately
+    # (its own role/lane mapping), reached only for diagram_type == "access".
+    if diagram_type == "access":
+        return _access_spec(provider, boundary_id, region, resolved, relationships)
 
     # Stable ordering: sort every resolved resource by (lane index, identity) so
     # slot assignment is deterministic and independent of file/dict order.
@@ -713,6 +720,85 @@ def _lane_order() -> Tuple[str, ...]:
     except ImportError:  # pragma: no cover - flat-module fallback
         from layout.base import LANES  # type: ignore[no-redef]
     return tuple(LANES)
+
+
+# 1.11.0 WS7 — access diagram role/lane mapping. An access diagram reads
+# left→right as principal → policy → resource (Req 7 AC4). The three access
+# roles are placed in three lanes whose LANES ordinals ascend left→right, so the
+# left-right axis lays them out in that order: a principal in ``actors`` (0), a
+# policy in ``router`` (2), a resource in ``data`` (6).
+_ACCESS_ROLE_LANE = {"principal": "actors", "policy": "router", "resource": "data"}
+
+#: Map a resolved resource's ORIGINAL lane to its aggregated access role. An
+#: external actor / on-premises caller is a ``principal``; a control-plane / edge
+#: / routing service is a ``policy`` (the grant point); everything that holds or
+#: processes state is a ``resource`` (the object access is granted to). This is
+#: the aggregation that collapses a large account into the small graph.
+_ACCESS_LANE_TO_ROLE = {
+    "actors": "principal", "on-premises": "principal",
+    "edge": "policy", "router": "policy", "platform": "policy",
+    "async": "resource", "workers": "resource", "data": "resource",
+}
+
+
+def _access_spec(
+    provider: str,
+    boundary_id: str,
+    region: str,
+    resolved: Sequence[Tuple[Any, str]],
+    relationships: Optional[Sequence[Mapping[str, Any]]],
+) -> "DiagramSpec":
+    """Build an ``access`` spec (1.11.0 WS7, Req 7 AC4): a small IAM-style graph.
+
+    An access diagram answers "who can reach what", so a large account is
+    AGGREGATED into three columns read left→right — **principal → policy →
+    resource** — rather than drawn as an exploded service mesh. Each resolved
+    resource is mapped to one of the three access roles by its original lane
+    (:data:`_ACCESS_LANE_TO_ROLE`): an external/on-prem caller is a principal, a
+    control-plane/edge/routing service is a policy, a stateful service is a
+    resource. Each role lands in a lane whose ordinal ascends left→right
+    (:data:`_ACCESS_ROLE_LANE`), so the ``left-right`` axis renders the chain in
+    order. Capped at the flow node budget (the ``access`` profile's node_cap) —
+    the whole point is a SMALL graph; the ``access-aggregation`` lint rule flags
+    a diagram that overflows the cap. ``flow`` class. Reached only for
+    ``diagram_type == "access"``, so byte-inert for every other type.
+    """
+    ordered = sorted(resolved, key=lambda pair: _resource_identity(pair[0]))
+    nodes: List[NodeSpec] = []
+    slot_by_lane: Dict[str, int] = {}
+    used_ids: Dict[str, int] = {}
+    count = 0
+    for resource, orig_role in ordered:
+        if count >= _FLOW_NODE_BUDGET:
+            break  # an access diagram is a small aggregated graph, not inventory
+        access_role = _ACCESS_LANE_TO_ROLE.get(lane_of(orig_role), "resource")
+        lane = _ACCESS_ROLE_LANE[access_role]
+        base_id = _slug(_resource_identity(resource))
+        node_id = base_id
+        if node_id in used_ids:
+            used_ids[base_id] += 1
+            node_id = f"{base_id}-{used_ids[base_id]}"
+        else:
+            used_ids[base_id] = 0
+        slot = slot_by_lane.get(lane, 0)
+        slot_by_lane[lane] = slot + 1
+        nodes.append(
+            NodeSpec(id=node_id, role=access_role, lane=lane, region="", slot=slot)
+        )
+        count += 1
+
+    edges = _edges_from_relationships(relationships, {n.id for n in nodes})
+    diagram_id = f"{provider}-{_slug(boundary_id)}-access"
+    return DiagramSpec(
+        diagram_id=diagram_id,
+        diagram_name=diagram_id,
+        axis="left-right",
+        nodes=tuple(nodes),
+        edges=edges,
+        containers=(),
+        flow_lines=(),
+        title=f"{provider} access — {boundary_id} / {region}",
+    )
 
 
 def _edges_from_relationships(
