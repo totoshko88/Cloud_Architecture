@@ -105,3 +105,26 @@ def test_documentation_ip_not_flagged_for_network_type():
 def test_empty_type_is_byte_inert():
     assert _network_lint_profile(_diagram(diagram_type=None)) is False
     assert _network_lint_profile(_diagram(diagram_type="")) is False
+
+
+# --------------------------------------------------------------------------- #
+# WS7 — the `access` diagram-type profile (Req 7 AC1).
+# --------------------------------------------------------------------------- #
+
+
+def test_access_profile_fields():
+    p = load_type_profile("access")
+    assert isinstance(p, TypeProfile)
+    assert p.name == "access"
+    assert p.base_class == "flow"           # a readable chain, not a landscape
+    assert p.axis == "left-right"           # principal -> policy -> resource
+    assert p.node_cap == 12                  # Req 7 AC3 cap
+    assert p.aggregation_key == "principal"  # Req 7 AC1 mandatory aggregation key
+    assert p.lint_profile == "access"
+    assert "trust_boundary" in p.special_containers
+    assert set(p.allowed_roles) == {"principal", "policy", "resource", "trust_boundary"}
+
+
+def test_network_profile_has_no_aggregation_key():
+    # aggregation_key is access-only; the network profile leaves it None.
+    assert load_type_profile("network").aggregation_key is None

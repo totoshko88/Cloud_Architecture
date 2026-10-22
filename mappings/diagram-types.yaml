@@ -14,6 +14,8 @@
 #   allowed_roles       roles the type expects to see (advisory; [] = any).
 #   special_containers  container kinds the type introduces (leaf boundaries).
 #   lint_profile        named lint profile the linter scopes on for the type.
+#   aggregation_key     role dimension the type aggregates on before the node
+#                       cap (WS7 access); null for non-aggregating types.
 
 version: 1
 profiles:
@@ -38,3 +40,22 @@ profiles:
     special_containers:
       - security_group
     lint_profile: network
+  # 1.11.0 WS7 (Requirement 7): access diagrams aggregate a large account's
+  # principals, policies and resources into a small principal→policy→resource
+  # graph read left-to-right. base_class=flow (a readable chain, not a wide
+  # landscape); aggregation_key=principal is the dimension collapsed before the
+  # node_cap applies; trust_boundary is the leaf container an access diagram
+  # introduces. Byte-inert until a diagram declares diagram_type: access.
+  access:
+    base_class: flow
+    node_cap: 12
+    axis: left-right
+    aggregation_key: principal
+    allowed_roles:
+      - principal
+      - policy
+      - resource
+      - trust_boundary
+    special_containers:
+      - trust_boundary
+    lint_profile: access

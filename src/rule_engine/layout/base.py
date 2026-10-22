@@ -119,6 +119,10 @@ ROLE_SCOPE: Dict[str, str] = {
     "transit_gateway": "network", "vpn_gateway": "network",
     "direct_connect": "network", "route_table": "network",
     "network_firewall": "network",
+    # 1.11.0 WS7 access diagram type — identity/IAM is account-wide, not pinned
+    # to a region or network, so principal/policy/resource are global-scoped.
+    # Extended roles only (constants.RESOURCE_TYPES stays the 16-value core).
+    "principal": "global", "policy": "global", "resource": "global",
     # regional managed services
     "object_store": "regional", "obj": "regional",
     "message_queue": "regional", "queue": "regional",

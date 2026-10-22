@@ -132,6 +132,12 @@ CONTAINER_KINDS: Tuple[str, ...] = (
     # node glyph (a SG is a scope, not a service). Default-inert: no shipped
     # golden declares it, so every golden `.drawio` stays byte-identical.
     "security_group",
+    # 1.11.0 WS7 (access diagram type): a Trust Boundary drawn as a LEAF
+    # boundary — the account / identity-provider / federation perimeter an
+    # access diagram groups principals inside, like `security_group`. A
+    # boundary-ONLY kind (a trust perimeter is a scope, not a service node).
+    # Default-inert: no shipped golden declares it.
+    "trust_boundary",
 )
 
 #: The two container kinds EVERY profile must declare (Requirement 2 AC6). The

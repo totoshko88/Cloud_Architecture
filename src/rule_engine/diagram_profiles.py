@@ -36,6 +36,11 @@ class TypeProfile:
     allowed_roles: Tuple[str, ...] = ()
     special_containers: Tuple[str, ...] = ()
     lint_profile: Optional[str] = None
+    #: 1.11.0 WS7 (access type, Req 7 AC1): the role dimension the type
+    #: aggregates on before the node cap applies — e.g. ``principal`` for an
+    #: access diagram, so a 40-role account collapses to a small
+    #: principal→policy→resource graph. ``None`` for types that do not aggregate.
+    aggregation_key: Optional[str] = None
 
 
 @lru_cache(maxsize=1)
@@ -71,6 +76,9 @@ def _load_profiles() -> Dict[str, TypeProfile]:
             ),
             lint_profile=(
                 str(body["lint_profile"]) if body.get("lint_profile") else None
+            ),
+            aggregation_key=(
+                str(body["aggregation_key"]) if body.get("aggregation_key") else None
             ),
         )
     return out

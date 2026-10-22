@@ -215,12 +215,20 @@ workstream to ship; property tests name the design property they validate.
       clean, all 13 goldens byte-identical._
 
 - [ ] 8. WS7 — `access` diagram type (following release)
-  - [ ] 8.1 Add the `access` TypeProfile with a mandatory aggregation key and a
+  - [x] 8.1 Add the `access` TypeProfile with a mandatory aggregation key and a
     node cap.
     - _Requirements: 7.1_
-  - [ ] 8.2 Add extended roles `principal`, `policy`, `resource`,
+    - _Done: `access` profile in `diagram-types.yaml` (base_class=flow,
+      axis=left-right, node_cap=12, lint_profile=access) + a new
+      `aggregation_key` field on `TypeProfile` (=`principal`), parsed by the
+      reader; `network.aggregation_key` stays `None`. Byte-inert._
+  - [-] 8.2 Add extended roles `principal`, `policy`, `resource`,
     `trust_boundary`.
     - _Requirements: 7.2_
+    - _Partial: code side done — `principal`/`policy`/`resource` in `ROLE_SCOPE`
+      (global), `trust_boundary` a leaf-boundary `CONTAINER_KINDS` kind;
+      `RESOURCE_TYPES` unchanged. The per-provider icon mappings (×4 profiles)
+      and `roles.yaml` native types are the remaining asset side._
   - [ ] 8.3 Add the `access-aggregation` lint rule (class-aware severity).
     - _Requirements: 7.3_
   - [ ] 8.4 Render `principal -> policy -> resource` left-to-right; ship an
