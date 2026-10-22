@@ -1367,6 +1367,7 @@ def build_diagram(
     caption_plan=None,
     skin: "Skin | None" = None,
     flow_groups: Sequence[Tuple[str, Sequence[str]]] = (),
+    flow_steps: str = "box",
 ) -> str:
     """Assemble a full ``.drawio`` document from the standard building blocks.
 
@@ -1404,6 +1405,7 @@ def build_diagram(
         page_w=page_w, page_h=page_h,
         skin=skin,
         flow_groups=flow_groups,
+        flow_steps=flow_steps,
     )
     routed = _orthogonalised(edges, nodes)
     text = _assemble_document(routed=routed, **kwargs)
@@ -1641,6 +1643,7 @@ def _assemble_document(
     page_h: int,
     skin: "Skin | None" = None,
     flow_groups: Sequence[Tuple[str, Sequence[str]]] = (),
+    flow_steps: str = "box",
 ) -> str:
     """Emit the ``.drawio`` document for already-routed edges (no hygiene)."""
     parts: List[str] = []
@@ -1743,6 +1746,7 @@ def _assemble_document(
     box_w = legend_w if legend_w is not None else _text_w(flow_lines, legend_body)
     flow_h = _text_h(flow_lines, legend_w)
     legend_h = _text_h(legend_body, legend_w)
+    _draw_flow_box = flow_steps != "document"
     if legend_mode == "row-below":
         # Theme 43 Mode B: a physically wide-and-short diagram puts the two boxes
         # SIDE-BY-SIDE below the body, as a horizontal row whose RIGHT edge aligns
@@ -1752,8 +1756,13 @@ def _assemble_document(
         # drives the canvas width, so a flow raster stays under its 1600px budget.
         flow_x = legend_x
         legend2_x = int(legend_x + box_w + GRID)
-        parts.append(text_cell("flow-legend", flow_lines, flow_x, legend_y_flow, box_w, flow_h, skin=skin))
-        parts.append(text_cell("legend", legend_body, legend2_x, legend_y_flow, box_w, legend_h, skin=skin))
+        if _draw_flow_box:
+            parts.append(text_cell("flow-legend", flow_lines, flow_x, legend_y_flow, box_w, flow_h, skin=skin))
+            parts.append(text_cell("legend", legend_body, legend2_x, legend_y_flow, box_w, legend_h, skin=skin))
+        else:
+            # 1.11.0 WS2 document mode: the steps live in the companion; only the
+            # Legend stays on-canvas, taking the left (Flow) slot.
+            parts.append(text_cell("legend", legend_body, flow_x, legend_y_flow, box_w, legend_h, skin=skin))
     else:
         # Mode A (default, stack): the Legend stacks BELOW the Flow box. A caller's
         # ``legend_y_legend`` is a hint, not a guarantee: a long Flow list (or a
@@ -1761,9 +1770,13 @@ def _assemble_document(
         # two boxes would overlap — silently, because neither is a node, so no
         # geometry rule would catch it. Push the Legend down to clear the Flow box
         # by one grid step.
-        legend_y = max(legend_y_legend, legend_y_flow + flow_h + GRID)
-        parts.append(text_cell("flow-legend", flow_lines, legend_x, legend_y_flow, box_w, flow_h, skin=skin))
-        parts.append(text_cell("legend", legend_body, legend_x, legend_y, box_w, legend_h, skin=skin))
+        if _draw_flow_box:
+            legend_y = max(legend_y_legend, legend_y_flow + flow_h + GRID)
+            parts.append(text_cell("flow-legend", flow_lines, legend_x, legend_y_flow, box_w, flow_h, skin=skin))
+            parts.append(text_cell("legend", legend_body, legend_x, legend_y, box_w, legend_h, skin=skin))
+        else:
+            # document mode: Legend takes the Flow box's top slot.
+            parts.append(text_cell("legend", legend_body, legend_x, legend_y_flow, box_w, legend_h, skin=skin))
     parts.append(
         "      </root>\n    </mxGraphModel>\n  </diagram>\n</mxfile>\n"
     )

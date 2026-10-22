@@ -45,3 +45,54 @@ def test_absent_members_are_skipped_and_empty_group_draws_nothing():
 def test_group_style_is_light_grey_no_fill():
     cells = dl.flow_group_cells((("G", ("a",)),), [_node("a", 0, 0)])
     assert "strokeColor=#9AA5B1" in cells and "fillColor=none" in cells
+
+
+def _mini_diagram(flow_steps):
+    b = [dl.Boundary(id="bx", label="acct", x=40, y=40, w=400, h=300)]
+    n = [_node("a", 80, 80)]
+    return dl.build_diagram(
+        diagram_id="d", diagram_name="d", title="t", boundaries=b, nodes=n,
+        edges=[], flow_lines=("1. a to b", "2. b to c"), legend_x=500,
+        flow_steps=flow_steps,
+    )
+
+
+def test_flow_steps_box_has_flow_cell_document_omits_it():
+    box = _mini_diagram("box")
+    doc = _mini_diagram("document")
+    assert 'id="flow-legend"' in box
+    assert 'id="flow-legend"' not in doc
+    # the Legend stays on-canvas in both
+    assert 'id="legend"' in box and 'id="legend"' in doc
+
+
+def test_proposer_clusters_adjacent_same_lane_and_drops_singletons():
+    from rule_engine.advise_cli import propose_flow_groups
+    from rule_engine.layout.model import DiagramSpec, NodeSpec
+    spec = DiagramSpec(
+        diagram_id="p", diagram_name="p", axis="left-right",
+        nodes=(
+            NodeSpec(id="x0", role="lb", lane="edge", region="", slot=0),
+            NodeSpec(id="x1", role="lb", lane="edge", region="", slot=1),
+            NodeSpec(id="w0", role="serverless_fn", lane="workers", region="", slot=0),
+        ),
+        edges=(), containers=(), flow_lines=(), title="p",
+    )
+    props = propose_flow_groups(spec)
+    # x0+x1 cluster (adjacent slots, same lane); w0 singleton dropped
+    assert len(props) == 1
+    assert props[0]["members"] == ["x0", "x1"]
+
+
+def test_proposer_caps_run_at_max_size():
+    from rule_engine.advise_cli import propose_flow_groups
+    from rule_engine.layout.model import DiagramSpec, NodeSpec
+    nodes = tuple(
+        NodeSpec(id=f"n{i}", role="serverless_fn", lane="workers", region="", slot=i)
+        for i in range(5)
+    )
+    spec = DiagramSpec(diagram_id="p", diagram_name="p", axis="left-right",
+                       nodes=nodes, edges=(), containers=(), flow_lines=(), title="p")
+    props = propose_flow_groups(spec, max_size=4)
+    # a 5-run splits into a 4-group + the remainder (which, being <2, is dropped)
+    assert all(len(g["members"]) <= 4 for g in props)
