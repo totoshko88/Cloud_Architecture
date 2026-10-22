@@ -1476,15 +1476,42 @@ def _is_network_diagram(a: Artifact) -> bool:
     """True when ``a`` is a Network_Diagram for the purposes of ``ip-range``.
 
     A Network_Diagram is a diagram whose ``diagram_class`` is ``landscape`` OR
-    whose companion ``diagram_type`` is one of network / infrastructure /
-    deployment. A flow/application diagram that incidentally mentions an address
-    is not evaluated (R3.3)."""
+    whose companion ``diagram_type`` carries the ``network`` lint profile. The
+    profile is resolved from ``mappings/diagram-types.yaml`` (1.11.0 WS6, Req 6):
+    a type whose ``TypeProfile.lint_profile == "network"`` is a Network_Diagram
+    without a code edit here, so the data file — not this list — is the source of
+    truth. The legacy hardcoded types (network / infrastructure / deployment)
+    remain a fallback for a workspace that ships no profiles file, keeping pre-WS6
+    behaviour byte-inert. A flow/application diagram that incidentally mentions an
+    address is not evaluated (R3.3)."""
     if not _is_diagram(a):
         return False
     if (a.diagram_class or DIAGRAM_CLASS_FLOW).lower() == DIAGRAM_CLASS_LANDSCAPE:
         return True
+    if _network_lint_profile(a):
+        return True
     dtype = (a.diagram_type or "").strip().lower()
     return dtype in _NETWORK_DIAGRAM_TYPES
+
+
+def _network_lint_profile(a: Artifact) -> bool:
+    """True when ``a``'s ``diagram_type`` resolves to a profile scoped on the
+    ``network`` lint profile (1.11.0 WS6, Requirement 6 AC1).
+
+    The profile registry (``mappings/diagram-types.yaml``) is the data-defined
+    source of truth: the ``network`` type declares ``lint_profile: network``, and
+    any future type aliased to it is recognized here with no code change. A
+    workspace with no profiles file resolves to ``None`` and this is a byte-inert
+    no-op (the legacy ``_NETWORK_DIAGRAM_TYPES`` fallback then decides). Reading a
+    profile is side-effect-free and cached; the import is lazy so linter module
+    load stays cheap and import order is irrelevant."""
+    dtype = (a.diagram_type or "").strip()
+    if not dtype:
+        return False
+    from rule_engine.diagram_profiles import load_type_profile
+
+    profile = load_type_profile(dtype)
+    return profile is not None and (profile.lint_profile or "").lower() == "network"
 
 
 def _on_diagram_text(a: Artifact) -> List[str]:
