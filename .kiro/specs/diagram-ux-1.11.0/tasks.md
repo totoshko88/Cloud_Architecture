@@ -58,13 +58,13 @@ workstream to ship; property tests name the design property they validate.
       `draw_cli` AFTER `spec_from_snapshot` and OUTSIDE `layout()`, so it never
       mutates the deterministic hot-path and `.drawio` stays byte-identical
       under every policy. `ask`/`auto`/`error` all implemented._
-  - [ ] 3.3 Record applied assumptions as a `recorded_assumptions:` frontmatter
+  - [x] 3.3 Record applied assumptions as a `recorded_assumptions:` frontmatter
     key plus a `## Assumptions` body section in the companion writer.
     - _Requirements: 5.4, 5.7_
-    - _Partial: the `## Assumptions` body section is emitted (conditionally, only
-      when non-empty, so companion goldens stay byte-inert); the
-      `recorded_assumptions:` frontmatter key is deferred to the full companion
-      integration._
+    - _Done: the `## Assumptions` body section and the `recorded_assumptions:`
+      frontmatter key (one `kind:target` entry per applied assumption) are both
+      emitted by `build_companion`, non-empty-only so a fully-specified spec is
+      byte-identical, and the extra key passes the kb-frontmatter contract._
   - [x] 3.4 Add `--assume {ask,auto,error}` (default `auto`) to `draw_cli.py`,
     threaded like `--legacy`.
     - _Requirements: 5.2_

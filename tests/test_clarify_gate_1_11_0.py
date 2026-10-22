@@ -122,3 +122,36 @@ def test_assumptions_markdown_round_trip():
         Assumption(UncertaintyKind.MISSING_MEMBERSHIP, "n", "q?", "tier-band", "why"),
     ])
     assert "## Assumptions" in md and "`n`" in md and "tier-band" in md
+
+
+# --------------------------------------------------------------------------- #
+# WS5.3 — recorded_assumptions frontmatter key mirrors the ## Assumptions body.
+# --------------------------------------------------------------------------- #
+
+
+def test_recorded_assumptions_frontmatter_emitted_only_when_present():
+    from rule_engine.draw_cli import build_companion
+
+    empty = build_companion("aws", "simple", "s")
+    assert "recorded_assumptions" not in empty
+    # byte-identical whether the arg is omitted or an empty sequence
+    assert empty == build_companion("aws", "simple", "s", assumptions=())
+
+    withk = build_companion("aws", "simple", "s", assumptions=[
+        Assumption(UncertaintyKind.MISSING_MEMBERSHIP, "api", "q", "tier-band 0", "why"),
+        Assumption(UncertaintyKind.AMBIGUOUS_EDGE_KIND, "e3", "q", "sync", "why"),
+    ])
+    assert "recorded_assumptions:" in withk
+    assert "  - missing_membership:api" in withk
+    assert "  - ambiguous_edge_kind:e3" in withk
+
+
+def test_companion_with_recorded_assumptions_passes_frontmatter_contract():
+    from rule_engine.draw_cli import build_companion
+    from rule_engine import kb_validator as kv
+
+    doc = build_companion("aws", "simple", "s", assumptions=[
+        Assumption(UncertaintyKind.MISSING_MEMBERSHIP, "api", "q", "tier-band 0", "why"),
+    ])
+    # the extra key must not trip the kb-frontmatter contract
+    assert kv.validate_document(doc) == []

@@ -455,6 +455,7 @@ def _companion_frontmatter(
     provider: str,
     diagram_type: str,
     paired_basename: Optional[str],
+    assumptions: Sequence[Any] = (),
 ) -> Dict[str, Any]:
     """Assemble the twelve required frontmatter keys plus the class cross-links.
 
@@ -505,6 +506,15 @@ def _companion_frontmatter(
         elif diagram_type == "summary":
             fm["detailed_view"] = pair
         fm["related_docs"] = [f"{pair}.diagram.md"]
+    # 1.11.0 WS5: a machine-readable manifest of the assumptions `auto` applied,
+    # mirroring the human `## Assumptions` body section. One `kind:target` entry
+    # per assumption, so a KB reader (or the reconcile gate) can tell a stated
+    # fact from a guess without parsing prose. Emitted ONLY when non-empty, so a
+    # fully-specified spec leaves the frontmatter byte-identical.
+    if assumptions:
+        fm["recorded_assumptions"] = [
+            f"{a.kind.value}:{a.target_id}" for a in assumptions
+        ]
     return fm
 
 
@@ -546,6 +556,13 @@ def _yaml_frontmatter(fm: Mapping[str, Any]) -> str:
                 lines.append(f"  - {item}")
         else:
             lines.append(f"{key}: []")
+    # 1.11.0 WS5: recorded_assumptions is emitted ONLY when present (a
+    # fully-specified spec never sets it), so the key is absent from every
+    # pre-WS5 companion and those stay byte-identical.
+    if fm.get("recorded_assumptions"):
+        lines.append("recorded_assumptions:")
+        for item in fm["recorded_assumptions"]:
+            lines.append(f"  - {item}")
     lines.append("---")
     return "\n".join(lines) + "\n"
 
@@ -631,9 +648,16 @@ def build_companion(
     diagram_type: str,
     basename: str,
     paired_basename: Optional[str] = None,
+    assumptions: Sequence[Any] = (),
 ) -> str:
-    """Build the full companion ``.diagram.md`` text (frontmatter + four sections)."""
-    fm = _companion_frontmatter(basename, provider, diagram_type, paired_basename)
+    """Build the full companion ``.diagram.md`` text (frontmatter + four sections).
+
+    ``assumptions`` (1.11.0 WS5) — the applied-assumption records from the
+    clarify gate. When non-empty they add a ``recorded_assumptions:`` frontmatter
+    key (machine-readable manifest). Empty ⇒ byte-identical to the pre-WS5 output.
+    """
+    fm = _companion_frontmatter(basename, provider, diagram_type, paired_basename,
+                                assumptions)
     return _yaml_frontmatter(fm) + "\n" + _companion_body(provider, diagram_type, basename)
 
 
@@ -707,7 +731,8 @@ def generate(
         snapshot_dir, provider, diagram_type, basename, relationships,
         assume=assume, assumption_sink=_assumptions, style=style,
     )
-    companion_text = build_companion(provider, diagram_type, basename)
+    companion_text = build_companion(provider, diagram_type, basename,
+                                     assumptions=_assumptions)
     # 1.11.0 WS5: record applied assumptions as a structured companion section.
     # Appended only when non-empty, so a fully-specified spec leaves the
     # companion byte-identical.
