@@ -118,6 +118,15 @@ _WRAPPED_TEXT_RENDER_OVERSHOOT = 15.0
 #: right answer is to split or page the diagram rather than export an illegible
 #: postage stamp.
 MIN_EXPORT_SCALE = 0.5
+
+#: 1.11.0 WS2: A4 soft-target width in px at 96dpi (landscape A4 ≈ 1123px; the
+#: portrait 794px is too narrow for any real diagram). Used ONLY when a caller
+#: opts in with ``--paper a4``: it is a SOFT ceiling that pulls a small canvas
+#: down toward an A4-printable width, but the raster budget and the legibility
+#: floor always win — A4 never inflates a canvas, never pushes the scale below
+#: ``MIN_EXPORT_SCALE``, and never overrides an over-budget fit. Off by default,
+#: so every existing export is byte-identical.
+A4_TARGET_WIDTH = 1123
 #: Back-compat alias (pre-1.10.12 name; the floor applied to landscapes only).
 LANDSCAPE_MIN_SCALE = MIN_EXPORT_SCALE
 
@@ -320,6 +329,7 @@ def compute_scale(
     source: Path,
     diagram_class: Optional[str] = None,
     max_width_override: Optional[int] = None,
+    paper: Optional[str] = None,
 ) -> Tuple[float, float]:
     """Return ``(scale, width)`` for exporting ``source``.
 
@@ -362,7 +372,18 @@ def compute_scale(
         # Even at the legibility floor it will not fit: refuse rather than export
         # an illegible postage stamp (split or page the diagram instead).
         raise CanvasTooWideError(source, width, dclass, max_width)
-    return (min(MAX_EXPORT_SCALE, fit), width)
+    scale = min(MAX_EXPORT_SCALE, fit)
+
+    # 1.11.0 WS2: A4 soft target. When the caller opts in with ``--paper a4``,
+    # pull a canvas that would otherwise upscale past an A4-printable width DOWN
+    # toward A4, but never below the legibility floor and never above the budget
+    # fit — the raster budget always wins. A canvas already at or under the A4
+    # width keeps its budget scale (A4 never inflates). No opt-in ⇒ unchanged.
+    if paper == "a4":
+        a4_fit = (A4_TARGET_WIDTH - border) / width
+        if a4_fit < scale:
+            scale = max(MIN_EXPORT_SCALE, a4_fit)
+    return (scale, width)
 
 
 def export_one(
@@ -370,6 +391,7 @@ def export_one(
     repo_root: Path = ASSET_ROOT,
     drawio: str = "drawio",
     max_width_override: Optional[int] = None,
+    paper: Optional[str] = None,
 ) -> Path:
     """Export ``source`` (a .drawio) to ``source + '.png'`` with icons inlined.
 
@@ -396,7 +418,7 @@ def export_one(
     # min(1.5, fit), or refuse below the floor. Computed before touching the CLI
     # so a too-wide canvas fails without spawning draw.io or writing a temp copy.
     dclass = _diagram_class_of(source)
-    scale, _width = compute_scale(source, dclass, max_width_override)
+    scale, _width = compute_scale(source, dclass, max_width_override, paper)
 
     inlined = inline_local_images(original, repo_root)
 
@@ -506,6 +528,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                              "floor. Default: the class budget (1600 flow / 3600 "
                              "landscape); an over-budget canvas fits down "
                              "automatically either way.")
+    parser.add_argument("--paper", choices=["a4"], default=None,
+                        help="A4 SOFT target (1.11.0 WS2): pull a small canvas down "
+                             "toward an A4-printable width (~1123px). Soft — the "
+                             "raster budget and the legibility floor always win, so "
+                             "A4 never inflates a canvas, never drops below the "
+                             "floor, and never overrides an over-budget fit. Default: "
+                             "off (unchanged export).")
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     repo_root = Path(args.repo_root)
@@ -539,7 +568,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     for src in sources:
         try:
             out = export_one(src, repo_root, args.drawio,
-                             max_width_override=args.max_width)
+                             max_width_override=args.max_width,
+                             paper=args.paper)
             size_kb = out.stat().st_size // 1024
             print(f"OK: {os.path.relpath(out, repo_root)} ({size_kb}KB)")
         except subprocess.CalledProcessError as exc:

@@ -131,6 +131,57 @@ _TEXT_STYLE = (
     f"spacingLeft={GRID};spacingRight={GRID};spacingTop={GRID};spacingBottom={GRID}"
 )
 
+# ---------------------------------------------------------------------------
+# Presentation skin (1.11.0 WS1) — style channels ONLY, never geometry.
+# ---------------------------------------------------------------------------
+# A Skin restyles furniture borders, edge colour, and (later) numeric markers
+# without moving a single node or edge coordinate. Every field defaults to the
+# value that reproduces the 1.10.12 byte output, so a diagram with no Skin — or
+# the default Skin — renders byte-identically (proven by regen_examples.py
+# --check). The furniture/edge channels are pure style: no geometry consumer
+# (legend-placement, marker-*, container-*) reads a furniture or edge COLOUR, so
+# changing them cannot shift a verdict. The marker badge is a separate,
+# geometry-bearing feature (WS1 task 2) and is not carried here yet.
+
+#: Furniture border presets for the Flow/Legend text boxes.
+_FURNITURE_STROKE = {
+    "black": "#000000",   # 1.10.12 default — byte-identical
+    "light": "#B3B3B3",   # neutral light grey
+    "none": "none",       # borderless
+    # "brand" is resolved per diagram from the provider boundary stroke by the
+    # caller (draw_cli), which knows the provider; the renderer receives the
+    # already-resolved hex via edge_stroke/furniture overrides.
+}
+
+
+@dataclass(frozen=True)
+class Skin:
+    """Presentation-only style choices. Defaults reproduce 1.10.12 exactly.
+
+    - ``furniture_stroke``: border of the Flow/Legend boxes
+      (``black`` default | ``light`` | ``none`` | an explicit ``#RRGGBB``).
+    - ``edge_stroke``: edge line colour. ``None`` (default) emits NO
+      ``strokeColor`` token, byte-identical to today (draw.io default black);
+      a hex adds ``strokeColor=<hex>`` to every edge.
+    - ``marker_badge``: numeric-marker form (``none`` default = inline bold
+      text, the only byte-inert value). ``circle``/``square`` are the
+      geometry-bearing badge forms delivered by WS1 task 2; carried here so the
+      field exists, but the renderer treats any non-``none`` value as a no-op
+      until the badge renderer lands.
+    """
+
+    furniture_stroke: str = "black"
+    edge_stroke: Optional[str] = None
+    marker_badge: str = "none"
+
+    def furniture_stroke_hex(self) -> str:
+        """The resolved stroke colour token for a furniture box style."""
+        return _FURNITURE_STROKE.get(self.furniture_stroke, self.furniture_stroke)
+
+
+#: The default Skin — every field at its 1.10.12 byte-identical value.
+DEFAULT_SKIN = Skin()
+
 
 # ---------------------------------------------------------------------------
 # Data model
@@ -928,6 +979,48 @@ def boundary_cell(b: Boundary) -> str:
     )
 
 
+#: Light-grey logical-group box style (1.11.0 WS2): a named context group drawn
+#: BEHIND the nodes, caption top-left, no fill (so icons and edges show through).
+_FLOW_GROUP_STYLE = (
+    "rounded=1;whiteSpace=wrap;html=1;dashed=0;strokeColor=#9AA5B1;"
+    "fillColor=none;verticalAlign=top;align=left;fontColor=#5A6B7B;fontSize=12;"
+    "spacingLeft=6;spacingTop=4"
+)
+#: padding (px) from the member bbox to the group box edge, and the caption band.
+_FLOW_GROUP_PAD = 16
+_FLOW_GROUP_CAPTION = 22
+
+
+def flow_group_cells(
+    groups: Sequence[Tuple[str, Sequence[str]]], nodes: Sequence[Node],
+) -> str:
+    """Emit one grey box per logical group (1.11.0 WS2), sized to enclose its
+    named member nodes' footprints plus a caption band. Members not present are
+    skipped; a group with no present member draws nothing. Pure presentation —
+    no node is moved. Returns '' when ``groups`` is empty (byte-inert)."""
+    if not groups:
+        return ""
+    from rule_engine.geometry import caption_band
+    pos = {n.id: n for n in nodes}
+    out: List[str] = []
+    for gi, (label, members) in enumerate(groups):
+        boxes = [pos[m] for m in members if m in pos]
+        if not boxes:
+            continue
+        x0 = min(n.x for n in boxes) - _FLOW_GROUP_PAD
+        y0 = min(n.y for n in boxes) - _FLOW_GROUP_PAD - _FLOW_GROUP_CAPTION
+        x1 = max(n.x + ICON_SIZE for n in boxes) + _FLOW_GROUP_PAD
+        y1 = max(n.y + ICON_SIZE + caption_band(n.label) for n in boxes) + _FLOW_GROUP_PAD
+        out.append(
+            f'        <mxCell id="flowgroup-{gi}" value="{_xml_escape(label)}" '
+            f'style="{_FLOW_GROUP_STYLE}" vertex="1" parent="1">\n'
+            f'          <mxGeometry x="{int(x0)}" y="{int(y0)}" '
+            f'width="{int(x1 - x0)}" height="{int(y1 - y0)}" as="geometry" />\n'
+            "        </mxCell>\n"
+        )
+    return "".join(out)
+
+
 def _orthogonalised(
     edges: Sequence[Edge], nodes: Sequence[Node]
 ) -> List[Edge]:
@@ -986,10 +1079,43 @@ def _orthogonalised(
     return out
 
 
-def edge_cell(e: Edge, parent: str = "1", origin: Tuple[float, float] = (0, 0)) -> str:
+def _marker_value(marker: str, skin: "Skin | None") -> str:
+    """The edge-label value for a numbered marker.
+
+    ``marker_badge='none'`` (default) → the bare escaped number, byte-identical
+    to 1.10.12. ``circle``/``square`` wrap the number in an HTML label that
+    draws a filled badge with a white numeral BESIDE the line (an edge label is
+    offset from the stroke, not painted on it). Crucially the badge keeps the
+    number as the edge's LABEL: the parser strips HTML (`drawio_model` label
+    decoding), so ``label.strip().isdigit()`` still holds and every marker check
+    (``marker-label-collision``, ``marker-collision``, the hygiene pass) sees the
+    marker at the same ``label_pos`` anchor — no geometry is re-pointed, and the
+    badge is a pure presentation wrapper around the existing marker label."""
+    esc = _xml_escape(marker)
+    if skin is None or skin.marker_badge in ("none", "", None):
+        return esc
+    radius = "50%" if skin.marker_badge == "circle" else "3px"
+    # Inline-styled span: filled dark disc/box, white bold numeral. Single
+    # quotes inside so the double-quoted XML attribute stays well-formed; the
+    # whole value is XML-escaped (& < >) by wrapping the pre-built markup.
+    span = (
+        "&lt;span style='display:inline-block;min-width:16px;height:16px;"
+        "line-height:16px;padding:0 2px;border-radius:" + radius + ";"
+        "background:#1A1A1A;color:#FFFFFF;font-weight:bold;text-align:center;"
+        "font-size:11px'&gt;" + esc + "&lt;/span&gt;"
+    )
+    return span
+
+
+def edge_cell(e: Edge, parent: str = "1", origin: Tuple[float, float] = (0, 0),
+              skin: "Skin | None" = None) -> str:
     """Emit one edge cell. ``parent`` / ``origin``: the cell the edge is a child
     of and that cell's absolute origin — draw.io stores an edge's waypoints
-    relative to its parent, so they are written as ``point - origin``."""
+    relative to its parent, so they are written as ``point - origin``.
+
+    ``skin``: when it carries ``edge_stroke`` a ``strokeColor=<hex>`` token is
+    appended; ``None`` / an unset ``edge_stroke`` emits NO colour token — the
+    exact 1.10.12 byte output (draw.io default black)."""
     dash = "dashed=1;" if (e.dashed or e.peering) else ""
     ex, ey = e.exit
     nx, ny = e.entry
@@ -1005,15 +1131,20 @@ def edge_cell(e: Edge, parent: str = "1", origin: Tuple[float, float] = (0, 0)) 
         # arrow-style lint rule): open pointers read cleaner than heavy filled
         # heads and the stroke stays visible when scaled down.
         heads = "endArrow=open;endFill=0;"
+    # Style channel: an explicit edge colour from the skin. Appended LAST so it
+    # never reorders the existing tokens; absent → no token (byte-identical).
+    stroke = ""
+    if skin is not None and skin.edge_stroke:
+        stroke = f"strokeColor={skin.edge_stroke};"
     style = (
         f"edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;{heads}"
-        f"strokeWidth={EDGE_STROKE_WIDTH};{dash}"
+        f"strokeWidth={EDGE_STROKE_WIDTH};{dash}{stroke}"
         f"exitX={ex};exitY={ey};exitDx=0;exitDy=0;exitPerimeter=0;"
         f"entryX={nx};entryY={ny};entryDx=0;entryDy=0;"
         "fontSize=12;fontStyle=1"
     )
     head = (
-        f'        <mxCell id="{e.id}" value="{_xml_escape(e.marker)}" style="{style}" '
+        f'        <mxCell id="{e.id}" value="{_marker_value(e.marker, skin)}" style="{style}" '
         f'edge="1" parent="{parent}" source="{e.source}" target="{e.target}">\n'
     )
     if e.points:
@@ -1034,10 +1165,18 @@ def edge_cell(e: Edge, parent: str = "1", origin: Tuple[float, float] = (0, 0)) 
     return head + '          <mxGeometry relative="1" as="geometry" />\n        </mxCell>\n'
 
 
-def text_cell(cid: str, lines: Sequence[str], x: int, y: int, w: int = 320, h: int = 200) -> str:
+def text_cell(cid: str, lines: Sequence[str], x: int, y: int, w: int = 320, h: int = 200,
+              skin: "Skin | None" = None) -> str:
     value = "&#10;".join(_xml_escape(line) for line in lines)
+    style = _TEXT_STYLE
+    # Style channel: swap the furniture border colour. Default skin (or None)
+    # keeps strokeColor=#000000, so the emitted style is byte-identical. Only a
+    # non-black furniture_stroke rewrites the single strokeColor token in place,
+    # preserving token order (fillColor and spacing are untouched).
+    if skin is not None and skin.furniture_stroke != "black":
+        style = _TEXT_STYLE.replace("strokeColor=#000000", f"strokeColor={skin.furniture_stroke_hex()}")
     return (
-        f'        <mxCell id="{cid}" value="{value}" style="{_TEXT_STYLE}" '
+        f'        <mxCell id="{cid}" value="{value}" style="{style}" '
         f'vertex="1" parent="1">\n'
         f'          <mxGeometry x="{x}" y="{y}" width="{w}" height="{h}" as="geometry" />\n'
         "        </mxCell>\n"
@@ -1226,6 +1365,9 @@ def build_diagram(
     page_h: int = 950,
     caption_safe: bool = True,
     caption_plan=None,
+    skin: "Skin | None" = None,
+    flow_groups: Sequence[Tuple[str, Sequence[str]]] = (),
+    flow_steps: str = "box",
 ) -> str:
     """Assemble a full ``.drawio`` document from the standard building blocks.
 
@@ -1250,6 +1392,12 @@ def build_diagram(
     1.10.7). The pass is idempotent and leaves the document byte-identical when
     no marker collides.
     """
+    # 1.11.0 WS2: fail-honest on an unknown flow_steps presentation mode.
+    if flow_steps not in ("box", "document", "panel"):
+        raise ValueError(
+            f"unknown flow_steps {flow_steps!r}; must be one of "
+            "'box' (default), 'document', 'panel'"
+        )
     # 1.10.12 WS6: a boundary narrower than its caption grows right into free
     # space or wraps the caption (a no-op on layout() output, which is fitted).
     boundaries = fit_boundary_captions(
@@ -1261,6 +1409,9 @@ def build_diagram(
         legend_y_legend=legend_y_legend, legend_w=legend_w,
         legend_lines=legend_lines, legend_mode=legend_mode,
         page_w=page_w, page_h=page_h,
+        skin=skin,
+        flow_groups=flow_groups,
+        flow_steps=flow_steps,
     )
     routed = _orthogonalised(edges, nodes)
     text = _assemble_document(routed=routed, **kwargs)
@@ -1496,6 +1647,9 @@ def _assemble_document(
     legend_mode: str,
     page_w: int,
     page_h: int,
+    skin: "Skin | None" = None,
+    flow_groups: Sequence[Tuple[str, Sequence[str]]] = (),
+    flow_steps: str = "box",
 ) -> str:
     """Emit the ``.drawio`` document for already-routed edges (no hygiene)."""
     parts: List[str] = []
@@ -1525,16 +1679,21 @@ def _assemble_document(
         ]
     for e in routed:
         if slots.get(e.id, -1) < 0:
-            parts.append(edge_cell(e))
+            parts.append(edge_cell(e, skin=skin))
     parts.append("\n")
     for b in _clear_container_captions(boundaries, nodes, routed):
         parts.append(boundary_cell(b))
     parts.append("\n")
+    # 1.11.0 WS2: light-grey logical-group boxes, drawn after boundaries and
+    # before nodes so icons/edges paint over them. No-op (byte-inert) when empty.
+    if flow_groups:
+        parts.append(flow_group_cells(flow_groups, nodes))
+        parts.append("\n")
     for e in routed:
         k = slots.get(e.id, -1)
         if k >= 0:
             b = boundaries[k]
-            parts.append(edge_cell(e, parent=b.id, origin=(b.x, b.y)))
+            parts.append(edge_cell(e, parent=b.id, origin=(b.x, b.y), skin=skin))
     parts.append("\n")
     # Wave C: emit each node as a structural child of its tightest enclosing
     # boundary (``parent=<id>`` + geometry relative to the host origin), so
@@ -1593,6 +1752,13 @@ def _assemble_document(
     box_w = legend_w if legend_w is not None else _text_w(flow_lines, legend_body)
     flow_h = _text_h(flow_lines, legend_w)
     legend_h = _text_h(legend_body, legend_w)
+    _draw_flow_box = flow_steps != "document"
+    # 1.11.0 WS2 panel mode: the Flow box is drawn as a FULL-HEIGHT furniture
+    # strip down the right margin (the hand-drawn "steps panel") rather than a
+    # tight box. Presentation only — same right-margin x as the stacked box, so
+    # no node moves and _cover_page grows the page if the strip runs tall. Only
+    # flow_steps=="panel" takes it; box/document are byte-identical.
+    _panel = flow_steps == "panel"
     if legend_mode == "row-below":
         # Theme 43 Mode B: a physically wide-and-short diagram puts the two boxes
         # SIDE-BY-SIDE below the body, as a horizontal row whose RIGHT edge aligns
@@ -1602,8 +1768,13 @@ def _assemble_document(
         # drives the canvas width, so a flow raster stays under its 1600px budget.
         flow_x = legend_x
         legend2_x = int(legend_x + box_w + GRID)
-        parts.append(text_cell("flow-legend", flow_lines, flow_x, legend_y_flow, box_w, flow_h))
-        parts.append(text_cell("legend", legend_body, legend2_x, legend_y_flow, box_w, legend_h))
+        if _draw_flow_box:
+            parts.append(text_cell("flow-legend", flow_lines, flow_x, legend_y_flow, box_w, flow_h, skin=skin))
+            parts.append(text_cell("legend", legend_body, legend2_x, legend_y_flow, box_w, legend_h, skin=skin))
+        else:
+            # 1.11.0 WS2 document mode: the steps live in the companion; only the
+            # Legend stays on-canvas, taking the left (Flow) slot.
+            parts.append(text_cell("legend", legend_body, flow_x, legend_y_flow, box_w, legend_h, skin=skin))
     else:
         # Mode A (default, stack): the Legend stacks BELOW the Flow box. A caller's
         # ``legend_y_legend`` is a hint, not a guarantee: a long Flow list (or a
@@ -1611,9 +1782,21 @@ def _assemble_document(
         # two boxes would overlap — silently, because neither is a node, so no
         # geometry rule would catch it. Push the Legend down to clear the Flow box
         # by one grid step.
-        legend_y = max(legend_y_legend, legend_y_flow + flow_h + GRID)
-        parts.append(text_cell("flow-legend", flow_lines, legend_x, legend_y_flow, box_w, flow_h))
-        parts.append(text_cell("legend", legend_body, legend_x, legend_y, box_w, legend_h))
+        if _draw_flow_box:
+            legend_y = max(legend_y_legend, legend_y_flow + flow_h + GRID)
+            # Panel mode: stretch the Flow box into a full-height furniture strip
+            # (top of the Flow slot down to one container-pad above the page
+            # bottom), never shorter than its natural text height. box/document
+            # keep flow_h exactly, so their output is byte-identical.
+            flow_box_h = flow_h
+            if _panel:
+                flow_box_h = max(flow_h, int(page_h - legend_y_flow - CONTAINER_PAD))
+                legend_y = max(legend_y_legend, legend_y_flow + flow_box_h + GRID)
+            parts.append(text_cell("flow-legend", flow_lines, legend_x, legend_y_flow, box_w, flow_box_h, skin=skin))
+            parts.append(text_cell("legend", legend_body, legend_x, legend_y, box_w, legend_h, skin=skin))
+        else:
+            # document mode: Legend takes the Flow box's top slot.
+            parts.append(text_cell("legend", legend_body, legend_x, legend_y_flow, box_w, legend_h, skin=skin))
     parts.append(
         "      </root>\n    </mxGraphModel>\n  </diagram>\n</mxfile>\n"
     )

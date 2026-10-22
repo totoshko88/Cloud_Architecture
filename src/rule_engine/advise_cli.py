@@ -165,6 +165,37 @@ def load_specs(arg: str) -> List[DiagramSpec]:
         os.chdir(cwd)
 
 
+def propose_flow_groups(spec: DiagramSpec, max_size: int = 4) -> List[dict]:
+    """Propose a DRAFT flow_groups list (1.11.0 WS2) for the owner to confirm.
+
+    Heuristic: cluster nodes that share a lane into runs of CONSECUTIVE slots,
+    capped at ``max_size`` (a larger run is a subsystem — advise splitting the
+    diagram instead). The engine never auto-applies groups; this only prints a
+    draft the owner edits and pastes into ``DiagramSpec.flow_groups``. A cluster
+    of a single node is dropped (a group of one is noise).
+    """
+    by_lane: dict = {}
+    for n in spec.nodes:
+        by_lane.setdefault((n.lane, n.region), []).append(n)
+    proposals: List[dict] = []
+    for (lane, region), group in sorted(by_lane.items()):
+        members = sorted(group, key=lambda n: n.slot)
+        run: List[str] = []
+        prev_slot: Optional[int] = None
+        def _flush():
+            if len(run) >= 2:
+                label = f"{lane.replace('_', ' ').title()} group"
+                proposals.append({"label": label, "members": list(run)})
+        for n in members:
+            if prev_slot is not None and (n.slot != prev_slot + 1 or len(run) >= max_size):
+                _flush()
+                run = []
+            run.append(n.id)
+            prev_slot = n.slot
+        _flush()
+    return proposals
+
+
 def advise(spec: DiagramSpec) -> dict:
     """Lay ``spec`` out and return the advice record."""
     from rule_engine.layout import layout
@@ -186,6 +217,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("specs", nargs="+", metavar="SPEC",
                     help="a .json/.yaml spec, module.py:NAME, or a builder script")
     ap.add_argument("--json", action="store_true", help="emit JSON records")
+    ap.add_argument("--flow-groups", action="store_true",
+                    help="propose a DRAFT flow_groups list (1.11.0 WS2) to "
+                    "confirm and paste into DiagramSpec.flow_groups, instead of "
+                    "the ordering report")
     args = ap.parse_args(argv)
 
     records = []
@@ -196,11 +231,23 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             print(f"error: {arg}: {exc}", file=sys.stderr)
             return 2
         for spec in specs:
-            rec = advise(spec)
+            if args.flow_groups:
+                rec = {"diagram_id": spec.diagram_id,
+                       "flow_groups": propose_flow_groups(spec)}
+            else:
+                rec = advise(spec)
             rec["source"] = arg
             records.append(rec)
     if args.json:
         print(json.dumps(records, indent=2))
+    elif args.flow_groups:
+        for rec in records:
+            print(f"{rec['source']} [{rec['diagram_id']}] — draft flow_groups:")
+            if not rec["flow_groups"]:
+                print("  (no adjacent same-lane runs to group)")
+            for g in rec["flow_groups"]:
+                members = ", ".join(repr(m) for m in g["members"])
+                print(f"  ({g['label']!r}, ({members}))")
     else:
         for rec in records:
             print(f"{rec['source']} [{rec['diagram_id']}]")

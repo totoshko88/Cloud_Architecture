@@ -113,6 +113,16 @@ ROLE_SCOPE: Dict[str, str] = {
     "vpc": "network", "nat_gateway": "network",
     "internet_gateway": "network", "vpc_endpoint": "network",
     "vpc_peering": "network", "batch": "network",
+    # 1.11.0 WS6 network diagram type — gateways/plumbing live at the VPC edge,
+    # route table and firewall inside it; all network-scoped. Extended roles
+    # only (never added to constants.RESOURCE_TYPES; the 16-value core holds).
+    "transit_gateway": "network", "vpn_gateway": "network",
+    "direct_connect": "network", "route_table": "network",
+    "network_firewall": "network",
+    # 1.11.0 WS7 access diagram type — identity/IAM is account-wide, not pinned
+    # to a region or network, so principal/policy/resource are global-scoped.
+    # Extended roles only (constants.RESOURCE_TYPES stays the 16-value core).
+    "principal": "global", "policy": "global", "resource": "global",
     # regional managed services
     "object_store": "regional", "obj": "regional",
     "message_queue": "regional", "queue": "regional",
@@ -138,6 +148,32 @@ def effective_scope(node) -> Optional[str]:
     """
     override = getattr(node, "scope", None)
     return override if override else role_scope(node.role)
+
+
+#: 1.11.0 WS3 (hybrid diagrams). A **foreign leaf boundary** is a container that
+#: holds its member nodes DIRECTLY (not via a nested region/az) and may be
+#: parented inside a region-network container — a Kubernetes ``namespace`` or a
+#: ``security_group`` nested inside an AWS ``vpc``, so a hybrid diagram can draw
+#: a self-hosted cluster block inside a cloud VPC (owner rule: foreign/self-hosted
+#: → Kubernetes-blue, managed-in-own-cloud → provider brand). ``peer_account`` /
+#: ``external_cloud`` are leaf boundaries too, but they sit OUTSIDE the primary
+#: account as disjoint siblings (``_wrap_external_bands``), never parented into a
+#: region container, so they are not in this nesting set.
+_FOREIGN_LEAF_KINDS: frozenset = frozenset({"namespace", "security_group"})
+
+#: The container kinds a foreign leaf boundary may be parented to (Req 3.1/3.4).
+#: Two legitimate hosts:
+#:  * a **region-network** container — ``vpc`` / ``network_boundary`` (modelled
+#:    as a vpc kind) / ``subnet`` / ``az`` — the HYBRID case: a Kubernetes
+#:    namespace or a security group drawn inside a cloud VPC.
+#:  * the ``account`` envelope — the NATIVE Kubernetes case (1.10.11), where the
+#:    Cluster boundary is an ``account``-kind envelope and its namespaces nest
+#:    directly inside it.
+#: A foreign leaf is NEVER parented to a ``region`` band (it lives inside the
+#: network, not loose in the region), nor to another leaf boundary.
+_LEAF_PARENT_KINDS: frozenset = frozenset(
+    {"account", "vpc", "network_boundary", "subnet", "public_subnet", "az"}
+)
 
 
 def _validate_spec(spec: DiagramSpec) -> None:
@@ -244,6 +280,40 @@ def _validate_spec(spec: DiagramSpec) -> None:
                     f"{node.container!r} of region {target.region!r}; a node's "
                     "declared container must be in the node's own region"
                 )
+
+    # 1.11.0 WS3: a foreign leaf boundary (a Kubernetes `namespace` or a
+    # `security_group`) that declares a `parent` must name a real region-network
+    # container in its own region — fail-honest, coordinate-free (Req 3.1/3.4).
+    # Before this release a foreign leaf with a typo'd or envelope `parent`
+    # passed SILENTLY (container nesting was never validated); now the accept is
+    # EXPLICIT, so a hybrid spec is checked exactly like node membership. A
+    # foreign leaf with `parent=None` keeps the pre-1.11.0 behaviour (treated as
+    # a top-level / sibling leaf), so no existing spec changes.
+    for c in spec.containers:
+        if c.kind not in _FOREIGN_LEAF_KINDS or c.parent is None:
+            continue
+        host = container_by_id.get(c.parent)
+        if host is None:
+            raise SpecError(
+                f"container {c.id!r} (kind {c.kind!r}) declares unknown parent "
+                f"{c.parent!r} (not a declared container id)"
+            )
+        if host.kind not in _LEAF_PARENT_KINDS:
+            raise SpecError(
+                f"foreign leaf boundary {c.id!r} (kind {c.kind!r}) declares parent "
+                f"{c.parent!r} of kind {host.kind!r}; a {c.kind} may only nest "
+                f"inside a cluster envelope or a region-network container "
+                f"({sorted(_LEAF_PARENT_KINDS)})"
+            )
+        # The account/cluster envelope carries no region (it spans all regions),
+        # so a namespace in region 'a' nesting in a region-less cluster is legal
+        # — only a REGION-network host must share the leaf's region.
+        if host.kind != "account" and host.region != c.region:
+            raise SpecError(
+                f"foreign leaf boundary {c.id!r} (region {c.region!r}) declares "
+                f"parent {c.parent!r} of region {host.region!r}; a nested leaf "
+                "boundary must be in its host container's own region"
+            )
 
     # 1.10.12 (WS10): an edge endpoint MAY be a container id — a
     # boundary-to-boundary relationship (VPC/VCN peering, a transit-gateway

@@ -55,6 +55,8 @@ every applicable rule against every artifact.
 | `edge-bidirectional` | A diagram edge is double-headed: its style sets both a non-`none` `startArrow` and a non-`none` `endArrow`. Draw a two-way relationship as two single-ended edges instead. | WARNING | diagram-standards Edge Routing (no double-headed arrow) / R1 |
 | `node-label-length` | A service-node label exceeds the length cap: more than 4 words or more than 40 characters. Node labels stay short (the service name); explanation goes in a `callout`. Legend/Flow/title/callout text cells are not node labels and are exempt. | WARNING | diagram-standards Overlay Vocabulary (short labels + callout) / R2 |
 | `ip-range` | On-diagram text in a Network_Diagram carries a public IP literal (a routable global IPv4/IPv6 that is neither a documentation range — 192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24, 2001:db8::/32 — nor private). Only a Network_Diagram (`landscape` class OR companion `diagram_type` in network/infrastructure/deployment) is evaluated. | WARNING | diagram-standards Documentation IP Ranges / R3 |
+| `access-aggregation` | An access diagram (companion `diagram_type` resolves to `TypeProfile.lint_profile == access`) whose drawn node count exceeds the access profile's `node_cap` (default 12) — it was not collapsed into a small `principal → policy → resource` graph. Only an access diagram is evaluated; every other diagram is unaffected. Raised to ERROR for `landscape`. | WARNING/ERROR | diagram-standards Diagram Class / R7 AC3 |
+| `data-classification` | A dataflow diagram (companion `diagram_type` resolves to `TypeProfile.lint_profile == dataflow`) names a data store flagged as PII (`pii`/`personal`/`gdpr`/`pci`/`phi`/`sensitive`/`ccpa`) with no classification marker (`encrypted`/`classified`/`confidential`/`restricted`/`tokenized`/`anonymized`/`redacted`/`public-data`). Only a dataflow diagram is evaluated; every other diagram is unaffected. Raised to ERROR for `landscape`. | WARNING/ERROR | diagram-standards Diagram Class / R8 AC3 |
 | `orphan-landscape` | A `landscape`-class diagram declares no valid `summary_of` cross-link to a `flow` summary. | ERROR | diagram-standards Diagram Class |
 | `overlay-legend-coverage` | A diagram carries an overlay marker (findings/state vocabulary) whose term does not appear as a whole token in a Legend line. | WARNING | diagram-standards Overlay Vocabulary / R1 AC12 |
 | `exit-thirds` | A node fans out **more than three** edges on one side, or two same-side exits sit closer than ~⅕ of the side (they merge into one doubled line). **Raised to ERROR** when two exits share the **exact same** contact point (identical `exitX` and `exitY`). | WARNING/ERROR | diagram-standards Label-safe exits |
@@ -415,6 +417,22 @@ every applicable rule against every artifact.
   is the canonical defect). WARNING for `flow`; **ERROR for `landscape`**, where
   the nested boundary hierarchy is the primary device that keeps a large
   as-built legible.
+- **`access-aggregation` (WARNING/ERROR)** — An access diagram's job is to
+  collapse a large account into a small `principal → policy → resource` graph.
+  When the drawn node count exceeds the access profile's `node_cap` (default
+  12), the diagram is an exploded mesh rather than an aggregated view. Only an
+  access diagram (companion `diagram_type` resolving to `lint_profile: access`)
+  is evaluated; every other diagram is unaffected. WARNING for `flow`; **ERROR
+  for `landscape`**, where an un-aggregated as-built access view is a harder
+  failure. New in 1.11.0 (WS7).
+- **`data-classification` (WARNING/ERROR)** — A data-flow audit must state, for
+  every store of regulated data, how it is classified. The rule fires when a
+  dataflow diagram (companion `diagram_type` resolving to `lint_profile:
+  dataflow`) names a data store flagged as PII (`pii` / `personal` / `gdpr` / …)
+  with no classification marker (`encrypted` / `classified` / `tokenized` / …).
+  Only a dataflow diagram is evaluated; every other diagram is unaffected.
+  WARNING for `flow`; **ERROR for `landscape`**, where an unclassified PII store
+  on the audit as-built is a harder failure. New in 1.11.0 (WS8).
 - **`edge-direction` (WARNING/ERROR)** — *Geometry-enforced.* The **directional
   contract**: every edge that declares explicit contact points must **exit** its
   source on the **right or bottom** face and **enter** its target on the **left or
@@ -730,6 +748,8 @@ keeps its exact behavior.
 | `edge-float` | WARNING | **ERROR** (every edge must pin its contact points) |
 | `entry-thirds` | WARNING | **ERROR** (arrivals on one face must stay distinct) |
 | `edge-endpoint` | WARNING | **ERROR** (a dense as-built must resolve every endpoint) |
+| `access-aggregation` | WARNING | **ERROR** (an un-aggregated as-built access view is a harder failure) |
+| `data-classification` | WARNING | **ERROR** (an unclassified PII store on a dataflow as-built is a harder failure) |
 | `edge-crossing-excess` | WARNING (> ⌈0.25×E⌉) | WARNING (> ⌈0.25×E⌉), **ERROR** (> 0.5×E) |
 | `edge-routing` (icon crossing) | **ERROR** | **ERROR** (a run through an icon it does not connect / into its target from the wrong side) |
 | `geometric-containment` | WARNING | **ERROR** (a hidden non-membership is a correctness failure; also ERROR on a network diagram) |

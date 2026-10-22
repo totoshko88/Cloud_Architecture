@@ -64,6 +64,8 @@ CONTAINER_KINDS = frozenset(
         # 1.10.3 (D19): AWS public subnet + Corporate data center groups.
         "public_subnet",
         "on_premises",
+        # 1.11.0 WS6: Security Group leaf boundary (network diagram type).
+        "security_group",
     }
 )
 

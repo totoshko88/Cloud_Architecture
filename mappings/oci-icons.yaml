@@ -39,6 +39,52 @@ resources:
     brand_hex: "#F80000"
     stencil: "assets/vendor/oci-stencils/stencils.json#object-storage"  # Storage - Object Storage
     style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans,Helvetica,Arial,sans-serif;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  # --- 1.11.0 WS6: network diagram-type roles (extended roles only; not in
+  # constants.RESOURCE_TYPES). OCI stencils keyed in stencils.json. ----------
+  transit_gateway:
+    icon_id: oci.transit_gateway
+    brand_hex: "#F80000"
+    stencil: "assets/vendor/oci-stencils/stencils.json#dynamic-routing-gateway-drg"  # Networking - Dynamic Routing Gateway (DRG)
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans,Helvetica,Arial,sans-serif;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  vpn_gateway:
+    icon_id: oci.vpn_gateway
+    brand_hex: "#F80000"
+    stencil: "assets/vendor/oci-stencils/stencils.json#special-connectors-site-to-site-vpn-vertical"  # Networking - Site-to-Site VPN
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans,Helvetica,Arial,sans-serif;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  direct_connect:
+    icon_id: oci.direct_connect
+    brand_hex: "#F80000"
+    stencil: "assets/vendor/oci-stencils/stencils.json#special-connectors-fastconnect-vertical"  # Networking - FastConnect
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans,Helvetica,Arial,sans-serif;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  route_table:
+    icon_id: oci.route_table
+    brand_hex: "#F80000"
+    stencil: "assets/vendor/oci-stencils/stencils.json#route-table"  # Networking - Route Table
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans,Helvetica,Arial,sans-serif;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  network_firewall:
+    icon_id: oci.network_firewall
+    brand_hex: "#F80000"
+    stencil: "assets/vendor/oci-stencils/stencils.json#firewall"  # Networking - Firewall
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans,Helvetica,Arial,sans-serif;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  # --- 1.11.0 WS7 access diagram type: principal / policy / resource ---
+  # OCI's IAM model via official v24.2 stencils: a principal is a User, a policy
+  # is the IAM (Identity and Access Management) glyph, a resource is Resource
+  # Manager. Keys verified present in stencils.json. Extended roles only.
+  principal:
+    icon_id: oci.principal
+    brand_hex: "#F80000"
+    stencil: "assets/vendor/oci-stencils/stencils.json#user"  # Identity - User (principal)
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans,Helvetica,Arial,sans-serif;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  policy:
+    icon_id: oci.policy
+    brand_hex: "#F80000"
+    stencil: "assets/vendor/oci-stencils/stencils.json#iam-identity-and-access-management"  # Identity - IAM (policy)
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans,Helvetica,Arial,sans-serif;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  resource:
+    icon_id: oci.resource
+    brand_hex: "#F80000"
+    stencil: "assets/vendor/oci-stencils/stencils.json#resource-manager"  # Developer Services - Resource Manager (resource)
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans,Helvetica,Arial,sans-serif;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   managed_sql:
     icon_id: oci.managed_sql
     brand_hex: "#F80000"
@@ -63,6 +109,71 @@ resources:
     icon_id: oci.llm_platform
     brand_hex: "#F80000"
     stencil: "assets/vendor/oci-stencils/stencils.json#artificial-intelligence"  # Analytics and AI - Artificial Intelligence
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans,Helvetica,Arial,sans-serif;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  compute:
+    icon_id: oci.compute
+    brand_hex: "#F80000"
+    stencil: "assets/vendor/oci-stencils/stencils.json#virtual-machine-vm"  # Compute - Virtual Machine VM
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans,Helvetica,Arial,sans-serif;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  managed_mysql:
+    icon_id: oci.managed_mysql
+    brand_hex: "#F80000"
+    stencil: "assets/vendor/oci-stencils/stencils.json#mysql"  # Database - MySQL
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans,Helvetica,Arial,sans-serif;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  load_balancer:
+    icon_id: oci.load_balancer
+    brand_hex: "#F80000"
+    stencil: "assets/vendor/oci-stencils/stencils.json#flexible-load-balancer"  # Networking - Flexible Load Balancer
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans,Helvetica,Arial,sans-serif;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  api_gateway:
+    icon_id: oci.api_gateway
+    brand_hex: "#F80000"
+    stencil: "assets/vendor/oci-stencils/stencils.json#api-gateway"  # Developer Services - API Gateway
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans,Helvetica,Arial,sans-serif;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  iam:
+    icon_id: oci.iam
+    brand_hex: "#F80000"
+    stencil: "assets/vendor/oci-stencils/stencils.json#iam-identity-and-access-management"  # Identity and Security - IAM Identity and Access Management
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans,Helvetica,Arial,sans-serif;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  bastion:
+    icon_id: oci.bastion
+    brand_hex: "#F80000"
+    stencil: "assets/vendor/oci-stencils/stencils.json#bastion"  # Identity and Security - Bastion
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans,Helvetica,Arial,sans-serif;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  waf:
+    icon_id: oci.waf
+    brand_hex: "#F80000"
+    stencil: "assets/vendor/oci-stencils/stencils.json#waf"  # Identity and Security - WAF
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans,Helvetica,Arial,sans-serif;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  monitoring:
+    icon_id: oci.monitoring
+    brand_hex: "#F80000"
+    stencil: "assets/vendor/oci-stencils/stencils.json#monitoring"  # Observability and Management - Monitoring
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans,Helvetica,Arial,sans-serif;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  logging:
+    icon_id: oci.logging
+    brand_hex: "#F80000"
+    stencil: "assets/vendor/oci-stencils/stencils.json#logging"  # Observability and Management - Logging
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans,Helvetica,Arial,sans-serif;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  data_science:
+    icon_id: oci.data_science
+    brand_hex: "#F80000"
+    stencil: "assets/vendor/oci-stencils/stencils.json#data-science"  # Analytics and AI - Data Science
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans,Helvetica,Arial,sans-serif;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  block_volume:
+    icon_id: oci.block_volume
+    brand_hex: "#F80000"
+    stencil: "assets/vendor/oci-stencils/stencils.json#block-storage"  # Storage - Block Storage
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans,Helvetica,Arial,sans-serif;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  file_storage:
+    icon_id: oci.file_storage
+    brand_hex: "#F80000"
+    stencil: "assets/vendor/oci-stencils/stencils.json#file-storage"  # Storage - File Storage
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans,Helvetica,Arial,sans-serif;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  container_registry:
+    icon_id: oci.container_registry
+    brand_hex: "#F80000"
+    stencil: "assets/vendor/oci-stencils/stencils.json#container-registry"  # Developer Services - Container Registry
     style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans,Helvetica,Arial,sans-serif;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
 
   # --- External / third-party systems (Theme 1) ---
@@ -170,3 +281,8 @@ containers:
     brand_hex: "#F80000"
     # Subnet — terracotta dashed, transparent, left-aligned (network element).
     style: "rounded=0;whiteSpace=wrap;html=1;dashed=1;strokeWidth=1;align=left;verticalAlign=top;fontFamily=Oracle Sans,Helvetica,Arial,sans-serif;fillColor=none;strokeColor=#AE562C;fontColor=#AE562C;fontSize=12;spacingLeft=5;fontStyle=1"
+  # 1.11.0 WS6: Network Security Group — dashed Oracle-red rect, no fill, leaf.
+  security_group:
+    icon_id: oci.security_group
+    brand_hex: "#F80000"
+    style: "rounded=0;whiteSpace=wrap;html=1;dashed=1;strokeWidth=1;align=left;verticalAlign=top;fontFamily=Oracle Sans,Helvetica,Arial,sans-serif;fillColor=none;strokeColor=#F80000;fontColor=#B30000;fontSize=12;spacingLeft=5;fontStyle=1"
