@@ -310,6 +310,14 @@ RULE_COLLINEAR_EDGES = "collinear-edges"
 #                              that checks the Legend exists, this checks it does
 #                              not describe a boundary the reader cannot find.
 RULE_LEGEND_BOUNDARY_COVERAGE = "legend-boundary-coverage"
+# 1.11.0 WS7 (access diagram type, Requirement 7 AC3):
+#   access-aggregation — an access diagram whose un-aggregated node count
+#                        exceeds the access profile's node_cap (the diagram was
+#                        not collapsed into a small principal→policy→resource
+#                        graph); WARNING for flow, ERROR for landscape. Only an
+#                        access diagram (TypeProfile.lint_profile == "access")
+#                        is evaluated; every other diagram is byte-inert.
+RULE_ACCESS_AGGREGATION = "access-aggregation"
 
 # ``RULE_SEVERITIES`` and ``CLASS_ESCALATIONS`` are DERIVED from the ``RULES``
 # registry (defined near the end of this module, once every predicate exists) —
@@ -1537,6 +1545,55 @@ def _network_lint_profile(a: Artifact) -> bool:
     return profile is not None and (profile.lint_profile or "").lower() == "network"
 
 
+def _access_lint_profile(a: Artifact):
+    """The access :class:`TypeProfile` for ``a``, or ``None``.
+
+    Mirrors :func:`_network_lint_profile` but for the ``access`` lint profile
+    (1.11.0 WS7, Requirement 7). Returns the resolved profile (so the caller can
+    read its ``node_cap``) when ``a``'s ``diagram_type`` resolves to a profile
+    scoped on ``lint_profile: access``, else ``None``. Data-defined: a future
+    type aliased to the access profile is recognized with no code edit, and a
+    workspace with no profiles file resolves to ``None`` (byte-inert no-op). The
+    import is lazy so linter module load stays cheap."""
+    dtype = (a.diagram_type or "").strip()
+    if not dtype:
+        return None
+    from rule_engine.diagram_profiles import load_type_profile
+
+    profile = load_type_profile(dtype)
+    if profile is not None and (profile.lint_profile or "").lower() == "access":
+        return profile
+    return None
+
+
+def _check_access_aggregation(a: Artifact):
+    """access-aggregation: an access diagram that was not aggregated down to its
+    node cap (WARNING flow / ERROR landscape, Req 7 AC3).
+
+    An access diagram's job is to collapse a large account into a small
+    ``principal → policy → resource`` graph. WHEN the drawn node count exceeds
+    the access profile's ``node_cap`` (default 12), the diagram is an exploded
+    mesh rather than an aggregated view, and the rule fires. Scope: only an
+    access diagram (``TypeProfile.lint_profile == "access"``) is evaluated —
+    every other diagram, and a workspace with no profiles file, is skipped
+    entirely (byte-inert). The offender is the diagram's node count vs the cap."""
+    if not _is_diagram(a):
+        return False
+    profile = _access_lint_profile(a)
+    if profile is None:
+        return False
+    cap = profile.node_cap
+    if not isinstance(cap, int) or cap <= 0:
+        return False
+    count = len(a.node_names or ())
+    if count <= cap:
+        return False
+    return RuleHit(
+        offenders=(f"{count} nodes",),
+        reason=f"un-aggregated-access-over-cap-{cap}",
+    )
+
+
 def _on_diagram_text(a: Artifact) -> List[str]:
     """Collect the artifact's on-diagram text: node labels, edge labels, the
     Legend, and the Flow list (which carries callout-style prose lines).
@@ -2442,6 +2499,15 @@ RULES: Tuple[Tuple[RuleSpec, Callable[[Artifact], _PredicateResult]], ...] = (
     # scoped to a Network_Diagram (landscape OR a network/infra/deployment
     # diagram_type), so it does not fire on a flow diagram at all (1.10.0, Part C).
     (RuleSpec(RULE_IP_RANGE, Severity.WARNING), _check_ip_range),
+    # access-aggregation (1.11.0 WS7): an access diagram not collapsed to its
+    # node cap. WARNING for flow, ERROR for landscape (an as-built access view
+    # that stays an exploded mesh is a harder failure). Scoped to an access
+    # diagram (TypeProfile.lint_profile == access), so byte-inert for every
+    # other diagram (Req 7 AC3/AC5).
+    (
+        RuleSpec(RULE_ACCESS_AGGREGATION, Severity.WARNING, landscape=Severity.ERROR),
+        _check_access_aggregation,
+    ),
     # container-overlap: WARNING for flow, ERROR for landscape (sibling
     # boundaries must not overlap on an as-built).
     (

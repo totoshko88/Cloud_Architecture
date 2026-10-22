@@ -231,8 +231,13 @@ workstream to ship; property tests name the design property they validate.
       OCI User/IAM/Resource-Manager stencils) + `roles.yaml` native types +
       icon-index rebuilt 73→76; `trust_boundary` a leaf-boundary `CONTAINER_KINDS`
       kind. `RESOURCE_TYPES` unchanged; byte-inert._
-  - [ ] 8.3 Add the `access-aggregation` lint rule (class-aware severity).
+  - [x] 8.3 Add the `access-aggregation` lint rule (class-aware severity).
     - _Requirements: 7.3_
+    - _Done: `_check_access_aggregation` fires when a diagram whose
+      `TypeProfile.lint_profile == access` draws more nodes than the profile's
+      `node_cap` (default 12); WARNING flow / ERROR landscape; scoped to access
+      diagrams only (byte-inert elsewhere). Documented in `diagram-lint.md` rule
+      table + Diagram Class escalation table (ruleset-sync green)._
   - [ ] 8.4 Render `principal -> policy -> resource` left-to-right; ship an
     access golden pair.
     - _Requirements: 7.4_
