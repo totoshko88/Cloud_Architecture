@@ -278,6 +278,23 @@ workstream to ship; property tests name the design property they validate.
     - **Property 10: added icon roles are byte-inert until used**
     - **Validates: Requirement 9.3**
 
+- [x] 11. WS8 — `dataflow` diagram type for audits (third release)
+  - [x] 11.1 Add the `dataflow` TypeProfile (`base_class=landscape`,
+    `axis=left-right`, `lint_profile=dataflow`); `dataflow` a first-class
+    `diagram_type` reusing landscape geometry.
+    - _Requirements: 8.1, 8.5_
+  - [x] 11.2 Apply `ip-range` to a dataflow diagram (a data-flow audit must not
+    leak a real public address).
+    - _Requirements: 8.2_
+  - [x] 11.3 Add the `data-classification` lint rule (class-aware severity): a
+    PII-flagged data store with no classification marker, scoped to a dataflow
+    diagram. Documented in `diagram-lint.md` (rule table + Diagram Class table),
+    ruleset-sync green.
+    - _Requirements: 8.2, 8.3_
+  - [ ] 11.4 Ship a dataflow golden pair under `examples/`.
+    - _Requirements: 8.4_
+    - _Deferred: raster export unavailable in the sandbox._
+
 - [ ] 10. WS10 — render→index bridge (separate release after WS9)
   - [ ] 10.1 Build the committed index with `full_packs=True` so the per-slug
     table ships for offline resolution.

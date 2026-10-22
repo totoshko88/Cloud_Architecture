@@ -180,7 +180,7 @@ def lane_of(role: str) -> str:
 #: around ONE system block — also the ``flow`` class.
 DIAGRAM_TYPES: Tuple[str, ...] = (
     "context", "simple", "summary", "landscape", "c4-context", "c4-container",
-    "access",
+    "access", "dataflow",
 )
 
 #: The ``flow`` node budget (diagram-standards → Node Limit). A ``simple`` /
@@ -395,7 +395,11 @@ def spec_from_snapshot(
     resolved = _iter_snapshot_resources(snap, provider)
 
     # Coverage-by-type + over-budget guard (Requirement 10.4, 10.7).
-    is_landscape = diagram_type == "landscape"
+    # 1.11.0 WS8: a dataflow diagram is a landscape-class as-built (completeness
+    # on one canvas, like a network as-built), so it reuses the landscape
+    # geometry path — it is the companion diagram_type + the data-classification
+    # lint that make it a dataflow, not a different spec shape.
+    is_landscape = diagram_type in ("landscape", "dataflow")
     if is_landscape:
         if len(resolved) > LANDSCAPE_NODE_ERROR:
             raise SnapshotSplitRequired(

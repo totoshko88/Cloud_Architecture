@@ -90,6 +90,7 @@ _CLASS_OF = {
     "context": "flow", "simple": "flow", "summary": "flow", "landscape": "landscape",
     "c4-context": "flow", "c4-container": "flow",
     "access": "flow",
+    "dataflow": "landscape",
 }
 
 #: A fixed date used for the companion frontmatter dates and the title, so the
@@ -796,10 +797,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     help="provider profile of the Snapshot")
     ap.add_argument("--type", required=True, dest="diagram_type",
                     choices=("context", "simple", "summary", "landscape",
-                             "c4-context", "c4-container", "access"),
+                             "c4-context", "c4-container", "access", "dataflow"),
                     help="diagram type: context / c4-context (C4 Context) and "
                     "c4-container are flow-class; simple / summary are flow; "
                     "access is a flow-class principal→policy→resource graph; "
+                    "dataflow is a landscape-class data-flow audit view; "
                     "landscape is landscape-class")
     ap.add_argument("--out", required=True, dest="out_basename",
                     help="output path stem; writes <out>.drawio and "

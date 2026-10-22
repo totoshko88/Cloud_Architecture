@@ -318,6 +318,13 @@ RULE_LEGEND_BOUNDARY_COVERAGE = "legend-boundary-coverage"
 #                        access diagram (TypeProfile.lint_profile == "access")
 #                        is evaluated; every other diagram is byte-inert.
 RULE_ACCESS_AGGREGATION = "access-aggregation"
+# 1.11.0 WS8 (dataflow diagram type, Requirement 8 AC3):
+#   data-classification — a dataflow diagram names a data store flagged as PII
+#                         (pii/personal/gdpr/…) with no classification marker
+#                         (encrypted/classified/…); WARNING flow / ERROR
+#                         landscape. Only a dataflow diagram
+#                         (TypeProfile.lint_profile == "dataflow") is evaluated.
+RULE_DATA_CLASSIFICATION = "data-classification"
 
 # ``RULE_SEVERITIES`` and ``CLASS_ESCALATIONS`` are DERIVED from the ``RULES``
 # registry (defined near the end of this module, once every predicate exists) —
@@ -1514,9 +1521,14 @@ def _is_network_diagram(a: Artifact) -> bool:
     truth. The legacy hardcoded types (network / infrastructure / deployment)
     remain a fallback for a workspace that ships no profiles file, keeping pre-WS6
     behaviour byte-inert. A flow/application diagram that incidentally mentions an
-    address is not evaluated (R3.3)."""
+    address is not evaluated (R3.3).
+
+    1.11.0 WS8: a ``dataflow`` diagram is ALSO evaluated for ``ip-range`` (Req 8
+    AC2) — a data-flow audit must not leak a real public address either."""
     if not _is_diagram(a):
         return False
+    if _dataflow_lint_profile(a) is not None:
+        return True
     if (a.diagram_class or DIAGRAM_CLASS_FLOW).lower() == DIAGRAM_CLASS_LANDSCAPE:
         return True
     if _network_lint_profile(a):
@@ -1564,6 +1576,67 @@ def _access_lint_profile(a: Artifact):
     if profile is not None and (profile.lint_profile or "").lower() == "access":
         return profile
     return None
+
+
+def _dataflow_lint_profile(a: Artifact):
+    """The dataflow :class:`TypeProfile` for ``a``, or ``None`` (1.11.0 WS8).
+
+    Mirrors :func:`_network_lint_profile` / :func:`_access_lint_profile`: returns
+    the resolved profile when ``a``'s ``diagram_type`` resolves to a profile
+    scoped on ``lint_profile: dataflow``, else ``None``. Data-defined and
+    byte-inert when no profiles file is present (Req 8 AC1/AC4). Lazy import so
+    linter module load stays cheap."""
+    dtype = (a.diagram_type or "").strip()
+    if not dtype:
+        return None
+    from rule_engine.diagram_profiles import load_type_profile
+
+    profile = load_type_profile(dtype)
+    if profile is not None and (profile.lint_profile or "").lower() == "dataflow":
+        return profile
+    return None
+
+
+#: PII / sensitive-data markers an auditor expects on a data store in a dataflow
+#: diagram (Req 8 AC3). A node-label token matching one of these flags the node
+#: as carrying regulated data.
+_PII_MARKERS = (
+    "pii", "personal", "gdpr", "pci", "phi", "sensitive", "ccpa",
+)
+#: Classification markers that SATISFY the rule — a data store whose label (or an
+#: adjacent overlay) carries one of these is explicitly classified, so it is not
+#: flagged. ``encrypted`` counts: an encrypted store declares its data posture.
+_CLASSIFICATION_MARKERS = (
+    "classified", "encrypted", "confidential", "restricted", "public-data",
+    "tokenized", "anonymized", "redacted",
+)
+
+
+def _check_data_classification(a: Artifact):
+    """data-classification: a PII data store in a dataflow diagram carries no
+    classification marker (WARNING flow / ERROR landscape, Req 8 AC3).
+
+    A data-flow audit must say, for every store of regulated data, HOW it is
+    classified. The rule fires WHEN a dataflow diagram's on-diagram text names a
+    node whose label flags PII (``pii`` / ``personal`` / ``gdpr`` / …) but does
+    NOT also carry a classification marker (``encrypted`` / ``classified`` / …).
+    Scope: only a dataflow diagram (``TypeProfile.lint_profile == dataflow``) is
+    evaluated — every other diagram, and a workspace with no profiles file, is
+    byte-inert. Offenders are the unclassified PII node labels."""
+    if not _is_diagram(a):
+        return False
+    if _dataflow_lint_profile(a) is None:
+        return False
+    offenders: List[str] = []
+    for name in (a.node_names or ()):
+        low = name.lower()
+        if any(m in low for m in _PII_MARKERS) and not any(
+            c in low for c in _CLASSIFICATION_MARKERS
+        ):
+            offenders.append(name)
+    if not offenders:
+        return False
+    return RuleHit(offenders=tuple(offenders), reason="unclassified-pii-store")
 
 
 def _check_access_aggregation(a: Artifact):
@@ -2507,6 +2580,14 @@ RULES: Tuple[Tuple[RuleSpec, Callable[[Artifact], _PredicateResult]], ...] = (
     (
         RuleSpec(RULE_ACCESS_AGGREGATION, Severity.WARNING, landscape=Severity.ERROR),
         _check_access_aggregation,
+    ),
+    # data-classification (1.11.0 WS8): a PII data store in a dataflow diagram
+    # with no classification marker. WARNING for flow, ERROR for landscape (a
+    # dataflow as-built is the audit artifact). Scoped to a dataflow diagram
+    # (TypeProfile.lint_profile == dataflow), byte-inert elsewhere (Req 8 AC3/AC4).
+    (
+        RuleSpec(RULE_DATA_CLASSIFICATION, Severity.WARNING, landscape=Severity.ERROR),
+        _check_data_classification,
     ),
     # container-overlap: WARNING for flow, ERROR for landscape (sibling
     # boundaries must not overlap on an as-built).

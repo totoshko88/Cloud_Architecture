@@ -59,3 +59,24 @@ profiles:
     special_containers:
       - trust_boundary
     lint_profile: access
+  # 1.11.0 WS8 (Requirement 8): dataflow diagrams show where data lives and
+  # moves, what is PII, and where data boundaries / encryption sit, for a
+  # GDPR/WAFR audit. base_class=landscape (completeness on one canvas, like a
+  # network as-built); axis left-right (source → processing → store). The
+  # linter applies ip-range PLUS data-classification to a dataflow diagram
+  # (lint_profile=dataflow). Byte-inert until a diagram declares
+  # diagram_type: dataflow.
+  dataflow:
+    base_class: landscape
+    node_cap: null
+    axis: left-right
+    allowed_roles:
+      - object_store
+      - managed_sql
+      - message_queue
+      - secrets_store
+      - serverless_fn
+      - llm_platform
+      - cache
+    special_containers: []
+    lint_profile: dataflow
