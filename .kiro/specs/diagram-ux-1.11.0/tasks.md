@@ -111,20 +111,24 @@ workstream to ship; property tests name the design property they validate.
     - _Partial: `provider` field added to both specs, default `None`, byte-inert
       (`c371425`). Explicit foreign-leaf accept in `_validate_spec` is deferred
       (5.3/5.5)._
-  - [ ] 5.2 Make `_skin_renderers` / `_boundaries_from` / `_container_style`
+  - [x] 5.2 Make `_skin_renderers` / `_boundaries_from` / `_container_style`
     resolve each cell under `cell.provider or primary`.
     - _Requirements: 3.2, 3.3_
-    - _Partial: `_skin_renderers` is per-node provider-aware (`c371425`,
-      proven k8s-in-AWS). `_boundaries_from` / `_container_style` per-container
-      resolution on the spec path is deferred (5.4)._
+    - _Done: `_skin_renderers` per-node provider-aware (`c371425`);
+      `_boundaries_from` resolves each container under `container.provider or
+      primary` (owner rule: provider brand vs Kubernetes-blue `#326CE5`,
+      data-driven via `resolve_container`)._
   - [ ] 5.3 flow-collapse vs landscape-expand rule for the foreign sub-block.
     - _Requirements: 3.5, 3.6_
     - _Deferred. Owner rule closed: managed k8s in its own cloud ⇒ provider
       glyph; foreign/self-hosted ⇒ Kubernetes blue `#326CE5`._
-  - [ ] 5.4 Per-container provider in `_container_style_providers` with
+  - [x] 5.4 Per-container provider in `_container_style_providers` with
     title-token fallback.
     - _Requirements: 3.7_
-    - _Deferred._
+    - _Done: container-style lint recognises a foreign box by its shape
+      signature and skips it, so a k8s-blue namespace in an aws-titled diagram is
+      never falsely flagged (proven empirically — AWS boxes are `grIcon` groups,
+      the k8s namespace is a plain dashed box, no signature collision)._
   - [ ] 5.5 Add an `examples/hybrid/` golden (AWS VPC with a nested k8s
     deployment block), flow + landscape; export raster.
     - _Requirements: 3.5, 3.6_

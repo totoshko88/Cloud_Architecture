@@ -293,6 +293,14 @@ def _boundaries_from(
         box = placed.containers.get(c.id)
         if box is None:
             continue
+        # 1.11.0 WS3: resolve each container's style under its OWN provider when
+        # it declares one (hybrid diagrams), else the diagram's primary provider.
+        # This is the owner's closed rule, data-driven: a managed orchestration
+        # service in its own cloud (provider=aws) keeps the provider brand box,
+        # while a foreign / self-hosted cluster (provider=kubernetes) resolves the
+        # Kubernetes-blue #326CE5 box straight from kubernetes-icons.yaml. An
+        # unset provider yields the primary verbatim, so the default is byte-inert.
+        cell_provider = getattr(c, "provider", None) or provider
         out.append(
             Boundary(
                 id=c.id,
@@ -301,7 +309,7 @@ def _boundaries_from(
                 y=int(box.y),
                 w=int(box.w),
                 h=int(box.h),
-                style=_container_style(kind_of[c.id], provider),
+                style=_container_style(kind_of[c.id], cell_provider),
                 kind=kind_of[c.id],
             )
         )
