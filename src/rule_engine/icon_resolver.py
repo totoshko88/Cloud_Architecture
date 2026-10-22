@@ -215,6 +215,16 @@ def resolve_icon(resource_type: str, provider: str) -> Dict[str, str]:
         entry = containers.get(resource_type)
 
     if entry is None:
+        # 1.11.0 WS10 (Req 9.5/9.6): before failing, try the render->index
+        # bridge — an EXACT-name asset from the per-slug index — so a standard
+        # but un-mapped service draws its official icon instead of hard-failing.
+        # The bridge is exact-slug only (never a look-alike); None means no exact
+        # asset, so the resolver stays fail-honest and raises unchanged.
+        from rule_engine.asset_index import bridge_resolve_style
+
+        bridged = bridge_resolve_style(resource_type, provider)
+        if bridged is not None:
+            return bridged
         raise UnresolvedTypeError(resource_type, provider)
 
     if not isinstance(entry, dict):

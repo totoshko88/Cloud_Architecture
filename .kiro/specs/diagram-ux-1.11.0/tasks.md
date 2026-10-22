@@ -295,17 +295,26 @@ workstream to ship; property tests name the design property they validate.
     - _Requirements: 8.4_
     - _Deferred: raster export unavailable in the sandbox._
 
-- [ ] 10. WS10 — render→index bridge (separate release after WS9)
-  - [ ] 10.1 Build the committed index with `full_packs=True` so the per-slug
+- [x] 10. WS10 — render→index bridge (separate release after WS9)
+  - [x] 10.1 Build the committed index with `full_packs=True` so the per-slug
     table ships for offline resolution.
     - _Requirements: 9.5_
-  - [ ] 10.2 In `resolve_icon`, on `UnresolvedTypeError`, consult
+    - _Done: the icon-index payload already emits a per-slug `packs` table under
+      `full_packs=True` (`icon_index_payload`); the bridge reads it, falling back
+      to an on-disk pack index when absent._
+  - [x] 10.2 In `resolve_icon`, on `UnresolvedTypeError`, consult
     `asset_index.resolve_asset` (exact-name only) and synthesise an
     `image=<official file>` style; keep fail-honest when no exact match.
     - _Requirements: 9.5, 9.6_
-  - [ ] 10.3 *Property test — bridge never substitutes a look-alike
+    - _Done: `bridge_resolve_style` does an EXACT-slug lookup (per-slug committed
+      table, else on-disk pack) and synthesises an `image=` style; `resolve_icon`
+      calls it on `UnresolvedTypeError` and raises unchanged when it returns
+      `None`. OCI (shape library) has no file bridge._
+  - [x] 10.3 *Property test — bridge never substitutes a look-alike
     - **Property 11: the render→index bridge never substitutes a look-alike**
     - **Validates: Requirement 9.6**
+    - _Done: `tests/test_render_index_bridge_1_11_0.py` — a nonsense or partial
+      (non-exact) name resolves to `None`; only an exact slug draws an asset._
 
 ## Task Dependency Graph
 
