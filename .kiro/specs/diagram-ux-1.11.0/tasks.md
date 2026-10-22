@@ -73,7 +73,7 @@ workstream to ship; property tests name the design property they validate.
     - **Property 7: a fully specified spec yields no assumptions**
     - **Validates: Requirement 5.6**
 
-- [ ] 4. WS2 — flow groups and description placement
+- [x] 4. WS2 — flow groups and description placement
   - [x] 4.1 Add `DiagramSpec.flow_groups` and `flow_steps` with byte-inert
     defaults; validate at the `layout()` entry (mirror `resolve_spacing`).
     - _Requirements: 2.1, 2.6_
