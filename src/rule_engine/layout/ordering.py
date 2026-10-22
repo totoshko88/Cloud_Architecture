@@ -35,7 +35,12 @@ the ``build_diagram`` finishing passes. The best one is kept only when the
 FINISHED diagram has no more back-edges, no more crossings, no new rule error,
 own-caption cut or collinear pair, and strictly fewer back-edges or crossings.
 A declared order with more than :data:`FINISH_BUDGET` raw crossings is kept as
-is: the finishing measurement is too slow to run per candidate there. So no diagram gets worse than its
+is: the finishing measurement is too slow to run per candidate there. A *dense*
+diagram — at or above :data:`FINISH_NODE_BUDGET` nodes, or a base geometry with
+:data:`FINISH_CUT_BUDGET` own-caption cuts or :data:`FINISH_FACE_BUDGET`
+overloaded source faces (G21) — takes the same fast path: the per-candidate
+caption finishing explodes combinatorially on a large landscape, so the
+declared order is kept without it. So no diagram gets worse than its
 declared order (the decision-3 guard): the declared order is always a
 candidate, and wins every tie. A spec whose proxy finds no back-edge to remove
 costs one cheap search and is laid out exactly as declared.
@@ -77,6 +82,41 @@ MAX_FINISHED = 2
 #: Above this many raw crossings in the declared order the finishing
 #: measurement is too slow to run per candidate; the declared order is kept.
 FINISH_BUDGET = 20
+
+# --- G21: size-scoped skip of the per-candidate finishing measurement --------
+# The Phase-2 finishing loop runs the full ``plan_caption_safe_geo`` +
+# ``plan_crossing_repair_geo`` once per base and once per surviving candidate.
+# On a dense landscape that caption-planner search explodes combinatorially
+# (``_find_move`` -> ``_best_joint`` -> ``_ranked`` -> ``_admissible`` ->
+# ``_cross_segs``) and ``layout()`` never returns. These budgets skip the
+# finishing measurement — falling back to the declared/base order, exactly as
+# the ``FINISH_BUDGET`` crossings guard already does — above a size that only a
+# dense landscape reaches. Derivation (measured on the shipped goldens + SEP
+# fixtures through full ``layout()``):
+#
+#   | spec                              | nodes | cands | own-cuts | faces | finishes |
+#   | kubernetes-…-landscape (golden)   |    10 |   2   |   low    |  <3   |  yes     |  <- largest finishing golden
+#   | SEP 06 flow fixture               |     9 |   1   |    -     |   -   |  no      |
+#   | SEP sandbox-lifecycle flow        |     7 |   1   |    -     |   -   |  no      |
+#   | SEP 08 landscape fixture          |    14 |   4   |    -     |   -   |  yes (92s, returns)
+#   | sep-account landscape fixture     |    17 |   2   |    -     |   -   |  yes (89s, returns)
+#   | SEP 09 crosscloud landscape       |    27 |   4   |   12     |   1   |  HANGS   |
+#   | HA multiregion landscapes         |  32   |   1   |    -     |   -   |  no      |
+#
+# The largest shipped golden that reaches the finishing loop is the 10-node
+# kubernetes landscape; the 32-node HA landscapes have ``cands == 1`` and return
+# before any finishing measurement. ``FINISH_NODE_BUDGET = 20`` sits with 2x
+# headroom over the k8s golden and sends SEP 09 (27) down the fast path. The
+# cut/face terms are defence-in-depth so a small-but-pathological spec cannot
+# re-trigger the explosion: 09 has 12 own-caption cuts / 1 overloaded face,
+# while the k8s golden and the SEP flow fixtures stay well below.
+#: Auto-ordering skips the per-candidate finishing measurement at or above this
+#: many nodes (primary, must-have term).
+FINISH_NODE_BUDGET = 20
+#: …or at or above this many own-caption cuts in the base geometry.
+FINISH_CUT_BUDGET = 10
+#: …or at or above this many overloaded source faces in the base geometry.
+FINISH_FACE_BUDGET = 3
 
 ProxyKey = Tuple[int, int, int, int, int]
 
@@ -571,6 +611,27 @@ class Finished(NamedTuple):
     cost: Tuple        #: ``route_cost(...).as_tuple()``; ``cost[0]`` = rule errors
 
 
+def _caption_planner_cost(placed: PlacedDiagram) -> Tuple[int, int]:
+    """``(own-caption cuts, overloaded source faces)`` of ``placed``'s raw
+    geometry — the two quantities that drive the caption-planner cost (G21).
+
+    Built the same way :func:`measure_finished` (``finishing=False``) builds its
+    geometry (``_serialize_candidate`` -> ``parse_drawio`` -> ``build_geometry``),
+    in one parse, so the step-2 gate costs one geometry build on the base
+    candidate and no extra placement/finishing run."""
+    from ..caption_routing import _overloaded
+    from ..drawio_model import parse_drawio
+    from ..geometry import build_geometry, check_edge_crosses_own_label
+    from .repair import _serialize_candidate
+
+    labels = dict(getattr(placed.spec, "node_labels", ()) or ())
+    geo = build_geometry(parse_drawio(_serialize_candidate(placed, labels),
+                                      path="<ordering>.drawio")[0])
+    own_cuts = len(check_edge_crosses_own_label(geo))
+    faces = len({e.source for e in geo.edges if _overloaded(geo, e)})
+    return own_cuts, faces
+
+
 def measure_finished(placed: PlacedDiagram, finishing: bool = True) -> Finished:
     """Measure a finished diagram exactly as ``scripts/canvas_metrics.py`` does
     (model space), after the ``build_diagram`` finishing passes when
@@ -628,6 +689,22 @@ def order_and_place(
         return dataclasses.replace(base, order_report=(
             f"auto-order: skipped — {base_raw.crossings} raw crossings exceed the "
             f"finishing-measurement budget ({FINISH_BUDGET}); declared order kept",))
+    # G21: the per-candidate finishing measurement (``plan_caption_safe_geo`` +
+    # ``plan_crossing_repair_geo``) explodes combinatorially on a dense
+    # landscape. Skip it — keeping the declared/base order, exactly as the
+    # crossings guard above does — above a node/own-caption-cut/overloaded-face
+    # size that only such a dense diagram reaches (see FINISH_*_BUDGET). The
+    # declared order is always a valid, lint-clean result; the fast path only
+    # forgoes per-candidate caption finishing.
+    base_cuts, base_faces = _caption_planner_cost(base)
+    if (len(spec.nodes) >= FINISH_NODE_BUDGET
+            or base_cuts >= FINISH_CUT_BUDGET
+            or base_faces >= FINISH_FACE_BUDGET):
+        return dataclasses.replace(base, order_report=(
+            f"auto-order: skipped — {len(spec.nodes)} nodes / {base_cuts} own-caption "
+            f"cuts / {base_faces} overloaded faces exceed the finishing-measurement "
+            f"budget (nodes {FINISH_NODE_BUDGET} / cuts {FINISH_CUT_BUDGET} / faces "
+            f"{FINISH_FACE_BUDGET}); declared order kept",))
     # Phase 1 — lay every candidate out and screen it on the raw (pre-
     # finishing) geometry. Node positions are final before the finishing
     # passes, so the back-edge count is exact here.

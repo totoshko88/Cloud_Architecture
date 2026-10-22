@@ -278,3 +278,47 @@ def test_marker_on_own_caption_slides_clear():
     assert g.check_marker_label_collision(slid) == []
     assert g.check_marker_icon_collision(slid) == []
     assert g.resolve_marker_collisions(geo, clearance=0.0) == {}
+
+
+# --------------------------------------------------------------------------- #
+# G21 — a dense landscape takes the size-scoped fast path and returns promptly
+# --------------------------------------------------------------------------- #
+
+def test_dense_landscape_layout_returns_fast():
+    """G21 timing guard: ``layout()`` on the ~27-node / ~26-edge / 8-container
+    SEP 09 cross-cloud landscape must return promptly via the size-scoped
+    fast path, not hang in the per-candidate caption-finishing search.
+
+    Reuses the in-repo SEP 09 fixture by file path so the test tracks the real
+    shape (no duplicated spec). Before the fix ``layout()`` did not return
+    (>45 s watchdog); the fast path returns in a few seconds on local 3.15, so
+    a 60 s bound is ~10x headroom yet far under the hang — generous enough that
+    a slow CI runner (py3.11–3.14) does not flake, while still catching a
+    regression that silently re-enables per-candidate finishing on this shape.
+    """
+    import importlib.util
+    import time
+    from pathlib import Path
+
+    fixture = (Path(__file__).resolve().parents[1]
+               / "tests/fixtures/sep/scripts/build_09_crosscloud_landscape.py")
+    assert fixture.exists(), fixture
+    mod_spec = importlib.util.spec_from_file_location("sep_build_09", fixture)
+    mod = importlib.util.module_from_spec(mod_spec)
+    mod_spec.loader.exec_module(mod)  # type: ignore[union-attr]
+
+    spec = mod._spec()
+    assert len(spec.nodes) >= 20
+    assert spec.order == "auto"  # the fast path must honour the auto path
+
+    t0 = time.perf_counter()
+    placed = layout(spec)
+    elapsed = time.perf_counter() - t0
+
+    assert elapsed < 60.0, f"layout() took {elapsed:.1f}s (fast path should be seconds)"
+    assert "apigw" in placed.nodes
+    assert len(placed.nodes) >= 20
+    # The fast-path report proves per-candidate finishing was skipped; a future
+    # change that re-enables it on this dense shape drops this line and fails.
+    assert placed.order_report
+    assert any("finishing-measurement budget" in line for line in placed.order_report)

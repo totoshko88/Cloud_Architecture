@@ -149,6 +149,23 @@ _MAX_PARTNERS = 4
 _JOINT_POOL = 600
 _JOINT_SEEDS = 30
 
+#: G21 defence-in-depth: the greedy caption-safe search (``_plan_once`` ->
+#: ``_find_move`` -> ``_best_joint``) is bounded by a per-plan work budget — a
+#: ceiling on the number of per-edge move searches a single planning run may
+#: run. When exhausted the search stops and keeps the best plan found so far
+#: (the remaining edges keep their pre-finishing route). The ceiling is an order
+#: of magnitude above the worst *returning* corpus/golden spend, so it is NEVER
+#: hit on a shipped golden or SEP flow fixture (their output stays byte-
+#: identical); it is a second barrier behind the ``ordering.FINISH_*_BUDGET``
+#: node gate, which already keeps dense landscapes off this path entirely.
+#: Measured worst returning spend (full ``layout()``, local 3.15): the SEP 08
+#: landscape fixture issues on the order of a few hundred ``_find_move`` calls
+#: across its planning passes; 20000 is ~40x above that.
+_MOVE_EVAL_BUDGET = 20000
+#: Remaining move-search budget for the current ``_plan_once`` run (reset at the
+#: start of each run). A list so the counter is mutable across helper calls.
+_MOVE_EVAL_LEFT = [_MOVE_EVAL_BUDGET]
+
 
 
 @dataclass(frozen=True)
@@ -1276,7 +1293,15 @@ def _wrapped(geo: DiagramGeometry, e: EdgeGeom) -> Optional[Tuple[DiagramGeometr
 def _find_move(work: DiagramGeometry, e: EdgeGeom, base: _Score) -> Optional[Move]:
     """The best acceptable re-route of ``e`` (side corridor, then joint
     moves, then — on an overloaded source whose caption TEXT it strikes — a
-    corner exit), or None."""
+    corner exit), or None.
+
+    Bounded by :data:`_MOVE_EVAL_BUDGET` (G21 defence-in-depth): when the
+    per-plan work budget is exhausted the search stops and returns None, so the
+    edge keeps its current route and the greedy plan degrades gracefully rather
+    than running unbounded."""
+    if _MOVE_EVAL_LEFT[0] <= 0:
+        return None
+    _MOVE_EVAL_LEFT[0] -= 1
     found = None
     for start in (2 * GRID, GRID):
         _CORRIDOR_START[0] = start
@@ -1359,6 +1384,7 @@ def _plan_once(geo: DiagramGeometry, reverse: bool) -> Tuple[CaptionPlan, Diagra
     """One greedy planning run over the offending edges in declared (or
     reverse) order; returns the plan and the geometry it produces."""
     _RANK_CACHE.clear()
+    _MOVE_EVAL_LEFT[0] = _MOVE_EVAL_BUDGET  # G21: reset the per-plan work budget
     work = replace(geo, edges=list(geo.edges), containers=dict(geo.containers),
                    text_boxes=dict(geo.text_boxes))
     routes: Dict[str, Route] = {}

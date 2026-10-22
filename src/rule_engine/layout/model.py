@@ -218,7 +218,13 @@ class DiagramSpec:
     #: sits before its producer, and choose ``vpc_side``, keeping the result only
     #: when the finished diagram has fewer back-edges, or as many back-edges and
     #: fewer crossings, than the declared order. ``"manual"`` opts out entirely:
-    #: the declared slots are laid out as written. Not a coordinate.
+    #: the declared slots are laid out as written. A *dense* diagram (G21: at or
+    #: above :data:`~rule_engine.layout.ordering.FINISH_NODE_BUDGET` nodes, or a
+    #: base geometry with too many own-caption cuts / overloaded faces) takes a
+    #: size-scoped fast path under ``"auto"``: it keeps the declared order
+    #: without the costly per-candidate finishing measurement, so ``layout()``
+    #: returns promptly on a large landscape instead of hanging. Not a
+    #: coordinate.
     order: str = "auto"
     #: 1.10.12 (WS4): which side of a region's regional column its Network
     #: Boundary (VPC) block stands on (North–South specs with a ``region``

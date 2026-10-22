@@ -244,7 +244,7 @@ the Layout Engine (it emits a coordinate-free node set); the
   the ordering can use `vpc_side: right` there. The guard is not relaxed.
 
 - **`layout()` hangs on a dense landscape — unbounded caption-safe planning in
-  auto-ordering (G21, 1.10.12 WS4/WS2).** → **Open (performance regression).**
+  auto-ordering (G21, 1.10.12 WS4/WS2).** → **Resolved (1.10.12).**
   `layout()` does not return (observed > 5 min, effectively a hang) on the SEP
   cross-cloud landscape `scripts/build_09_crosscloud_landscape.py` (27 nodes,
   24 edges, 8 containers) after two cross-cluster edges were added and the
@@ -306,3 +306,33 @@ the Layout Engine (it emits a coordinate-free node set); the
   (e.g. a few seconds) in CI — there is currently no large-landscape timing
   guard, so this regression shipped in WS4 undetected. The four shipped goldens
   are smaller and fast, which is why the release gate passed.
+
+  **Resolution (1.10.12).** Proposed fix 2 (size-scoped skip) as the primary,
+  with fix 1 (work budget) as defence-in-depth. `layout/ordering.py` gains a
+  size gate in `order_and_place`, alongside the existing `FINISH_BUDGET`
+  crossings guard: when the base geometry has `>= FINISH_NODE_BUDGET = 20`
+  nodes, `>= FINISH_CUT_BUDGET = 10` own-caption cuts, or `>= FINISH_FACE_BUDGET
+  = 3` overloaded source faces, the per-candidate `measure_finished(finishing=
+  True)` loop is skipped and the declared/base order is kept (an `order_report`
+  records the fast path). The declared order is always a valid, lint-clean
+  result, so the fast path only forgoes per-candidate caption finishing —
+  exactly what `FINISH_BUDGET` already does for a high-crossing base. The
+  thresholds were derived by measuring every shipped golden + SEP fixture through
+  full `layout()`: the largest golden that reaches the finishing loop is the
+  10-node kubernetes landscape (`cands=2`), the 32-node HA landscapes return
+  before finishing (`cands=1`), and SEP 09 is 27 nodes / 12 own-caption cuts / 1
+  overloaded face — so 20/10/3 preserves every golden byte-for-byte (verified
+  via `scripts/regen_examples.py --check`, all 12 generators + rasters ok) and
+  sends SEP 09 and any dense landscape down the fast path. `caption_routing.py`
+  gains a per-plan work budget `_MOVE_EVAL_BUDGET = 20000` (a ceiling on
+  `_find_move` searches per `_plan_once` run, reset at the start of each run; on
+  exhaustion the greedy search stops and keeps the best plan so far) — an order
+  of magnitude above the worst returning spend, so no golden/flow output
+  changes; it is a second barrier behind the node gate for the slow-but-
+  returning SEP 08 / sep-account landscape fixtures. SEP 09 `layout()` now
+  returns in ~9 s on local 3.15 (was > 45 s / hung). The `order == "manual"`
+  opt-out is unchanged. A timing-guard regression test
+  (`tests/test_ordering_ws4.py::test_dense_landscape_layout_returns_fast`) loads
+  the SEP 09 fixture by path and asserts `layout()` returns under a bounded
+  wall-clock budget with the fast-path `order_report` present — the
+  large-landscape timing guard that was missing.
