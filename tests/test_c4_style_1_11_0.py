@@ -150,3 +150,41 @@ def test_non_c4_type_keeps_the_provider_icon_rules_byte_inert():
         Artifact(kind="diagram", is_drawio=True, source_format="drawio",
                  diagram_type="simple")
     ) is False
+
+
+# --------------------------------------------------------------------------- #
+# WS4.2 tail — relationships render as DASHED arrows under style=c4.
+#
+# The C4 relationship notation is a dashed arrow; the engine is topological, so
+# the relationship's prose stays in the Flow legend (the numbered-marker
+# convention), not a free-text edge label. Under style='c4' every edge is forced
+# dashed; style='icon' uses the spec's own dashed flag verbatim (byte-inert).
+# --------------------------------------------------------------------------- #
+
+from rule_engine.draw_cli import _edges_from  # noqa: E402
+from rule_engine.diagram_layout import edge_cell  # noqa: E402
+
+
+def _placed_c4():
+    spec = _c4_container_spec(
+        "aws", "acct", "us-east-1",
+        _resolved(["serverless_fn", "object_store", "cdn"]),
+        [{"source": "svc0", "target": "svc1", "label": "writes"}],
+    )
+    return layout(spec)
+
+
+def test_c4_style_forces_dashed_edges():
+    placed = _placed_c4()
+    edges = _edges_from(placed, style="c4")
+    assert edges and all(e.dashed for e in edges)
+    assert "dashed=1" in edge_cell(edges[0])
+
+
+def test_icon_style_edges_keep_the_spec_flag_byte_inert():
+    placed = _placed_c4()
+    edges = _edges_from(placed, style="icon")
+    # the c4-container spec's relationship is not dashed in the spec, so under
+    # icon style it must render solid — unchanged from the default path.
+    assert all(e.dashed is False for e in edges)
+    assert "dashed=1" not in edge_cell(edges[0])

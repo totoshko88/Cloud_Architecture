@@ -139,11 +139,13 @@ workstream to ship; property tests name the design property they validate.
     - _Requirements: 4.1, 4.2, 4.5_
     - _Done: `1149128` (types normalise onto flow geometry, `context` kept as a
       `c4-context` alias, `--style icon|c4` threaded through the CLI)._
-  - [ ] 6.2 Add the box renderer + dashed labelled edges under `style=c4`,
+  - [x] 6.2 Add the box renderer + dashed labelled edges under `style=c4`,
     reusing the `external_system` style string.
     - _Requirements: 4.3_
-    - _Partial: `_c4_box_renderer` (box + `[Container: role]`, no provider glyph)
-      done (`1149128`); dashed labelled relationship edges deferred._
+    - _Done: `_c4_box_renderer` (box + `[Container: role]`, no provider glyph)
+      and dashed relationship arrows under `style=c4` (`_edges_from` forces
+      `dashed` for C4). The engine is topological, so relationship prose stays in
+      the Flow legend (numbered-marker convention), not a free-text edge label._
   - [x] 6.3 Write `_c4_container_spec` modelled on `_context_spec`.
     - _Requirements: 4.1_
     - _Done: `_c4_container_spec` — neutral boxes (no provider icon) nested in a

@@ -308,14 +308,19 @@ def _boundaries_from(
     return out
 
 
-def _edges_from(placed: PlacedDiagram) -> List[Edge]:
+def _edges_from(placed: PlacedDiagram, style: str = "icon") -> List[Edge]:
+    # 1.11.0 WS4: under C4 style every relationship is a DASHED labelled arrow
+    # (the C4 notation for a relationship), regardless of the spec's own dashed
+    # flag. For style='icon' the spec's dashed/peering flags are used verbatim,
+    # so the default path stays byte-identical.
+    c4 = style == "c4"
     return [
         Edge(
             id=pe.spec.id,
             source=pe.spec.source,
             target=pe.spec.target,
             marker=pe.spec.marker,
-            dashed=pe.spec.dashed,
+            dashed=pe.spec.dashed or c4,
             peering=pe.spec.peering,
             exit=pe.exit,
             entry=pe.entry,
@@ -392,7 +397,7 @@ def build_drawio(
 
     renderers = _skin_renderers(provider, spec.nodes, style=style)
     nodes = _nodes_from(placed, renderers)
-    edges = _edges_from(placed)
+    edges = _edges_from(placed, style=style)
 
     # Container labels: the single account boundary the translator emits.
     boundary_id, region = _read_boundary_region(spec)
