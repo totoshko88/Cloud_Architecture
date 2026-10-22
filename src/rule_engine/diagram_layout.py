@@ -1392,6 +1392,12 @@ def build_diagram(
     1.10.7). The pass is idempotent and leaves the document byte-identical when
     no marker collides.
     """
+    # 1.11.0 WS2: fail-honest on an unknown flow_steps presentation mode.
+    if flow_steps not in ("box", "document", "panel"):
+        raise ValueError(
+            f"unknown flow_steps {flow_steps!r}; must be one of "
+            "'box' (default), 'document', 'panel'"
+        )
     # 1.10.12 WS6: a boundary narrower than its caption grows right into free
     # space or wraps the caption (a no-op on layout() output, which is fitted).
     boundaries = fit_boundary_captions(
@@ -1747,6 +1753,12 @@ def _assemble_document(
     flow_h = _text_h(flow_lines, legend_w)
     legend_h = _text_h(legend_body, legend_w)
     _draw_flow_box = flow_steps != "document"
+    # 1.11.0 WS2 panel mode: the Flow box is drawn as a FULL-HEIGHT furniture
+    # strip down the right margin (the hand-drawn "steps panel") rather than a
+    # tight box. Presentation only — same right-margin x as the stacked box, so
+    # no node moves and _cover_page grows the page if the strip runs tall. Only
+    # flow_steps=="panel" takes it; box/document are byte-identical.
+    _panel = flow_steps == "panel"
     if legend_mode == "row-below":
         # Theme 43 Mode B: a physically wide-and-short diagram puts the two boxes
         # SIDE-BY-SIDE below the body, as a horizontal row whose RIGHT edge aligns
@@ -1772,7 +1784,15 @@ def _assemble_document(
         # by one grid step.
         if _draw_flow_box:
             legend_y = max(legend_y_legend, legend_y_flow + flow_h + GRID)
-            parts.append(text_cell("flow-legend", flow_lines, legend_x, legend_y_flow, box_w, flow_h, skin=skin))
+            # Panel mode: stretch the Flow box into a full-height furniture strip
+            # (top of the Flow slot down to one container-pad above the page
+            # bottom), never shorter than its natural text height. box/document
+            # keep flow_h exactly, so their output is byte-identical.
+            flow_box_h = flow_h
+            if _panel:
+                flow_box_h = max(flow_h, int(page_h - legend_y_flow - CONTAINER_PAD))
+                legend_y = max(legend_y_legend, legend_y_flow + flow_box_h + GRID)
+            parts.append(text_cell("flow-legend", flow_lines, legend_x, legend_y_flow, box_w, flow_box_h, skin=skin))
             parts.append(text_cell("legend", legend_body, legend_x, legend_y, box_w, legend_h, skin=skin))
         else:
             # document mode: Legend takes the Flow box's top slot.

@@ -86,10 +86,14 @@ workstream to ship; property tests name the design property they validate.
     `## Flow` section in the companion.
     - _Requirements: 2.7_
     - _Done: `85c04de` (Flow box suppressed, Legend takes the top slot)._
-  - [ ] 4.4 `flow_steps="panel"`: furniture strip, bottom-preferred for
+  - [x] 4.4 `flow_steps="panel"`: furniture strip, bottom-preferred for
     `left-right`; A4 soft target in `export_raster.compute_scale` only.
     - _Requirements: 2.8, 2.9_
-    - _Deferred: `panel` mode and the A4 soft target are not yet implemented._
+    - _Done: `panel` draws the Flow box as a full-height furniture strip down the
+      right margin (presentation only, no node shift; `box`/`document`
+      byte-identical; unknown value rejected fail-honest). `--paper a4` adds an
+      A4 soft target to `compute_scale` that never inflates, never drops below
+      the floor, and never overrides the raster budget._
   - [x] 4.5 Add `rule-engine-advise flow-groups` proposer (prints a draft,
     writes nothing).
     - _Requirements: 2.5_
@@ -98,10 +102,12 @@ workstream to ship; property tests name the design property they validate.
   - [x] 4.6 *Property test — empty flow_groups byte-inert
     - **Property 3: empty flow_groups is byte-inert**
     - **Validates: Requirement 2.2**
-  - [ ] 4.7 *Property test — panel keeps the flow raster budget
+  - [x] 4.7 *Property test — panel keeps the flow raster budget
     - **Property 4: panel keeps the flow raster budget**
     - **Validates: Requirements 2.8, 2.9**
-    - _Deferred with 4.4 (panel mode)._
+    - _Done: A4 soft target is budget-subordinate (budget + floor always win);
+      tests cover small (no inflate) / medium (pulled to A4) / over-budget
+      (floor clamp) / default-unchanged._
 
 - [ ] 5. WS3 — hybrid diagrams
   - [x] 5.1 Add `NodeSpec.provider` / `ContainerSpec.provider` (optional,

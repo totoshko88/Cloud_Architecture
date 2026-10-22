@@ -96,3 +96,108 @@ def test_proposer_caps_run_at_max_size():
     props = propose_flow_groups(spec, max_size=4)
     # a 5-run splits into a 4-group + the remainder (which, being <2, is dropped)
     assert all(len(g["members"]) <= 4 for g in props)
+
+
+# --------------------------------------------------------------------------- #
+# WS2.4 — flow_steps="panel" (full-height furniture strip) + A4 soft target.
+# --------------------------------------------------------------------------- #
+
+
+def _flow_h(text):
+    m = re.search(r'id="flow-legend".*?height="(\d+)"', text, re.S)
+    return int(m.group(1)) if m else None
+
+
+def _assemble(flow_steps, page_h=950, legend_y_flow=40):
+    return dl._assemble_document(
+        diagram_id="d", diagram_name="d", title="t", boundaries=[], nodes=[],
+        routed=[], flow_lines=["Flow", "1. a", "2. b"], legend_x=900,
+        legend_y_flow=legend_y_flow, legend_y_legend=200, legend_w=None,
+        legend_lines=["Legend", "x"], legend_mode="stack", page_w=1850,
+        page_h=page_h, flow_steps=flow_steps,
+    )
+
+
+def test_box_and_document_are_byte_identical_regardless_of_panel_code():
+    # box keeps the tight Flow box; document suppresses it. Neither changes.
+    box = _assemble("box")
+    assert 'id="flow-legend"' in box
+    assert box == _assemble("box")
+    doc = _assemble("document")
+    assert 'id="flow-legend"' not in doc  # Legend takes the top slot
+
+
+def test_panel_stretches_the_flow_box_to_full_height():
+    box_h = _flow_h(_assemble("box"))
+    panel_h = _flow_h(_assemble("panel", page_h=950, legend_y_flow=40))
+    # panel height = page_h - legend_y_flow - CONTAINER_PAD = 950 - 40 - 30
+    assert panel_h == 950 - 40 - dl.CONTAINER_PAD
+    assert panel_h > box_h  # a full-height strip, not the tight box
+
+
+def test_panel_never_shorter_than_the_text():
+    # A tiny page cannot shrink the strip below the natural text height.
+    tiny = _flow_h(_assemble("panel", page_h=60, legend_y_flow=40))
+    box_h = _flow_h(_assemble("box"))
+    assert tiny == box_h
+
+
+def test_unknown_flow_steps_is_rejected():
+    import pytest
+    with pytest.raises(ValueError, match="unknown flow_steps"):
+        dl.build_diagram(
+            diagram_id="d", diagram_name="d", title="t", boundaries=[],
+            nodes=[], edges=[], flow_lines=["Flow"], legend_x=900,
+            legend_y_flow=40, legend_y_legend=200, legend_w=None,
+            legend_lines=["Legend"], page_w=1850, page_h=950,
+            flow_steps="strip",
+        )
+
+
+# --- A4 soft target in compute_scale -------------------------------------- #
+
+import tempfile  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+from rule_engine import export_raster as er  # noqa: E402
+
+
+def _canvas(width_px):
+    d = tempfile.mkdtemp()
+    p = Path(d) / "x.drawio"
+    p.write_text(
+        f'<mxfile><diagram id="x" name="x"><mxGraphModel pageWidth="2600" '
+        f'pageHeight="900"><root><mxCell id="0"/><mxCell id="1" parent="0"/>'
+        f'<mxCell id="n" value="n" style="rounded=0" vertex="1" parent="1">'
+        f'<mxGeometry x="0" y="0" width="{width_px}" height="40" as="geometry"/>'
+        f'</mxCell></root></mxGraphModel></diagram></mxfile>',
+        encoding="utf-8",
+    )
+    return p
+
+
+def test_a4_does_not_inflate_a_small_canvas():
+    s = _canvas(300)
+    # default caps at MAX; A4 must not push it higher (A4 only ever pulls down)
+    assert er.compute_scale(s, diagram_class="flow") == \
+        er.compute_scale(s, diagram_class="flow", paper="a4")
+
+
+def test_a4_pulls_a_medium_canvas_down_toward_a4_width():
+    s = _canvas(1400)
+    default, _ = er.compute_scale(s, diagram_class="flow")
+    a4, _ = er.compute_scale(s, diagram_class="flow", paper="a4")
+    assert a4 < default  # pulled down toward A4
+    assert a4 >= er.MIN_EXPORT_SCALE
+
+
+def test_a4_never_drops_below_the_legibility_floor():
+    s = _canvas(2400)  # A4 fit would be < floor
+    a4, _ = er.compute_scale(s, diagram_class="flow", paper="a4")
+    assert a4 == er.MIN_EXPORT_SCALE
+
+
+def test_a4_default_path_is_unchanged_without_opt_in():
+    s = _canvas(1400)
+    assert er.compute_scale(s, diagram_class="flow") == \
+        er.compute_scale(s, diagram_class="flow", paper=None)
