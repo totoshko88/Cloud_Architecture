@@ -213,9 +213,81 @@ def write_aws4_manifest(ids: List[str], out: str | Path = AWS4_MANIFEST) -> None
     )
 
 
+# --------------------------------------------------------------------------- #
+# draw.io built-in stencil id manifest (1.10.12)
+# --------------------------------------------------------------------------- #
+#
+# ``rule-engine-verify-icon --strict`` reported every node drawn with a plain
+# built-in stencil (``shape=mxgraph.ios7.icons.book``) as ``unverified``: only
+# the aws4 ids had an allow-list (SEP feedback §2.1). This manifest is the
+# allow-list for the rest — every ``mxgraph.<lib>.<id>`` the installed draw.io
+# app references — and it is the ONLY source a built-in stencil is accepted
+# from: a hand-written or curated id never enters it. Extracted from
+# ``app.asar`` by ``rule-engine-build-icon-sets`` (like aws4 / azure2) and
+# committed as ``mappings/drawio-stencils.json``, so CI verifies without the app.
+
+DRAWIO_STENCILS_MANIFEST = resolve_bundled_dir("mappings") / "drawio-stencils.json"
+
+# ``mxgraph.<lib>.<id>`` — the library segment, then one or more dotted
+# segments (ids may contain hyphens, e.g. ``mxgraph.flowchart.multi-document``).
+_DRAWIO_STENCIL_RE = _re.compile(r"mxgraph\.[a-z0-9_]+(?:\.[A-Za-z0-9_\-]+)+")
+
+
+def extract_drawio_stencil_ids(asar_path: str | Path) -> List[str]:
+    """Return every ``mxgraph.<lib>.<id>`` stencil id referenced in ``app.asar``.
+
+    A library name that is only a prefix of other ids (``mxgraph.ios7.icons``
+    when ``mxgraph.ios7.icons.book`` exists) is dropped: it names a library,
+    not a shape. The scan is not exhaustive (a few ids are composed at run
+    time), so an id it misses stays unverified — it is never assumed valid."""
+    asar_path = Path(asar_path)
+    if not asar_path.is_file():
+        raise FileNotFoundError(f"draw.io app.asar not found: {asar_path}")
+    data = asar_path.read_bytes().decode("latin-1")
+    found = {m.rstrip("-") for m in _DRAWIO_STENCIL_RE.findall(data)}
+    prefixes = {i.rsplit(".", 1)[0] for i in found}
+    return sorted(i for i in found if i not in prefixes)
+
+
+def load_drawio_stencils_manifest(
+    path: str | Path = DRAWIO_STENCILS_MANIFEST,
+) -> Optional[Set[str]]:
+    """Load the committed built-in stencil id manifest, or ``None`` if absent."""
+    path = Path(path)
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    ids = data.get("ids") if isinstance(data, dict) else None
+    if not isinstance(ids, list):
+        return None
+    return set(ids) or None
+
+
+def write_drawio_stencils_manifest(
+    ids: List[str], out: str | Path = DRAWIO_STENCILS_MANIFEST
+) -> None:
+    """Write the sorted built-in stencil id manifest to ``out`` (deterministic JSON)."""
+    payload = {
+        "library": "mxgraph.*",
+        "source": "draw.io app.asar",
+        "count": len(ids),
+        "ids": sorted(ids),
+    }
+    Path(out).write_text(
+        json.dumps(payload, indent=1, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
+
+
 __all__ = [
     "DEFAULT_MANIFEST",
     "AWS4_MANIFEST",
+    "DRAWIO_STENCILS_MANIFEST",
+    "extract_drawio_stencil_ids",
+    "load_drawio_stencils_manifest",
+    "write_drawio_stencils_manifest",
     "extract_azure2_paths",
     "extract_aws4_ids",
     "build_aws4_manifest",

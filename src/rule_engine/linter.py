@@ -269,6 +269,47 @@ RULE_EDGE_JOG = "edge-jog"
 #                            WARNING, both classes.
 RULE_CONTAINER_STYLE = "container-style"
 RULE_MARKER_LABEL_COLLISION = "marker-label-collision"
+# 1.10.12 WS3 (C7). A crossing a single legal face swap removes:
+#   edge-crossing-avoidable — one edge re-routed onto another legal exit/entry
+#                             face pair (exit right/bottom, entry left/top)
+#                             lowers the crossing count without adding a
+#                             routing finding (``crossing_repair.avoidable_crossings``,
+#                             the same test the engine's repair pass and the
+#                             ``Xav`` metric use); WARNING, both classes.
+RULE_EDGE_CROSSING_AVOIDABLE = "edge-crossing-avoidable"
+# 1.10.12 WS5 (C2, C3). Dropped steps and disconnected islands:
+#   flow-step-undrawn — a numbered ``Flow`` step no edge carries as its marker,
+#                       unless the line says ``(not drawn)``; WARNING, both
+#                       classes.
+#   graph-islands     — a landscape whose connected nodes split into more than
+#                       one connected component; WARNING, landscape only.
+RULE_FLOW_STEP_UNDRAWN = "flow-step-undrawn"
+RULE_GRAPH_ISLANDS = "graph-islands"
+# 1.10.12 WS6 (C4, C8). Container geometry:
+#   container-caption-overflow — a container caption wider than its box;
+#                                WARNING, ERROR when the overflowing text
+#                                prints over a node icon or caption.
+#   sibling-size-uniformity    — aligned sibling containers holding the same
+#                                number of slots differ in width / height;
+#                                WARNING, both classes.
+RULE_CONTAINER_CAPTION_OVERFLOW = "container-caption-overflow"
+RULE_SIBLING_SIZE_UNIFORMITY = "sibling-size-uniformity"
+# 1.10.12 WS8 (C5). Two unrelated edges that read as one line:
+#   collinear-edges — two unrelated edges whose parallel legs sit under two
+#                     grid steps apart with overlapping extents (the one-line
+#                     illusion, ``geometry.collinear_edge_pairs``); WARNING,
+#                     both classes. offenders = the two edge ids.
+RULE_COLLINEAR_EDGES = "collinear-edges"
+# 1.10.12 WS11 (C10). The Legend lists a boundary that is not drawn:
+#   legend-boundary-coverage — a Legend ``Outer boundary`` / ``Inner boundary``
+#                              line names a stack / network boundary that is not
+#                              on the canvas (an account-only context diagram
+#                              that still lists an inner boundary — SEP 01/04);
+#                              WARNING, both classes. offenders = the offending
+#                              legend line(s). The mirror of ``legend-present``:
+#                              that checks the Legend exists, this checks it does
+#                              not describe a boundary the reader cannot find.
+RULE_LEGEND_BOUNDARY_COVERAGE = "legend-boundary-coverage"
 
 # ``RULE_SEVERITIES`` and ``CLASS_ESCALATIONS`` are DERIVED from the ``RULES``
 # registry (defined near the end of this module, once every predicate exists) —
@@ -707,6 +748,29 @@ def _check_legend_present(a: Artifact) -> bool:
     directly.
     """
     return _is_diagram(a) and not a.has_legend
+
+
+def _check_legend_boundary_coverage(a: Artifact):
+    """legend-boundary-coverage: the Legend names a boundary not drawn (WARNING).
+
+    WS11 (C10): the Mandatory Legend Block lists the outer/inner boundary only
+    when that boundary is on the canvas (``diagram_layout.legend_lines_for``). A
+    Legend that lists ``Inner boundary = Network Boundary …`` on an account-only
+    diagram (no nested network boundary) describes something the reader cannot
+    find. The drawn boundaries are read structurally from the parsed container
+    nesting (``geometry.check_legend_boundary_coverage``), so the rule is
+    provider-neutral and needs no mapping.
+    """
+    if not _is_diagram(a) or not a.legend_lines:
+        return False
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    offenders = _geo.check_legend_boundary_coverage(geo, a.legend_lines)
+    if not offenders:
+        return False
+    return RuleHit(offenders=tuple(offenders), reason="legend-names-undrawn-boundary")
 
 
 def _check_companion_doc(a: Artifact) -> bool:
@@ -1190,7 +1254,8 @@ def _check_canvas_quality(a: Artifact):
     Separate from relationship lint — it asks "is the canvas used, is the aspect
     sane", the questions 09-crosscloud-landscape passed every relationship rule
     yet failed. Thresholds are calibrated against the shipped corpus so no golden
-    false-positives (aspect > 2.6, content coverage < 25%)."""
+    false-positives (aspect > 2.6; 1.10.12 WS6: largest empty rectangle > 25% of
+    the canvas, replacing the content-coverage test)."""
     geo = _geometry_of(a)
     if geo is None:
         return False
@@ -1199,6 +1264,45 @@ def _check_canvas_quality(a: Artifact):
     if not findings:
         return False
     return [RuleHit(offenders=(subject,), reason=reason) for subject, reason in findings]
+
+
+def _check_container_caption_overflow(a: Artifact):
+    """container-caption-overflow: a container caption wider than its box (WS6).
+
+    WARNING; a hit whose overflowing text prints over a node's icon or caption
+    is reported separately as an ERROR on both classes (the SEP 09 VPC caption
+    over "API Gateway (5 APIs)"). Reason ``caption-overflow:+<px>`` /
+    ``caption-overprints-node:+<px>``; offenders = the container, then the
+    overprinted nodes."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    findings = _geo.check_container_caption_overflow(geo)
+    if not findings:
+        return False
+    hits: List[RuleHit] = []
+    for cid, over, nodes in findings:
+        if nodes:
+            hits.append(RuleHit(offenders=(cid,) + tuple(nodes),
+                                reason=f"caption-overprints-node:+{over}",
+                                severity=Severity.ERROR))
+        else:
+            hits.append(RuleHit(offenders=(cid,), reason=f"caption-overflow:+{over}"))
+    return hits
+
+
+def _check_sibling_size_uniformity(a: Artifact):
+    """sibling-size-uniformity: aligned siblings with the same slot count differ
+    in size (WS6, C8; WARNING, both classes)."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    findings = _geo.check_sibling_size_uniformity(geo)
+    if not findings:
+        return False
+    return [RuleHit(offenders=ids, reason=reason) for ids, reason in findings]
 
 
 def _container_style_providers(a: Artifact) -> List[str]:
@@ -1534,9 +1638,16 @@ def _check_edge_crosses_label(a: Artifact):
     # 1.10.7: the linter measures each caption at its real text width (the
     # engine's scored objective keeps the icon-width band, so goldens hold).
     findings = _geo.check_edge_crosses_label(geo, caption_width=True)
-    if not findings:
-        return False
-    return RuleHit(offenders=_offender_ids(findings), reason="crosses-label-band")
+    # 1.10.12 WS2: an edge striking its OWN source/target caption (the bottom
+    # drop through the name under its icon) is reported too, under its own
+    # reason, instead of being exempt.
+    own = _geo.check_edge_crosses_own_label(geo)
+    hits = []
+    if findings:
+        hits.append(RuleHit(offenders=_offender_ids(findings), reason="crosses-label-band"))
+    if own:
+        hits.append(RuleHit(offenders=_offender_ids(own), reason="edge-crosses-own-label"))
+    return hits or False
 
 
 def _check_edge_crosses_container_label(a: Artifact):
@@ -1754,6 +1865,78 @@ def _check_flow_legend(a: Artifact) -> bool:
         if m:
             covered.add(int(m.group(1)))
     return not set(markers).issubset(covered)
+
+
+#: A Flow step line ``N. <text>`` / ``N) <text>``.
+_FLOW_STEP_RE = re.compile(r"^\s*(\d+)\s*[.)]")
+#: An edge label that is only marker numbers (``7``, ``7, 8``, ``7/8``).
+_MARKER_LIST_RE = re.compile(r"^[\d\s,/&+-]+$")
+#: The explicit opt-out a Flow line carries when its step is deliberately not
+#: drawn as an edge (a step described for context only).
+NOT_DRAWN_TOKEN = "(not drawn)"
+
+
+def _drawn_markers(a: Artifact) -> set:
+    """Every marker number an edge label carries (single or listed)."""
+    out = set()
+    for e in a.edges:
+        label = str(getattr(e, "label", None) or "").strip()
+        if label and _MARKER_LIST_RE.match(label):
+            out.update(int(n) for n in re.findall(r"\d+", label))
+    return out
+
+
+def _check_flow_step_undrawn(a: Artifact):
+    """flow-step-undrawn: a numbered Flow step no edge draws (WARNING).
+
+    1.10.12 WS5 (C2). ``flow-legend`` checks the other direction (every edge
+    marker has a Flow line), so a step whose edge was folded into the legend
+    linted clean while its node lost its only relationship (SEP 05 #7, 06
+    #7/#10/#11 leaving Bedrock orphaned, 07 #8/#9, 09 #17). A step that is
+    deliberately context-only says so: its line carries ``(not drawn)``.
+    offenders = ``step-<N>``; reason ``undrawn-steps:<N,...>``."""
+    if not _is_diagram(a) or not a.flow_legend_lines:
+        return False
+    drawn = _drawn_markers(a)
+    missing: List[int] = []
+    for line in list(a.flow_legend_lines)[1:]:
+        text = str(line)
+        m = _FLOW_STEP_RE.match(text)
+        if not m or NOT_DRAWN_TOKEN in text.lower():
+            continue
+        n = int(m.group(1))
+        if n not in drawn and n not in missing:
+            missing.append(n)
+    if not missing:
+        return False
+    missing.sort()
+    return RuleHit(
+        offenders=tuple(f"step-{n}" for n in missing),
+        reason="undrawn-steps:" + ",".join(str(n) for n in missing),
+    )
+
+
+def _check_graph_islands(a: Artifact):
+    """graph-islands: a landscape split into disconnected islands (WARNING).
+
+    1.10.12 WS5 (C3). A landscape shows how everything relates at once; when
+    its connected nodes fall into two or more components (SEP 09: no edge
+    between the SEP account and any external band) the reader sees several
+    unrelated pictures on one canvas. Nodes with no edge at all are
+    ``node-connectivity``'s, and are left out here, as is every
+    overlay-marked node (``standby``, ``supporting``). offenders = the nodes
+    outside the largest component; reason ``islands:<components>``."""
+    if (a.diagram_class or DIAGRAM_CLASS_FLOW).lower() != DIAGRAM_CLASS_LANDSCAPE:
+        return False
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    comps = _geo.graph_components(geo)
+    if len(comps) <= 1:
+        return False
+    rest = sorted(n for c in comps[1:] for n in c)
+    return RuleHit(offenders=tuple(rest), reason=f"islands:{len(comps)}")
 
 
 def _check_edge_approach(a: Artifact):
@@ -2033,18 +2216,65 @@ def _check_edge_crossing_excess(a: Artifact):
     return False
 
 
-def _check_marker_label_collision(a: Artifact):
-    """marker-label-collision: a numbered flow-marker renders on a node caption
-    and overprints the service name (WARNING, both classes). offenders = the
-    marker edge and the node whose caption it sits on."""
+def _check_edge_crossing_avoidable(a: Artifact):
+    """edge-crossing-avoidable: a crossing a single legal face swap would remove
+    (1.10.12 WS3). offenders = the edges whose swap lowers the crossing count;
+    reason ``avoidable:<removed>/<crossings>`` (WARNING, both classes)."""
     geo = _geometry_of(a)
     if geo is None:
         return False
     from rule_engine import geometry as _geo
-    findings = _geo.check_marker_label_collision(geo)
-    if not findings:
+    crossings, _n_edges, _pairs = _geo.edge_crossing_stats(geo)
+    if not crossings:
         return False
-    return RuleHit(offenders=_offender_ids(findings), reason="marker-on-caption")
+    from rule_engine.crossing_repair import avoidable_crossings
+    removed, swaps = avoidable_crossings(geo)
+    if not removed:
+        return False
+    return RuleHit(
+        offenders=tuple(s.split(" ", 1)[0] for s in swaps),
+        reason=f"avoidable:{removed}/{crossings}",
+    )
+
+
+def _check_collinear_edges(a: Artifact):
+    """collinear-edges: two unrelated edges whose parallel legs sit under two
+    grid steps apart with overlapping extents read as one line (1.10.12 WS8,
+    defect C5). offenders = the two edge ids of each pair; reason
+    ``collinear:<pairs>`` (WARNING, both classes). The same
+    ``geometry.collinear_edge_pairs`` the ``col`` metric and the engine's
+    collinear-shift pass use, so what lint flags is what the engine tries to
+    separate."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    pairs = sorted(_geo.collinear_edge_pairs(geo))
+    if not pairs:
+        return False
+    offenders = tuple(eid for pair in pairs for eid in pair)
+    return RuleHit(offenders=offenders, reason=f"collinear:{len(pairs)}")
+
+
+def _check_marker_label_collision(a: Artifact):
+    """marker-label-collision: a numbered flow-marker renders on a node caption
+    (``marker-on-caption``) or on a node icon (``marker-on-icon``, 1.10.12 WS7)
+    and overprints the service name or glyph (WARNING, both classes).
+    offenders = the marker edge and the node it sits on."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    hits: List[RuleHit] = []
+    on_caption = _geo.check_marker_label_collision(geo)
+    if on_caption:
+        hits.append(RuleHit(offenders=_offender_ids(on_caption), reason="marker-on-caption"))
+    on_icon = _geo.check_marker_icon_collision(geo)
+    if on_icon:
+        hits.append(RuleHit(offenders=_offender_ids(on_icon), reason="marker-on-icon"))
+    if not hits:
+        return False
+    return hits[0] if len(hits) == 1 else hits
 
 
 def _check_detour_hook(a: Artifact):
@@ -2122,6 +2352,16 @@ RULES: Tuple[Tuple[RuleSpec, Callable[[Artifact], _PredicateResult]], ...] = (
     (
         RuleSpec(RULE_CANVAS_QUALITY, Severity.WARNING),
         _check_canvas_quality,
+    ),
+    # 1.10.12 WS6: container caption wider than its box (WARNING; a hit that
+    # prints over a node is an ERROR carried on the hit) and unequal siblings.
+    (
+        RuleSpec(RULE_CONTAINER_CAPTION_OVERFLOW, Severity.WARNING),
+        _check_container_caption_overflow,
+    ),
+    (
+        RuleSpec(RULE_SIBLING_SIZE_UNIFORMITY, Severity.WARNING),
+        _check_sibling_size_uniformity,
     ),
     # edge-routing: a bare non-orthogonal edge is a WARNING, but a run cutting
     # through an icon it does not connect (``*-through-*``) or into its own
@@ -2211,6 +2451,9 @@ RULES: Tuple[Tuple[RuleSpec, Callable[[Artifact], _PredicateResult]], ...] = (
     (RuleSpec(RULE_LEGEND_PLACEMENT, Severity.WARNING), _check_legend_placement),
     (RuleSpec(RULE_FLOW_LEGEND, Severity.WARNING), _check_flow_legend),
     (RuleSpec(RULE_NODE_CONNECTIVITY, Severity.WARNING), _check_node_connectivity),
+    # 1.10.12 WS5: dropped Flow steps (both classes) and landscape islands.
+    (RuleSpec(RULE_FLOW_STEP_UNDRAWN, Severity.WARNING), _check_flow_step_undrawn),
+    (RuleSpec(RULE_GRAPH_ISLANDS, Severity.WARNING), _check_graph_islands),
     (RuleSpec(RULE_EDGE_APPROACH, Severity.WARNING), _check_edge_approach),
     (RuleSpec(RULE_ORPHAN_LANDSCAPE, Severity.ERROR), _check_orphan_landscape),
     (
@@ -2241,10 +2484,25 @@ RULES: Tuple[Tuple[RuleSpec, Callable[[Artifact], _PredicateResult]], ...] = (
         RuleSpec(RULE_EDGE_CROSSING_EXCESS, Severity.WARNING),
         _check_edge_crossing_excess,
     ),
+    # edge-crossing-avoidable (1.10.12 WS3): WARNING on both classes.
+    (
+        RuleSpec(RULE_EDGE_CROSSING_AVOIDABLE, Severity.WARNING),
+        _check_edge_crossing_avoidable,
+    ),
+    # collinear-edges (1.10.12 WS8): WARNING on both classes.
+    (
+        RuleSpec(RULE_COLLINEAR_EDGES, Severity.WARNING),
+        _check_collinear_edges,
+    ),
     (RuleSpec(RULE_DETOUR_HOOK, Severity.WARNING), _check_detour_hook),
     (
         RuleSpec(RULE_STRUCTURAL_INTEGRITY, Severity.WARNING),
         _check_structural_integrity,
+    ),
+    # legend-boundary-coverage (1.10.12 WS11): WARNING on both classes.
+    (
+        RuleSpec(RULE_LEGEND_BOUNDARY_COVERAGE, Severity.WARNING),
+        _check_legend_boundary_coverage,
     ),
 )
 

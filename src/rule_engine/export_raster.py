@@ -36,17 +36,16 @@ that calls :func:`main` here, so both entry points share one implementation.
 
 Requires the ``drawio`` CLI on PATH (draw.io desktop).
 
-Export at scale ≥ 1 (R8.4, D8)
-------------------------------
-The exporter never downscales. It parses the page, measures the natural canvas
-width ``W`` (the union of every vertex box), and exports at ``--scale`` clamped
-to at least 1 (never below), computed as ``clamp(target / W, 1, max_width / W)``
-with ``target`` 1600px (flow) / 3400px (landscape) and ``max_width`` the class
-budget (1600 flow / 3600 landscape). When the canvas cannot fit its class budget
-even at scale 1 (``W + 2*border > max_width``), the export **fails** with a clear
-"split the diagram" error and writes no PNG — the exporter refuses to silently
-downscale a too-wide diagram (D8 tightens those layouts rather than raising the
-budget).
+Export scale (1.10.12 decision 1)
+---------------------------------
+The exporter parses the page, measures the natural canvas width ``W`` (the
+rendered extent of every vertex, captions included) and exports at
+``--scale = min(1.5, (max_width - 2*border) / W)`` with ``max_width`` the class
+budget (1600 flow / 3600 landscape). A canvas that fits its budget is never
+downscaled (the fit term is ≥ 1) and is upscaled by at most 1.5; a canvas over
+its budget is fitted down automatically, flow and landscape alike. Only when
+even the 0.5 legibility floor cannot fit (``fit < MIN_EXPORT_SCALE``) does the
+export **fail** with a "split the diagram" error and write no PNG.
 
 Hygiene (R8.5)
 --------------
@@ -76,6 +75,8 @@ import tempfile
 from pathlib import Path
 from typing import List, Optional, Sequence, Tuple
 
+from rule_engine.engine_assets import locate_asset, sniff_mime
+
 # The asset root defaults to the CURRENT WORKING DIRECTORY (the workspace a
 # user runs the exporter in), NOT a repo path — the packaged console script
 # has no repo checkout. ``image=assets/vendor/...`` tokens are resolved under
@@ -85,15 +86,19 @@ ASSET_ROOT = Path.cwd()
 # image=<path> where <path> is a workspace-relative asset file we must inline.
 _ASSET_IMAGE_RE = re.compile(r"image=(assets/vendor/[^;\"]+)")
 
-# Class-aware export targets and budgets (match the raster gate's class-aware
-# budget in rule_engine.raster_gate). A ``flow`` diagram fits a doc column at
-# 1600px; a ``landscape`` as-built needs a wider raster so 30-plus nodes stay
-# legible (the reference detailed as-built exports at ~3400px). The class is
-# read from the companion .diagram.md.
-FLOW_TARGET_WIDTH = 1600
-LANDSCAPE_TARGET_WIDTH = 3400
+# Class-aware export budgets (match the raster gate's class-aware budget in
+# rule_engine.raster_gate). A ``flow`` diagram fits a doc column at 1600px; a
+# ``landscape`` as-built may run to 3600px. The class is read from the
+# companion .diagram.md.
 FLOW_MAX_WIDTH = 1600
 LANDSCAPE_MAX_WIDTH = 3600
+
+#: Upper export scale (1.10.12 decision 1). Before 1.10.12 every raster was
+#: upscaled toward a class TARGET width (1600 flow / 3400 landscape), so a
+#: 1360px landscape exported at ~2.5x and the PNG said nothing about how the
+#: canvas was used (defect C11). The scale is now ``min(1.5, fit)``: crisp on a
+#: HiDPI screen, never inflated to fill the budget.
+MAX_EXPORT_SCALE = 1.5
 
 EXPORT_BORDER = "8"
 EXPORT_THEME = "light"
@@ -107,11 +112,14 @@ EXPORT_THEME = "light"
 #: corpus re-render accompanying this fix.
 _WRAPPED_TEXT_RENDER_OVERSHOOT = 15.0
 
-#: Legibility floor for the Theme 23 landscape auto-downscale: a landscape wider
-#: than its 3600px budget is scaled down to fit, but never below this factor —
-#: below it the icons are too small to read, and the right answer is to split or
-#: page the landscape rather than export an illegible postage stamp.
-LANDSCAPE_MIN_SCALE = 0.5
+#: Legibility floor for the over-budget fit-down (Theme 23, extended to flows in
+#: 1.10.12): a canvas wider than its class budget is scaled down to fit, but
+#: never below this factor — below it the icons are too small to read, and the
+#: right answer is to split or page the diagram rather than export an illegible
+#: postage stamp.
+MIN_EXPORT_SCALE = 0.5
+#: Back-compat alias (pre-1.10.12 name; the floor applied to landscapes only).
+LANDSCAPE_MIN_SCALE = MIN_EXPORT_SCALE
 
 #: Seconds before a hung draw.io CLI export is killed (R8.5).
 EXPORT_TIMEOUT = 180
@@ -137,10 +145,10 @@ class MissingAssetError(RuntimeError):
 
 
 class CanvasTooWideError(RuntimeError):
-    """Raised when a diagram cannot fit its class budget at scale >= 1 (R8.4/D8).
+    """Raised when a diagram cannot fit its class budget even at the 0.5 floor.
 
-    This is the "split the diagram" signal: the exporter refuses to downscale a
-    canvas that is wider than its class budget, and writes no PNG."""
+    This is the "split the diagram" signal: the exporter refuses to shrink a
+    canvas below :data:`MIN_EXPORT_SCALE`, and writes no PNG."""
 
     def __init__(self, source: Path, width: float, diagram_class: str, max_width: int) -> None:
         self.source = source
@@ -149,7 +157,8 @@ class CanvasTooWideError(RuntimeError):
         self.max_width = max_width
         super().__init__(
             f"{source}: canvas {int(round(width))}px exceeds the "
-            f"{diagram_class} budget at scale 1 — split the diagram"
+            f"{diagram_class} budget even at scale {MIN_EXPORT_SCALE} — "
+            "split the diagram"
         )
 
 
@@ -186,15 +195,18 @@ def _diagram_background_of(source: Path) -> str:
     return "transparent" if m.group(1).strip().lower() == "transparent" else "white"
 
 
-def _mime_for(path: Path) -> str:
-    suffix = path.suffix.lower()
-    if suffix == ".svg":
-        return "image/svg+xml"
-    if suffix in (".png",):
-        return "image/png"
-    if suffix in (".jpg", ".jpeg"):
-        return "image/jpeg"
-    return "application/octet-stream"
+def _mime_for(path: Path, data: Optional[bytes] = None) -> str:
+    """The image MIME of an asset: sniffed from its bytes, else its suffix.
+
+    1.10.12: a PNG saved under an ``.svg`` name (or any mislabelled file) is
+    inlined with its real MIME — draw.io renders a wrong MIME as a broken image.
+    """
+    if data is None:
+        try:
+            data = path.read_bytes()
+        except OSError:
+            data = b""
+    return sniff_mime(data, path.name)
 
 
 def missing_assets(text: str, repo_root: Path = ASSET_ROOT) -> List[str]:
@@ -208,7 +220,7 @@ def missing_assets(text: str, repo_root: Path = ASSET_ROOT) -> List[str]:
         rel = match.group(1)
         if rel in seen:
             continue
-        if not (repo_root / rel).is_file():
+        if locate_asset(rel, repo_root) is None:
             seen.append(rel)
     return seen
 
@@ -225,11 +237,12 @@ def inline_local_images(text: str, repo_root: Path = ASSET_ROOT) -> str:
 
     def repl(match: re.Match) -> str:
         rel = match.group(1)
-        asset = repo_root / rel
-        if not asset.is_file():
+        asset = locate_asset(rel, repo_root)
+        if asset is None:
             return match.group(0)
-        data = base64.b64encode(asset.read_bytes()).decode("ascii")
-        return f"image=data:{_mime_for(asset)},{data}"
+        raw = asset.read_bytes()
+        data = base64.b64encode(raw).decode("ascii")
+        return f"image=data:{_mime_for(asset, raw)},{data}"
 
     return _ASSET_IMAGE_RE.sub(repl, text)
 
@@ -310,80 +323,46 @@ def compute_scale(
 ) -> Tuple[float, float]:
     """Return ``(scale, width)`` for exporting ``source``.
 
-    ``width`` is the natural canvas width ``W``. By default ``scale`` is
-    ``clamp(target / W, 1, max_width / W)`` — never below 1, so the exporter
-    never downscales, and a canvas wider than its class budget raises
+    ``width`` is the natural canvas width ``W``. ``scale`` is
+    ``min(MAX_EXPORT_SCALE, (max_width - 2*border) / W)`` (1.10.12 decision 1):
+    at most 1.5, never below 1 while the canvas fits its class budget, and below
+    1 only for an over-budget canvas, which is fitted down automatically (no
+    ``--max-width`` needed). A fit below :data:`MIN_EXPORT_SCALE` raises
     :class:`CanvasTooWideError` (the "split the diagram" signal).
 
-    **Theme 13 — ``max_width_override``.** A legitimate multi-column flow can
-    render a few px over the 1600px flow budget (the diagnosed draw.io
-    wrapped-legend overshoot), with no way to nudge it under at export time
-    short of re-authoring. When a caller passes ``max_width_override`` (CLI
-    ``--max-width``), that value REPLACES the class budget AND permits a bounded
-    **downscale**: a canvas wider than the override is scaled DOWN to fit it
-    (``scale = (override - border) / W``, possibly < 1) rather than raising. The
-    default path (``max_width_override is None``) is byte-for-byte unchanged — no
-    shipped example downscales — so the opt-in never perturbs the corpus or the
-    raster gate.
+    **Theme 13 — ``max_width_override``.** When a caller passes
+    ``max_width_override`` (CLI ``--max-width``), that value REPLACES the class
+    budget in the same formula, without the legibility floor.
     """
     dclass = diagram_class or _diagram_class_of(source)
     is_landscape = dclass == "landscape"
-    target = LANDSCAPE_TARGET_WIDTH if is_landscape else FLOW_TARGET_WIDTH
     max_width = LANDSCAPE_MAX_WIDTH if is_landscape else FLOW_MAX_WIDTH
 
     width = _canvas_width(source)
     border = int(EXPORT_BORDER) * 2
 
-    if max_width_override is not None:
-        # Opt-in: fit the canvas to the override, downscaling if necessary.
-        if width <= 0:
-            return (1.0, width)
-        if max_width_override <= border:
-            raise CanvasTooWideError(source, width, dclass, max_width_override)
-        fit = (max_width_override - border) / width
-        # Upscale toward the override like the default path, but allow < 1 so a
-        # small overshoot is fit instead of failing. Cap the upscale so the
-        # scaled width never exceeds the override.
-        scale = min(fit, max(1.0, target / width)) if fit >= 1.0 else fit
-        return (scale, width)
-
-    if width + border > max_width:
-        # Theme 23: a LANDSCAPE "everything" view that genuinely needs more than
-        # its 3600px budget is downscaled to fit (to a legibility floor) rather
-        # than hard-failing, so an as-built does not have to be artificially
-        # grouped to export. A FLOW still raises — its 12-node cap means an
-        # over-budget flow is holding too much, and "split the diagram" is the
-        # right signal.
-        if is_landscape:
-            if width <= 0:
-                return (1.0, width)
-            fit = (max_width - border) / width
-            if fit < LANDSCAPE_MIN_SCALE:
-                # Even at the floor it will not fit — refuse rather than export an
-                # illegible postage stamp (split or page the landscape instead).
-                raise CanvasTooWideError(source, width, dclass, max_width)
-            return (fit, width)
-        # A FLOW that is only MARGINALLY over — within the wrapped-legend render
-        # overshoot plus the border — is absorbed by a hair of downscale (visually
-        # imperceptible, ~0.99) rather than hard-failing: Theme 13 opt1 added that
-        # ~15px to every width, which can tip a legitimate edge-of-budget
-        # multi-column flow (the cross-cloud composition at 1595px content) 11px
-        # over. A flow genuinely bigger than that margin still raises "split the
-        # diagram" — its 12-node cap means it is holding too much.
-        margin = _WRAPPED_TEXT_RENDER_OVERSHOOT + border
-        if width + border <= max_width + margin and width > 0:
-            return ((max_width - border) / width, width)
-        raise CanvasTooWideError(source, width, dclass, max_width)
-
     if width <= 0:
         # Degenerate/empty canvas: nothing to scale up or down.
         return (1.0, width)
 
-    # Never below 1 (no downscaling); never so large the scaled width + borders
-    # exceeds the class budget.
-    upper = (max_width - border) / width
-    scale = max(1.0, min(target / width, upper))
-    return (scale, width)
+    if max_width_override is not None:
+        # Opt-in (Theme 13): the override REPLACES the class budget. Same policy
+        # as the default path, but with no legibility floor — the caller asked
+        # for this width explicitly.
+        if max_width_override <= border:
+            raise CanvasTooWideError(source, width, dclass, max_width_override)
+        return (min(MAX_EXPORT_SCALE, (max_width_override - border) / width), width)
+
+    # 1.10.12 decision 1: ``scale = min(1.5, (budget - 2*border) / W)``. The fit
+    # term is below 1 only when the canvas is over its class budget, so the
+    # exporter never downscales a canvas that fits, and fits an over-budget one
+    # (flow or landscape) down automatically instead of failing.
+    fit = (max_width - border) / width
+    if fit < MIN_EXPORT_SCALE:
+        # Even at the legibility floor it will not fit: refuse rather than export
+        # an illegible postage stamp (split or page the diagram instead).
+        raise CanvasTooWideError(source, width, dclass, max_width)
+    return (min(MAX_EXPORT_SCALE, fit), width)
 
 
 def export_one(
@@ -398,8 +377,8 @@ def export_one(
 
     * :class:`MissingAssetError` when the source references an ``assets/vendor``
       file that does not exist (R8.5) — fail rather than export a broken image;
-    * :class:`CanvasTooWideError` when the canvas cannot fit its class budget at
-      scale 1 (R8.4) — the "split the diagram" signal;
+    * :class:`CanvasTooWideError` when the canvas cannot fit its class budget
+      even at :data:`MIN_EXPORT_SCALE` — the "split the diagram" signal;
     * ``subprocess.CalledProcessError`` if the draw.io CLI exits non-zero;
     * ``subprocess.TimeoutExpired`` if the CLI hangs past ``EXPORT_TIMEOUT``;
     * ``FileNotFoundError`` if the CLI is absent.
@@ -414,8 +393,8 @@ def export_one(
     if missing:
         raise MissingAssetError(source, missing)
 
-    # Scale >= 1 or refuse (R8.4/D8). Computed before touching the CLI so a
-    # too-wide canvas fails without spawning draw.io or writing a temp copy.
+    # min(1.5, fit), or refuse below the floor. Computed before touching the CLI
+    # so a too-wide canvas fails without spawning draw.io or writing a temp copy.
     dclass = _diagram_class_of(source)
     scale, _width = compute_scale(source, dclass, max_width_override)
 
@@ -522,11 +501,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--drawio", default="drawio",
                         help="path to the draw.io CLI (default: 'drawio' on PATH)")
     parser.add_argument("--max-width", type=int, default=None, metavar="PX",
-                        help="override the class width budget and permit a bounded "
-                             "DOWNSCALE to fit it (Theme 13): fit a legitimate "
-                             "multi-column flow that renders a few px over 1600 "
-                             "without re-authoring. Default: off (never downscale; "
-                             "a too-wide canvas is the 'split the diagram' signal).")
+                        help="override the class width budget (Theme 13): export at "
+                             "min(1.5, (PX - 2*border) / W), with no legibility "
+                             "floor. Default: the class budget (1600 flow / 3600 "
+                             "landscape); an over-budget canvas fits down "
+                             "automatically either way.")
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     repo_root = Path(args.repo_root)

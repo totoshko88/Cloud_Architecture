@@ -440,13 +440,14 @@ def _mapping_style_signatures(provider: str) -> Dict[str, str]:
     """
     import re
 
-    import yaml
-
     out: Dict[str, str] = {}
-    path = resolve_bundled_dir("mappings") / f"{provider}-icons.yaml"
+    # 1.10.12: the merged mapping tree (bundled + mappings/local/ overlays), the
+    # same one the icon resolver draws from, so a local role reverse-maps too.
+    from rule_engine import mapping_tree
+
     try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except (OSError, yaml.YAMLError):
+        data = mapping_tree.load_provider_mapping(provider)
+    except mapping_tree.MappingTreeError:
         return out
     if not isinstance(data, Mapping):
         return out

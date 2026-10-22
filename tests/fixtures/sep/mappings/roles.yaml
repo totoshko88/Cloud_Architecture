@@ -1,0 +1,345 @@
+# Diagram presentation roles → per-provider service query.
+#
+# A "role" is how a NODE is shown in a diagram (its icon), which is a superset of
+# the nine neutral *resource types* in schemas/inventory.schema.json. The neutral
+# types cover the inventory/normalizer contract; diagram generators additionally
+# need presentation-only roles (cdn, dns, waf, cache, …) that map to a distinct
+# vendor icon but are not first-class inventory types.
+#
+# RULE (see .kiro/steering/diagram-standards.md — "One role per distinct
+# service"): a service that is semantically different from an existing role gets
+# its OWN role with a per-provider icon — never a look-alike. A CDN is not an
+# object store; a DNS is not a load balancer; a WAF is not a generic secrets
+# store. This file is the single source of truth for that role → service mapping;
+# scripts/build_icon_sets.py resolves each query against the indexed official
+# packs and writes the resolved icon into the committed mappings/icon-index.json.
+#
+# For each role, per provider, `query` is the service name resolved against that
+# provider's official pack index (asset_index.resolve_asset). For GCP a role may
+# also declare `gcp_category` — the Google docs category whose icon stands in when
+# the service has no dedicated 2025 product icon (product-first, category-fallback;
+# this is Google's own convention, e.g. Cloud CDN → Networking category icon).
+version: 1
+
+roles:
+
+  # --- container roles (rendered as group/boundary styles, not node icons) --
+  # boundary and network_boundary are drawn as dashed container frames (see each
+  # mappings/<provider>-icons.yaml `containers:` block), not as node image icons.
+  # Their entries here resolve the *representative* group glyph for reference.
+  boundary:
+    aws: "Account"
+    azure: "Subscriptions"
+    gcp_category: "Management Tools"
+    oci: "compartments"
+  network_boundary:
+    aws: "Virtual Private Cloud"
+    azure: "Virtual Networks"
+    gcp_category: "Networking"
+    oci: "virtual-cloud-network-vcn"
+  serverless_fn:
+    aws: "Lambda"
+    azure: "Function Apps"
+    gcp_category: "Serverless Computing"
+    oci: "functions"
+  object_store:
+    aws: "Simple Storage Service"
+    azure: "Storage Accounts"
+    gcp: "Cloud Storage"
+    oci: "object-storage"
+  managed_sql:
+    aws: "RDS"
+    azure: "SQL Database"
+    gcp: "Cloud SQL"
+    oci: "autonomous-db"
+  message_queue:
+    aws: "Simple Queue Service"
+    azure: "Service Bus"
+    gcp_category: "Integration Services"
+    oci: "streaming"
+  secrets_store:
+    aws: "Secrets Manager"
+    azure: "Key Vaults"
+    gcp_category: "Security Identity"
+    oci: "vault"
+  managed_k8s:
+    aws: "Elastic Kubernetes Service"
+    azure: "Kubernetes Services"
+    gcp: "GKE"
+    oci: "container-engine-for-kubernetes"
+  llm_platform:
+    aws: "Bedrock"
+    azure: "Azure OpenAI"
+    gcp: "Vertex AI"
+    oci: "artificial-intelligence"
+
+  # --- presentation-only roles (distinct icon, not an inventory type) -------
+  # CDN: AWS CloudFront, Azure CDN Profiles, GCP → Networking category (Google's
+  # own convention: Cloud CDN has no product glyph), OCI CDN stencil.
+  cdn:
+    aws: "CloudFront"
+    azure: "CDN Profiles"
+    gcp_category: "Networking"
+    oci: "cdn"
+  # DNS / traffic routing.
+  dns:
+    aws: "Route 53"
+    azure: "DNS Zones"
+    gcp_category: "Networking"
+    oci: "dns"
+  # Web Application Firewall.
+  waf:
+    aws: "WAF"
+    azure: "Web Application Firewall Policies WAF"
+    gcp_category: "Security Identity"
+    oci: "waf"
+  # Load balancer.
+  lb:
+    aws: "Elastic Load Balancing"
+    azure: "Load Balancers"
+    gcp_category: "Networking"
+    oci: "load-balancer"
+  # In-memory cache. OCI has no dedicated cache glyph → falls back to its
+  # database family; recorded as a gap for OCI.
+  cache:
+    aws: "ElastiCache"
+    azure: "Cache Redis"
+    gcp_category: "Databases"
+    oci: "autonomous-db"
+  # Virtual machine / compute instance (EC2 and peers). Compute family, distinct
+  # from serverless_fn — a VM is not a function. Orange compute family on AWS.
+  compute_instance:
+    aws: "EC2"
+    azure: "Virtual Machines"
+    gcp_category: "Compute"
+    oci: "compute"
+  # Managed elastic file system / shared NFS. Storage family (green on AWS) —
+  # distinct from object_store: a mountable filesystem is not a bucket.
+  file_system:
+    aws: "Elastic File System"
+    azure: "Azure Files"
+    gcp_category: "Storage"
+    oci: "file-storage"
+
+  # --- additional AWS services (commonly used in architecture diagrams) ------
+  # These extend beyond the core presentation roles to cover services that appear
+  # frequently in real-world diagrams. The query string matches the official AWS
+  # icon pack's Arch_<Service> naming. Each service has its own icon — never
+  # substitute a look-alike (diagram-standards.md "Icon Fidelity").
+
+  # AWS Systems Manager — Management & Governance family (pink)
+  ssm:
+    aws: "Systems Manager"
+    azure: "Automation Accounts"
+    gcp_category: "Management Tools"
+    oci: "resource-manager"
+
+  # Amazon Aurora — Database family (blue)
+  aurora:
+    aws: "Aurora"
+    azure: "Azure Database MySQL Server"
+    gcp: "Cloud SQL"
+    oci: "autonomous-db"
+
+  # Amazon DynamoDB — Database family (blue)
+  dynamodb:
+    aws: "DynamoDB"
+    azure: "Cosmos DB"
+    gcp_category: "Databases"
+    oci: "nosql"
+
+  # AWS Identity and Access Management — Security family (red)
+  iam:
+    aws: "Identity and Access Management"
+    azure: "Entra ID"
+    gcp_category: "Security Identity"
+    oci: "identity-and-access-management"
+
+  # Amazon Simple Notification Service — Application Integration (pink)
+  sns:
+    aws: "Simple Notification Service"
+    azure: "Notification Hubs"
+    gcp_category: "Integration Services"
+    oci: "notifications"
+
+  # AWS Step Functions — Application Integration (pink)
+  step_functions:
+    aws: "Step Functions"
+    azure: "Logic Apps"
+    gcp_category: "Integration Services"
+    oci: "resource-manager"
+
+  # Amazon EventBridge — Application Integration (pink)
+  eventbridge:
+    aws: "EventBridge"
+    azure: "Event Grid"
+    gcp_category: "Integration Services"
+    oci: "events"
+
+  # Amazon API Gateway — Networking & Content Delivery (purple)
+  api_gateway:
+    aws: "API Gateway"
+    azure: "API Management"
+    gcp: "Apigee"
+    oci: "api-gateway"
+
+  # Amazon Cognito — Security family (red)
+  cognito:
+    aws: "Cognito"
+    azure: "Entra ID"
+    gcp_category: "Security Identity"
+    oci: "identity-and-access-management"
+
+  # Amazon CloudWatch — Management & Governance family (pink)
+  cloudwatch:
+    aws: "CloudWatch"
+    azure: "Monitor"
+    gcp_category: "Management Tools"
+    oci: "monitoring"
+
+  # AWS License Manager — Management & Governance family (pink). A distinct
+  # service (software-licence tracking), its own icon — not a look-alike. Azure
+  # and GCP have no dedicated licence-manager product glyph, so they fall back to
+  # the Management Tools category; OCI uses its resource/governance manager.
+  license_manager:
+    aws: "License Manager"
+    azure: "Automation Accounts"
+    gcp_category: "Management Tools"
+    oci: "resource-manager"
+
+  # AWS Organizations — the ORG-level service glyph (regen9). Distinct from the
+  # single-account `peer_account`/`external_cloud` resource glyph: this is the
+  # Organizations SERVICE icon (Arch_AWS-Organizations), used for an org/
+  # management-scope node. Management & Governance family (pink).
+  organizations:
+    aws: "Organizations"
+    azure: "Management Groups"
+    gcp_category: "Management Tools"
+    oci: "organization"
+
+  # LMS mortarboard / graduation cap (regen9). A provider-neutral learning glyph
+  # for a Learning Management System node. No cloud pack ships a generic
+  # mortarboard, so the workspace supplies a hand-authored public-domain SVG
+  # (assets/vendor/education/mortarboard.svg) via the local overlay. Listed here
+  # so the committed icon-index roles layer carries the role; the neutral mark is
+  # the same on every provider.
+  education:
+    aws: "education"
+    azure: "education"
+    gcp_category: "education"
+    oci: "education"
+
+  # EPAM DIAL AI proxy brand mark (regen9, owner-supplied). A specific external
+  # SaaS brand (ai-proxy.lab.epam.com), not a cloud service — supplied as an
+  # owner asset via the local overlay (assets/vendor/dial-brand/dial.svg).
+  dial:
+    aws: "dial"
+    azure: "dial"
+    gcp_category: "dial"
+    oci: "dial"
+
+  # Amazon Bedrock AgentCore — AI/ML family (green)
+  bedrock_agentcore:
+    aws: "Bedrock AgentCore"
+    azure: "Azure OpenAI"
+    gcp: "Vertex AI"
+    oci: "artificial-intelligence"
+
+  # --- Resource-level icons (specific instances, not services) ---------------
+  # These are for when you need to show a specific RESOURCE (like a bucket) vs
+  # the SERVICE (like S3). Resource icons come from Res_* in the AWS pack.
+
+  # S3 Bucket — a specific storage bucket, not the S3 service itself
+  s3_bucket:
+    aws: "Simple Storage Service Bucket"
+    azure: "Storage Accounts"
+    gcp: "Cloud Storage"
+    oci: "bucket"
+
+  # S3 Bucket with objects — shows bucket contains data
+  s3_bucket_with_objects:
+    aws: "Simple Storage Service Bucket With Objects"
+    azure: "Storage Accounts"
+    gcp: "Cloud Storage"
+    oci: "bucket"
+
+  # Lambda Function — a specific function, not the Lambda service
+  lambda_function:
+    aws: "Lambda Lambda Function"
+    azure: "Function Apps"
+    gcp_category: "Serverless Computing"
+    oci: "functions"
+
+  # EC2 Instance — a specific VM instance
+  ec2_instance:
+    aws: "EC2 Instance"
+    azure: "Virtual Machines"
+    gcp_category: "Compute"
+    oci: "virtual-machine-vm"
+
+  # RDS DB Instance — a specific database instance
+  rds_instance:
+    aws: "Aurora Amazon RDS Instance"
+    azure: "SQL Database"
+    gcp: "Cloud SQL"
+    oci: "autonomous-db"
+
+  # --- Compute / registry services (Theme 5) ---------------------------------
+  # AWS Batch — managed batch compute. Compute family (orange). VPC-scoped
+  # (jobs run on compute in a subnet).
+  batch:
+    aws: "Batch"
+    azure: "Batch Accounts"
+    gcp_category: "Compute"
+    oci: "compute"
+
+  # Elastic Container Registry — managed container image registry. Containers
+  # family. Regional service reached over endpoints.
+  ecr:
+    aws: "Elastic Container Registry"
+    azure: "Container Registries"
+    gcp_category: "Containers"
+    oci: "registry"
+
+  # --- Network resource icons (Theme 15) -------------------------------------
+  # First-class network-plumbing roles so a connectivity diagram no longer has
+  # to hand-draw grey boxes. AWS uses the Resource-Icons (Res_*) set; the brand
+  # colour is the Networking family purple (#8C4FFF). All are VPC-scoped (they
+  # live inside the Network Boundary) — see ROLE_SCOPE in layout/base.py.
+
+  # The VPC itself as a node marker (distinct from the network_boundary CONTAINER
+  # frame — this is the small VPC glyph used when a VPC is referenced as a node).
+  vpc:
+    aws: "Virtual Private Cloud"
+    azure: "Virtual Networks"
+    gcp_category: "Networking"
+    oci: "virtual-cloud-network-vcn"
+
+  # NAT Gateway — outbound-only egress for private subnets.
+  nat_gateway:
+    aws: "VPC NAT Gateway"
+    azure: "NAT"
+    gcp_category: "Networking"
+    oci: "nat-gateway"
+
+  # Internet Gateway — the VPC's attachment to the public internet.
+  internet_gateway:
+    aws: "VPC Internet Gateway"
+    azure: "Virtual Networks"
+    gcp_category: "Networking"
+    oci: "internet-gateway"
+
+  # VPC Endpoint — PrivateLink/interface or gateway endpoint to a regional
+  # service without traversing the public internet.
+  vpc_endpoint:
+    aws: "VPC Endpoints"
+    azure: "Private Link"
+    gcp_category: "Networking"
+    oci: "service-gateway"
+
+  # VPC Peering Connection — a direct network link between two VPCs.
+  vpc_peering:
+    aws: "VPC Peering Connection"
+    azure: "Virtual Networks"
+    gcp_category: "Networking"
+    oci: "remote-peering-gateway"

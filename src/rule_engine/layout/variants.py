@@ -29,6 +29,7 @@ solver leans on so it can never do worse than today):
 | back-edge     | loop-above, descend-near       | REVIEW.md experiment 2             |
 | spine         | straight-drop, side-corridor   | pass 1c / ``_box_directly_below``  |
 | corridor side | left-gap, right-gap            | ``_free_left_corridor_x`` / 1d     |
+| entry face    | <family>-top, <family>-left    | 1.10.12 WS3 (C7), ``_face_variants``|
 
 **Pure function.** :func:`generate` reads only ``(edge, placed, containers,
 kind)`` and returns descriptors — it lays no waypoints and touches no allocator.
@@ -101,6 +102,9 @@ class RoutePlan(str, Enum):
     TURN_NEAR_TARGET = "turn-near-target"  # long haul: run horizontal first,
     #                                        put the long vertical at the TARGET's
     #                                        approach column (Theme 38b)
+    RETURN_BUS_ABOVE = "return-bus-above"  # 1.10.12 WS5: leftward / response
+    RETURN_BUS_BELOW = "return-bus-below"  # edge on a lane outside every content
+    #                                        row it spans (the return bus)
 
 
 @dataclass(frozen=True)
@@ -127,6 +131,10 @@ class RouteVariant:
     entry: Contact
     plan: RoutePlan
     rank: int
+    #: 1.10.12 WS3: an entry-face alternative (:func:`_face_variants`). The
+    #: solver admits it only when it crosses strictly less than every other
+    #: variant of the edge, so a face swap is never taken for ink or turns.
+    face_swap: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -212,7 +220,7 @@ def _rule_based_contacts(
 # ---------------------------------------------------------------------------
 
 def _variant(edge_id: str, family: str, exit_pt: Contact, entry_pt: Contact,
-             plan: RoutePlan, rank: int) -> RouteVariant:
+             plan: RoutePlan, rank: int, face_swap: bool = False) -> RouteVariant:
     """Build one :class:`RouteVariant`, asserting contract-legality by
     construction (a family that ever emits an illegal face is a coding bug, not
     an input condition)."""
@@ -228,6 +236,7 @@ def _variant(edge_id: str, family: str, exit_pt: Contact, entry_pt: Contact,
         entry=entry_pt,
         plan=plan,
         rank=rank,
+        face_swap=face_swap,
     )
 
 
@@ -300,6 +309,70 @@ def _back_edge_variants(edge: "EdgeSpec", rule_exit: Contact,
         _variant(edge.id, "descend-near", rule_exit, rule_entry,
                  RoutePlan.DESCEND_NEAR, start_rank + 1),
     ]
+
+
+def _is_return(edge: "EdgeSpec", placed: Dict[str, "Box"]) -> bool:
+    """True for a leftward / response edge: the target's centre sits left of
+    the source's left edge (a back-edge, a reply queue, an actor callback)."""
+    src = placed.get(edge.source)
+    tgt = placed.get(edge.target)
+    if src is None or tgt is None:
+        return False
+    return tgt.x + tgt.w / 2.0 < src.x
+
+
+def _return_bus_variants(edge: "EdgeSpec", placed: Dict[str, "Box"], kind: str,
+                         rule_exit: Contact, rule_entry: Contact,
+                         start_rank: int,
+                         nest: "Dict[str, tuple] | None" = None) -> List[RouteVariant]:
+    """return-bus family (1.10.12 WS5, C2): a leftward / response edge laid on a
+    dedicated lane OUTSIDE every content row it spans
+    (:func:`rule_engine.layout.routers._route_return_bus`).
+
+    Offered for a return edge of either long-haul class (``back-edge`` /
+    ``cross-region``, incl. the Theme 11 callback to an external actor on the
+    left): bus above -> top or left entry, bus below -> left entry (a bottom
+    arrival from the lower bus would break the contract). The exit is the right
+    face (rule band kept when the rule already exits right): a bottom exit from a
+    captioned source would strike its own caption (Variant A). Flagged
+    ``face_swap`` so the solver takes a bus only on strictly fewer crossings with
+    no new rule finding: a bus exists to remove crossings, never for ink.
+
+    ``nest`` (the edge's entry of :func:`routers.decide_return_bus_nesting`)
+    sets the exit band of a reply that shares its source with other replies,
+    so the nested runs leave the face in nesting order (WS5 review F1)."""
+    if kind not in ("back-edge", "cross-region") or not _is_return(edge, placed):
+        return []
+    out: List[RouteVariant] = []
+    rank = start_rank
+    for name, plan, entries in (
+        ("return-bus-above", RoutePlan.RETURN_BUS_ABOVE, (_ENTRY_TOP, _ENTRY_LEFT)),
+        ("return-bus-below", RoutePlan.RETURN_BUS_BELOW, (_ENTRY_LEFT,)),
+    ):
+        if nest is not None:
+            side = "above" if plan is RoutePlan.RETURN_BUS_ABOVE else "below"
+            exit_pt = (1.0, _bus_exit_band(nest, side))
+        else:
+            exit_pt = _keep_band(rule_exit, _EXIT_RIGHT)
+        for entry in entries:
+            out.append(_variant(edge.id, f"{name}-{_face(entry)}", exit_pt,
+                                _keep_band(rule_entry, entry), plan, rank,
+                                face_swap=True))
+            rank += 1
+    return out
+
+
+def _bus_exit_band(nest: "Dict[str, tuple]", side: str) -> float:
+    """The right-face exit y-fraction of a nested return-bus run on ``side``.
+
+    The inner run (rank ``count - 1``) leaves from the band nearest its bus: on
+    the upper bus that is the UPPER band, so the outer run's stub passes below
+    the inner rise; on the lower bus the mirror."""
+    rank, count = nest[side]
+    bands = nest["bands"]
+    depth = count - 1 - rank  # 0 = innermost
+    idx = depth if side == "above" else count - 1 - depth
+    return bands[max(0, min(idx, len(bands) - 1))]
 
 
 def _face(pt: Contact) -> str:
@@ -380,6 +453,59 @@ def _spine_variants(edge: "EdgeSpec", placed: Dict[str, "Box"],
     return variants
 
 
+def _face_variants(edge: "EdgeSpec", placed: Dict[str, "Box"], kind: str,
+                   rule_exit: Contact, rule_entry: Contact,
+                   start_rank: int) -> List[RouteVariant]:
+    """face family (1.10.12 WS3, C7): the same route shapes entering the OTHER
+    legal face of the target (left vs top).
+
+    The families above choose a corridor; each of them reuses the rule-based
+    entry face, so the scored search never saw a face alternative. SEP 09
+    ``e3`` (Route 53 → CloudFront) is the case: the back-edge entered the LEFT
+    face because the target had a left gap (Rule G), cut ``e1`` already
+    arriving there, and the TOP entry (legal, shorter, crossing-free) was never
+    generated. ``route_cost`` counts crossings, so generating the candidate is
+    enough for the argmin to pick it.
+
+    * ``back-edge`` → loop-above / descend-near with the other entry face;
+    * ``fan-out-row`` / ``cross-region`` (converging runs) → lane-above /
+      lane-below with the other entry face;
+    * ``spine`` → none here: the spine family already varies both faces
+      (straight-drop, right-gap, left-gap).
+
+    The exit keeps its rule-based face and band: a bottom exit from a captioned
+    source would strike its own caption (Variant A, WS2); the bottom face stays
+    with the straight-drop / left-gap spine and the Rule K back-edge shapes. A
+    new face takes its centre (:func:`_keep_band` keeps a same-face band), so
+    a slot shared with another arrival scores an ``entry-thirds`` finding and
+    loses. Every variant keeps a right/bottom exit and a left/top entry."""
+    face = _face(rule_entry)
+    if face not in ("left", "top"):
+        return []
+    alt_entry = _ENTRY_TOP if face == "left" else _ENTRY_LEFT
+    alt = _face(alt_entry)
+    if kind == "back-edge":
+        plans = (("loop-above", RoutePlan.LOOP_ABOVE), ("descend-near", RoutePlan.DESCEND_NEAR))
+    elif kind in ("fan-out-row", "cross-region"):
+        plans = (("lane-above", RoutePlan.LANE_ABOVE), ("lane-below", RoutePlan.LANE_BELOW))
+    else:
+        # ``spine`` already varies its faces (straight-drop: bottom→top;
+        # right-gap: right→top; left-gap: bottom→left). A right-corridor →
+        # left-entry spine was tried and dropped: on the HA summary the greedy
+        # search took it for ``s4`` and the repair loop could not separate the
+        # corridor it then shared with ``s9`` (strict layout raised). The
+        # finishing crossing-repair pass still tries that face pair on the
+        # finished document, where every finding is judged.
+        return []
+    out: List[RouteVariant] = []
+    rank = start_rank
+    for name, plan in plans:
+        out.append(_variant(edge.id, f"{name}-{alt}", rule_exit, alt_entry, plan, rank,
+                            face_swap=True))
+        rank += 1
+    return out
+
+
 def _left_gap_available(src: "Box", tgt: "Box", others: List["Box"],
                         containers: Dict[str, "Box"]) -> bool:
     """True when the column's LEFT gap is a usable vertical corridor for a spine
@@ -417,6 +543,8 @@ def generate(
     containers: Dict[str, "Box"],
     kind: str,
     global_contacts: "Dict[str, tuple] | None" = None,
+    faces: bool = True,
+    bus_nest: "Dict[str, dict] | None" = None,
 ) -> List[RouteVariant]:
     """Return the sanctioned :class:`RouteVariant`\\ s for ``edge`` in rank order.
 
@@ -504,6 +632,20 @@ def generate(
     # kind == "straight": a directly-opposite adjacent target is a single centred
     # segment; there is no sanctioned alternative shape, so the rule-based variant
     # is the only one. The list is still non-empty.
+
+    # 1.10.12 WS3: the other legal entry face, ranked after every corridor
+    # family so it wins only on a strictly lower ``route_cost``. ``faces=False``
+    # (the most-constrained-first ordering key) keeps the routing order of
+    # every edge exactly what it was before the family existed.
+    if faces:
+        fv = _face_variants(edge, placed, kind, rule_exit, rule_entry, rank)
+        variants.extend(fv)
+        rank += len(fv)
+        # 1.10.12 WS5: the return bus, judged like a face swap (strictly fewer
+        # crossings) and likewise left out of the ordering key.
+        variants.extend(_return_bus_variants(edge, placed, kind, rule_exit,
+                                             rule_entry, rank,
+                                             (bus_nest or {}).get(edge.id)))
 
     return _dedupe_by_id(variants)
 

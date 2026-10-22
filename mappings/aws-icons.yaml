@@ -396,6 +396,31 @@ resources:
     brand_hex: "#E7157B"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_Management-Governance/Res_AWS-Organizations_Management-Account_48.svg"
 
+  # AWS Organizations — the ORGANIZATION-level service glyph (1.10.12, SEP
+  # feedback §1): an org / management scope drawn as one node (e.g. a
+  # "Sandbox-mgmt + Logging org"). Distinct from peer_account (the single
+  # Res_AWS-Organizations_Account glyph) and external_cloud (the
+  # management-account resource glyph) — one role per distinct service.
+  # Management & Governance family pink.
+  organizations:
+    icon_id: aws.organizations
+    icon_provenance: service
+    brand_hex: "#E7157B"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Management-Tools/48/Arch_AWS-Organizations_48.svg"
+
+  # Education / learning system (1.10.12, SEP feedback §2.1) — an LMS or
+  # course platform. Provider-neutral graduation-mortarboard glyph, authored in
+  # this repository under CC0 1.0 and bundled with the engine
+  # (rule_engine/engine_assets/education/mortarboard.svg); the canonical
+  # assets/vendor/education/ path resolves to the bundled copy when the
+  # workspace has none. Grayscale, so it is valid on every profile. An external
+  # system: drawn outside the cloud boundaries, unclassified in ROLE_SCOPE.
+  education:
+    icon_id: education.mortarboard
+    icon_provenance: neutral
+    brand_hex: "#333333"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/education/mortarboard.svg"
+
 # Container styles for boundaries (using mxgraph.aws4.group for proper draw.io
 # group behavior — these are structural elements, not service icons)
 # `brand_hex` on a container entry is the PROVIDER ANCHOR (AWS Squid Ink

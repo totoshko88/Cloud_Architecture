@@ -26,7 +26,7 @@ output (R1.1, R1.2).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 try:  # package-relative import when used as ``rule_engine.layout.repair``
     from ..diagram_layout import GRID, CONTAINER_PAD
@@ -216,7 +216,7 @@ def _spec_container_id(cand: "PlacedDiagram", oid: object) -> object:
     return oid
 
 
-def _serialize_candidate(cand: "PlacedDiagram") -> str:
+def _serialize_candidate(cand: "PlacedDiagram", labels: Optional[Dict[str, str]] = None) -> str:
     """Serialize a candidate to ``.drawio`` text via ``build_diagram`` (stub icons).
 
     Builds the ``Node`` / ``Edge`` / ``Boundary`` objects ``build_diagram``
@@ -224,7 +224,11 @@ def _serialize_candidate(cand: "PlacedDiagram") -> str:
     neutral stub icon renderer (the oracle judges *geometry*, not the glyph). The
     returned text is exactly what the linter would parse, so re-parsing it with
     ``build_geometry`` gives the oracle the linter's own view (design.md →
-    "Integration points & risks / _run_oracle adapter")."""
+    "Integration points & risks / _run_oracle adapter").
+
+    ``labels`` (1.10.12 WS4) captions each stub node with its display label
+    instead of its id, so the finishing passes (caption-safe re-routes, caption
+    wraps) see the real caption widths."""
     # 1.10.6: draw each container with the caption and style the skin will use
     # when the spec carries them, so the oracle and the scored solver see the
     # caption exactly where the linter will (``edge-crosses-container-label``).
@@ -249,7 +253,8 @@ def _serialize_candidate(cand: "PlacedDiagram") -> str:
     ]
     stub = _dl.builtin_icon(_STUB_ICON_STYLE)
     nodes = [
-        _dl.Node(id=nid, label=nid, x=int(box.x), y=int(box.y), render=stub)
+        _dl.Node(id=nid, label=(labels or {}).get(nid, nid), x=int(box.x), y=int(box.y),
+                 render=stub)
         for nid, box in sorted(cand.nodes.items())
     ]
     edges = [
@@ -275,6 +280,9 @@ def _serialize_candidate(cand: "PlacedDiagram") -> str:
         flow_lines=cand.spec.flow_lines,
         legend_x=cand.legend_x,
         legend_w=cand.legend_w,
+        # The oracle judges the geometry the engine routed; the Variant A
+        # re-route is the shared builder's finishing pass on the real document.
+        caption_safe=False,
     )
 
 

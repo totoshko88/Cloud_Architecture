@@ -302,3 +302,20 @@ roles:
     azure: "Virtual Networks"
     gcp_category: "Networking"
     oci: "remote-peering-gateway"
+  # --- Organization / education (1.10.12, SEP feedback §1 / §2.1) -----------
+  # The ORGANIZATION-level service (an org / management scope as one node).
+  # Distinct from the single-account peer_account glyph. Azure's analogue is
+  # Management Groups, OCI's the organization stencil; GCP has no product
+  # glyph, so the Management Tools category stands in (Google's convention).
+  organizations:
+    aws: "Organizations"
+    azure: "Management Groups"
+    gcp_category: "Management Tools"
+    oci: "organization"
+  # Education / learning system (an LMS or course platform). No vendor pack
+  # ships a neutral mortarboard, so the role carries no provider query: it
+  # resolves to the engine-bundled CC0 asset (rule_engine/engine_assets) on
+  # every provider (`source: bundled` in icon-index.json).
+  education:
+    asset: "assets/vendor/education/mortarboard.svg"
+    display_name: "Education (mortarboard)"

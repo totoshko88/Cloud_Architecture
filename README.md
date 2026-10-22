@@ -5,8 +5,9 @@
 # Diagram & Inventory Rule Engine
 
 A reusable, cloud-agnostic Kiro project that codifies how AI agents deterministically
-produce architecture diagrams and inventory documents across five provider profiles:
-`aws`, `azure`, `gcp`, `oci`, and a vendor-neutral `generic` fallback.
+produce architecture diagrams and inventory documents across six provider profiles:
+`aws`, `azure`, `gcp`, `oci`, a vendor-neutral `generic` fallback, and an
+orchestrator-platform `kubernetes` profile.
 
 ## Purpose
 
@@ -88,6 +89,7 @@ legible. Icons are the provider's official glyphs, resolved through `mappings/ic
 | **GCP** | [Vertex pipeline](examples/gcp/01-gcp-vertex-pipeline.drawio) · [png](examples/gcp/01-gcp-vertex-pipeline.drawio.png) | [summary](examples/gcp/02-gcp-ha-multiregion-summary.drawio) · [png](examples/gcp/02-gcp-ha-multiregion-summary.drawio.png) | [landscape](examples/gcp/02-gcp-ha-multiregion-landscape.drawio) · [png](examples/gcp/02-gcp-ha-multiregion-landscape.drawio.png) |
 | **OCI** | [GenAI stack](examples/oci/01-oci-genai-stack.drawio) · [png](examples/oci/01-oci-genai-stack.drawio.png) | [summary](examples/oci/02-oci-ha-multiregion-summary.drawio) · [png](examples/oci/02-oci-ha-multiregion-summary.drawio.png) | [landscape](examples/oci/02-oci-ha-multiregion-landscape.drawio) · [png](examples/oci/02-oci-ha-multiregion-landscape.drawio.png) |
 | **generic** | [reference architecture](examples/generic/01-generic-reference-architecture.drawio) · [png](examples/generic/01-generic-reference-architecture.drawio.png) | — | — |
+| **kubernetes** | — | [summary](examples/kubernetes/01-kubernetes-architecture-summary.drawio) · [png](examples/kubernetes/01-kubernetes-architecture-summary.drawio.png) | [landscape](examples/kubernetes/01-kubernetes-architecture-landscape.drawio) · [png](examples/kubernetes/01-kubernetes-architecture-landscape.drawio.png) |
 | **cross-cloud** | [C4 composition](examples/cross-cloud/01-cross-cloud-composition.drawio) · [png](examples/cross-cloud/01-cross-cloud-composition.drawio.png) | — | — |
 
 Icon mechanism per cloud: **AWS** built-in `mxgraph.aws4.*` stencils; **Azure** azure2
@@ -216,4 +218,5 @@ and send changes as a pull request using the
   [inventory-standards](.kiro/steering/inventory-standards.md),
   [provider-profiles](.kiro/steering/provider-profiles.md),
   [kb-frontmatter](.kiro/steering/kb-frontmatter.md),
-  [diagram-lint](.kiro/steering/diagram-lint.md)
+  [diagram-lint](.kiro/steering/diagram-lint.md),
+  [asset-packs](.kiro/steering/asset-packs.md)

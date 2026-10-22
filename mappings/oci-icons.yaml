@@ -117,6 +117,13 @@ resources:
     icon_provenance: neutral
     brand_hex: "#333333"
     style: "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;dashed=1;verticalAlign=middle;fontSize=12"
+  # Education / learning system (1.10.12) — the provider-neutral CC0
+  # mortarboard bundled with the engine (see aws-icons.yaml `education`).
+  education:
+    icon_id: education.mortarboard
+    icon_provenance: neutral
+    brand_hex: "#333333"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/education/mortarboard.svg"
 
 containers:
   # Container styles follow the official OCI Architecture Diagram Toolkit v24.2

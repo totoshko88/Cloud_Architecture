@@ -103,6 +103,7 @@ def _verify_page(page: Page, sources: IconSources) -> tuple[List[Dict[str, str]]
     for cell in vertices:
         cell_refs = refs_by_cell.get(cell.id, [])
         verifiable_rows: List[Dict[str, str]] = []
+        unverified_detail = ""
         for ref in cell_refs:
             status, detail = resolve(ref, sources)
             row = {
@@ -116,6 +117,9 @@ def _verify_page(page: Page, sources: IconSources) -> tuple[List[Dict[str, str]]
                 # A ref kind with no verification source at all does not make
                 # the vertex "verifiable"; fold it into the vertex-level
                 # unverified report below rather than emitting a ref row.
+                # Keep its reason (e.g. a built-in stencil the asar-extracted
+                # manifest lacks) so the report says WHY.
+                unverified_detail = unverified_detail or detail
                 continue
             verifiable_rows.append(row)
 
@@ -129,7 +133,8 @@ def _verify_page(page: Page, sources: IconSources) -> tuple[List[Dict[str, str]]
                     "kind": "vertex",
                     "reference": cell.label or cell.id,
                     "status": UNVERIFIED,
-                    "detail": "service vertex has no verifiable icon reference",
+                    "detail": "service vertex has no verifiable icon reference"
+                    + (f" ({unverified_detail})" if unverified_detail else ""),
                 }
             )
     return references, len(vertices)

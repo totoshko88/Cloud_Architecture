@@ -58,7 +58,7 @@ documented gap that does not block publication.
 | D32 | **Reconcile was silent about resources with no role (S2).** A resource without a role is invisible to the coverage check, so a resource type the mapping lacks (QuickSight, Glue, …) passed unseen. `rule-engine-reconcile` now counts every enumerated resource and prints `[WARNING] N of M enumerated resource(s) have no role …`; eligibility and exit codes are unchanged. | Resolved (1.10.7) | `reconcile.py` |
 | D33 | **The Legend described boundaries the diagram did not draw (S3).** Every Legend carried the outer- and inner-boundary lines, even on a VPC-less account or a summary that draws only region boxes. `Boundary.kind` + `diagram_layout.legend_lines_for` now emit a boundary line only for a drawn kind, in `build_diagram` and in `rule-engine-draw` (account-only, so no inner-boundary line). Goldens regenerated (Legend text and box height only, geometry untouched): `examples/{aws,azure,gcp,oci}/02-*-ha-multiregion-summary.{drawio,drawio.png}`. | Resolved (1.10.7) | `diagram_layout.py`, `draw_cli.py`, `scripts/*_common.py`, `.kiro/steering/diagram-standards.md` |
 | D34 | **`lint --all` read agent working notes as KB documents.** `.agents/tasks/*.md` raised spurious `frontmatter` CRITICALs. `.agents` joined `cli._EXCLUDED_DIRS`; corpus lint returns to the 8-WARNING baseline. | Resolved (1.10.7) | `cli.py` |
-| D35 | **Three Edge Routing statements contradicted each other (S1).** "A target directly below takes the bottom-centre exit", "the right side is the default because a bottom stub crosses the caption" and "spine edges route via a side corridor" were all binding. Resolved as text, Variant A: a vertical spine whose source has a caption below its icon takes the side corridor; the straight bottom drop is allowed only when no caption is in the way. The engine implementation is deferred to 1.11 (G15); until then `_own_caption_cuts` draws such an edge behind an opaque caption background and `edge-crosses-label` keeps exempting an edge's own endpoints. The agent-discipline rules (M7: no post-`layout()` geometry edits, every gate last, lane semantics, contiguous slots, IAM/CFN not data-flow nodes) and the serverless / org-level scope guidance (S4) were added in the same pass. | Resolved (1.10.7) | `.kiro/steering/diagram-standards.md`, `.kiro/steering/provider-profiles.md`, `SKILL.md` (both) |
+| D35 | **Three Edge Routing statements contradicted each other (S1).** "A target directly below takes the bottom-centre exit", "the right side is the default because a bottom stub crosses the caption" and "spine edges route via a side corridor" were all binding. Resolved as text, Variant A: a vertical spine whose source has a caption below its icon takes the side corridor; the straight bottom drop is allowed only when no caption is in the way. **The engine implementation shipped in 1.10.12 (WS2, G15 closed):** the spine routes via the side corridor, edges render beneath vertices, the corpus + SEP regenerate to 0 own-caption cuts, and `edge-crosses-label` now reports an own-caption strike under reason `edge-crosses-own-label` instead of exempting it. The agent-discipline rules (M7: no post-`layout()` geometry edits, every gate last, lane semantics, contiguous slots, IAM/CFN not data-flow nodes) and the serverless / org-level scope guidance (S4) were added in the same pass. | Resolved (1.10.7) | `.kiro/steering/diagram-standards.md`, `.kiro/steering/provider-profiles.md`, `SKILL.md` (both) |
 | D36 | **Flow/Legend drawn over an external node; nothing flagged it.** `place_legend` cleared only the account box, and its docstring claimed every node sat left of `account.right`. An account-only spec draws external lanes outside the account, so the quick summary's consumer (`users`, x=910…988, in `on-premises`) sat under the Flow box at x=830. No rule saw it: `legend-placement` judged only containers, `node-overlap` skips text cells, and `edge-crosses-legend` is a WARNING that fires only when an edge runs through the box. Now `layout.repair.place_legend_for` (used by both pipeline paths, `_contain_escaping_routes` and the solver's scoring legend) sets `legend_x = snap(max(account or container right, every node icon right, every caption right) + CONTAINER_PAD)`. The caption width comes from the new presentation-only `DiagramSpec.node_labels` via `geometry.node_caption_box` (7.0 px/char); `rule-engine-draw` passes its labels, and an absent label is icon-wide. On every golden the rightmost caption is left of the outer container's right edge (e.g. aws/01 1169 < 1200, HA landscapes 2670 < 2690), so `legend_x` and the goldens are byte-identical. `legend-placement` adds `overlaps-node-<id>` (box ∩ icon or caption), an ERROR on both classes set on the hit (the default stays WARNING, so `CLASS_ESCALATIONS` is unchanged). Corpus: 0 new findings; the anonymised fixture `tests/fixtures/drawio/legend-overlaps-node/` is BLOCKED (`overlaps-node-users`). | Resolved (1.10.7) | `layout/repair.py`, `layout/pipeline.py`, `layout/solver.py`, `layout/model.py`, `layout_engine.py`, `draw_cli.py`, `geometry.check_legend_placement`, `linter.py`, `.kiro/steering/diagram-lint.md`, `.kiro/steering/diagram-standards.md` |
 | D37 | **A flow marker printed under another edge's line; nothing moved or flagged it.** In the re-rendered quick summary `e9` (Amazon Quick → Quick users) ran left across the account at y=560, straight through the 80 px `Athena → Quick` drop and its midpoint marker `8` at (730, 560). `resolve_marker_collisions` compared markers only with markers, and only `edge_hygiene_text` callers (two golden builders and `rule-engine-orthogonalise`) ever ran it: `build_diagram`, `rule-engine-draw`, the HA builders and hand-written scripts got no marker pass at all. Now phase 2 slides a marker closer than `MARKER_EDGE_CLEARANCE` to a foreign segment along its own edge (nearest of `pos ∓ k·0.2`, k = 1…4, `|pos| ≤ 0.8`) to a spot clear of every foreign line, every other marker (24 px) and every node icon and caption; with no such spot it stays and lint reports it. `build_diagram` applies the pass through `orthogonalise.marker_hygiene_text`, and `edge_hygiene_text` runs it last on the final lines (on the pre-offset geometry it moved a marker that the trunk offset would have cleared). **Threshold: 10 px, strict, not `MARKER_MIN_SEP` (24 px).** 24 px is a marker-to-marker distance (two glyphs); marker-to-line is half of one 12 px glyph. Measured across the 15 goldens and the pre-hygiene XML of the four engine goldens: no anchor is closer than 10 px to a foreign segment, and 16 sit at exactly 10.0 px (HA landscapes `l3`/`l4`, gcp/01 and oci/01 `e2`/`e5`, `e6`/`e7`), the sanctioned one-grid-step parallel corridor; 24 or 12 px would flag and move all 16. `marker-collision` gains the reason `marker-on-edge-<id>` (WARNING). No golden changed (`make examples-check`, `git diff --stat examples/` equal to the pre-change baseline), so no golden needs a justification; corpus lint unchanged (8 WARNING); quick 1.10.0 summary fixture: 1 finding (`e1` on `e2`). | Resolved (1.10.7) | `geometry.py`, `orthogonalise.py`, `diagram_layout.py`, `linter.py`, `.kiro/steering/diagram-lint.md`, `.kiro/steering/diagram-standards.md`, `tests/test_marker_on_edge_1_10_7.py` |
 | D38 | **Where the consumer sits decides whether its delivery edge crosses the spine (item 1b), and `node_labels` was undocumented.** With `Quick users` in `actors` (left edge, as M7 said), `e9` is a same-row back-edge to a top entry beside the canvas edge (Rule G); `route_back_edge` loops above the row and every leftward path above it crosses the `e6`/`e7`/`e8` spine. **Spec path chosen, engine route deferred (G19)**, because the only crossing-free engine route is a new six-point U (drop into the ~30 px band between the captions and the account border, run left, cross the border, rise beside `users`, step in above it, drop into its top) that neither back-edge router produces; it would have to go into both the legacy global-contact pass and the solver's `descend-near` family; `aws/01` `e1` (eks → alb, same row, top entry, loop above) is the same edge class, so the change is golden-exposed unless gated by an ad-hoc predicate; and a bottom exit to a same-row target is outside Rule K's "below AND left" sanction. **M7 wording changed (a change to the approved text):** a consumer or notification recipient *should* sit on the external edge adjacent to the node that serves it; when that node is in the last occupied cloud lane that is the far external column, declared in `on-premises`, and `sub` (half a row per step) aligns a lone consumer with its producer's row because account-only specs rank slots per lane; otherwise it shares the `actors` edge. Sources still share one edge and a source API is never `on-premises`. SHOULD scope (no lint), so `tests/quick_regression_specs.py::LANDSCAPE_CONFORMANT` stays legal and unedited and the G12 numbers stand. Applied to the representative quick summary: `users` in `on-premises` slot 0, `sub=6`, so `e9` is one straight level 140 px run; 0/10 crossings (was 1/10), no marker on a line, outer dead-space 2.43, lint `[OK]`, PNG 1583 px. `DiagramSpec.node_labels` (D36) is now documented in the field docstring, both SKILL.md copies and diagram-standards (*Live Agent Generation → Agent discipline*, *Reserve the right margin*): pass it whenever a `DiagramSpec` is built by hand or through private builder APIs, or wide captions are not reserved by the Flow/Legend placement. | Resolved (1.10.7) | `.kiro/steering/diagram-standards.md`, `SKILL.md` (both), `layout/model.py` |
@@ -187,23 +187,28 @@ the Layout Engine (it emits a coordinate-free node set); the
   row grows to ~2200px (the G12 cause). Planned: a `group` / `tier` container kind
   laid out by the engine. 1.10.7 documents the grouping as guidance only
   (diagram-standards → *Grouping strategies*).
-- **Variant A spine rule not implemented in the engine (G15, D3).** → **Open
-  (deferred to 1.11).** 1.10.7 resolves the S1 contradiction as text (D35); the
-  engine may still emit a straight bottom drop through the source's own caption,
-  mitigated by `diagram_layout._own_caption_cuts`. Planned: route a captioned
-  source's spine via the side corridor (or move the caption), then regenerate the
-  corpus and drop the own-endpoint exemption from `edge-crosses-label`.
-- **Slots are hand-picked (G16, D4).** → **Open (deferred to 1.11).** The engine
-  places nodes in the declared `slot` order and only searches placement variants
-  around it, so a spec whose slots were tuned for another layout keeps its
-  crossings (the conformant quick landscape, 23/25). Planned: an automatic slot
-  search that minimises crossings per lane.
-- **Workspace-local roles overlay (G17, S5).** → **Open (deferred to 1.11).**
-  Local edits to `mappings/aws-icons.yaml` / `roles.yaml` make every engine
-  upgrade a conflict, so the quick workspace stayed on a 1.10.0 mapping. Planned:
-  `mappings/local/*.yaml` merged over the bundled mappings at resolve time (local
-  wins only for the keys it defines), never written by `rule-engine-init`.
-  Documented, not implemented, in asset-packs → *Workspace-local roles overlay*.
+- **Variant A spine rule (G15, D3).** → **Resolved (1.10.12, WS2).** The engine
+  now routes a captioned source's spine via the side corridor and emits edges
+  **beneath the vertices** (z-order), so an unavoidable masked case is hidden by
+  the opaque caption background instead of struck across the name. The corpus and
+  SEP were regenerated to **0 own-caption cuts** (`diagram_layout._own_caption_cuts`),
+  and `edge-crosses-label` no longer exempts an edge's own caption — a bottom drop
+  through the source's own name is reported under the new reason
+  `edge-crosses-own-label`. The S1 text (D35) is unchanged; its "engine
+  implementation deferred to 1.11" note is now superseded.
+- **Slots are hand-picked (G16, D4).** → **Resolved (1.10.12, WS4, decision 3).**
+  Automatic flow-aware ordering is on by default: unpinned slots are ordered by
+  neighbour barycentre (back-edges first, crossings second). Explicit pins
+  (`pinned` / `slot` / non-zero `sub`) are respected and `order: manual` opts the
+  whole diagram out; `rule-engine-advise` reports what the reorder changed. The
+  guard is "no golden gets more crossings or back-edges than its WS0 baseline".
+- **Workspace-local roles overlay (G17, S5).** → **Resolved (1.10.12, WS9).**
+  `src/rule_engine/mapping_tree.py` merges the bundled mappings with
+  `mappings/local/*.yaml` (including `roles.yaml`) at resolve time — local wins
+  only for the keys it defines — and is read by `build_icon_index`,
+  `resolve_icon` and `check-asset-paths`. `rule-engine-init` never writes
+  `mappings/local/`, so an engine upgrade no longer conflicts with local edits,
+  and `--check` warns on a no-effect workspace edit (`mapping_tree.no_effect_edits`).
 - **Contract Legend still uses the green/blue boundary wording (G18).** → **Open
   (deferred to 1.11).** 1.10.7 removed the cross-provider "dashed green outer /
   dashed blue inner" convention from provider-profiles and diagram-standards
@@ -228,3 +233,106 @@ the Layout Engine (it emits a coordinate-free node set); the
   the same edge class. Also planned: align a lone external consumer with its
   producer's row automatically instead of through `sub`. 1.10.7 takes the spec
   path (D38).
+- **Peer-account rise through a stacked regional column (G20, 1.10.12 WS4).** →
+  **Open (router).** With `vpc_side: right` the automatic ordering removes the
+  SEP 03 back-edge `e13` (API Gateway → RDS), but every such order makes the
+  router run a peer-account edge straight up through a regional icon (`e8`
+  Batch → EPM-CMTR through EventBridge, `e7` ECR → CICD through CloudWatch), an
+  `edge-routing` ERROR, so the ordering guard rejects the order and 03 keeps
+  its declared one. The vertical rise has to take the free lane beside the
+  regional column (as the back-edge router's drop column already does) before
+  the ordering can use `vpc_side: right` there. The guard is not relaxed.
+
+- **`layout()` hangs on a dense landscape — unbounded caption-safe planning in
+  auto-ordering (G21, 1.10.12 WS4/WS2).** → **Resolved (1.10.12).**
+  `layout()` does not return (observed > 5 min, effectively a hang) on the SEP
+  cross-cloud landscape `scripts/build_09_crosscloud_landscape.py` (27 nodes,
+  24 edges, 8 containers) after two cross-cluster edges were added and the
+  Flow/Legend captions widened. It built in seconds on 1.10.11.
+
+  **Root cause (faulthandler stack dump).** The WS4 automatic ordering
+  (`layout/ordering.py:order_and_place`) measures each finished candidate with
+  `measure_finished(cand, finishing=True)`, which runs the full
+  `caption_routing.plan_caption_safe_geo` (+ `crossing_repair`) on the candidate
+  geometry. The hang is inside the caption-safe planner's search:
+  `plan_caption_safe_geo → _plan_once → _wrap_move → _find_move → _best_joint →
+  _ranked → _ranked_uncached → _admissible` (`caption_routing.py` lines
+  1444→1387→1339→1284→1198→903→934→759). On a dense landscape with many
+  overloaded faces this combinatorial move search explodes. The existing guards
+  do not bound it in wall-clock terms: `FINISH_BUDGET = 20` raw crossings skips
+  auto-ordering only when the *base* is already over budget (09's base is under
+  it, so the loop proceeds); `MAX_FINISHED = 2`, `_MAX_PASSES = 3`,
+  `_ORACLE_BUDGET = 24`, `_MAX_PARTNERS = 4`, `_MAX_TRIPLES = 6` cap individual
+  steps but give no global time/work ceiling, and the planner runs once per base
+  plus once per surviving candidate (`search_candidates(09)` = 4), each a full
+  caption plan on 27 nodes.
+
+  **Repro.** On 1.10.12 (commit `00f071e`), from the SEP workspace:
+  `python scripts/build_09_crosscloud_landscape.py` never returns; a
+  `faulthandler.dump_traceback_later(25, exit=True)` around `layout(_spec())`
+  prints the stack above. 07 and the flow diagrams are unaffected (small
+  node/face counts). Isolation confirms the cost is entirely in
+  `measure_finished`'s `finishing=True` caption planning, not in
+  `search_candidates` (which returns 4 candidates instantly) nor in node
+  placement.
+
+  **Impact.** A workspace cannot regenerate a dense `landscape` on 1.10.12 at
+  all — the build hangs. This blocks three cosmetic SEP-09 edits (grid-snap a
+  node, widen + top-align the Flow/Legend, add an org caption) that are pure
+  post-`layout()` builder changes; they are written and correct but cannot run
+  because `layout()` itself does not return.
+
+  **Proposed fix (any one, or a combination).**
+  1. Put a **wall-clock / work budget** on `plan_caption_safe_geo` (and the
+     per-candidate `measure_finished(finishing=True)` loop): bound total admissible-
+     move evaluations and fall back to the pre-finishing geometry when the budget
+     is spent, so a dense landscape degrades to "good order, un-finished caption
+     routing" instead of hanging.
+  2. **Scale the auto-ordering effort to diagram size** — skip the
+     `finishing=True` candidate measurement (or reduce `MAX_FINISHED` to 0, i.e.
+     keep the declared order) above a node/face-count threshold, mirroring the
+     existing `FINISH_BUDGET` crossing guard but keyed on node/overloaded-face
+     count, which is what actually drives the caption-planner cost.
+  3. Add an opt-out: honour `DiagramSpec.order == "manual"` as a documented
+     escape (it already short-circuits `order_and_place`), and/or an
+     `order="declared-no-finish"` mode, so a known-dense landscape can request
+     the fast path explicitly.
+  4. Memoise / prune `_admissible` across candidates (the four candidates share
+     most of their geometry) so the planner is not re-run from scratch per
+     candidate.
+
+  **Regression test to add.** A landscape fixture of ~27 nodes / ~24 edges / 8
+  containers (the SEP 09 shape) must complete `layout()` within a bounded time
+  (e.g. a few seconds) in CI — there is currently no large-landscape timing
+  guard, so this regression shipped in WS4 undetected. The four shipped goldens
+  are smaller and fast, which is why the release gate passed.
+
+  **Resolution (1.10.12).** Proposed fix 2 (size-scoped skip) as the primary,
+  with fix 1 (work budget) as defence-in-depth. `layout/ordering.py` gains a
+  size gate in `order_and_place`, alongside the existing `FINISH_BUDGET`
+  crossings guard: when the base geometry has `>= FINISH_NODE_BUDGET = 20`
+  nodes, `>= FINISH_CUT_BUDGET = 10` own-caption cuts, or `>= FINISH_FACE_BUDGET
+  = 3` overloaded source faces, the per-candidate `measure_finished(finishing=
+  True)` loop is skipped and the declared/base order is kept (an `order_report`
+  records the fast path). The declared order is always a valid, lint-clean
+  result, so the fast path only forgoes per-candidate caption finishing —
+  exactly what `FINISH_BUDGET` already does for a high-crossing base. The
+  thresholds were derived by measuring every shipped golden + SEP fixture through
+  full `layout()`: the largest golden that reaches the finishing loop is the
+  10-node kubernetes landscape (`cands=2`), the 32-node HA landscapes return
+  before finishing (`cands=1`), and SEP 09 is 27 nodes / 12 own-caption cuts / 1
+  overloaded face — so 20/10/3 preserves every golden byte-for-byte (verified
+  via `scripts/regen_examples.py --check`, all 12 generators + rasters ok) and
+  sends SEP 09 and any dense landscape down the fast path. `caption_routing.py`
+  gains a per-plan work budget `_MOVE_EVAL_BUDGET = 20000` (a ceiling on
+  `_find_move` searches per `_plan_once` run, reset at the start of each run; on
+  exhaustion the greedy search stops and keeps the best plan so far) — an order
+  of magnitude above the worst returning spend, so no golden/flow output
+  changes; it is a second barrier behind the node gate for the slow-but-
+  returning SEP 08 / sep-account landscape fixtures. SEP 09 `layout()` now
+  returns in ~9 s on local 3.15 (was > 45 s / hung). The `order == "manual"`
+  opt-out is unchanged. A timing-guard regression test
+  (`tests/test_ordering_ws4.py::test_dense_landscape_layout_returns_fast`) loads
+  the SEP 09 fixture by path and asserts `layout()` returns under a bounded
+  wall-clock budget with the fast-path `order_report` present — the
+  large-landscape timing guard that was missing.

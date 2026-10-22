@@ -1012,9 +1012,11 @@ def test_free_left_corridor_used_for_same_column_tier_skip():
     skin = importlib.import_module("build_aws_ha_example").SKIN
     g = _geom(build_landscape(skin))
     l4 = next(e for e in g.edges if e.id == "l4")
-    # Enters app_a2 from the LEFT (entryX == 0), exits the source bottom.
+    # Enters app_a2 from the LEFT (entryX == 0). 1.10.12 (Variant A): it leaves
+    # the source's RIGHT face (lb_a's caption sits under its icon) and only then
+    # turns into the left corridor.
     assert l4.entry[0] is not None and l4.entry[0] <= 0.0, f"l4 entry {l4.entry}"
-    assert l4.exit[1] is not None and l4.exit[1] >= 1.0, f"l4 exit {l4.exit}"
+    assert l4.exit[0] is not None and l4.exit[0] >= 1.0, f"l4 exit {l4.exit}"
     # The vertical corridor runs LEFT of the source column (x < lb_a.x).
     lb_a = g.nodes["lb_a"]
     xs = [p[0] for p in l4.points]
@@ -1098,13 +1100,22 @@ def test_fanout_source_branches_do_not_cross():
         assert crosses == 0, f"{a}x{b} crosses ({crosses})"
 
 
-def test_left_corridor_branch_exits_bottom_left():
-    """The left-corridor fan-out branch (l4) exits the source bottom-LEFT
-    (exitX < 0.5) so it does not cross the centre straight-down branch (l3)."""
+def test_left_corridor_branch_clears_the_source_caption():
+    """The lb_a fan-out (l3 to the column below, l4 down the left corridor) used
+    to leave the bottom face, through lb_a's caption. 1.10.12 (Variant A): both
+    leave the RIGHT face on distinct bands, strike no own caption, and do not
+    cross each other."""
+    from rule_engine.geometry import check_edge_crosses_own_label, edge_polyline, segments_cross
     g = _aws_landscape_geo()
+    l3 = next(e for e in g.edges if e.id == "l3")
     l4 = next(e for e in g.edges if e.id == "l4")
-    assert l4.exit[1] is not None and l4.exit[1] >= 1.0, f"l4 not a bottom exit: {l4.exit}"
-    assert l4.exit[0] is not None and l4.exit[0] < 0.5, f"l4 not bottom-LEFT: {l4.exit}"
+    for e in (l3, l4):
+        assert e.exit[0] is not None and e.exit[0] >= 1.0, f"{e.id} not a right exit: {e.exit}"
+    assert abs(l3.exit[1] - l4.exit[1]) >= 0.2, (l3.exit, l4.exit)
+    cut = {eid for eid, _ in check_edge_crosses_own_label(g)}
+    assert not cut & {"l3", "l4"}, cut
+    p3, p4 = edge_polyline(g, l3), edge_polyline(g, l4)
+    assert not any(segments_cross(a, b) for a in zip(p3, p3[1:]) for b in zip(p4, p4[1:]))
 
 
 def test_three_fanout_targets_split_across_the_two_row_bands():

@@ -45,6 +45,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from rule_engine.constants import PROVIDERS, resolve_bundled_dir  # single source of truth
+from rule_engine.mapping_tree import load_roles
 
 logger = logging.getLogger(__name__)
 
@@ -696,7 +697,7 @@ class ResolvedRoleIcon:
 
     role: str
     provider: str
-    source: str            # "product" | "category" | "stencil" | "builtin" | "unresolved"
+    source: str            # "product" | "category" | "stencil" | "builtin" | "bundled" | "unresolved"
     ref: str = ""          # file path (image providers), "<manifest>#slug" (oci), or stencil id
     display_name: str = ""
     note: str = ""
@@ -723,6 +724,24 @@ def resolve_role_icon(
     a pack key (``aws``/``azure``/``gcp-core``/``gcp-category``/``oci``) to its
     slug index. GCP is product-first (``gcp`` query against ``gcp-core``), then
     category-fallback (``gcp_category`` against ``gcp-category``)."""
+    resolved = _resolve_role_in_packs(role, provider, spec, pack_indexes)
+    if resolved.source == "unresolved" and spec.get("asset"):
+        # 1.10.12: a provider-neutral role (``education``) carries no vendor
+        # query; it points at an engine-bundled asset (``rule_engine.
+        # engine_assets``) that every provider draws the same way.
+        return ResolvedRoleIcon(role, provider, "bundled", str(spec["asset"]),
+                                str(spec.get("display_name") or ""),
+                                "engine-bundled neutral asset")
+    return resolved
+
+
+def _resolve_role_in_packs(
+    role: str,
+    provider: str,
+    spec: Dict[str, str],
+    pack_indexes: Dict[str, Dict[str, AssetEntry]],
+) -> ResolvedRoleIcon:
+    """Resolve one role for one provider against the vendor packs only."""
     if provider == "gcp":
         # product-first
         prod_q = spec.get("gcp")
@@ -777,7 +796,7 @@ def _resolve_in(query: str, index: Dict[str, AssetEntry]) -> Optional[AssetEntry
 
 def build_icon_index(
     pack_roots: Dict[str, str],
-    roles_path: Path = ROLES_PATH,
+    roles_path: Optional[Path] = None,
     full_packs: bool = False,
     pack_pins: Optional[Dict[str, str]] = None,
 ) -> Dict[str, object]:
@@ -792,8 +811,6 @@ def build_icon_index(
     Returns ``{"version", "pack_summary": {provider: {count, sha256}}, "roles":
     {role: {provider: resolved}}}`` (plus ``packs`` when ``full_packs``), ready to
     serialize deterministically."""
-    import yaml  # local import; PyYAML is already a runtime dep
-
     pins = dict(pack_pins or {})
 
     # Index each pack. GCP is two packs; the others map key==provider.
@@ -816,8 +833,11 @@ def build_icon_index(
         provider = "gcp" if key.startswith("gcp") else key
         packs_view.setdefault(provider, {}).update(idx)
 
-    roles_cfg = yaml.safe_load(Path(roles_path).read_text(encoding="utf-8"))
-    roles = (roles_cfg or {}).get("roles", {})
+    # One merged mapping tree (1.10.12): the bundled roles.yaml (or the
+    # explicit ``roles_path``) with every ``mappings/local/roles.yaml`` overlay
+    # merged per role, so a workspace role reaches the committed index.
+    roles_cfg = load_roles(roles_path=Path(roles_path) if roles_path else None)
+    roles = (roles_cfg or {}).get("roles", {}) or {}
 
     resolved_roles: Dict[str, Dict[str, Dict[str, str]]] = {}
     for role, spec in roles.items():

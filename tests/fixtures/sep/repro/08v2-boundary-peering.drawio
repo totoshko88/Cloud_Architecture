@@ -1,0 +1,142 @@
+<mxfile host="app.diagrams.net" agent="rule-engine golden-example" version="24.0.0">
+  <diagram id="aws-sep-network" name="08-network-crossaccount">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1720" pageHeight="1098" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="aws SEP network — 870325637521 / eu-central-1 | 2026-10-15 | v3" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=16;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="900" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e1" value="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="dns" target="cloudfront">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.7692307692307693;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.7692307692307693;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="cloudfront" target="igw">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="680.00" y="120.00" />
+              <mxPoint x="680.00" y="180.00" />
+              <mxPoint x="630.00" y="180.00" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e3" value="3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="igw" target="lambda">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="680.00" y="520.00" />
+              <mxPoint x="680.00" y="760.00" />
+              <mxPoint x="90.00" y="760.00" />
+              <mxPoint x="90.00" y="520.00" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e4" value="4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=1.0256410256410255;exitY=0.7692307692307693;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.7692307692307693;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="lambda" target="vpce-gw">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="250.00" y="540.00" />
+              <mxPoint x="250.00" y="590.00" />
+              <mxPoint x="190.00" y="590.00" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e5" value="5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=1.0256410256410255;exitY=0.7692307692307693;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.7692307692307693;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="rds" target="vpce-if">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="460.00" y="540.00" />
+              <mxPoint x="460.00" y="590.00" />
+              <mxPoint x="410.00" y="590.00" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e6" value="6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="lambda" target="rds">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" value="11" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="nat" target="eks-shared">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1170.00" y="520.00" />
+              <mxPoint x="1170.00" y="940.00" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e12" value="12" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=1.0256410256410255;exitY=0.7692307692307693;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.2564102564102564;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="nat" target="eks-dev">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1000.00" y="540.00" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e7" value="7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0;exitY=0.5;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="boundary-vpc-a" target="peer-ext">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="480.00" y="600.00" />
+              <mxPoint x="480.00" y="940.00" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="boundary-account" value="SEP — AWS 870325637521 / eu-central-1" style="shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_account;grStroke=1;fillColor=none;strokeColor=#CD2264;dashed=0;verticalAlign=top;align=left;spacingLeft=30;fontColor=#CD2264;fontSize=12;html=1" vertex="1" parent="1">
+          <mxGeometry x="30" y="360" width="900" height="460" as="geometry" />
+        </mxCell>
+        <mxCell id="boundary-vpc-a" value="se vpc-05cd5663a70d3a65c (192.168.128.0/20) private app/batch subnets" style="shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_vpc2;grStroke=1;fillColor=none;strokeColor=#8C4FFF;dashed=0;verticalAlign=top;align=left;spacingLeft=30;fontColor=#7B3FE4;fontSize=12;html=1" vertex="1" parent="1">
+          <mxGeometry x="60" y="420" width="838" height="370" as="geometry" />
+        </mxCell>
+        <mxCell id="peer-ext" value="External peers OUTSIDE SEP — MongoDB Atlas 781849312837 / EPM-CMTR 088595288622 / CICD 884218299410 / ED-KRSB 183631338639" style="rounded=0;whiteSpace=wrap;html=1;dashed=1;fillColor=none;strokeColor=#666666;fontColor=#333333;verticalAlign=top;align=left;spacingLeft=6;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="70" y="840" width="1238" height="198" as="geometry" />
+        </mxCell>
+
+
+        <mxCell id="dns" value="Route 53 syndicate.education" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Networking-Content-Delivery/48/Arch_Amazon-Route-53_48.svg" vertex="1" parent="1">
+          <mxGeometry x="350" y="60" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="cloudfront" value="CloudFront edge" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Networking-Content-Delivery/48/Arch_Amazon-CloudFront_48.svg" vertex="1" parent="1">
+          <mxGeometry x="570" y="60" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="igw" value="Internet Gateway" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_Networking-Content-Delivery/Res_Amazon-VPC_Internet-Gateway_48.svg" vertex="1" parent="boundary-vpc-a">
+          <mxGeometry x="510" y="60" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="lambda" value="Lambda VPC-attached" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Compute/48/Arch_AWS-Lambda_48.svg" vertex="1" parent="boundary-vpc-a">
+          <mxGeometry x="70" y="60" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="rds" value="RDS sep-strapi-pg" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Databases/48/Arch_Amazon-RDS_48.svg" vertex="1" parent="boundary-vpc-a">
+          <mxGeometry x="290" y="60" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="nat" value="NAT nat-11699e9f181a77012" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_Networking-Content-Delivery/Res_Amazon-VPC_NAT-Gateway_48.svg" vertex="1" parent="boundary-vpc-a">
+          <mxGeometry x="730" y="60" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="vpce-gw" value="VPCe S3 + DynamoDB" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_Networking-Content-Delivery/Res_Amazon-VPC_Endpoints_48.svg" vertex="1" parent="boundary-vpc-a">
+          <mxGeometry x="70" y="220" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="vpce-if" value="VPCe ECR interface" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_Networking-Content-Delivery/Res_Amazon-VPC_Endpoints_48.svg" vertex="1" parent="boundary-vpc-a">
+          <mxGeometry x="290" y="220" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="atlas" value="MongoDB Atlas 781849312837" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=assets/vendor/opensource-colorized/mongodb.svg;dashed=1;dashPattern=1 3;overlay=supporting" vertex="1" parent="peer-ext">
+          <mxGeometry x="30" y="60" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="cmtr-sre" value="EPM-CMTR SRE EC2 088595288622" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_Management-Governance/Res_AWS-Organizations_Account_48.svg;dashed=1;dashPattern=1 3;overlay=supporting" vertex="1" parent="peer-ext">
+          <mxGeometry x="250" y="60" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="cmtr-cmtm" value="EPM-CMTR CMTM 088595288622" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_Management-Governance/Res_AWS-Organizations_Account_48.svg;dashed=1;dashPattern=1 3;overlay=supporting" vertex="1" parent="peer-ext">
+          <mxGeometry x="470" y="60" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="eks-shared" value="EKS shared (public) 088595288622" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Containers/48/Arch_Amazon-Elastic-Kubernetes-Service_48.svg" vertex="1" parent="peer-ext">
+          <mxGeometry x="1130" y="60" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="cicd" value="CICD acct 884218299410" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_Management-Governance/Res_AWS-Organizations_Account_48.svg;dashed=1;dashPattern=1 3;overlay=supporting" vertex="1" parent="peer-ext">
+          <mxGeometry x="690" y="60" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="eks-dev" value="EKS dev (public) 183631338639" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Containers/48/Arch_Amazon-Elastic-Kubernetes-Service_48.svg" vertex="1" parent="peer-ext">
+          <mxGeometry x="910" y="60" width="78" height="78" as="geometry" />
+        </mxCell>
+
+        <mxCell id="flow-legend" value="Flow&#10;1. Route 53 syndicate.education resolves to CloudFront (acct 323549576358)&#10;2. CloudFront / clients ingress to the se VPC via the Internet Gateway&#10;3. IGW fronts the public path into the VPC-attached Lambda tier&#10;4. S3 + DynamoDB reached via gateway VPC endpoints (no NAT hop)&#10;5. ECR dkr + api reached via interface VPC endpoints&#10;6. Lambda / Strapi persist content to RDS sep-strapi-pg (VPC-scoped)&#10;7. VPC PEERING: the se VPC peers with the external peer accounts (Atlas pcx-0e257b23d337fda0b, EPM-CMTR pcx-0ba890357ddac7479 / pcx-0bd56ed835959cbbc, CICD pcx-0754f6dee2f5bf2fd) — boundary to boundary&#10;11. PUBLIC EKS endpoint to control-plane shared (088595288622) via NAT — not peering&#10;12. PUBLIC EKS endpoint to student development-dev (183631338639) via NAT — not peering" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF;spacingLeft=10;spacingRight=10;spacingTop=10;spacingBottom=10" vertex="1" parent="1">
+          <mxGeometry x="1380" y="120" width="280" height="372" as="geometry" />
+        </mxCell>
+        <mxCell id="legend" value="Legend&#10;Solid line = primary flow&#10;Dashed line = asynchronous / event-driven flow&#10;Red = blocked / missing / disabled&#10;🆕 = new in version N&#10;🔄 = changed in version N&#10;Outer boundary = stack Boundary (captioned; provider style)&#10;Inner boundary = Network Boundary (captioned; provider style)&#10;Numbered markers (1..N) = ordered data flow steps; see Flow list&#10;Nesting: Account &gt; Region &gt; VPC (se 192.168.128.0/20) &gt; private subnet tier&#10;Solid peering line = active VPC peering (pcx + peer CIDR on the Flow list)&#10;Grey box = external, non-AWS (MongoDB Atlas) or an external peer AWS account&#10;VPC endpoints: S3 + DynamoDB gateway, ECR dkr + api interface; NAT egress for the rest&#10;EKS clusters reached over PUBLIC endpoints (not peering); student peering pcx-0fc81284930ddf8e4 is route-less&#10;No SQS / Secrets interface endpoints — those regional services egress via NAT&#10;supporting = peer target reached over VPC peering (drawn as a boundary-to-boundary edge, not a per-host edge)" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF;spacingLeft=10;spacingRight=10;spacingTop=10;spacingBottom=10" vertex="1" parent="1">
+          <mxGeometry x="1380" y="502" width="280" height="468" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

@@ -1,0 +1,113 @@
+<mxfile host="app.diagrams.net" agent="rule-engine golden-example" version="24.0.0">
+  <diagram id="aws-sep-task-verification" name="06-flow-task-verification">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1488" pageHeight="1068" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="aws SEP task verification — 870325637521 / eu-central-1 | 2026-10-17 | v4" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=16;fontStyle=1" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="900" height="30" as="geometry" />
+        </mxCell>
+
+        <mxCell id="account" value="SEP — 870325637521 / eu-central-1" style="shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_account;grStroke=1;fillColor=none;strokeColor=#CD2264;dashed=0;verticalAlign=top;align=left;spacingLeft=30;fontColor=#CD2264;fontSize=12;html=1" vertex="1" parent="1">
+          <mxGeometry x="220" y="60" width="1020" height="520" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e6" value="6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=0.2564102564102564;exitY=1.0256410256410255;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="batch" target="ext">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="710.00" y="240.00" />
+              <mxPoint x="1280.00" y="240.00" />
+              <mxPoint x="1280.00" y="160.00" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="student" value="Student (verify)" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_General-Icons/Res_48_Light/Res_Client_48_Light.svg" vertex="1" parent="1">
+          <mxGeometry x="30" y="120" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="socket" value="WebSocket API" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Networking-Content-Delivery/48/Arch_Amazon-API-Gateway_48.svg" vertex="1" parent="account">
+          <mxGeometry x="30" y="60" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="lti" value="lti-adapter" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Compute/48/Arch_AWS-Lambda_48.svg" vertex="1" parent="account">
+          <mxGeometry x="250" y="60" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="batch" value="Batch verifiers" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Compute/48/Arch_AWS-Batch_48.svg;labelBackgroundColor=#FFFFFF" vertex="1" parent="account">
+          <mxGeometry x="470" y="60" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="bedrock" value="Bedrock (Angry EdA)" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Artificial-Intelligence/48/Arch_Amazon-Bedrock_48.svg" vertex="1" parent="account">
+          <mxGeometry x="690" y="380" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="ecr" value="ECR images" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Containers/48/Arch_Amazon-Elastic-Container-Registry_48.svg" vertex="1" parent="account">
+          <mxGeometry x="690" y="60" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="s3" value="S3 tasks / outputs" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Storage/48/Arch_Amazon-Simple-Storage-Service_48.svg" vertex="1" parent="account">
+          <mxGeometry x="910" y="300" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="ext" value="Syndicate Rule Engine EC2 and student EKS clusters" style="shape=mxgraph.networks.server;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;verticalLabelPosition=bottom;verticalAlign=top;align=center;fontSize=12" vertex="1" parent="1">
+          <mxGeometry x="1350" y="120" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="atlas" value="MongoDB Atlas" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=assets/vendor/opensource-colorized/mongodb.svg" vertex="1" parent="1">
+          <mxGeometry x="1350" y="440" width="78" height="78" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e1" value="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="student" target="socket">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="socket" target="lti">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.2564102564102564;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.2564102564102564;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="lti" target="batch">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="batch" target="ecr">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" value="5" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.7692307692307693;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.7692307692307693;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="batch" target="s3">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="800.00" y="180.00" />
+              <mxPoint x="800.00" y="320.00" />
+              <mxPoint x="1190.00" y="320.00" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e8" value="8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5128205128205128;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="lti" target="atlas">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="580.00" y="160.00" />
+              <mxPoint x="580.00" y="360.00" />
+              <mxPoint x="1390.00" y="360.00" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e9" value="9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.7692307692307693;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5128205128205128;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="lti" target="s3">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="600.00" y="180.00" />
+              <mxPoint x="600.00" y="330.00" />
+              <mxPoint x="1170.00" y="330.00" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e12" value="12" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=1.0256410256410255;exitY=0.7692307692307693;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="socket" target="student">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="360.00" y="180.00" />
+              <mxPoint x="360.00" y="240.00" />
+              <mxPoint x="0.00" y="240.00" />
+              <mxPoint x="0.00" y="160.00" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="flow-legend" value="Flow&#10;1. Verify (WebSocket)&#10;2. socket to lti-adapter&#10;3. lti submits Batch job&#10;4. Batch pulls ECR image&#10;5. Batch reads S3 task&#10;6. SRE-&gt;Rule Engine; KTM-&gt;EKS&#10;7. Signed callback to lti&#10;8. lti records grade (Atlas)&#10;9. lti writes logs to S3&#10;10. lti asks Bedrock summary&#10;11. lti pushes to WebSocket&#10;12. WebSocket to student" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF;spacingLeft=10;spacingRight=10;spacingTop=10;spacingBottom=10" vertex="1" parent="1">
+          <mxGeometry x="818" y="740" width="300" height="228" as="geometry" />
+        </mxCell>
+        <mxCell id="legend" value="Legend&#10;Solid = primary flow&#10;Dashed = async / event&#10;Red = blocked / missing&#10;🆕 = new in vN&#10;🔄 = changed in vN&#10;Outer box = Account&#10;Markers 1..N = steps&#10;Grey = external acct&#10;SRE: EPM-CMTR 088595288622&#10;EKS: ED-KRSB 183631338639&#10;Callback 7 = signed HTTP" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF;spacingLeft=10;spacingRight=10;spacingTop=10;spacingBottom=10" vertex="1" parent="1">
+          <mxGeometry x="1128" y="740" width="300" height="212" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

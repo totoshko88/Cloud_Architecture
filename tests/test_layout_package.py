@@ -100,7 +100,7 @@ def test_variants_module_imports_cleanly_and_exposes_its_symbols():
 
     assert dataclasses.is_dataclass(variants.RouteVariant)
     field_names = {f.name for f in dataclasses.fields(variants.RouteVariant)}
-    assert field_names == {"id", "exit", "entry", "plan", "rank"}
+    assert field_names == {"id", "exit", "entry", "plan", "rank", "face_swap"}
 
 
 def test_solver_module_imports_cleanly_and_exposes_its_symbols():

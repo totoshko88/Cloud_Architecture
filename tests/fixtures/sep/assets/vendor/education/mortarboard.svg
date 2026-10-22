@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <title>LMS mortarboard (graduation cap)</title>
+  <!-- Generic education / learning glyph: a graduation mortarboard with tassel.
+       Hand-authored public-domain geometry (no vendor brand), so it is
+       licence-clean and renders as a real image (not an empty stencil box). -->
+  <g fill="none" stroke="#16499E" stroke-width="5" stroke-linejoin="round" stroke-linecap="round">
+    <!-- Mortarboard top (the flat square board, drawn as a diamond) -->
+    <polygon points="64,26 118,52 64,78 10,52" fill="#2D7FF9" />
+    <!-- Cap band / head cup under the board -->
+    <path d="M38 62 L38 86 C38 96 90 96 90 86 L90 62" fill="#5B9BFB" />
+    <!-- Tassel cord from the board centre to the right edge, then hanging down -->
+    <path d="M64 52 L112 52 L112 92" fill="none" />
+    <!-- Tassel knob -->
+    <circle cx="112" cy="98" r="6" fill="#F5A623" stroke="#B9791A" />
+  </g>
+</svg>

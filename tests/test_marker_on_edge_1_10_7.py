@@ -197,6 +197,9 @@ def _build(edges):
         diagram_id="t", diagram_name="t", title="aws t — 123456789012 / us-east-1 | 2026-10-07 | v1",
         boundaries=[], nodes=nodes, edges=edges, flow_lines=["Flow", "8. a", "9. b"],
         legend_x=1000,
+        # This module pins the marker pass on a fixed route; keep the 1.10.12
+        # Variant A re-route (e8 drops through Athena's caption) out of it.
+        caption_safe=False,
     )
 
 

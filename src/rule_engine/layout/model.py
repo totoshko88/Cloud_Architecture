@@ -86,6 +86,15 @@ class NodeSpec:
     #: other diagram. One of ``"network"`` / ``"regional"`` / ``"global"``;
     #: ``None`` means "use the role default". Coordinate-free.
     scope: Optional[str] = None
+    #: 1.10.12 (WS4): an **explicit slot pin**. By default a node's ``slot`` is
+    #: the author's *seed* order: the automatic flow-aware ordering
+    #: (:mod:`rule_engine.layout.ordering`) may permute the slots of the nodes
+    #: in one lane/band to remove back-edges and crossings. ``pinned=True``
+    #: keeps this node at its declared slot. A node with a non-zero ``sub`` is
+    #: treated as pinned too (a sub-row nudge is tuned against its slot), and the
+    #: ordering never changes ``sub``. Coordinate-free: it fixes an index, never
+    #: a coordinate.
+    pinned: bool = False
 
 
 @dataclass(frozen=True)
@@ -203,6 +212,28 @@ class DiagramSpec:
     col_step: Optional[int] = None
     row_step: Optional[int] = None
     sub_step: Optional[int] = None
+    #: 1.10.12 (WS4): automatic flow-aware ordering. ``"auto"`` (the default)
+    #: lets :func:`~rule_engine.layout.layout` reorder the *unpinned* slots of
+    #: each lane/band by neighbour barycentre, re-lane a left→right sink that
+    #: sits before its producer, and choose ``vpc_side``, keeping the result only
+    #: when the finished diagram has fewer back-edges, or as many back-edges and
+    #: fewer crossings, than the declared order. ``"manual"`` opts out entirely:
+    #: the declared slots are laid out as written. A *dense* diagram (G21: at or
+    #: above :data:`~rule_engine.layout.ordering.FINISH_NODE_BUDGET` nodes, or a
+    #: base geometry with too many own-caption cuts / overloaded faces) takes a
+    #: size-scoped fast path under ``"auto"``: it keeps the declared order
+    #: without the costly per-candidate finishing measurement, so ``layout()``
+    #: returns promptly on a large landscape instead of hanging. Not a
+    #: coordinate.
+    order: str = "auto"
+    #: 1.10.12 (WS4): which side of a region's regional column its Network
+    #: Boundary (VPC) block stands on (North–South specs with a ``region``
+    #: container). ``"left"`` is the pre-1.10.12 placement (VPC left, regional
+    #: column right); ``"right"`` puts the regional column first, so a flow that
+    #: runs from regional services into the VPC (API Gateway → RDS) reads left to
+    #: right. ``"auto"`` (default) means ``"left"`` unless the automatic ordering
+    #: finds that ``"right"`` removes back-edges. Not a coordinate.
+    vpc_side: str = "auto"
 
 
 # ---------------------------------------------------------------------------
@@ -251,3 +282,7 @@ class PlacedDiagram:
     #: (1.10.7). A golden builder lays out with ``strict=True`` so it never ships
     #: a degraded diagram.
     degraded: bool = False
+    #: 1.10.12 (WS4): what the automatic flow-aware ordering changed and why,
+    #: one line per change plus a verdict line (``rule-engine-advise`` prints
+    #: it). Empty when ``order="manual"`` or on the legacy path.
+    order_report: Tuple[str, ...] = ()

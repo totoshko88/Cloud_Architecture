@@ -210,6 +210,14 @@ resources:
     brand_hex: "#326CE5"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/control_plane_components/labeled/kubelet.svg"
 
+  # Education / learning system (1.10.12) — the provider-neutral CC0
+  # mortarboard bundled with the engine (see aws-icons.yaml `education`).
+  education:
+    icon_id: education.mortarboard
+    icon_provenance: neutral
+    brand_hex: "#333333"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/education/mortarboard.svg"
+
 containers:
   # Cluster envelope — k8s-blue dashed box with a top-left caption, matching the
   # cloud-account group convention (caption meets 4.5:1 on white at #326CE5).

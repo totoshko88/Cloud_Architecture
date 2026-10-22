@@ -45,7 +45,9 @@ every applicable rule against every artifact.
 | `edge-routing` | A diagram edge is not orthogonally routed, crosses a node icon, shares a corridor with a parallel edge, overlaps a label/legend, or two edges leave/enter one node side on the same contact point. **Raised to ERROR** when an edge's run cuts through a node icon — an unrelated node (`*-through-*`) or its own target reached from the wrong side (`pierces-target-*`). | WARNING/ERROR | diagram-standards Edge Routing |
 | `container-padding` | A container border sits flush against or straddles a child node (no grid-step padding). Raised to ERROR for `landscape`. | WARNING/ERROR | diagram-standards Container Padding |
 | `container-dead-space` | A Boundary container is sized far larger than its direct children: its area exceeds the summed child footprint-plus-padding demand by more than a calibrated ratio: **2.5** for an outer (top-level) Boundary that no other container encloses (reason `outer-dead-space`), **5.0** for a nested one (reason `dead-space`), each set above the sparsest legitimate corpus tier. The mirror of `container-padding` (which checks the minimum clearance). Advisory on both classes; a childless container is skipped. | WARNING | diagram-standards Container Padding |
-| `canvas-quality` | A lint-clean diagram that nonetheless wastes the canvas or runs a wild aspect (Theme 25). `aspect-ratio:<w>x<h>=<r>` when the canvas bounding box is wider/taller than **2.6**:1 (above the widest shipped golden, 2.45); `canvas-utilization:<pct>` when content (summed outer boundaries + nodes outside every boundary) covers less than **25%** of the canvas bbox (> 75% dead space; the sparsest golden covers 28%). Separate from relationship lint — it asks "is the canvas used, is the aspect sane". Pure canvas geometry; advisory on both classes. | WARNING | diagram-standards Canvas quality (Theme 25) |
+| `canvas-quality` | A lint-clean diagram that nonetheless wastes the canvas or runs a wild aspect (Theme 25). `aspect-ratio:<w>x<h>=<r>` when the canvas bounding box is wider/taller than **2.6**:1 (above the widest shipped golden, 2.45); `empty-rectangle:<w>x<h>=<pct>%` when the **largest empty rectangle** on the canvas (obstacles: every node icon + caption, every outer container, every text cell) covers more than **25%** of the canvas bbox (every shipped golden is at most 21%). Recalibrated in 1.10.12 (WS6): the old `canvas-utilization` coverage test (summed outer-boundary + uncontained icon area under 25%) flagged an evenly spread context diagram of bare icons and passed a canvas with one large void. Separate from relationship lint: it asks "is there a hole a reader takes for missing content, is the aspect sane". Pure canvas geometry; advisory on both classes. | WARNING | diagram-standards Canvas quality (Theme 25) |
+| `container-caption-overflow` | A Boundary container's caption (longest line x 7.0px/char + the style's `spacingLeft` + `spacingRight` + 2 x `spacing`) is **wider than the box**, so the text runs past the border (reason `caption-overflow:+<px>`). **ERROR on both classes** when the part outside the box prints over a node's icon or caption (reason `caption-overprints-node:+<px>`; offenders = the container, then the nodes). New in 1.10.12 (WS6, C4). | WARNING/ERROR | diagram-standards Container Padding (a container holds its caption) |
+| `sibling-size-uniformity` | Sibling Boundary containers (same tightest parent) aligned in a column (left edges within one grid step) or a row (tops within one grid step) that hold the **same number of node columns** differ in width, or the **same number of node rows** differ in height, by more than one grid step. Reason `<col or row>@<x or y>:<width or height>-spread:<px>`. New in 1.10.12 (WS6, C8). | WARNING | diagram-standards Container Nesting (one slot pitch per sibling group) |
 | `min-font-size` | A diagram carries on-diagram text below the 12px minimum font size. | WARNING | diagram-standards Accessibility & Contrast |
 | `grid-alignment` | A diagram node's absolute x or y is not a whole multiple of the grid step (default 10). | WARNING | diagram-standards Layout Geometry |
 | `node-overlap` | Two diagram node icon boxes overlap (intersecting rectangles). | WARNING | diagram-standards Layout Geometry |
@@ -62,7 +64,7 @@ every applicable rule against every artifact.
 | `text-padding` | A filled+stroked text/legend/note box does not set uniform inner padding (`spacing{Left,Right,Top,Bottom}`). | WARNING | diagram-standards Text-box Padding |
 | `corridor-sharing` | Two unrelated long edges run in the same straight horizontal/vertical corridor (same grid line, overlapping extent). | WARNING | diagram-standards Edge Routing (one edge per corridor) |
 | `edge-float` | An edge declares no explicit exit/entry contact point (floats its connection to the perimeter router). Raised to ERROR for `landscape`. | WARNING/ERROR | diagram-standards Edge Routing (no-float on landscape) |
-| `edge-crosses-label` | A routed edge's polyline crosses an **unrelated node's label band** (the caption strip drawn beneath the icon, as wide as its text at 7.0px/char and never narrower than the icon), i.e. a corridor runs through a service name. The edge's own source/target captions are exempt. | WARNING | diagram-standards Edge Routing (corridors clear the label band) |
+| `edge-crosses-label` | A routed edge's polyline crosses an **unrelated node's label band** (the caption strip drawn beneath the icon, as wide as its text at 7.0px/char and never narrower than the icon), i.e. a corridor runs through a service name (reason `crosses-label-band`). **New in 1.10.12 (WS2):** a bottom drop that strikes the name under its **own** icon is no longer exempt — it is reported under the distinct reason `edge-crosses-own-label`. | WARNING | diagram-standards Edge Routing (corridors clear the label band) |
 | `edge-crosses-container-label` | A routed edge's polyline runs **along a Boundary container's top caption band** (a corridor slicing a `vpc-…`/`az-…` label). The caption width is sized from its text, so a run clearing a short caption is not flagged; only a long horizontal run along the caption trips. **Caption-overflow escape (guidance, Theme 3):** when a MANDATED long caption (e.g. `provider account / region`) is attached to a boundary that is *necessarily* small (a single-node boundary), the caption text overflows the box on both sides, so an unavoidable top-entry crossing is a caption-overflow artifact, not a routing defect — treat it as an accepted WARNING rather than re-routing into a worse finding (a 4th left-face entry → `entry-thirds`) or shortening a required caption. The sanctioned structural fix is a **wrapped / two-line boundary caption** so it no longer overflows horizontally; until the builder emits one, the overflow crossing is the lesser evil. (Guidance only — no change to the WARNING condition.) | WARNING | diagram-standards Edge Routing (adaptive routing / corridors clear the caption) |
 | `edge-crosses-container` | A routed edge's polyline passes **through the interior of a Boundary container that neither endpoint belongs to** — e.g. a fan-out from a VPC-scoped node to a regional node outside the VPC that dips into the VPC band. A container either endpoint is inside (a legitimate border crossing to enter/leave) is exempt, as is a parent of such a box. The stronger companion to `edge-crosses-container-label`, which guards only the top caption strip. | WARNING | diagram-standards Edge Routing (route around a container, not through it) |
 | `edge-on-container-border` | A routed edge has a **long, axis-aligned leg that coincides with a Boundary container border** it does not belong to — a grid-aligned corridor (a whole grid multiple) allocated beside a non-grid-aligned container edge lands ~2px off it and reads as riding the border. A *parallel*-ride test (a vertical leg is judged only against left/right borders, a horizontal leg only against top/bottom), so a leg that merely crosses a border to enter/leave is never flagged; there is no endpoint-inside exemption because a run parallel to and coincident with a border reads as part of it even when one endpoint sits inside the box. | WARNING | diagram-standards Edge Routing (a long vertical never coincides with a container border) |
@@ -72,16 +74,21 @@ every applicable rule against every artifact.
 | `edge-crosses-title` | A routed edge runs **through, or along within one grid step of, the reserved title band** at the top of the canvas (the `title` text cell). A run routed above the top node row overdraws the title and makes it hard to read. New in 1.10.10 (Theme 26). | WARNING | diagram-standards Edge Routing (title keep-out band) |
 | `edge-jog` | An edge between two **directly facing** nodes (the next node on the same row, or directly below in the same column, with nothing between) is drawn with a **jog** instead of one straight segment (`level-jog` / `drop-jog`). A straight line is the most readable route, so a directly-opposite target keeps it and the siblings spread around it. New in 1.10.6. | WARNING | diagram-standards Edge Routing (straight line keeps the centre) |
 | `node-connectivity` | A role-bearing node is drawn with **zero incident edges** and carries no overlay marker explaining why. Boundary containers and text cells are not nodes and are exempt. | WARNING | diagram-standards Inventory completeness → diagram |
-| `legend-placement` | A `Flow` / `Legend` box does not sit in the **right margin**, at least one grid step past the outermost container's right edge, or overlaps a Boundary container, or is drawn over any node's icon or caption (`overlaps-node-<id>`). **Raised to ERROR on both classes** for `overlaps-node-<id>`. | WARNING/ERROR | diagram-standards Reserve the right margin for Flow/Legend |
+| `legend-placement` | A `Flow` / `Legend` box does not sit in the **right margin**, at least one grid step past the outermost container's right edge, or overlaps a Boundary container, or is drawn over any node's icon or caption (`overlaps-node-<id>`). A box whose top is at least one grid step below every container and node footprint (the below-body block, 1.10.12 WS6) is not judged against the right margin. **Raised to ERROR on both classes** for `overlaps-node-<id>`. | WARNING/ERROR | diagram-standards Reserve the right margin for Flow/Legend |
 | `edge-approach` | Two consecutive points of a route are not axis-aligned (`diagonal-leg`), or the leg touching a contact does not meet its face head-on (`exit-leg-…` / `entry-leg-…`). | WARNING | diagram-standards Every leg is explicitly axis-aligned |
 | `parse-error` | A `.drawio` file does not parse as XML, a Diagram_Page cannot be decompressed, geometry construction raises, or the document declares a DTD / entity. All other rules are skipped for that artifact. | ERROR | R1 AC8 / R1 AC9 |
 | `edge-endpoint` | An edge references a non-existent `source`/`target`, or has neither (`missing-source`, `missing-target`, `dangling-source:<id>`, `dangling-target:<id>`). Raised to ERROR for `landscape`. | WARNING/ERROR | R1 AC10 / diagram-standards Never leave an edge endpoint detached |
 | `source-format` | A diagram is authored in a non-canonical source (`.puml` / `.mmd`); draw.io is the only publishable diagram source (D1). | ERROR | R10 AC3 / diagram-standards Source Format |
 | `marker-collision` | Two edge flow-markers (the numbered labels) render closer than the merge threshold (`MARKER_MIN_SEP` = 24px) and overprint into one number. offenders = the colliding edge ids. Companion to the deterministic marker de-collision pass (`orthogonalise.resolve_marker_collisions`). **1.10.7:** a marker whose anchor lies within one grid step (`MARKER_EDGE_CLEARANCE` = 10px, strict) of a **different** edge's segment, so that edge's line strikes the number, is reported with reason `marker-on-edge-<id>`. | WARNING | diagram-standards Numbered Flow Legend / edge-hygiene 1.10.5 B1 |
-| `marker-label-collision` | A numbered flow-marker's rendered anchor falls inside a node's caption rectangle (centred under the icon, as wide as its text at 7.0px/char), so the number overprints the service name. offenders = the marker edge and the node. | WARNING | diagram-standards Numbered Flow Legend / hotfix 1.10.7 |
+| `marker-label-collision` | A numbered flow-marker's rendered anchor falls inside a node's caption rectangle (centred under the icon, as wide as its text at 7.0px/char), so the number overprints the service name (reason `marker-on-caption`); **new in 1.10.12 (WS7)** the anchor falling inside the node's 78×78 icon box is reported under reason `marker-on-icon`. offenders = the marker edge and the node. | WARNING | diagram-standards Numbered Flow Legend / hotfix 1.10.7 |
 | `edge-crossing-excess` | The diagram's edge-crossing count exceeds a per-diagram cap proportional to the edge count (`ceil(0.25 × E)`), reason `crossings-over-cap:X/E`. **Hard cap (1.10.7):** on a `landscape`, more than `0.5 × E` crossings is an **ERROR** (reason `crossings-over-hard-cap:X/E`) — the routing has collapsed. offenders = the crossing edge-id pairs. Uses the same crossing detection `route_cost` minimises. | WARNING/ERROR | diagram-standards Edge Routing (minimise crossings) / edge-hygiene 1.10.5 B2 |
+| `edge-crossing-avoidable` | A crossing that a **single legal face swap** removes: one edge of a crossing pair, re-routed onto another legal exit/entry face pair (exit right, or bottom from a source with no caption; entry left/top) with a stub + one-lane route, lowers the crossing count **without adding a routing finding** (no icon, caption, text box, foreign container or container caption crossed; no shared corridor, border ride, detour hook; no new oracle finding). Reason `avoidable:<removed>/<crossings>`; offenders = the edges whose swap removes it. The same test (`crossing_repair.avoidable_crossings`) the engine's final crossing-repair pass and the `Xav` metric use. New in 1.10.12 (WS3). | WARNING | diagram-standards Edge Routing (crossing-aware contact selection) |
+| `collinear-edges` | Two **unrelated** edges whose parallel legs (each at least two grid steps long) sit **under two grid steps apart** with overlapping extents, so the two lines read as **one** (the one-line illusion, defect C5). Two legs meeting at a shared point of edges sharing an endpoint (a sanctioned trunk junction), and a gap a node icon visibly terminates, are exempt. Reason `collinear:<pairs>`; offenders = the two edge ids of each pair. The same `geometry.collinear_edge_pairs` the `col` metric and the engine's collinear-shift pass (`collinear_repair`) use, so what lint flags is what the engine tries to separate. New in 1.10.12 (WS8). | WARNING | diagram-standards Edge Routing (one edge per corridor) |
+| `flow-step-undrawn` | A numbered `Flow` step (`N.` / `N)`) is carried by **no edge** as its marker, so the step is described but not drawn and its node may lose its only relationship. A step that is deliberately context-only carries `(not drawn)` in its Flow line and is exempt. Reason `undrawn-steps:<N,...>`; offenders = `step-<N>`. The reverse of `flow-legend`. New in 1.10.12 (WS5). | WARNING | diagram-standards Numbered Flow Legend / Inventory completeness → diagram |
+| `graph-islands` | A `landscape` whose connected nodes split into **more than one connected component** (islands with no edge between them). Edge-less nodes (`node-connectivity`'s) and overlay-marked nodes (`standby`, `supporting`) are left out. Reason `islands:<components>`; offenders = the nodes outside the largest component. Landscape only. New in 1.10.12 (WS5). | WARNING | diagram-standards Inventory completeness → diagram (drawing is not relating) |
 | `detour-hook` | An edge's routed (Manhattan) length exceeds `2.5 ×` the straight Manhattan distance between its contacts — it loops out and back instead of going where it is going. offenders = the edge id. | WARNING | diagram-standards Edge Routing (shortest sensible route) / edge-hygiene 1.10.5 B3 |
 | `structural-integrity` | An edge `source`/`target` id resolves to no placeable box (`edge-unresolved-source`/`-target`), or a node carries a non-positive-area geometry (`node-no-geometry`). A cross-check adapted from the awesome-copilot draw.io validator; unique-id and parent-chain checks are already enforced earlier (the single parser dedupes cell ids before geometry sees them; a parent cycle raises `parse-error`), so only the not-yet-covered checks are added here. | WARNING | R1 AC10 / awesome-copilot draw.io validator / edge-hygiene 1.10.5 B4 |
+| `legend-boundary-coverage` | A Legend names a boundary that is **not drawn**: an `Outer boundary = …` line with no Boundary container on the canvas, or an `Inner boundary = …` line with no **nested** (network) boundary — the account-only context diagram that still lists an inner boundary (SEP 01/04, defect C10). The drawn boundaries are read **structurally** from the nesting of the parsed container boxes (`geometry.check_legend_boundary_coverage`), so the rule is provider-neutral and needs no mapping. The mirror of `legend-present`: that checks the Legend exists; this checks it does not describe a boundary the reader cannot find. Reason `legend-names-undrawn-boundary`; offenders = the offending legend line(s). New in 1.10.12 (WS11). | WARNING | diagram-standards Mandatory Legend Block / `legend_lines_for` |
 
 ### Rule Detail
 
@@ -183,6 +190,10 @@ every applicable rule against every artifact.
   `overlay=<term>` (e.g. a `standby` passive peer) is *declaring* why it has no
   edges, double-encoded and documented in the Legend, which is the sanctioned way
   to draw a symmetric mirror tier without duplicating every edge into it.
+  **1.10.12 (WS5, C13):** an ops / observability service (monitoring, CI state,
+  a config store) marked `overlay=supporting` is the sanctioned exemption for a
+  node that supports the workload but is not a step of its data flow; it is
+  the honest alternative to fabricating an edge chain to satisfy this rule.
   WARNING on both classes: it surfaces the defect without blocking publication,
   because "connected enough" is a judgement the author makes.
 - **`edge-approach` (WARNING)** — *Geometry-enforced.* An `orthogonalEdgeStyle`
@@ -237,7 +248,41 @@ every applicable rule against every artifact.
   `node-overlap` skips text cells, and `edge-crosses-legend` fires only when an
   edge runs through the box. The layout engine now places the boxes past every
   node footprint too (`layout.repair.place_legend_for`); a hand-authored diagram
-  must do the same.
+  must do the same. **Below-body mode (1.10.12 WS6):** a wide-and-short diagram may
+  put both boxes in one block BELOW the body, left-aligned with it
+  (`diagram_layout.theme43_legend_placement`, Mode B). A box whose top sits at
+  least one grid step below every container and every node footprint (icon +
+  caption) is in that mode: `left-of-diagram-body` and `overlaps-<container-id>`
+  do not apply to it, `overlaps-node-<id>` still does.
+- **`container-caption-overflow` (WARNING/ERROR)** — *New in 1.10.12 (WS6, C4).
+  Geometry-enforced.* A container is sized from its children, so a one-node VPC
+  under a long caption (`se vpc-05cd5663a70d3a65c (192.168.128.0/20)`, SEP 03 /
+  09) was 138px wide under a 335px caption and the text printed across the next
+  column's icon and name. The caption's need is its longest line x 7.0px/char
+  (the conservative 12px estimator the caption checks share) plus the style's
+  `spacingLeft` + `spacingRight` + 2 x `spacing` (draw.io default 2); a need above
+  the box width is `caption-overflow:+<px>` (WARNING). The text is located where
+  draw.io draws it (`align`, the spacings) and NOT capped at the box: when the
+  part outside the box intersects a node's icon or caption rectangle the hit is
+  `caption-overprints-node:+<px>`, an **ERROR on both classes** (a name printed
+  over another name is unreadable, not a style nit). The engine sizes every
+  container it lays out to its caption (`layout.place.fit_container_captions`)
+  and the shared builder grows a hand-placed boundary into free space or wraps
+  its caption onto two lines (`diagram_layout.fit_boundary_captions`), so the
+  rule bites on hand-authored geometry. The `capovf` column of
+  `scripts/canvas_metrics.py` uses the same need.
+- **`sibling-size-uniformity` (WARNING)** — *New in 1.10.12 (WS6, C8).
+  Geometry-enforced.* diagram-standards: sibling containers in one column share a
+  left edge and a width, in one row a top and a height, and a sibling group uses
+  one slot pitch, so bands with the same slot count are identical. Siblings are
+  containers with the same tightest enclosing container (or none). They are
+  compared only when aligned (left edges, or tops, within one grid step), and only
+  with siblings holding the same number of slots along the compared axis: node
+  COLUMNS for a width, node ROWS for a height (distinct node x / y within one grid
+  step), so a two-node stack is never compared with a two-node row. A spread
+  above one grid step is a finding. The case that added it: SEP 09's three-node
+  external bands measured 618, 660 and 618 because each was sized from its own
+  caption footprint. Advisory on both classes.
 - **`edge-routing` (WARNING/ERROR)** — *Geometry-enforced from the parsed `.drawio` model.* The check is conservative to avoid false positives on validly routed diagrams. It flags: (a) a **non-orthogonal** edge; (b) a **waypoint-free** edge whose straight run between its real contact points passes through an unrelated node (`straight-through-<node>`); and (c) — **new in v1.5.1** — an edge whose **final approach leg reaches its own target's pinned entry contact from the wrong side**, so the leg pierces the target's glyph to reach the contact (`pierces-target-<node>`). Case (c) catches the canonical defect where an edge pins a *top* entry but its corridor sits *below* the icon, so the arrow enters up through the icon body instead of from above (or the mirror on any face). A waypointed edge is **not** blindly trusted: while its raw diagonal is not sampled (draw.io routes orthogonally, so the diagonal would false-flag a validly routed edge), its real **orthogonal knee** path — the horizontal-first axis-aligned segments draw.io actually draws between consecutive points — **is** sampled (case (d), **new in v1.5.4**), so a knee leg that slices an unrelated icon is flagged (`knee-through-<node>`). This closes the gap where a waypointed edge's L-shaped leg (the devoxx `e8` horizontal stub cutting the RDS glyph) stepped cleanly between diagonal samples yet rendered straight through the icon. The self-pierce criterion (c) is checked on every edge regardless of waypoints, because a wrong-side approach is a defect even when the rest of the route was deliberate. **Severity: an icon-crossing finding — `*-through-*` (b) or `pierces-target-*` (c) — is raised to ERROR on any class** (a line drawn over an icon it does not connect, or into its target from the wrong side, is a correctness failure, not a style nit); a bare non-orthogonal edge with no crossing stays a WARNING. Beyond the enforced core, edges should be orthogonally routed
   (`edgeStyle=orthogonalEdgeStyle` for `.drawio`), must not cross through a node icon,
   and must enter a node on its left/top and exit on its right/bottom. When one node
@@ -460,10 +505,18 @@ every applicable rule against every artifact.
   12px estimator the container-caption checks use), centred on the icon and never
   narrower than it, 16px per line when it wraps past one line. A wide caption
   ("partner-central-sync") overhangs its icon on both sides, and an edge through
-  that overhang reads as striking the name out. The edge's own source/target
-  captions stay exempt (a stub leaving its own node is S1, deferred to 1.11). The
-  layout engine's scored objective keeps the icon-width band, so engine output is
-  unchanged. Advisory (WARNING) for both classes.
+  that overhang reads as striking the name out. **The edge's own source/target
+  caption is no longer silently exempt (1.10.12, WS2):** a bottom drop that
+  strikes the name under its *own* icon is reported under the distinct reason
+  **`edge-crosses-own-label`** (an unrelated-caption crossing keeps the reason
+  `crosses-label-band`). The engine's WS2 caption-safe pass drives this to **0 on
+  the corpus and SEP** — spine edges from a captioned source take the Variant A
+  side corridor (see diagram-standards → *Vertical spine vs straight bottom drop*),
+  and the remaining masked cases draw the edge beneath the vertex so the opaque
+  caption background hides the line. A hand-authored bottom drop through the
+  source's own name trips `edge-crosses-own-label`. The layout engine's scored
+  objective keeps the icon-width band, so engine output is unchanged. Advisory
+  (WARNING) for both classes.
 - **`marker-label-collision` (WARNING)** — *New in 1.10.7. Geometry-enforced.* A
   numbered flow-marker renders at its anchor (`marker_anchor`: the signed
   arc-length position along the route). When that anchor falls inside any node's
@@ -471,7 +524,10 @@ every applicable rule against every artifact.
   inclusive with a half-pixel tolerance — the number overprints the service name
   (the quick summary's `4` printed across `alerts`). Every node is checked, the
   edge's own endpoints included. offenders = the marker edge and the node; reason
-  `marker-on-caption`. Lint-only (the engine's scored objective does not read it).
+  `marker-on-caption`. **A second reason `marker-on-icon` (1.10.12, WS7):** when
+  the anchor instead falls inside a node's 78×78 **icon** box, the number
+  overprints the glyph; `check_marker_icon_collision` reports it alongside the
+  caption case. Lint-only (the engine's scored objective does not read it).
   WARNING on both classes.
 - **`marker-collision` (WARNING)** — *Geometry-enforced (1.10.5; foreign-edge
   reason 1.10.7).* Two reasons. `markers-overprint`: two markers render closer
@@ -496,6 +552,87 @@ every applicable rule against every artifact.
   the HA landscapes 0.14 × E, while the 1.10.0 quick landscape crossed 28 times on
   28 edges (1.00 × E). A `flow` diagram stays WARNING-only — its ≤ 12-node cap
   already bounds the damage.
+- **`edge-crossing-avoidable` (WARNING)** — *New in 1.10.12 (WS3, C7).
+  Geometry-enforced.* The directional contract leaves an edge up to four legal
+  face pairs (exit right/bottom × entry left/top); choosing among them by a
+  geometric precondition instead of by crossings left crossings a different
+  legal face would remove (SEP 09 `e3`: a back-edge entering CloudFront's
+  LEFT face, where `e1` already arrived, when its TOP face was legal, shorter
+  and crossing-free). The rule greedily re-routes one edge of a crossing pair
+  at a time onto another legal face pair — a stub out of the exit face, one
+  lane, a stub into the entry face, entry slots kept distinct from the face's
+  other contacts — and counts the crossings such swaps remove. A swap counts
+  only when it lowers the total crossing count AND adds nothing: no icon,
+  node caption, text box, foreign container or container caption crossed, no
+  shared corridor or border ride, no detour hook, and no routing finding the
+  oracle did not already report. A bottom exit is offered only from a source
+  with no caption below its icon (Variant A). Each edge swaps at most once.
+  Reason `avoidable:<removed>/<crossings>`; offenders = the swapped edges.
+  The engine runs the same test as its final crossing-repair pass
+  (`crossing_repair.plan_crossing_repair`, after the caption-safe pass in
+  `build_diagram`), so engine output never trips it; it is published so a
+  hand-authored diagram is held to the same standard. Advisory (WARNING) on
+  both classes; `edge-crossing-excess` still caps the total.
+- **`collinear-edges` (WARNING)** — *New in 1.10.12 (WS8, C5).
+  Geometry-enforced.* Two **unrelated** edges whose parallel legs sit on (or
+  within two grid steps of) the same grid line with overlapping extents read
+  as **one line**: the viewer cannot tell there are two flows (SEP 03 `e2` +
+  `e11` at model y=127; SEP 08 `e4` / `e5` / `e10` at y=789). The rule is pure
+  geometry (`geometry.collinear_edge_pairs`): a leg is counted only when it is
+  at least two grid steps long, the two legs are under two grid steps apart,
+  and their extents overlap or leave a gap of at most `COLLINEAR_GAP` along the
+  line. Two legs meeting at a shared point of edges that share an endpoint node
+  (a sanctioned trunk junction) are exempt, and so is a gap a node icon
+  visibly terminates (a chain running straight through a node). Reason
+  `collinear:<pairs>`; offenders = the two edge ids of each pair. The engine's
+  collinear-shift pass (`collinear_repair.plan_collinear_shift`, after the
+  crossing-repair pass in `build_diagram`) re-routes one edge of each pair onto
+  another legal route — keeping the move only when the pair count drops and no
+  other finding (crossing, back-edge, caption strike, …) is added — so engine
+  output never trips it; it is published so a hand-authored diagram is held to
+  the same standard. Advisory (WARNING) on both classes.
+- **`legend-boundary-coverage` (WARNING)** — *New in 1.10.12 (WS11, C10).
+  Geometry-enforced.* The Mandatory Legend Block names the outer/inner boundary
+  only when that boundary is actually on the canvas
+  (`diagram_layout.legend_lines_for`, 1.10.7). A Legend that still lists `Inner
+  boundary = Network Boundary …` on a diagram that draws **no nested (network)
+  boundary** — an account-only context diagram — describes something the reader
+  cannot find; the mirror holds for `Outer boundary`. This was the C10 defect:
+  SEP 01 and 04 draw only the SEP account box but assembled their Legend from
+  `STANDARD_LEGEND_LINES`, so both listed an inner boundary. The drawn
+  boundaries are read **structurally** from the nesting of the parsed container
+  boxes (`geometry.check_legend_boundary_coverage` /
+  `geometry._container_nesting`): `has_outer` is "≥ 1 Boundary container
+  drawn", `has_inner` is "≥ 1 Boundary container nested strictly inside
+  another". So an `account ⊃ vpc` stack passes, a lone account box fails the
+  inner line, and a set of sibling region boxes (the HA summaries, which the
+  builder already omits both lines for) raises nothing. Provider-neutral — it
+  reads geometry, not a mapping. The engine applies `legend_lines_for` on every
+  build path (`build_diagram` when `legend_lines is None`; the SEP scripts call
+  it explicitly), so generated diagrams never trip it; it is published so a
+  hand-authored Legend is held to the same standard. Reason
+  `legend-names-undrawn-boundary`; offenders = the offending legend line(s).
+  Advisory (WARNING) on both classes.
+- **`flow-step-undrawn` (WARNING)** — *New in 1.10.12 (WS5, C2).* `flow-legend`
+  checks that every edge marker has a Flow line; nothing checked the other
+  direction, so a step whose edge was folded into the legend (the 1.10.11
+  edge-folding lever) linted clean while its node lost its only relationship:
+  SEP 05 step 7, 06 steps 7/10/11 (Bedrock orphaned), 07 steps 8/9 (the
+  processor orphaned), 09 step 17. The rule reads the parsed `Flow` cell and
+  the edge labels (a single marker `7` or a list `7, 8`); a step line that says
+  `(not drawn)` is a declared context-only step and is exempt. Section
+  headers (`Ingest (1-4)`) are not steps. WARNING on both classes; the engine's
+  return bus (diagram-standards → *Return flows ride the return bus*) is the
+  sanctioned alternative to folding a reply.
+- **`graph-islands` (WARNING)** — *New in 1.10.12 (WS5, C3). Topology-enforced,
+  landscape only.* A landscape exists to show how everything relates at once;
+  when its connected nodes fall into several components (SEP 09: no edge
+  between the SEP account and any of the four external bands) the canvas holds
+  several unrelated pictures. Components are computed over nodes with at least
+  one edge, minus overlay-marked nodes, so a lone edge-less node stays
+  `node-connectivity`'s finding and is not double-reported. offenders = the
+  nodes outside the largest component; reason `islands:<n>`. A `flow` is not
+  judged (a narrative view may legitimately hold two short paths).
 - **`min-font-size` (WARNING)** — Every piece of on-diagram text (node labels, edge
   labels, boundary captions, title cell, and the `Flow`/`Legend` cells) must render at
   **12px or larger**, the accessibility floor from published AWS diagram conventions. A
@@ -598,7 +735,9 @@ keeps its exact behavior.
 | `geometric-containment` | WARNING | **ERROR** (a hidden non-membership is a correctness failure; also ERROR on a network diagram) |
 | `orphan-landscape` | n/a | ERROR unless `summary_of` names a `flow` summary |
 | `node-connectivity` | WARNING | WARNING (an overlay marker is the sanctioned exemption) |
+| `graph-islands` | n/a | WARNING (the connected nodes form one graph; `supporting` / `standby` nodes left out) |
 | `legend-placement` | WARNING; **ERROR** for `overlaps-node-*` | WARNING; **ERROR** for `overlaps-node-*` |
+| `container-caption-overflow` | WARNING; **ERROR** for `caption-overprints-node` | WARNING; **ERROR** for `caption-overprints-node` |
 | numbered flow markers | expected | optional (a landscape has no single path) |
 | `overlay-legend-coverage` | WARNING when overlay markers are used | WARNING when overlay markers are used |
 | raster budget (export guidance) | ≤ 1600px / < 500KB | ≤ 3600px / < 2MB (a wide as-built stays legible) |

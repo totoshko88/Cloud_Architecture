@@ -109,3 +109,45 @@ def test_fetch_provider_unpacks_a_gzip_tarball(tmp_path):
     assert result["files"] == 2
     assert (asset_root / "k8s-icons/community-53c/icons/svg/pod.svg").is_file()
     assert (asset_root / "k8s-icons/community-53c/icons/svg/deploy.svg").is_file()
+
+
+_SHA40 = "53c338ecba4a2a9240f6654cca1d6a9dac25c785"
+
+
+def test_refetch_normalises_a_stale_commit_suffixed_unpack(tmp_path):
+    """SEP feedback §4.2: a pack unpacked by an older fetcher left every icon
+    under ``k8s-icons/community-<sha>/icons/...``. A re-fetch strips the
+    git-archive wrapper and replaces the directory wholesale, so the mapping's
+    ``k8s-icons/icons/svg/...`` paths resolve with no symlink workaround."""
+    payload = _targz_bytes({f"community-{_SHA40}/icons/svg/resources/labeled/pod.svg": b"<svg/>"})
+    spec = dict(_pin(payload), url="https://example.test/pack.tar.gz",
+                unpack_to="k8s-icons", kind="svg-png-tree")
+    asset_root = tmp_path / "assets"
+    stale = asset_root / "k8s-icons" / f"community-{_SHA40}" / "icons" / "svg" / "old.svg"
+    stale.parent.mkdir(parents=True)
+    stale.write_bytes(b"<svg/>")
+    fetch_provider("kubernetes", spec, asset_root, tmp_path / "cache",
+                   opener=_FakeOpener(payload))
+    assert (asset_root / "k8s-icons/icons/svg/resources/labeled/pod.svg").is_file()
+    assert not (asset_root / "k8s-icons" / f"community-{_SHA40}").exists()
+
+
+def test_kubernetes_mapping_matches_the_pinned_pack_layout():
+    """kubernetes-icons.yaml points only at directories the pinned
+    kubernetes/community pack ships: control-plane icons under ``labeled/``
+    (there is no ``control_plane_components/unlabeled``), etcd under
+    ``infrastructure_components``, and every path under ``k8s-icons/icons/svg``
+    (the wrapper-stripped root)."""
+    import re
+
+    from rule_engine.constants import resolve_bundled_dir
+
+    text = (resolve_bundled_dir("mappings") / "kubernetes-icons.yaml").read_text(encoding="utf-8")
+    paths = re.findall(r"image=(assets/vendor/k8s-icons/[^;\"]+)", text)
+    assert paths, "kubernetes mapping must reference k8s pack icons"
+    for p in paths:
+        assert p.startswith("assets/vendor/k8s-icons/icons/svg/"), p
+        assert "control_plane_components/unlabeled/" not in p, p
+        assert "community-" not in p, p
+    etcd = [p for p in paths if p.endswith("/etcd.svg")]
+    assert etcd and all("/infrastructure_components/" in p for p in etcd), etcd

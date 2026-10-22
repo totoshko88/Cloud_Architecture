@@ -49,7 +49,7 @@ import sys
 from pathlib import Path
 from typing import List, Optional, Sequence
 
-from rule_engine.drawio_model import parse_drawio
+from rule_engine.drawio_model import absolute_origin, parse_drawio
 from rule_engine.geometry import (
     build_geometry,
     contact_faces,
@@ -80,16 +80,31 @@ def _set_token(style: str, name: str, value: float) -> str:
     return style + (";" if style and not style.endswith(";") else "") + text
 
 
-def _render_points(pts: Sequence[tuple]) -> str:
+def _render_points(pts: Sequence[tuple], origin: tuple = (0.0, 0.0)) -> str:
+    """Render absolute ``pts`` as an ``<Array>``, relative to the edge's parent
+    ``origin`` (an edge parented to a container stores container-relative
+    waypoints; the shared builder parents edges so they paint beneath nodes)."""
+    ox, oy = origin
     inner = "".join(
-        f'\n              <mxPoint x="{px:.2f}" y="{py:.2f}" />' for px, py in pts
+        f'\n              <mxPoint x="{px - ox:.2f}" y="{py - oy:.2f}" />' for px, py in pts
     )
     return f'<Array as="points">{inner}\n            </Array>'
 
 
+def _edge_origins(page) -> dict:
+    """Edge id -> absolute origin of its parent cell (``(0, 0)`` on the root layer)."""
+    return {
+        cid: absolute_origin(page, cell.parent)
+        for cid, cell in page.cells.items()
+        if cell.edge
+    }
+
+
 def orthogonalise_text(text: str) -> tuple[str, List[str]]:
     """Return ``(rewritten_xml, changed_edge_ids)``."""
-    geo = build_geometry(parse_drawio(text, path="<orthogonalise>.drawio")[0])
+    page = parse_drawio(text, path="<orthogonalise>.drawio")[0]
+    geo = build_geometry(page)
+    origins = _edge_origins(page)
     changed: List[str] = []
     edges = {e.id: e for e in geo.edges}
 
@@ -132,7 +147,7 @@ def orthogonalise_text(text: str) -> tuple[str, List[str]]:
                 style = _set_token(style, name, value)
             head = head[: sm.start(1)] + style + head[sm.end(1):]
 
-        array = _render_points(pts) if pts else ""
+        array = _render_points(pts, origins.get(eid, (0.0, 0.0))) if pts else ""
         if _ARRAY_RE.search(body):
             body = _ARRAY_RE.sub(lambda _m: array, body, count=1) if array else \
                 _ARRAY_RE.sub("", body, count=1)
@@ -194,7 +209,9 @@ def edge_hygiene_text(text: str, skip_ids: "Optional[set[str]]" = None) -> tuple
     Running twice yields no further change (each underlying geometry pass
     returns empty on an already-clean diagram).
     """
-    geo = build_geometry(parse_drawio(text, path="<edge-hygiene>.drawio")[0])
+    page = parse_drawio(text, path="<edge-hygiene>.drawio")[0]
+    geo = build_geometry(page)
+    origins = _edge_origins(page)
     # Marker vs marker only here (clearance 0 disables phase 2): the marker vs
     # foreign-edge slide must judge the FINAL lines, after ports and trunk
     # offsets moved them, so it runs on the rewritten text below (1.10.7 D37).
@@ -241,7 +258,7 @@ def edge_hygiene_text(text: str, skip_ids: "Optional[set[str]]" = None) -> tuple
         # Parallel-trunk offset: replace the waypoint <Array>.
         if eid in new_points:
             pts = new_points[eid]
-            array = _render_points(pts) if pts else ""
+            array = _render_points(pts, origins.get(eid, (0.0, 0.0))) if pts else ""
             if _ARRAY_RE.search(body):
                 body = (
                     _ARRAY_RE.sub(lambda _m: array, body, count=1)

@@ -167,6 +167,18 @@ def _validate_spec(spec: DiagramSpec) -> None:
     # as before.
     az_band = _node_az_band(spec)
 
+    # 1.10.12 (WS4): the ordering switches.
+    if getattr(spec, "order", "auto") not in ("auto", "manual"):
+        raise SpecError(
+            f"diagram {spec.diagram_id!r} declares unknown order "
+            f"{spec.order!r}; order must be 'auto' or 'manual'"
+        )
+    if getattr(spec, "vpc_side", "auto") not in ("auto", "left", "right"):
+        raise SpecError(
+            f"diagram {spec.diagram_id!r} declares unknown vpc_side "
+            f"{spec.vpc_side!r}; vpc_side must be 'auto', 'left' or 'right'"
+        )
+
     node_ids = set()
     seen_slots: dict[Tuple[str, str, int, int], str] = {}
     for node in spec.nodes:
@@ -233,16 +245,26 @@ def _validate_spec(spec: DiagramSpec) -> None:
                     "declared container must be in the node's own region"
                 )
 
+    # 1.10.12 (WS10): an edge endpoint MAY be a container id — a
+    # boundary-to-boundary relationship (VPC/VCN peering, a transit-gateway
+    # attachment) drawn between two container FACES rather than attached to a
+    # proxy node (RDS/Lambda) inside the boundary (defect C15). The router
+    # anchors such an edge on the container face under the same directional
+    # contract (exit right/bottom, enter left/top), and the lint/geometry treat
+    # the container as the endpoint. So a valid endpoint is a node id OR a
+    # container id; only an id that is neither is a dangling reference.
+    container_ids = {c.id for c in spec.containers}
+    valid_endpoints = node_ids | container_ids
     for edge in spec.edges:
-        if edge.source not in node_ids:
+        if edge.source not in valid_endpoints:
             raise SpecError(
                 f"edge {edge.id!r} has dangling source {edge.source!r} "
-                "(not a declared node id)"
+                "(not a declared node or container id)"
             )
-        if edge.target not in node_ids:
+        if edge.target not in valid_endpoints:
             raise SpecError(
                 f"edge {edge.id!r} has dangling target {edge.target!r} "
-                "(not a declared node id)"
+                "(not a declared node or container id)"
             )
 
 
@@ -1392,6 +1414,46 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
                     f"{spec.axis!r}; axis must be 'north-south' or 'left-right'"
                 )
         placed[node.id] = Box(node.id, _snap(x), _snap(y), ICON_SIZE, ICON_SIZE)
+
+    # 1.10.12 (WS4): ``vpc_side="right"`` — the regional column stands LEFT of
+    # the region's network block. The regional block keeps its internal
+    # (row, column) arrangement; the banded network block (and any feeder drawn
+    # directly above a banded anchor) moves right of the regional column that
+    # feeds it, with the same gap the default placement leaves between the two
+    # (one column step + two pads).
+    # A pure per-region translation, so rows, sub-rows and the peer-region
+    # mirror are unchanged. ``"left"`` / ``"auto"`` keep the default placement.
+    if (getattr(spec, "vpc_side", "auto") == "right" and spec.axis == "north-south"
+            and regional_col):
+        for region in sorted({n.region for n in spec.nodes if n.id in regional_col}):
+            reg_ids = [n.id for n in spec.nodes
+                       if n.region == region and n.id in regional_col
+                       and n.id not in regional_abs_x]
+            band_ids = [n.id for n in spec.nodes
+                        if n.region == region and n.id in band_within
+                        and n.container is not None
+                        and kind_of.get(n.container) in banded_kinds]
+            if not reg_ids or not band_ids:
+                continue
+            # The network block is inserted right after the last regional
+            # column that FEEDS it (API Gateway → RDS reads as one short
+            # forward hop); regional columns beyond that column move right by
+            # the network block's width. Columns up to it keep their x, so the
+            # block stays under the account-level row that feeds it.
+            band_set = set(band_ids)
+            feeders = [regional_col[e.source] for e in spec.edges
+                       if e.source in reg_ids and e.target in band_set]
+            k = max(feeders) if feeders else max(regional_col[i] for i in reg_ids)
+            rcx = regional_col_x.get(region, 0)
+            band_shift = (rcx + k + 1) * col_step() + 4 * CONTAINER_PAD
+            tail_shift = (rcx + 1) * col_step() + 4 * CONTAINER_PAD
+            moved = [(i, band_shift) for i in band_ids]
+            moved += [(i, tail_shift) for i in reg_ids if regional_col[i] > k]
+            moved += [(i, band_shift) for i in regional_abs_x
+                      if any(n.id == i and n.region == region for n in spec.nodes)]
+            for nid, dx in moved:
+                b = placed[nid]
+                placed[nid] = Box(nid, _snap(b.x + dx), b.y, b.w, b.h)
     return placed
 
 

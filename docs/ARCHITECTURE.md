@@ -36,9 +36,10 @@ read-only.
 
 ### Supported provider profiles
 
-`aws`, `azure`, `gcp`, `oci`, and a vendor-neutral `generic` profile (grayscale,
+`aws`, `azure`, `gcp`, `oci`, a vendor-neutral `generic` profile (grayscale,
 no vendor icons) that is both the fallback and the reference used when adding a
-new provider.
+new provider, and an orchestrator-platform `kubernetes` profile (Cluster
+boundary, Namespace leaf) added in 1.10.11.
 
 ---
 

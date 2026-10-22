@@ -9,7 +9,7 @@ backend-path = ["."]
 
 [project]
 name = "rule-engine"
-version = "1.10.11"
+version = "1.10.12"
 description = "Diagram & Inventory Rule Engine — a cloud-agnostic Kiro project for deterministic diagram and inventory generation."
 readme = "README.md"
 # The engine supports Python 3.11 through 3.14 (the CI test matrix, task 21.5).
@@ -76,6 +76,10 @@ rule-engine-reconcile = "rule_engine.reconcile:main"
 # deferred docs/REVIEW.md gap G8. Offline and deterministic; the raster export is
 # best-effort so a missing draw.io CLI never blocks the .drawio + companion.
 rule-engine-draw = "rule_engine.draw_cli:main"
+# Ordering advisor (1.10.12 WS4): lay a DiagramSpec out and report what the
+# automatic flow-aware ordering changed (slots / lanes / vpc_side) and why —
+# the finished back-edge and crossing counts before and after. Writes nothing.
+rule-engine-advise = "rule_engine.advise_cli:main"
 # Init-time icon-set builder (v1.3.x): fetch the official provider icon packs and
 # build the committed mappings/icon-index.json (per-role resolved icon per
 # provider + pack summary). Run at installation; --check verifies it is current.
@@ -111,6 +115,10 @@ where = ["src"]
 # the installed package with no repo checkout. The trees are git-ignored in the
 # source tree; the build backend regenerates them for every wheel/sdist.
 "rule_engine._bootstrap" = ["**/*"]
+# Engine-authored icon assets with no vendor source (1.10.12: the CC0
+# education mortarboard). Committed in-repo; resolved by
+# rule_engine.engine_assets.locate_asset when a workspace has no copy.
+"rule_engine.engine_assets" = ["**/*.svg"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

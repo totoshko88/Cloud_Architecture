@@ -121,6 +121,16 @@ class CorridorAllocator:
         self._free: Dict[str, list] = {}
         #: gap id -> set of lines already handed out (for occupancy queries).
         self._taken: Dict[str, set] = {}
+        #: edge id -> nesting rank of its turn column among fan-outs converging
+        #: on one target's left face (1.10.12 WS3; set by the pipeline from
+        #: ``routers.decide_converging_turns``). Read-only during routing.
+        self.turn_rank: Dict[str, int] = {}
+        #: edge id -> ``{"above": (rank, count), "below": (rank, count),
+        #: "bands": ...}`` nesting of return-bus replies leaving one source
+        #: (1.10.12 WS5; set by the solver from
+        #: ``routers.decide_return_bus_nesting``). Rank 0 is the outermost run.
+        #: Read-only during routing.
+        self.bus_rank: Dict[str, Dict[str, Tuple]] = {}
 
     # -- gap construction helpers ------------------------------------------
 

@@ -33,6 +33,11 @@ Ref kinds (``IconRef.kind``):
   reverse lookup in the digests manifest.
 * ``generic-shape`` — a base draw.io shape declared in
   ``mappings/generic-icons.yaml`` (the vendor-neutral profile has no vendor icons).
+* ``builtin-stencil`` (1.10.12) — a plain ``shape=mxgraph.<lib>.<id>`` stencil
+  outside the neutral families, on a node with no other ref. It is resolved
+  ONLY against the asar-extracted ``mappings/drawio-stencils.json`` (and the
+  aws4 manifest for ``mxgraph.aws4.*``); an id absent from it, or a missing
+  manifest, leaves the node ``unverified`` — never assumed valid.
 
 See ``design.md`` §6 for the dataclass signatures and status semantics.
 """
@@ -51,9 +56,11 @@ import yaml
 
 from rule_engine.azure2_shapes import (
     load_aws4_manifest as _load_aws4_manifest,
+    load_drawio_stencils_manifest as _load_drawio_stencils_manifest,
     load_manifest as _load_azure2_manifest,
     AWS4_MANIFEST,
     DEFAULT_MANIFEST as _AZURE2_MANIFEST,
+    DRAWIO_STENCILS_MANIFEST as _DRAWIO_STENCILS_MANIFEST,
 )
 from rule_engine.constants import (
     is_boundary_container_style as _is_boundary_style,
@@ -97,7 +104,7 @@ class IconRef:
     """One icon reference extracted from a service vertex."""
 
     cell_id: str
-    kind: str  # resIcon | grIcon | azure2 | image | oci-slug | oci-glyph | generic-shape
+    kind: str  # resIcon | grIcon | azure2 | image | oci-slug | oci-glyph | generic-shape | builtin-stencil
     reference: str
 
 
@@ -117,6 +124,8 @@ class IconSources:
     oci_stencils: Optional[FrozenSet[str]]  # assets/vendor/oci-stencils/stencils.json slugs
     generic_shapes: FrozenSet[str] = field(default_factory=frozenset)
     workspace_root: Path = field(default_factory=Path)
+    # mappings/drawio-stencils.json — asar-extracted built-in mxgraph.* ids.
+    drawio_stencils: Optional[FrozenSet[str]] = None
 
 
 # --------------------------------------------------------------------------- #
@@ -248,6 +257,22 @@ def _generic_shape_tokens(style: str) -> List[str]:
     return tokens
 
 
+def _builtin_stencil_id(style: str) -> Optional[str]:
+    """The ``shape=mxgraph.<lib>.<id>`` value of a non-neutral built-in stencil.
+
+    ``None`` for a non-``mxgraph`` shape, a neutral-family stencil (those stay
+    ``generic-shape`` refs, checked against ``generic-icons.yaml``), or a style
+    with no ``shape=``.
+    """
+    m = re.search(r"(?:^|;)shape=([^;]+)", style)
+    if not m:
+        return None
+    shape = m.group(1).strip()
+    if not shape.startswith("mxgraph.") or shape.startswith(_NEUTRAL_STENCIL_FAMILIES):
+        return None
+    return shape
+
+
 def load_sources(workspace_root: Path) -> IconSources:
     """Load every icon-resolution source available under ``workspace_root``.
 
@@ -261,7 +286,11 @@ def load_sources(workspace_root: Path) -> IconSources:
     azure2 = _load_azure2_manifest(root / "mappings" / "azure2-shapes.json")
     if azure2 is None:
         azure2 = _load_azure2_manifest(_AZURE2_MANIFEST)
+    stencils = _load_drawio_stencils_manifest(root / "mappings" / "drawio-stencils.json")
+    if stencils is None:
+        stencils = _load_drawio_stencils_manifest(_DRAWIO_STENCILS_MANIFEST)
     return IconSources(
+        drawio_stencils=frozenset(stencils) if stencils else None,
         aws4=frozenset(aws4) if aws4 else None,
         azure2=frozenset(azure2) if azure2 else None,
         oci_digests=_load_oci_digests(root),
@@ -454,8 +483,12 @@ def extract_refs(page: Page) -> Dict[str, List[IconRef]]:
                 cell_refs.append(IconRef(cell.id, "image", image_identity))
         # Generic-profile shapes: a plain base shape with no vendor reference.
         if not cell_refs and not has_stencil:
-            for token in _generic_shape_tokens(cell.style or ""):
-                cell_refs.append(IconRef(cell.id, "generic-shape", token))
+            builtin = _builtin_stencil_id(cell.style or "")
+            if builtin is not None:
+                cell_refs.append(IconRef(cell.id, "builtin-stencil", builtin))
+            else:
+                for token in _generic_shape_tokens(cell.style or ""):
+                    cell_refs.append(IconRef(cell.id, "generic-shape", token))
 
         # Attach the page glyph digest ONLY to a stencil-bearing service vertex
         # that carries no ociSlug= marker. When a slug is present it is the
@@ -529,6 +562,29 @@ def _resolve_image_path(ref: str) -> Tuple[str, str]:
     return RESOLVED, normalised
 
 
+def _resolve_builtin_stencil(ref: str, sources: IconSources) -> Tuple[str, str]:
+    """Accept a built-in ``mxgraph.*`` stencil ONLY from an asar-extracted manifest.
+
+    ``mxgraph.aws4.<id>`` is also accepted from ``aws4-icons.json``. Anything
+    else — an id the manifest lacks, or no manifest at all — is ``unverified``
+    (not ``unresolved``: the asar scan is not exhaustive, so absence is not
+    proof the id is wrong, but it is never proof it is right either).
+    """
+    m = _AWS4_RE.match(ref)
+    if m and sources.aws4 is not None and m.group(1) in sources.aws4:
+        return RESOLVED, f"built-in stencil {ref} (aws4-icons.json)"
+    if sources.drawio_stencils is None:
+        return UNVERIFIED, (
+            f"built-in stencil {ref}: no asar-extracted mappings/drawio-stencils.json "
+            f"(run rule-engine-build-icon-sets with draw.io installed)"
+        )
+    if ref in sources.drawio_stencils:
+        return RESOLVED, f"built-in stencil {ref} (drawio-stencils.json)"
+    return UNVERIFIED, (
+        f"built-in stencil {ref} not in the asar-extracted drawio-stencils.json"
+    )
+
+
 def _resolve_oci_slug(ref: str, sources: IconSources) -> Tuple[str, str]:
     if sources.oci_stencils is not None:
         if ref in sources.oci_stencils:
@@ -587,6 +643,8 @@ def resolve(ref: IconRef, sources: IconSources) -> Tuple[str, str]:
         return _resolve_oci_slug(ref.reference, sources)
     if kind == "oci-glyph":
         return _resolve_oci_glyph(ref.reference, sources, _glyph_sibling_slug(ref, sources))
+    if kind == "builtin-stencil":
+        return _resolve_builtin_stencil(ref.reference, sources)
     if kind == "generic-shape":
         if ref.reference in sources.generic_shapes:
             return RESOLVED, f"generic base shape {ref.reference!r}"

@@ -698,7 +698,14 @@ def route_fan_out_row(
     # of every earlier run and no rise cuts a sibling's lane.
     if not (entry_pt[1] is not None and entry_pt[1] <= 0.0):
         claims = allocator._taken.setdefault(f"turn-left:{tgt.id}", set())
+        # 1.10.12 WS3: a converging group is nested by source position
+        # (:func:`decide_converging_turns`, set on the allocator by the
+        # pipeline), so the column does not depend on the routing order.
         k = 0
+        rank = getattr(allocator, "turn_rank", {}).get(edge.id)
+        if rank:
+            while k < rank and turn_x + (k + 1) * 2 * GRID < tgt.x - GRID:
+                k += 1
         while int(turn_x + k * 2 * GRID) in claims and turn_x + (k + 1) * 2 * GRID < tgt.x - GRID:
             k += 1
         turn_x = _snap(turn_x + k * 2 * GRID)
@@ -1117,6 +1124,178 @@ def decide_converging_corridors(
             y += 2 * GRID          # stride, matching CorridorAllocator default
     return out
 
+
+
+def decide_converging_turns(
+    spec: DiagramSpec,
+    placed: Dict[str, Box],
+    entries: Dict[str, Contact],
+) -> Dict[str, int]:
+    """Nest the turn columns of fan-outs that CONVERGE on one target's LEFT face
+    by source position (1.10.12 WS3, C7).
+
+    Several ``fan-out-row`` edges into one target's left face each turn in their
+    own column left of the target (:func:`route_fan_out_row`). The columns do not
+    cross only when the edge whose source is **farther** from its entry row turns
+    **nearer** the target: its long vertical then stands between the target and
+    every shorter one, and each shorter run's horizontal ends before it. Handing
+    the columns out in declared order nested them backwards whenever the farther
+    source was declared first (SEP 01 ``e4`` / ``e5``: one crossing, zero after
+    the swap).
+
+    Returns ``{edge_id: rank}`` for the edges of every such group of two or more
+    distinct sources: rank 0 (the centred column, farthest from the target) for
+    the source nearest its entry row, then outward. Ties keep declared order.
+    Edges absent from the result keep the declared-order claim."""
+    order_index = {e.id: i for i, e in enumerate(spec.edges)}
+    groups: Dict[str, List[str]] = {}
+    for edge in spec.edges:
+        if classify_edge(edge, placed) != "fan-out-row":
+            continue
+        fx, fy = entries[edge.id]
+        if fx is None or fx > 0.0 or (fy is not None and fy <= 0.0):
+            continue  # only LEFT-face arrivals turn in a column left of the target
+        groups.setdefault(edge.target, []).append(edge.id)
+    out: Dict[str, int] = {}
+    for target, eids in groups.items():
+        sources = {spec.edges[order_index[e]].source for e in eids}
+        if len(eids) < 2 or len(sources) < 2:
+            continue
+        tgt = placed[target]
+
+        def _distance(eid: str) -> float:
+            edge = spec.edges[order_index[eid]]
+            src = placed[edge.source]
+            entry_y = tgt.y + (entries[eid][1] if entries[eid][1] is not None else 0.5) * tgt.h
+            return abs((src.y + src.h / 2.0) - entry_y)
+
+        for rank, eid in enumerate(sorted(eids, key=lambda e: (_distance(e), order_index[e]))):
+            out[eid] = rank
+    return out
+
+
+#: Two return-bus exits on one face closer than this merge into one line
+#: (``check_exit_thirds``' near-merge floor, ~1/5 of the face).
+_BUS_EXIT_MERGE = 0.2
+
+
+def decide_return_bus_nesting(
+    spec: DiagramSpec,
+    placed: Dict[str, Box],
+    exits: Optional[Dict[str, Contact]] = None,
+) -> Dict[str, Dict[str, Tuple]]:
+    """Nest the return-bus runs of replies that leave ONE source (1.10.12 WS5, F1).
+
+    Two leftward / response edges from one node that both ride the return bus
+    cross unless they nest: the run that reaches **farther left** takes the
+    OUTER bus lane (farthest from the content rows) and the OUTER rise column
+    (farthest from the source), and the inner run stays inside it. Handing the
+    lanes out in routing order nested them backwards on SEP 05 (``e3`` outer,
+    ``e7`` inner; ``e3``'s drop cut ``e7``'s lane: one crossing).
+
+    The left extent is the target's x. On a tie (targets stacked in one column)
+    the target farther from the bus is the outer one: its arrival must detour
+    past the nearer target, so it reaches farther. That is the lower target for
+    the upper bus and the higher one for the lower bus, so the rank is kept per
+    side. The exit bands follow the same nesting: on the upper bus the inner run
+    leaves from the upper band, so the outer run's stub passes below the inner
+    rise (mirrored on the lower bus).
+
+    Returns ``{edge_id: {"above": (rank, count), "below": (rank, count),
+    "bands": (y-fractions, ascending)}}`` for every group of two or more return
+    edges (back-edge / cross-region, target centre left of the source) sharing
+    a source; rank 0 is the outermost run. ``bands`` are the group's right-face
+    exit fractions from ``exits`` (centre when absent), spread to quarters when
+    two would merge and no other edge leaves that face. Ties keep declared order;
+    edges absent from the result keep the routing-order allocation."""
+    order_index = {e.id: i for i, e in enumerate(spec.edges)}
+    groups: Dict[str, List[EdgeSpec]] = {}
+    for edge in spec.edges:
+        src, tgt = placed.get(edge.source), placed.get(edge.target)
+        if src is None or tgt is None or not (tgt.x + tgt.w / 2.0 < src.x):
+            continue
+        if classify_edge(edge, placed) not in ("back-edge", "cross-region"):
+            continue
+        groups.setdefault(edge.source, []).append(edge)
+    out: Dict[str, Dict[str, Tuple]] = {}
+    for source, members in groups.items():
+        if len(members) < 2:
+            continue
+        n = len(members)
+
+        def _key(e: EdgeSpec, upper: bool) -> Tuple[float, float, int]:
+            t = placed[e.target]
+            return (t.x, -t.y if upper else t.y, order_index[e.id])
+
+        above = {e.id: r for r, e in enumerate(sorted(members, key=lambda e: _key(e, True)))}
+        below = {e.id: r for r, e in enumerate(sorted(members, key=lambda e: _key(e, False)))}
+
+        def _band(e: EdgeSpec) -> float:
+            pt = (exits or {}).get(e.id)
+            if pt is None or pt[0] is None or pt[0] < 1.0 or pt[1] is None:
+                return 0.5
+            return float(pt[1])
+
+        bands = sorted(_band(e) for e in members)
+        merged = any(b - a < _BUS_EXIT_MERGE for a, b in zip(bands, bands[1:]))
+        ids = {e.id for e in members}
+        face_busy = any(
+            e.source == source and e.id not in ids
+            and (exits or {}).get(e.id, (None, None))[0] is not None
+            and (exits or {})[e.id][0] >= 1.0
+            for e in spec.edges
+        )
+        if merged and not face_busy and n <= 3:
+            bands = [0.5] if n == 1 else (
+                [_UPPER_QUARTER, _LOWER_QUARTER] if n == 2
+                else [_UPPER_QUARTER, 0.5, _LOWER_QUARTER])
+        for e in members:
+            out[e.id] = {"above": (above[e.id], n), "below": (below[e.id], n),
+                         "bands": tuple(bands)}
+    return out
+
+
+def _allocate_nested(
+    allocator: "CorridorAllocator",
+    gap_id: str,
+    low: float,
+    high: float,
+    depth: int,
+    count: int,
+    from_high: bool,
+    inclusive: bool = False,
+) -> float:
+    """Claim the ``depth``-th corridor line of a gap counted from one side.
+
+    The return-bus nesting (:func:`decide_return_bus_nesting`) needs the lane
+    fixed by rank, not by routing order: depth 0 is the line nearest the
+    content (``from_high`` counts from ``high``), the next one outward, and so
+    on. Strided lines when the gap holds ``count`` of them, else grid-dense
+    lines (still distinct). ``inclusive`` admits the content-side bound itself
+    as a dense line when it lies on the grid (a bus band whose bound is already
+    one grid step off the icons), so a band one caption strip tall still holds
+    two nested runs. A taken line steps outward; an exhausted gap falls back to
+    :func:`_allocate_or_first`."""
+    allocator.register_gap(gap_id, low, high)
+    taken = allocator._taken.setdefault(gap_id, set())
+    lines = allocator._grid_lines(low, high)
+    if len(lines) < count:
+        edge_lo = inclusive and not from_high and abs(low / GRID - round(low / GRID)) < 1e-9
+        edge_hi = inclusive and from_high and abs(high / GRID - round(high / GRID)) < 1e-9
+        k = int(round(low / GRID)) if edge_lo else int(math.floor(low / GRID)) + 1
+        lines = []
+        while k * GRID < high or (edge_hi and abs(k * GRID - high) < 1e-9):
+            lines.append(int(k * GRID))
+            k += 1
+    if from_high:
+        lines = lines[::-1]
+    for line in lines[min(depth, max(len(lines) - 1, 0)):]:
+        if line not in taken:
+            taken.add(line)
+            if gap_id in allocator._free:
+                allocator._free[gap_id] = [ln for ln in allocator._free[gap_id] if ln != line]
+            return float(line)
+    return _allocate_or_first(allocator, gap_id, low, high)
 
 
 def _assign_exit_bands(ranked: List[Tuple[str, int]]) -> Dict[str, float]:
@@ -1617,8 +1796,14 @@ def route_back_edge(
     lane_above: Optional[bool] = None,
     corridor_y: Optional[float] = None,
     turn_near_target: bool = False,
+    bus: Optional[str] = None,
 ) -> List[Point]:
     """Route a ``back-edge`` (target left of source) out the right and back (Req 7.6).
+
+    ``bus`` (1.10.12 WS5, ``"above"`` / ``"below"``) lays the run on the
+    **return bus** instead (:func:`_route_return_bus`): a lane outside every
+    content row the run spans, so a leftward / response edge does not rake
+    through the rows of the forward flow it returns across.
 
     Shape: exit the source's **right** (never the side it enters), step into the
     gap (the stair moves both axes), rise into a dedicated loop corridor above
@@ -1636,6 +1821,9 @@ def route_back_edge(
     others = _relevant_obstacles(edge, obstacles)
 
     entry = _contact_point(tgt, entry_pt)
+    if bus is not None:
+        return _route_return_bus(edge, src, tgt, exit_pt, entry_pt, allocator,
+                                 obstacles, others, containers, bus == "above")
     if exit_pt[1] is not None and exit_pt[1] >= 1.0:
         return _route_back_edge_down(edge, src, tgt, exit_pt, entry_pt, allocator,
                                      others, containers)
@@ -1717,6 +1905,135 @@ def route_back_edge(
         ]
     waypoints = _dedupe_axis_collapse(waypoints, first)
     route = [_contact_point(src, exit_pt)] + waypoints + [entry]
+    route = _detour_clockwise_if_blocked(route, others)
+    return _interior_waypoints(route)
+
+
+def _shared_container(
+    src: Box, tgt: Box, containers: Optional[Dict[str, Box]]
+) -> Optional[Box]:
+    """The innermost container holding BOTH ``src`` and ``tgt`` (or None)."""
+    best: Optional[Box] = None
+    for c in (containers or {}).values():
+        if _box_contains(c, src) and _box_contains(c, tgt):
+            if best is None or (c.w * c.h) < (best.w * best.h):
+                best = c
+    return best
+
+
+def _route_return_bus(
+    edge: EdgeSpec,
+    src: Box,
+    tgt: Box,
+    exit_pt: Contact,
+    entry_pt: Contact,
+    allocator: "CorridorAllocator",
+    obstacles: List[Box],
+    others: List[Box],
+    containers: Optional[Dict[str, Box]],
+    above: bool,
+) -> List[Point]:
+    """1.10.12 WS5 (C2): lay a leftward / response edge on the RETURN BUS.
+
+    The ordinary back-edge loops in the row gap next to its SOURCE, so a reply
+    leaving a lower row (or one whose span holds a taller column) runs its long
+    horizontal between content rows and cuts every forward edge that crosses
+    that gap (SEP 05 ``e7``: four crossings). The return bus is a dedicated lane
+    OUTSIDE every content row the run spans: the band above the topmost node in
+    the run's x-span (``above``) or below the bottommost footprint (``below``).
+    It stays inside the innermost container that holds both endpoints (below
+    its caption strip, above its bottom border), so the run never escapes it.
+
+    Shape: exit right (stair step), rise / drop in the gap right of the source
+    to the bus lane, run left along it, then
+
+    * ``above`` + top entry — drop into the target's top (a free drop column
+      when the target's own column is stacked);
+    * left entry — descend / rise in a free lane in the gap left of the target
+      column (off every container border) and step right into its left face.
+
+    The bus lanes share the ``hcorr-<side>:<row>`` namespace of that band, so a
+    bus run and an ordinary loop there get distinct lines. Contract-legal by
+    construction (right exit, left/top entry)."""
+    ex = _contact_point(src, exit_pt)
+    entry = _contact_point(tgt, entry_pt)
+    gap_w = col_step() - ICON_SIZE
+    x_lo = min(src.x, tgt.x) - GRID
+    x_hi = max(src.right, tgt.right) + gap_w
+    span = [b for b in obstacles if not (b.right < x_lo or b.x > x_hi)] or [src, tgt]
+    shared = _shared_container(src, tgt, containers)
+    if shared is not None:
+        span = [b for b in span if _box_contains(shared, b)] or [src, tgt]
+    if above:
+        edge_box = min(span, key=lambda b: (b.y, b.x))
+        low = (edge_box.y - row_step()) + ICON_SIZE + LABEL_BAND + GRID
+        high = edge_box.y - GRID
+        low, high = _caption_free_band(low, high, containers, src)
+        gap = f"hcorr-above:{int(edge_box.y)}"
+    else:
+        edge_box = max(span, key=lambda b: (b.bottom, -b.x))
+        low = edge_box.y + ICON_SIZE + LABEL_BAND + GRID
+        high = edge_box.y + row_step()
+        if shared is not None:
+            high = min(high, shared.bottom - GRID)
+        gap = f"hcorr-below:{int(edge_box.y)}"
+    if high - low < GRID:
+        high = low + GRID
+    # Replies leaving one source nest by rank (:func:`decide_return_bus_nesting`):
+    # the inner run takes the lane nearest the content and the rise column
+    # nearest the source, the outer run the next ones out, whatever the routing
+    # order. An unranked run keeps the routing-order allocation.
+    nest = getattr(allocator, "bus_rank", {}).get(edge.id)
+    side_rank = nest["above" if above else "below"] if nest else None
+    if side_rank is not None:
+        depth = side_rank[1] - 1 - side_rank[0]
+        bus_y = _snap(_allocate_nested(allocator, gap, low, high, depth, side_rank[1],
+                                       from_high=above, inclusive=True))
+        gap_lo, gap_hi = allocator.column_gap(src.x, src.x + col_step())
+        rise_x = _snap(_allocate_nested(allocator, f"vcol:{int(src.right)}", gap_lo,
+                                        gap_hi, depth, side_rank[1], from_high=False))
+    else:
+        bus_y = _snap(_allocate_or_first(allocator, gap, low, high))
+        rise_x = _gap_column_x(allocator, src, edge.id)
+
+    first = _stair_first_waypoint(src, exit_pt, toward_down=not above)
+    first = (rise_x, first[1])
+    waypoints: List[Point] = [first, (rise_x, bus_y)]
+    if above and entry_pt[1] is not None and entry_pt[1] <= 0.0:
+        across = _snap(entry[0])
+        drop_x = _free_drop_column(tgt, across, bus_y, others, containers)
+        if drop_x == across:
+            waypoints += [(across, bus_y), (across, _snap(entry[1]))]
+        else:
+            band_lo, band_hi = _hcorridor_band(edge, tgt, tgt, False, containers)
+            approach_y = _snap(_allocate_or_first(
+                allocator, f"hcorr-above:{int(tgt.y)}", band_lo, band_hi
+            ))
+            waypoints += [(drop_x, bus_y), (drop_x, approach_y),
+                          (across, approach_y), (across, _snap(entry[1]))]
+    else:
+        host = _enclosing_container(tgt, containers)
+        left_bound = tgt.x - gap_w
+        if host is not None:
+            left_bound = max(left_bound, host.x + GRID)
+        lo_y, hi_y = sorted((bus_y, entry[1]))
+        borders = [
+            bx for c in (containers or {}).values()
+            if not (c.bottom < lo_y or c.y > hi_y) for bx in (c.x, c.right)
+        ]
+        cands = [
+            x for x in range(int(_snap(left_bound)), int(tgt.x - GRID) + 1, GRID)
+            if x >= left_bound
+            and all(abs(x - b) >= GRID for b in borders)
+            and not any(b.x <= x <= b.right and not (b.bottom < lo_y or b.y > hi_y)
+                        for b in others)
+        ]
+        centre = (left_bound + tgt.x) / 2.0
+        left_x = (min(cands, key=lambda x: (abs(x - centre), x)) if cands
+                  else _snap(max(tgt.x - gap_w // 2, CONTAINER_PAD)))
+        waypoints += [(left_x, bus_y), (left_x, _snap(entry[1]))]
+    waypoints = _dedupe_axis_collapse(waypoints, first)
+    route = [ex] + waypoints + [entry]
     route = _detour_clockwise_if_blocked(route, others)
     return _interior_waypoints(route)
 
@@ -1810,8 +2127,14 @@ def route_edge(
     lane_above: Optional[bool] = None,
     corridor_y: Optional[float] = None,
     turn_near_target: bool = False,
+    bus: Optional[str] = None,
 ) -> List[Point]:
     """Classify ``edge`` and dispatch to the matching ``route_<kind>`` router.
+
+    ``bus`` (1.10.12 WS5) routes a leftward / response edge on the return bus
+    (:func:`_route_return_bus`) whatever its class: the variant generator only
+    offers it for an edge whose target sits left of its source.
+
 
     A thin convenience over :func:`classify_edge` + :data:`ROUTERS`. Raises
     :class:`UnclassifiableEdgeError` (via :func:`classify_edge`) for an edge that
@@ -1829,6 +2152,9 @@ def route_edge(
     converging cross-region / back-edge hop (:func:`decide_converging_corridors`
     in the pipeline). Forwarded only to those two routers; the others ignore it,
     so a router called directly is unchanged."""
+    if bus is not None:
+        return route_back_edge(edge, exit_pt, entry_pt, allocator, obstacles,
+                               containers, bus=bus)
     placed = {b.id: b for b in obstacles}
     kind = classify_edge(edge, placed)
     if kind in ("cross-region", "back-edge"):
@@ -1843,6 +2169,76 @@ def route_edge(
     if kind == "spine":
         return ROUTERS[kind](edge, exit_pt, entry_pt, allocator, obstacles, containers)
     return ROUTERS[kind](edge, exit_pt, entry_pt, allocator, obstacles)
+
+
+# -- boundary-to-boundary edges (1.10.12 WS10, C15) -------------------------
+
+
+def container_edge_contacts(src: Box, tgt: Box) -> Tuple[Contact, Contact]:
+    """Return ``(exit, entry)`` faces for an edge anchored on container boxes.
+
+    A boundary-to-boundary relationship (VPC/VCN peering, a transit-gateway
+    attachment) is drawn between two container FACES, under the SAME directional
+    contract every node edge obeys (diagram-standards → *The directional
+    contract*): the edge **exits** the source container on its **right or
+    bottom** face and **enters** the target container on its **left or top**
+    face. The face is chosen from the relative placement of the two boxes, so a
+    peer to the right is reached right→left and a peer below is reached
+    bottom→top — never a left exit or a right entry.
+
+    An endpoint may also be a NODE box (a node ↔ container peering); the same
+    rule applies, since the contract is a property of the two boxes, not of what
+    they represent."""
+    # The two boxes are either side-by-side (columns disjoint), stacked (rows
+    # disjoint, columns overlap), or diagonally offset. The dominant axis picks
+    # the face pair; the contract then fixes which face.
+    cols_disjoint = tgt.x >= src.right or src.x >= tgt.right
+    rows_disjoint = tgt.y >= src.bottom or src.y >= tgt.bottom
+    below = tgt.y >= src.bottom          # target clearly below the source
+    right = tgt.x >= src.x               # target not to the left of the source
+    if rows_disjoint and not cols_disjoint and below:
+        # Stacked with overlapping columns → a clean vertical: bottom → top.
+        return (0.5, 1.0), (0.5, 0.0)
+    # Otherwise prefer the horizontal pair (right → left), which is the default
+    # contract exit; fall back to a bottom exit only when the target is below
+    # AND to the left (no contract-legal right route without a long loop).
+    if right or not below:
+        return (1.0, 0.5), (0.0, 0.5)
+    return (0.5, 1.0), (0.0, 0.5)         # below-left: bottom exit, left entry
+
+
+def route_container_edge(src: Box, tgt: Box, exit_pt: Contact, entry_pt: Contact) -> List[Point]:
+    """Route a boundary-to-boundary edge as one orthogonal L between two faces.
+
+    Deterministic and contract-legal: the exit contact leaves the source face
+    along its outward normal (right → horizontal first, bottom → vertical first)
+    and the entry contact meets the target face head-on (left → horizontal last,
+    top → vertical last). The single corner between the two legs is emitted
+    explicitly so draw.io never inserts one of its own
+    (diagram-standards → *Every leg is explicitly axis-aligned*); when the two
+    contacts already share a row or column no corner is needed. The waypoints
+    are the interior corner(s); :func:`orthogonalise_route` in the pipeline then
+    reconciles them with the grid-snapped contact points, exactly as for a node
+    edge."""
+    ex, ey = _contact_point(src, exit_pt)
+    nx, ny = _contact_point(tgt, entry_pt)
+    if abs(ex - nx) < 1e-9 or abs(ey - ny) < 1e-9:
+        return []  # already aligned on one axis → one straight segment
+    exit_horizontal = exit_pt[0] in (0.0, 1.0)    # right/left face → leave H
+    entry_horizontal = entry_pt[0] in (0.0, 1.0)  # left/right face → arrive H
+    if exit_horizontal and entry_horizontal:
+        # right → left: H out, drop/rise in a mid corridor, H into the target.
+        midx = _snap((ex + nx) / 2.0)
+        return [(midx, ey), (midx, ny)]
+    if (not exit_horizontal) and (not entry_horizontal):
+        # bottom → top: V out, across in a mid corridor, V into the target.
+        midy = _snap((ey + ny) / 2.0)
+        return [(ex, midy), (nx, midy)]
+    if exit_horizontal and not entry_horizontal:
+        # right → top: H out to the target's column, then V down into its top.
+        return [(nx, ey)]
+    # bottom → left: V out to the target's row, then H into its left face.
+    return [(ex, ny)]
 
 
 # -- small shared router utilities ------------------------------------------

@@ -39,7 +39,7 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 # Container / text classification and the root-layer id are shared with
 # cli._parse_drawio via rule_engine.constants so the C4 boundary-detection rule
@@ -76,6 +76,11 @@ from rule_engine.diagram_layout import CONTAINER_PAD, STAIR_STEP
 # One line at the 12px floor plus leading ~= 30px (three grid steps); this is a
 # conservative floor, not a per-string measurement.
 LABEL_BAND = 30
+
+#: Leading of every caption line past the first (1.10.12 WS2): a wrapped
+#: two-line caption is ``LABEL_BAND + CAPTION_LINE_H`` tall, so the padding,
+#: overlap, label-band and legend checks measure the real wrapped footprint.
+CAPTION_LINE_H = 16.0
 
 # How far past a container border a node may spill and still be attributed to
 # THAT container (v1.5.3 spill detection in ``check_container_padding``). A node
@@ -359,7 +364,7 @@ def check_node_overlap(
     band), so two nodes whose icons clear each other but whose labels collide are
     still flagged — the defect a reader sees. Pass ``label_band=0`` for the
     legacy icon-only test."""
-    boxes = [b.footprint(label_band) for b in geo.nodes.values()]
+    boxes = [node_footprint(geo, nid, label_band) for nid in geo.nodes]
     out: List[Tuple[str, str]] = []
     for i in range(len(boxes)):
         for j in range(i + 1, len(boxes)):
@@ -402,7 +407,7 @@ def check_container_padding(
     # spill is reserved for genuinely orphaned nodes (in no container at all).
     housed: set = set()
     for ncid, node in geo.nodes.items():
-        n = node.footprint(label_band)
+        n = node_footprint(geo, ncid, label_band)
         for c in geo.containers.values():
             if c.x <= n.x and c.y <= n.y and n.right <= c.right and n.bottom <= c.bottom:
                 housed.add(ncid)
@@ -410,7 +415,7 @@ def check_container_padding(
 
     # --- node-in-container -------------------------------------------------- #
     for ncid, node in geo.nodes.items():
-        n = node.footprint(label_band)
+        n = node_footprint(geo, ncid, label_band)
         for ccid, c in geo.containers.items():
             inside = c.x <= n.x and c.y <= n.y and n.right <= c.right and n.bottom <= c.bottom
             if not inside:
@@ -839,6 +844,62 @@ def segment_crosses_box(
     return False
 
 
+#: Border-ride band (1.10.12 WS7). INSIDE the box a leg up to this far from the
+#: border is a ride: it is the band ``segment_crosses_box``'s default 2px inset
+#: deliberately ignores, so the two tests together leave no blind strip.
+BORDER_RIDE_INSIDE = 2.0
+#: OUTSIDE the box a leg up to this far from the border is a ride: half the
+#: 1.5pt edge stroke (0.75) rounded up, i.e. the drawn line still overlaps the
+#: glyph's edge pixels. A leg one or more full pixels clear of the icon is a
+#: near-miss, not a crossing (the k8s landscape ``e8`` runs 2px off ``cm``).
+BORDER_RIDE_OUTSIDE = 1.0
+
+
+def segment_rides_box_border(
+    p: Tuple[float, float],
+    q: Tuple[float, float],
+    b: Box,
+    inside: float = BORDER_RIDE_INSIDE,
+    outside: float = BORDER_RIDE_OUTSIDE,
+    min_overlap: float = float(GRID),
+) -> bool:
+    """Return True when the axis-aligned leg ``p``→``q`` is drawn ON a border of ``b``.
+
+    :func:`segment_crosses_box` shrinks the box by a 2px inset so a graze is not
+    a crossing — which also makes it blind to a leg lying exactly on an icon's
+    border. The SEP 06 v3 ``e8`` run (``y = 360`` from ``x = 580`` to ``1390``)
+    rides S3's top edge (``y = 360``, ``x 1130..1208``) for the icon's full
+    width: on the canvas the line is drawn over the glyph's edge and through
+    both S3 entry contacts, yet no rule fired (C12).
+
+    A horizontal leg whose ``y`` lies on the box top or bottom — at most
+    ``inside`` into the box or ``outside`` beyond it — or a vertical leg whose
+    ``x`` lies likewise on its left or right, and that overlaps the box's extent
+    along the leg by at least ``min_overlap`` (one grid step, so touching a
+    corner is not a ride), is reported. Diagonal legs are never a ride."""
+    (px, py), (qx, qy) = p, q
+    if abs(py - qy) <= AXIS_EPS:
+        near, far, lo, hi = b.y, b.bottom, b.x, b.right
+        coord, a0, a1 = py, min(px, qx), max(px, qx)
+    elif abs(px - qx) <= AXIS_EPS:
+        near, far, lo, hi = b.x, b.right, b.y, b.bottom
+        coord, a0, a1 = px, min(py, qy), max(py, qy)
+    else:
+        return False
+    on_near = near - outside <= coord <= near + inside
+    on_far = far - inside <= coord <= far + outside
+    if not (on_near or on_far):
+        return False
+    return min(a1, hi) - max(a0, lo) >= min_overlap
+
+
+def _leg_hits_box(
+    p: Tuple[float, float], q: Tuple[float, float], b: Box
+) -> bool:
+    """A leg cuts ``b`` (inset-2 crossing) or rides one of its borders (WS7)."""
+    return segment_crosses_box(p, q, b) or segment_rides_box_border(p, q, b)
+
+
 def check_edge_routing(geo: DiagramGeometry) -> List[Tuple[str, str]]:
     """Return ``(edge_id, reason)`` for edges that break routing rules.
 
@@ -851,6 +912,14 @@ def check_edge_routing(geo: DiagramGeometry) -> List[Tuple[str, str]]:
     * a **waypointed** edge whose real *orthogonal* path (the axis-aligned knees
       draw.io actually draws, not the raw diagonals between points) runs through
       an unrelated node is flagged (``knee-through-<node>``, v1.5.4).
+
+    **1.10.12 WS7 — border rides.** A leg that lies ALONG an unrelated icon's
+    border (:data:`BORDER_RIDE_INSIDE` / :data:`BORDER_RIDE_OUTSIDE`,
+    overlapping it by ≥ one grid step)
+    is drawn over the glyph's edge, but the 2px inset of
+    :func:`segment_crosses_box` hid it (SEP 06 v3 ``e8`` on S3's top border).
+    Both the straight and the knee checks now also apply
+    :func:`segment_rides_box_border`, under the same ``*-through-*`` reasons.
 
     **v1.5.4 — the orthogonal-knee gap.** Before this release a waypointed edge
     was trusted entirely on the crossing criterion, because sampling the raw
@@ -917,8 +986,9 @@ def check_edge_routing(geo: DiagramGeometry) -> List[Tuple[str, str]]:
                 if other in (e.source, e.target):
                     continue
                 # Sample the straight segment; a 2px inset means a mere graze of
-                # a border does not count as a crossing.
-                if segment_crosses_box(p, q, b):
+                # a border does not count as a crossing, but a run lying ALONG a
+                # border does (1.10.12 WS7, ``segment_rides_box_border``).
+                if _leg_hits_box(p, q, b):
                     out.append((e.id, f"straight-through-{other}"))
                     break
             continue
@@ -933,7 +1003,7 @@ def check_edge_routing(geo: DiagramGeometry) -> List[Tuple[str, str]]:
             if other in (e.source, e.target):
                 continue
             if any(
-                segment_crosses_box(seg_a, seg_b, box)
+                _leg_hits_box(seg_a, seg_b, box)
                 for seg_a, seg_b in zip(knee_pts, knee_pts[1:])
             ):
                 out.append((e.id, f"knee-through-{other}"))
@@ -1029,16 +1099,62 @@ def node_caption_box(box: Box, label: str, label_band: float = LABEL_BAND) -> Bo
     The caption (``verticalLabelPosition=bottom``) is centred on the icon and
     is as wide as its longest line — estimated at :data:`_CAPTION_TEXT_CHAR_W`
     (7.0px/char at the 12px font, a conservative ceiling) — but never narrower
-    than the icon. It starts at the icon bottom and is ``label_band`` tall, or
-    16px per line when the caption wraps to more lines than that holds. A wide
+    than the icon. It starts at the icon bottom and is ``label_band`` tall plus
+    16px for every further line (:func:`caption_band`, 1.10.12). A wide
     caption ("Amazon QuickSight dashboards") overhangs its 78px icon on both
     sides; the icon-width band (:func:`Box.footprint`) cannot see an edge
     cutting through that overhang (1.10.7)."""
     lines = caption_lines(label)
     longest = max((len(ln) for ln in lines), default=0)
     w = max(box.w, longest * _CAPTION_TEXT_CHAR_W)
-    h = max(label_band, 16.0 * len(lines))
+    h = caption_band(label, label_band)
     return Box(box.id, box.x + box.w / 2.0 - w / 2.0, box.bottom, w, h)
+
+
+def caption_band(label: str, label_band: float = LABEL_BAND) -> float:
+    """Height of a node's caption band: ``label_band`` for a one-line caption,
+    plus :data:`CAPTION_LINE_H` for every further line (1.10.12 WS2: a caption
+    wrapped onto two lines is measured at its real footprint everywhere).
+    ``label_band <= 0`` (the legacy icon-only tests) stays as given."""
+    if label_band <= 0:
+        return label_band
+    return label_band + CAPTION_LINE_H * max(0, len(caption_lines(label)) - 1)
+
+
+def node_footprint(geo: "DiagramGeometry", nid: str, label_band: float = LABEL_BAND) -> Box:
+    """``nid``'s icon box grown downward by its real caption band
+    (:func:`caption_band` of its parsed label)."""
+    return geo.nodes[nid].footprint(caption_band(geo.node_labels.get(nid, ""), label_band))
+
+
+def wrap_caption(label: str) -> Optional[str]:
+    """The one-line caption ``label`` wrapped onto two lines, or None.
+
+    1.10.12 WS2: an overloaded source (three right exits plus an unavoidable
+    bottom exit) whose caption is wider than its icon has no bottom position
+    outside the text; wrapping the caption opens one. The break is at a space
+    (dropped) or after a hyphen (kept on the first line), never inside a word,
+    and as close to the middle as possible: the most balanced pair of lines,
+    then the earlier break. None when the label is empty, already multi-line,
+    or has no break point."""
+    lines = caption_lines(label)
+    if len(lines) != 1:
+        return None
+    text = lines[0]
+    best = None
+    for i, ch in enumerate(text):
+        if ch == " ":
+            a, b = text[:i].rstrip(), text[i + 1:].lstrip()
+        elif ch == "-" and 0 < i < len(text) - 1:
+            a, b = text[:i + 1], text[i + 1:]
+        else:
+            continue
+        if not a or not b or a.endswith(" ") or b.startswith("-"):
+            continue
+        key = (abs(len(a) - len(b)), max(len(a), len(b)), i)
+        if best is None or key < best[0]:
+            best = (key, f"{a}\n{b}")
+    return best[1] if best else None
 
 
 def check_edge_crosses_label(
@@ -1086,13 +1202,135 @@ def check_edge_crosses_label(
             if labels.get(other):
                 band = node_caption_box(b, labels[other], label_band)
             else:
-                band = Box(other, b.x, b.bottom, b.w, label_band)
+                # Icon-wide, but as tall as the real (possibly wrapped) caption.
+                band = Box(other, b.x, b.bottom, b.w,
+                           caption_band(geo.node_labels.get(other, ""), label_band))
             crossed = any(
                 segment_crosses_box(p, q, band)
                 for p, q in zip(polyline, polyline[1:])
             )
             if crossed:
                 out.append((e.id, other))
+    return sorted(set(out))
+
+
+def caption_text_box(box: Box, label: str, label_band: float = LABEL_BAND) -> Box:
+    """The rectangle the caption TEXT itself occupies (1.10.12 WS2).
+
+    Same estimator as :func:`node_caption_box` (7.0px/char, centred under the
+    icon, :func:`caption_band` tall) but WITHOUT the icon-width
+    floor: a short name ("app-az1") is narrower than its 78px icon, leaving a
+    corner band either side of the text that a bottom exit can use without
+    touching the letters. :func:`node_caption_box` stays the lint measure."""
+    lines = caption_lines(label)
+    longest = max((len(ln) for ln in lines), default=0)
+    w = longest * _CAPTION_TEXT_CHAR_W
+    h = caption_band(label, label_band)
+    return Box(box.id, box.x + box.w / 2.0 - w / 2.0, box.bottom, w, h)
+
+
+def check_edge_strikes_own_text(geo: DiagramGeometry) -> List[Tuple[str, str]]:
+    """Return ``(edge_id, node_id)`` for edges whose polyline crosses the real
+    text extent of their own source/target caption (:func:`caption_text_box`):
+    the VISIBLE strikes. A subset of :func:`check_edge_crosses_own_label`, which
+    also counts a line through the empty corner of a caption band."""
+    out: List[Tuple[str, str]] = []
+    for e in geo.edges:
+        poly = edge_polyline(geo, e)
+        if len(poly) < 2:
+            continue
+        for nid in dict.fromkeys((e.source, e.target)):
+            label = geo.node_labels.get(nid, "")
+            if nid not in geo.nodes or not caption_lines(label):
+                continue
+            txt = caption_text_box(geo.nodes[nid], label)
+            if any(segment_crosses_box(p, q, txt, inset=0.0) for p, q in zip(poly, poly[1:])):
+                out.append((e.id, nid))
+    return sorted(set(out))
+
+
+#: Collinear edges (1.10.12 WS0 metric, defect C5): parallel legs closer than
+#: this read as one line; shorter legs are stubs; an along-line gap up to
+#: ``COLLINEAR_GAP`` still reads as one broken line.
+COLLINEAR_OFFSET = 2 * GRID
+COLLINEAR_MIN_LEN = 2 * GRID
+COLLINEAR_GAP = 120.0
+
+
+def collinear_edge_pairs(
+    geo: DiagramGeometry, polys: Optional[Dict[str, List[Point]]] = None,
+) -> Set[Tuple[str, str]]:
+    """Return the ``(edge_a, edge_b)`` pairs (ids sorted) whose parallel legs (each at
+    least ``COLLINEAR_MIN_LEN``) are under ``COLLINEAR_OFFSET`` apart with
+    overlapping extents or a gap of at most ``COLLINEAR_GAP`` along the line, so
+    the two edges read as one (``scripts/canvas_metrics.py`` ``col``). Two legs
+    meeting at a shared point of edges sharing an endpoint (a trunk junction)
+    are exempt, and so is a gap a node icon visibly terminates."""
+    if polys is None:
+        polys = {e.id: p for e in geo.edges if len(p := edge_polyline(geo, e)) >= 2}
+    ends = {e.id: {e.source, e.target} for e in geo.edges}
+    legs: List[Tuple[str, str, float, float, float, Point, Point]] = []
+    for eid, poly in polys.items():
+        for p, q in zip(poly, poly[1:]):
+            ax = leg_axis(p, q)
+            if ax == "H" and abs(q[0] - p[0]) >= COLLINEAR_MIN_LEN:
+                lo, hi = sorted((p[0], q[0]))
+                legs.append((eid, "H", p[1], lo, hi, p, q))
+            elif ax == "V" and abs(q[1] - p[1]) >= COLLINEAR_MIN_LEN:
+                lo, hi = sorted((p[1], q[1]))
+                legs.append((eid, "V", p[0], lo, hi, p, q))
+    found: Set[Tuple[str, str]] = set()
+    for i, a in enumerate(legs):
+        for b in legs[i + 1:]:
+            if a[0] == b[0] or a[1] != b[1]:
+                continue
+            if abs(a[2] - b[2]) >= COLLINEAR_OFFSET:
+                continue
+            gap = max(a[3], b[3]) - min(a[4], b[4])  # > 0 gap, <= 0 overlap
+            if gap > COLLINEAR_GAP:
+                continue
+            if ends[a[0]] & ends[b[0]]:
+                pts_a, pts_b = {a[5], a[6]}, {b[5], b[6]}
+                if any(abs(pa[0] - pb[0]) < AXIS_EPS and abs(pa[1] - pb[1]) < AXIS_EPS
+                       for pa in pts_a for pb in pts_b):
+                    continue  # trunk junction of two branches of one node
+            if gap > 0:
+                # A node icon in the gap terminates both lines visibly (a chain
+                # running straight through a node), so they do not read as one.
+                mid = (a[2] + b[2]) / 2.0
+                lo, hi = min(a[4], b[4]), max(a[3], b[3])
+                g0, g1 = ((lo, mid), (hi, mid)) if a[1] == "H" else ((mid, lo), (mid, hi))
+                if any(segment_crosses_box(g0, g1, nb, inset=0.0) for nb in geo.nodes.values()):
+                    continue
+            found.add(tuple(sorted((a[0], b[0]))))
+    return found
+
+
+def check_edge_crosses_own_label(geo: DiagramGeometry) -> List[Tuple[str, str]]:
+    """Return ``(edge_id, node_id)`` for edges whose polyline crosses the caption
+    of their OWN source or target (1.10.12 WS2, defect C1).
+
+    :func:`check_edge_crosses_label` exempts an edge's endpoints, so the commonest
+    caption strike of all went unreported: a bottom exit drops straight through
+    the service name centred under its own icon (``lb-pr|imary``). The caption is
+    measured at its real text width (:func:`node_caption_box`) and only when the
+    node's label is known and non-empty, so a programmatic geometry without
+    labels yields nothing. Same :func:`segment_crosses_box` predicate as every
+    other routing check. Advisory (WARNING), reported by the linter as
+    ``edge-crosses-label`` reason ``edge-crosses-own-label``."""
+    out: List[Tuple[str, str]] = []
+    nodes = geo.nodes
+    for e in geo.edges:
+        poly = edge_polyline(geo, e)
+        if len(poly) < 2:
+            continue
+        for nid in dict.fromkeys((e.source, e.target)):
+            label = geo.node_labels.get(nid, "")
+            if nid not in nodes or not caption_lines(label):
+                continue
+            cap = node_caption_box(nodes[nid], label)
+            if any(segment_crosses_box(p, q, cap) for p, q in zip(poly, poly[1:])):
+                out.append((e.id, nid))
     return sorted(set(out))
 
 
@@ -1212,6 +1450,65 @@ def free_caption_x0(
     return None
 
 
+def container_caption_geom(
+    label: str, style: Optional[str], c: Box, band: float = CONTAINER_LABEL_BAND
+) -> Tuple[Box, Optional[Tuple[float, float]]]:
+    """The caption geometry :func:`check_edge_crosses_container_label` judges:
+    the caption band box (left-aligned, as wide as the caption text) and, when
+    the real style is known, the text's x extent. Precomputable per container."""
+    # The caption is left-aligned: size its width from the real caption text
+    # so a corridor RIGHT of the (short) text does not false-flag, while a run
+    # slicing a LONG caption still trips.
+    label_w = _container_caption_width(label, c.w)
+    box = Box(c.id, c.x, c.y, label_w, band)  # top-left .. +one line
+    extent = caption_text_extent(label, style, c) if style is not None else None
+    return box, extent
+
+
+def polyline_cuts_container_caption(
+    polyline: Sequence[Point], c: Box,
+    caption: Tuple[Box, Optional[Tuple[float, float]]], band: float = CONTAINER_LABEL_BAND,
+) -> bool:
+    """Whether ``polyline`` cuts container ``c``'s caption (see
+    :func:`check_edge_crosses_container_label` for the two conditions)."""
+    label, extent = caption
+    # A run only defects the caption when a HORIZONTAL segment runs along it.
+    # A near-VERTICAL segment that crosses the band is an edge dropping IN
+    # through the container's top edge to reach a target inside it (the
+    # sanctioned top entry) — not a run along the caption — so it is not
+    # flagged. The discriminator is the segment's direction, not which
+    # container the endpoints belong to. A run defects the caption only when a
+    # HORIZONTAL segment travels ALONG it for a meaningful distance — its
+    # overlap with the caption band's x-extent exceeds a short-step threshold:
+    # a short final entry-approach step that only grazes the caption's right
+    # edge (l4/l9 clipping ~7px) is below it; a long run laid along the
+    # caption (edge 2, or a cross-region rep line at the caption's y — l11)
+    # exceeds it.
+    lab_x0, lab_x1 = label.x, label.right
+    lab_y0, lab_y1 = label.y, label.bottom
+    for p, q in zip(polyline, polyline[1:]):
+        if abs(q[0] - p[0]) <= abs(q[1] - p[1]):
+            continue  # not a horizontal segment
+        seg_y = (p[1] + q[1]) / 2.0
+        if not (lab_y0 <= seg_y <= lab_y1):
+            continue  # not within the caption's vertical band
+        seg_lo, seg_hi = min(p[0], q[0]), max(p[0], q[0])
+        if min(seg_hi, lab_x1) - max(seg_lo, lab_x0) > 2 * GRID:
+            return True
+    # 1.10.3: a VERTICAL leg through the caption TEXT cuts it too. The
+    # sanctioned top entry drops through the container's top edge, but it must
+    # do so beside the caption, not through its letters (edges 1/15 slicing the
+    # left-aligned ``vpc-primary …`` caption on the OCI landscape). Needs the
+    # real style to locate the text, so it applies only to a parsed diagram.
+    if extent is not None:
+        tx0, tx1 = extent
+        return any(
+            tx0 - _CAPTION_CLEARANCE < cx < tx1 + _CAPTION_CLEARANCE
+            for cx in vertical_caption_cuts([polyline], c, band)
+        )
+    return False
+
+
 def check_edge_crosses_container_label(
     geo: DiagramGeometry, band: float = CONTAINER_LABEL_BAND
 ) -> List[Tuple[str, str]]:
@@ -1244,57 +1541,10 @@ def check_edge_crosses_container_label(
         polyline += list(e.points)
         polyline += [(t.x + nx * t.w, t.y + ny * t.h)]
         for cid, c in geo.containers.items():
-            # The caption is left-aligned: size its width from the real caption
-            # text so a corridor RIGHT of the (short) text does not false-flag,
-            # while a run slicing a LONG caption still trips.
-            label_w = _container_caption_width(geo.container_labels.get(cid, ""), c.w)
-            label = Box(cid, c.x, c.y, label_w, band)  # top-left .. +one line
-            # A run only defects the caption when a HORIZONTAL segment runs along
-            # it. A near-VERTICAL segment that crosses the band is an edge
-            # dropping IN through the container's top edge to reach a target
-            # inside it (the sanctioned top entry) — not a run along the caption —
-            # so it is not flagged. This replaces a membership exemption (which
-            # wrongly let a horizontal run along the TARGET's own VPC caption
-            # slip): the discriminator is the segment's direction, not which
-            # container the endpoints belong to.
-            # A run defects the caption only when a HORIZONTAL segment travels
-            # ALONG it for a meaningful distance — i.e. the segment's overlap
-            # with the caption band's x-extent exceeds a short-step threshold.
-            # A near-vertical drop through the top edge (a sanctioned top entry)
-            # has ~zero horizontal overlap; a short final entry-approach step that
-            # only grazes the caption's right edge (l4/l9 clipping ~7px) is below
-            # the threshold; a long run laid along the caption (edge 2, or a
-            # cross-region rep line at the caption's y — l11) exceeds it.
-            lab_x0, lab_x1 = label.x, label.right
-            lab_y0, lab_y1 = label.y, label.bottom
-            crossed = False
-            for p, q in zip(polyline, polyline[1:]):
-                if abs(q[0] - p[0]) <= abs(q[1] - p[1]):
-                    continue  # not a horizontal segment
-                seg_y = (p[1] + q[1]) / 2.0
-                if not (lab_y0 <= seg_y <= lab_y1):
-                    continue  # not within the caption's vertical band
-                # horizontal overlap of [min,max] segment x with the caption x-extent
-                seg_lo, seg_hi = min(p[0], q[0]), max(p[0], q[0])
-                overlap = min(seg_hi, lab_x1) - max(seg_lo, lab_x0)
-                if overlap > 2 * GRID:
-                    crossed = True
-                    break
-            # 1.10.3: a VERTICAL leg through the caption TEXT cuts it too. The
-            # sanctioned top entry drops through the container's top edge, but it
-            # must do so beside the caption, not through its letters (edges 1/15
-            # slicing the left-aligned ``vpc-primary …`` caption on the OCI
-            # landscape). Needs the real style to locate the text, so it applies
-            # only to a parsed diagram.
-            style = geo.container_styles.get(cid)
-            if not crossed and style is not None:
-                tx0, tx1 = caption_text_extent(
-                    geo.container_labels.get(cid, ""), style, c
-                )
-                crossed = any(
-                    tx0 - _CAPTION_CLEARANCE < cx < tx1 + _CAPTION_CLEARANCE
-                    for cx in vertical_caption_cuts([polyline], c, band)
-                )
+            caption = container_caption_geom(
+                geo.container_labels.get(cid, ""), geo.container_styles.get(cid), c, band
+            )
+            crossed = polyline_cuts_container_caption(polyline, c, caption, band)
             if crossed:
                 out.append((e.id, cid))
     return sorted(set(out))
@@ -1455,8 +1705,14 @@ class RouteCost:
 
 
 def edge_polyline(geo: DiagramGeometry, edge: EdgeGeom) -> List[Point]:
-    """Return an edge's full polyline: exit contact, waypoints, entry contact."""
-    src, tgt = geo.nodes.get(edge.source), geo.nodes.get(edge.target)
+    """Return an edge's full polyline: exit contact, waypoints, entry contact.
+
+    An endpoint may be a **container** id (a boundary-to-boundary peering edge,
+    WS10/C15), so each endpoint resolves against ``geo.nodes`` first and then
+    ``geo.containers`` — the contact fraction is a unit-square face fraction, so
+    it applies to a container box exactly as to a node box."""
+    src = geo.nodes.get(edge.source) or geo.containers.get(edge.source)
+    tgt = geo.nodes.get(edge.target) or geo.containers.get(edge.target)
     if src is None or tgt is None or None in edge.exit or None in edge.entry:
         return []
     return (
@@ -1464,6 +1720,41 @@ def edge_polyline(geo: DiagramGeometry, edge: EdgeGeom) -> List[Point]:
         + [(x, y) for x, y in edge.points]
         + [(tgt.x + edge.entry[0] * tgt.w, tgt.y + edge.entry[1] * tgt.h)]
     )
+
+
+def is_node_edge(geo: DiagramGeometry, edge: EdgeGeom) -> bool:
+    """True when BOTH endpoints are node boxes (not container boxes).
+
+    A boundary-to-boundary edge (container endpoint, WS10/C15) is anchored on a
+    container face and routed deterministically; the node-facing repair passes
+    (caption-safety, crossing repair, collinear shift) reason about node
+    captions and node-to-node routes, so they SKIP a non-node edge rather than
+    try to reroute it (and KeyError on the missing node box)."""
+    return edge.source in geo.nodes and edge.target in geo.nodes
+
+
+def content_bbox(geo: DiagramGeometry) -> Optional[Box]:
+    """Return the model bounding box of everything the page draws, or None.
+
+    Every container, every text cell (title / Flow / Legend), every node icon
+    plus its caption (:func:`node_caption_box`) and every edge contact and
+    waypoint — the same definition ``scripts/canvas_metrics.py`` uses for its
+    ``bbox`` / ``page_ok`` columns. The shared builder sizes ``pageWidth`` /
+    ``pageHeight`` to cover it (1.10.12 WS1, defect C14)."""
+    boxes: List[Box] = list(geo.containers.values()) + list(geo.text_boxes.values())
+    for nid, box in geo.nodes.items():
+        boxes.append(box)
+        label = geo.node_labels.get(nid, "")
+        if caption_lines(label):
+            boxes.append(node_caption_box(box, label))
+    pts: List[Point] = [p for e in geo.edges for p in edge_polyline(geo, e)]
+    if not boxes and not pts:
+        return None
+    x0 = min([b.x for b in boxes] + [p[0] for p in pts])
+    y0 = min([b.y for b in boxes] + [p[1] for p in pts])
+    x1 = max([b.right for b in boxes] + [p[0] for p in pts])
+    y1 = max([b.bottom for b in boxes] + [p[1] for p in pts])
+    return Box("bbox", x0, y0, x1 - x0, y1 - y0)
 
 
 def segments_cross(s1: Tuple[Point, Point], s2: Tuple[Point, Point]) -> bool:
@@ -1838,6 +2129,38 @@ def check_node_connectivity(geo: DiagramGeometry) -> List[str]:
     )
 
 
+def graph_components(geo: DiagramGeometry) -> List[List[str]]:
+    """Connected components of the drawn node graph, largest first (1.10.12 WS5).
+
+    Only nodes with at least one incident edge take part: an edge-less node is
+    ``node-connectivity``'s finding, not an island. Overlay-marked nodes
+    (``standby``, ``supporting``) are left out too: they declare why they are
+    not part of the flow. Each component is a sorted id list; components are
+    ordered by size (descending), then by their first id, so the result is
+    deterministic."""
+    members = {
+        n for e in geo.edges for n in (e.source, e.target)
+        if n in geo.nodes and n not in geo.overlay_nodes
+    }
+    parent = {n: n for n in members}
+
+    def find(x: str) -> str:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for e in geo.edges:
+        if e.source in parent and e.target in parent:
+            parent[find(e.source)] = find(e.target)
+    groups: Dict[str, List[str]] = {}
+    for n in members:
+        groups.setdefault(find(n), []).append(n)
+    comps = [sorted(g) for g in groups.values()]
+    comps.sort(key=lambda c: (-len(c), c[0]))
+    return comps
+
+
 # Calibrated dead-space threshold (placement-and-gates task 8). Measured across
 # the 57 shipped corpus containers: the sparsest legitimate container packs at a
 # ratio of 4.536 (container area / summed direct-child footprint+padding demand).
@@ -1874,35 +2197,114 @@ OUTER_DEAD_SPACE_RATIO = 2.5
 #     space — the 09 negative sat at ~0.15) is flagged while every golden passes.
 CANVAS_ASPECT_MAX = 2.6
 CANVAS_MIN_COVERAGE = 0.25
+#: 1.10.12 WS6: the largest empty rectangle on the canvas, as a share of the
+#: canvas bbox, above which ``canvas-quality`` reports ``empty-rectangle``. It
+#: replaces the ``canvas-utilization`` coverage test, which counted only outer
+#: boundary + uncontained icon AREA: a context diagram of bare icons around a
+#: small account (SEP 01) measured 8% "coverage" while its canvas was evenly
+#: used, and a diagram with one huge void (SEP 09 after WS5, 39% of the canvas
+#: empty in one block) measured a passing 31%. The largest empty rectangle names
+#: the void itself. Calibrated on the shipped corpus: every golden is <= 21%
+#: (the HA summaries); see ``.agents/tasks/1.10.12-metrics.md`` WS6.
+CANVAS_MAX_EMPTY_RECT = 0.25
+#: Raster cell of the largest-empty-rectangle search (one grid step).
+EMPTY_RECT_CELL = GRID
+
+
+def largest_empty_rect(
+    area: Box, obstacles: Sequence[Box], cell: int = EMPTY_RECT_CELL
+) -> Tuple[int, int]:
+    """Return ``(w, h)`` of the largest obstacle-free rectangle inside ``area``.
+
+    ``area`` is rasterised into ``cell``-sized squares; a square is blocked when
+    any obstacle overlaps it. Classic maximal-rectangle-in-histogram, O(cells).
+    Moved here from ``scripts/canvas_metrics.py`` (1.10.12 WS6) so the lint rule
+    and the metrics script measure the same rectangle."""
+    cols = max(0, int(area.w // cell))
+    rows = max(0, int(area.h // cell))
+    if not cols or not rows:
+        return (0, 0)
+    blocked = [bytearray(cols) for _ in range(rows)]
+    for o in obstacles:
+        c0 = max(0, int((o.x - area.x) // cell))
+        c1 = min(cols, int(-(-(o.right - area.x) // cell)))
+        r0 = max(0, int((o.y - area.y) // cell))
+        r1 = min(rows, int(-(-(o.bottom - area.y) // cell)))
+        for r in range(r0, r1):
+            row = blocked[r]
+            for c in range(c0, c1):
+                row[c] = 1
+    heights = [0] * cols
+    best = (0, 0, 0)  # area, w, h
+    for r in range(rows):
+        row = blocked[r]
+        for c in range(cols):
+            heights[c] = 0 if row[c] else heights[c] + 1
+        stack: List[int] = []
+        for c in range(cols + 1):
+            h = heights[c] if c < cols else 0
+            while stack and heights[stack[-1]] >= h:
+                top = stack.pop()
+                height = heights[top]
+                left = stack[-1] + 1 if stack else 0
+                width = c - left
+                if width * height > best[0]:
+                    best = (width * height, width, height)
+            stack.append(c)
+    return (best[1] * cell, best[2] * cell)
+
+
+def canvas_empty_rect(geo: DiagramGeometry) -> Optional[Tuple[int, int, float]]:
+    """``(w, h, share)`` of the largest empty rectangle on the canvas (WS6).
+
+    The canvas is :func:`content_bbox`; the obstacles are every text cell, every
+    OUTER container (a container no other container encloses) and every node
+    footprint (icon + caption, :func:`node_caption_box`). ``share`` is the
+    rectangle's area over the canvas area. ``None`` for an empty page. This is
+    the ``ler_out`` column of ``scripts/canvas_metrics.py``."""
+    bb = content_bbox(geo)
+    if bb is None or bb.w <= 0 or bb.h <= 0:
+        return None
+    conts = sorted(geo.containers.values(), key=lambda b: b.id)
+    obst: List[Box] = list(geo.text_boxes.values())
+    obst += [c for c in conts if _tightest_enclosing(c, conts) is None]
+    for nid, box in geo.nodes.items():
+        obst.append(box)
+        label = geo.node_labels.get(nid, "")
+        if caption_lines(label):
+            obst.append(node_caption_box(box, label))
+    w, h = largest_empty_rect(bb, obst)
+    return w, h, (w * h) / (bb.w * bb.h)
 
 
 def check_canvas_quality(
     geo: DiagramGeometry,
     aspect_max: float = CANVAS_ASPECT_MAX,
-    min_coverage: float = CANVAS_MIN_COVERAGE,
+    max_empty: float = CANVAS_MAX_EMPTY_RECT,
 ) -> List[Tuple[str, str]]:
     """Return ``(subject, reason)`` for canvas-quality defects (Theme 25).
 
     Separate from relationship lint: it asks "is the canvas used, is the aspect
-    sane, is the primary subject prominent" — the questions 09-crosscloud-landscape
-    passed every relationship rule yet failed (subject 15% of canvas, parked in a
-    corner, half the canvas dead).
+    sane" — the questions 09-crosscloud-landscape passed every relationship rule
+    yet failed.
 
     Two advisory findings, both pure canvas geometry (no membership needed, so
     independent of the container model):
 
     * ``aspect-ratio:<w>x<h>`` — the canvas bounding box is wider/taller than
       ``aspect_max`` : 1.
-    * ``canvas-utilization:<pct>`` — content (summed outer boundaries + nodes
-      outside every boundary) covers less than ``min_coverage`` of the canvas
-      bbox, i.e. more than ``1 - min_coverage`` dead space.
+    * ``empty-rectangle:<w>x<h>=<pct>%`` (1.10.12 WS6) — the largest empty
+      rectangle on the canvas (:func:`canvas_empty_rect`) covers more than
+      ``max_empty`` of the canvas bbox: one void a reader sees as missing
+      content. It replaces the 1.10.10 ``canvas-utilization`` coverage test,
+      which summed icon and outer-boundary AREA and so flagged a well-spread
+      context diagram of bare icons while passing a canvas with a single huge
+      hole.
 
     A ``primary-boundary-prominence`` sub-check is deliberately NOT implemented
     here: it needs to know WHICH boundary is the titled subject, and a
     multi-region / multi-cloud diagram legitimately has several peer outer
-    boundaries (the HA summaries sit at 0.20 single-outer prominence). It is
-    folded into the container-model work where boundary membership becomes
-    structural. Advisory (WARNING) on both classes."""
+    boundaries. Advisory (WARNING) on both classes."""
     out: List[Tuple[str, str]] = []
     allb = (
         list(geo.nodes.values())
@@ -1923,15 +2325,176 @@ def check_canvas_quality(
     if aspect > aspect_max:
         out.append(("canvas", f"aspect-ratio:{int(cw)}x{int(ch)}={aspect:.2f}"))
 
-    conts = list(geo.containers.values())
-    outers = [c for c in conts if _tightest_enclosing(c, conts) is None]
-    content = sum(c.w * c.h for c in outers)
-    for n in geo.nodes.values():
-        if _tightest_enclosing(n, conts) is None:
-            content += n.w * n.h
-    coverage = content / (cw * ch)
-    if coverage < min_coverage:
-        out.append(("canvas", f"canvas-utilization:{coverage * 100:.0f}%"))
+    ler = canvas_empty_rect(geo)
+    if ler is not None and ler[2] > max_empty:
+        w, h, share = ler
+        out.append(("canvas", f"empty-rectangle:{w}x{h}={share * 100:.0f}%"))
+    return out
+
+
+# --- Container captions (1.10.12 WS6, defect C4) --------------------------- #
+
+
+def container_caption_need(label: str, style: Optional[str]) -> float:
+    """Width a container needs to hold its caption on its widest line.
+
+    Longest rendered line x :data:`_CAPTION_TEXT_CHAR_W` plus the style's
+    ``spacingLeft`` + ``spacingRight`` + ``2 x spacing`` (draw.io default 2).
+    0 for an empty caption. The ``capovf`` column of ``canvas_metrics`` and the
+    engine's caption fit (``layout.place.fit_container_captions``) both use it."""
+    lines = caption_lines(label)
+    if not lines:
+        return 0.0
+    spacing = float(_style_value(style or "", "spacing") or _DRAWIO_LABEL_SPACING)
+    sl = float(_style_value(style or "", "spacingLeft") or 0.0)
+    sr = float(_style_value(style or "", "spacingRight") or 0.0)
+    return max(len(ln) for ln in lines) * _CAPTION_TEXT_CHAR_W + sl + sr + 2 * spacing
+
+
+def container_caption_rect(label: str, style: Optional[str], box: Box) -> Optional[Box]:
+    """The rectangle a container caption's TEXT occupies, NOT capped at the box.
+
+    Placed where draw.io draws it (``align`` default ``center``, the style's
+    spacings) along the top edge, one caption strip tall plus one line per
+    further line. ``None`` for an empty caption."""
+    lines = caption_lines(label)
+    if not lines:
+        return None
+    text_w = max(len(ln) for ln in lines) * _CAPTION_TEXT_CHAR_W
+    st = style or ""
+    spacing = float(_style_value(st, "spacing") or _DRAWIO_LABEL_SPACING)
+    sl = float(_style_value(st, "spacingLeft") or 0.0) + spacing
+    sr = float(_style_value(st, "spacingRight") or 0.0) + spacing
+    align = (_style_value(st, "align") or "center").lower()
+    if align == "left":
+        x0 = box.x + sl
+    elif align == "right":
+        x0 = box.right - sr - text_w
+    else:
+        x0 = box.x + sl + (box.w - sl - sr) / 2.0 - text_w / 2.0
+    h = CONTAINER_LABEL_BAND + CAPTION_LINE_H * (len(lines) - 1)
+    return Box(box.id, x0, box.y, text_w, h)
+
+
+def check_container_caption_overflow(
+    geo: DiagramGeometry,
+) -> List[Tuple[str, int, Tuple[str, ...]]]:
+    """Return ``(container_id, overflow_px, overprinted_node_ids)`` (WS6, C4).
+
+    A container whose caption (:func:`container_caption_need`) is wider than the
+    box spills its text past the border, where a line or a neighbour's name can
+    strike it (SEP 09: the ``se vpc-…`` caption ran 197px past its one-node VPC
+    and printed over "API Gateway (5 APIs)"). ``overprinted_node_ids`` lists the
+    nodes whose icon or caption the OUTSIDE part of the caption text overlaps;
+    the linter reports those as an ERROR. Sorted by container id."""
+    out: List[Tuple[str, int, Tuple[str, ...]]] = []
+    for cid in sorted(geo.containers):
+        box = geo.containers[cid]
+        label = geo.container_labels.get(cid, "")
+        style = geo.container_styles.get(cid, "")
+        need = container_caption_need(label, style)
+        if need <= box.w + 0.5:
+            continue
+        rect = container_caption_rect(label, style, box)
+        strips: List[Box] = []
+        if rect is not None and rect.right > box.right:
+            strips.append(Box("r", box.right, rect.y, rect.right - box.right, rect.h))
+        if rect is not None and rect.x < box.x:
+            strips.append(Box("l", rect.x, rect.y, box.x - rect.x, rect.h))
+        hit: List[str] = []
+        for nid in sorted(geo.nodes):
+            icon = geo.nodes[nid]
+            targets = [icon, node_caption_box(icon, geo.node_labels.get(nid, ""))]
+            if any(_boxes_intersect(s, t) for s in strips for t in targets):
+                hit.append(nid)
+        out.append((cid, int(math.ceil(need - box.w)), tuple(hit)))
+    return out
+
+
+def _boxes_intersect(a: Box, b: Box) -> bool:
+    return a.x < b.right and b.x < a.right and a.y < b.bottom and b.y < a.bottom
+
+
+# --- Sibling size uniformity (1.10.12 WS6, defect C8) ---------------------- #
+
+
+def _distinct(values: Sequence[float], tol: float) -> int:
+    """How many clusters ``values`` form when values within ``tol`` merge."""
+    n, last = 0, None
+    for v in sorted(values):
+        if last is None or v - last > tol:
+            n += 1
+        last = v
+    return n
+
+
+def check_sibling_size_uniformity(
+    geo: DiagramGeometry, grid: int = GRID
+) -> List[Tuple[Tuple[str, ...], str]]:
+    """Return ``(container_ids, reason)`` for sibling boxes of unequal size (WS6).
+
+    diagram-standards (*Container Nesting*): sibling containers in one column
+    share a left edge AND a width, in one row a top edge AND a height; and
+    sibling bands of one group use one slot pitch, so bands holding the same
+    number of slots are identical. Siblings are containers with the same
+    tightest enclosing container (or none). They are aligned when their left
+    edges (a column) or their tops (a row) agree within one grid step.
+
+    The dimension checked is the one the standard ties to each alignment: a
+    **column** cluster (shared left edge) must share a **width**, a **row**
+    cluster (shared top) a **height** — a row of bands legitimately differs in
+    width per content, and a column of bands in height, so only the shared
+    dimension is compared. Among aligned siblings only those with the same slot
+    count ALONG THE COMPARED AXIS are compared (node COLUMNS for a width, node
+    ROWS for a height), so a 2-node stack and a 2-node row are never compared.
+    A spread above one grid step is a finding, reason
+    ``<col|row>@<x|y>:width|height-spread:<px>``. WARNING, both classes."""
+    conts = sorted(geo.containers.values(), key=lambda b: b.id)
+    parent = {c.id: _tightest_enclosing(c, conts) for c in conts}
+    xs: Dict[str, List[float]] = {c.id: [] for c in conts}
+    ys: Dict[str, List[float]] = {c.id: [] for c in conts}
+    for b in geo.nodes.values():
+        p = _tightest_enclosing(b, conts)
+        if p is not None:
+            xs[p.id].append(b.x)
+            ys[p.id].append(b.y)
+    groups: Dict[str, List[Box]] = {}
+    for c in conts:
+        groups.setdefault(parent[c.id].id if parent[c.id] else "", []).append(c)
+    out: List[Tuple[Tuple[str, ...], str]] = []
+    for sibs in groups.values():
+        if len(sibs) < 2:
+            continue
+        # A column cluster shares a left edge → compare WIDTH (grouped by node
+        # columns); a row cluster shares a top → compare HEIGHT (by node rows).
+        for axis, key, dim, slots in (
+            ("col", lambda b: b.x, "width", xs),
+            ("row", lambda b: b.y, "height", ys),
+        ):
+            pool = sorted(sibs, key=lambda b: (key(b), b.id))
+            clusters: List[List[Box]] = []
+            for b in pool:
+                if clusters and abs(key(b) - key(clusters[-1][0])) <= grid:
+                    clusters[-1].append(b)
+                else:
+                    clusters.append([b])
+            for cl in clusters:
+                if len(cl) < 2:
+                    continue
+                by_slots: Dict[int, List[Box]] = {}
+                for b in cl:
+                    if slots[b.id]:
+                        by_slots.setdefault(_distinct(slots[b.id], grid), []).append(b)
+                for same in by_slots.values():
+                    if len(same) < 2:
+                        continue
+                    sizes = [b.w if dim == "width" else b.h for b in same]
+                    spread = max(sizes) - min(sizes)
+                    if spread > grid:
+                        out.append((
+                            tuple(sorted(b.id for b in same)),
+                            f"{axis}@{int(key(cl[0]))}:{dim}-spread:{int(spread)}",
+                        ))
     return out
 
 
@@ -1981,8 +2544,8 @@ def check_container_dead_space(
             limit = outer_threshold
         demand = 0.0
         # Nodes whose tightest enclosing container is this one (by footprint).
-        for node in geo.nodes.values():
-            fp = node.footprint(label_band)
+        for nid in geo.nodes:
+            fp = node_footprint(geo, nid, label_band)
             parent = _tightest_enclosing(fp, boxes)
             if parent is not None and parent.id == cbox.id:
                 demand += (fp.w + 2 * pad) * (fp.h + 2 * pad)
@@ -2135,6 +2698,74 @@ def check_container_style(
             # first in declaration order on a tie) — several providers share
             # one dashed-rectangle signature on a multi-cloud diagram.
             out.append((cid, min(failures, key=lambda f: f.count(" expected "))))
+    return out
+
+
+def _container_nesting(geo: DiagramGeometry) -> Tuple[bool, bool]:
+    """Return ``(has_outer, has_inner)`` for the drawn Boundary containers.
+
+    Structural, provider-neutral (WS11, C10): the parsed ``.drawio`` carries no
+    semantic ``kind`` (``account`` / ``vpc``), but nesting is a reliable proxy
+    for the outer/inner distinction the Legend names.
+
+    * ``has_outer`` — at least one Boundary container is drawn, so a stack
+      Boundary ("Outer boundary") exists on the canvas.
+    * ``has_inner`` — at least one Boundary container is drawn strictly INSIDE
+      another Boundary container, so a Network Boundary ("Inner boundary") is on
+      the canvas. An account that wraps a VPC (``account ⊃ vpc``) has one; an
+      account-only context diagram, or a set of sibling region boxes (the HA
+      summaries), has none.
+
+    A box is "strictly inside" another when it is contained and the two are not
+    the same box (equal boxes are not nesting). Containment is border-inclusive,
+    matching :func:`_box_inside`.
+    """
+    boxes = list(geo.containers.items())
+    has_outer = len(boxes) > 0
+    has_inner = False
+    for cid, inner in boxes:
+        for oid, outer in boxes:
+            if cid == oid:
+                continue
+            if (outer.x <= inner.x and inner.right <= outer.right
+                    and outer.y <= inner.y and inner.bottom <= outer.bottom
+                    and (outer.w * outer.h) > (inner.w * inner.h)):
+                has_inner = True
+                break
+        if has_inner:
+            break
+    return has_outer, has_inner
+
+
+def check_legend_boundary_coverage(
+    geo: DiagramGeometry, legend_lines: Sequence[str]
+) -> List[str]:
+    """Return the Legend boundary lines that name a boundary NOT drawn (WS11, C10).
+
+    The Mandatory Legend Block names the outer/inner boundary only when that
+    boundary is actually on the canvas (diagram-standards →
+    ``legend_lines_for``). A Legend that lists ``Inner boundary = Network
+    Boundary …`` on a diagram that draws no nested (network) boundary — e.g. an
+    account-only context diagram — describes something the reader cannot find
+    (SEP 01/04 before this fix). The mirror holds for ``Outer boundary``.
+
+    Pure, provider-neutral and structural: the drawn boundaries are read from
+    the nesting of the parsed container boxes (:func:`_container_nesting`), and a
+    legend line is an outer/inner-boundary line when its text before ``=``,
+    casefolded and stripped, starts with ``outer boundary`` / ``inner
+    boundary``. Returns the offending legend line(s), empty when the Legend is
+    consistent with what is drawn. WARNING in the ruleset."""
+    if not legend_lines:
+        return []
+    has_outer, has_inner = _container_nesting(geo)
+    out: List[str] = []
+    for raw in legend_lines:
+        line = str(raw).strip()
+        head = line.split("=", 1)[0].strip().casefold()
+        if head.startswith("outer boundary") and not has_outer:
+            out.append(line)
+        elif head.startswith("inner boundary") and not has_inner:
+            out.append(line)
     return out
 
 
@@ -2499,18 +3130,47 @@ def check_legend_placement(
     The two container conditions are skipped for a diagram with no boundary
     containers (a bare flow sketch has no body to reserve a margin against); the
     node condition is checked regardless.
+
+    **Below-body mode (1.10.12 WS6).** A wide-and-short diagram may put the two
+    boxes in one block BELOW the body, LEFT-ALIGNED with it, instead of in the
+    right margin (``diagram_layout.theme43_legend_placement``, ``row-below``). A
+    box whose top sits at least one grid step below every container and every
+    node footprint (icon + caption), AND whose left edge is at or past the
+    body's left edge (so it is genuinely under the body, not parked in the left
+    margin below it), is in that mode and is not judged against the right
+    margin; it still may not cover a node.
     """
     if not geo.text_boxes:
         return []
     outer_right = (
         max(c.right for c in geo.containers.values()) if geo.containers else None
     )
+    bottoms = [c.bottom for c in geo.containers.values()]
+    lefts = [c.x for c in geo.containers.values()]
+    rights = [c.right for c in geo.containers.values()]
+    for nid, icon in geo.nodes.items():
+        bottoms.append(node_caption_box(icon, geo.node_labels.get(nid, "")).bottom)
+        lefts.append(icon.x)
+        rights.append(icon.right)
+    body_bottom = max(bottoms, default=None)
+    body_left = min(lefts, default=None)
+    body_right = max(rights, default=None)
     out: List[Tuple[str, str]] = []
     for cid, box in sorted(geo.text_boxes.items()):
         heading = geo.text_headings.get(cid, "").strip().lower()
         if heading not in LEGEND_HEADINGS:
             continue
-        if outer_right is not None:
+        # Below-body (Mode B): the box sits below the whole body AND its left
+        # edge falls within the body's horizontal span — genuinely under the
+        # body, not parked in the left margin or flush against the right edge.
+        below_body = (
+            body_bottom is not None
+            and box.y >= body_bottom + grid
+            and body_left is not None
+            and body_right is not None
+            and body_left - grid <= box.x < body_right
+        )
+        if outer_right is not None and not below_body:
             if box.x < outer_right + grid:
                 out.append((cid, "left-of-diagram-body"))
             for kid, container in sorted(geo.containers.items()):
@@ -2961,6 +3621,26 @@ def check_marker_label_collision(geo: DiagramGeometry) -> List[Tuple[str, str]]:
     return out
 
 
+def check_marker_icon_collision(geo: DiagramGeometry) -> List[Tuple[str, str]]:
+    """Return ``(edge_id, node_id)`` for flow-markers drawn on a node ICON.
+
+    The icon-box companion of :func:`check_marker_label_collision` (1.10.12
+    WS7): a marker whose rendered anchor falls inside a node's icon box
+    (inclusive, :data:`AXIS_EPS` tolerance) prints the step number over the
+    glyph. The caption check never saw it, because a caption rectangle starts
+    below the icon. Every node is checked, endpoints included. Lint-only."""
+    out: List[Tuple[str, str]] = []
+    for eid, (px, py) in sorted(marker_anchors(geo).items()):
+        for nid in sorted(geo.nodes):
+            b = geo.nodes[nid]
+            if (
+                b.x - AXIS_EPS <= px <= b.right + AXIS_EPS
+                and b.y - AXIS_EPS <= py <= b.bottom + AXIS_EPS
+            ):
+                out.append((eid, nid))
+    return out
+
+
 def _edge_polylines(geo: DiagramGeometry) -> Dict[str, List[Point]]:
     """Return ``{edge_id: [exit, *waypoints, entry]}`` for every resolved edge.
 
@@ -3123,7 +3803,12 @@ def resolve_marker_collisions(
         here = anchor_of(eid)
         if here is None:
             continue
-        if _dist_to_foreign_edges(here, eid, polys)[0] >= clearance - AXIS_EPS:
+        # 1.10.12 (WS4): a marker printed on a node icon or caption slides too
+        # (diagram-standards → Numbered Flow Legend: "slide the marker along
+        # its edge clear of every caption"); a short drop under a two-line
+        # (wrapped) caption otherwise keeps its number on the service name.
+        if (_dist_to_foreign_edges(here, eid, polys)[0] >= clearance - AXIS_EPS
+                and not (clearance > 0 and in_box(here))):
             continue
         start = pos[eid]
         for k in range(1, 5):
@@ -3523,6 +4208,11 @@ def check_edge_escapes_container(geo: DiagramGeometry) -> List[Tuple[str, str]]:
     judged."""
     out: List[Tuple[str, str]] = []
     for e in geo.edges:
+        # A boundary-to-boundary edge (container endpoint, WS10) is anchored on
+        # a container face by design, so "leaves the common container of its two
+        # nodes" does not apply — it has a container AS an endpoint.
+        if e.source not in geo.nodes or e.target not in geo.nodes:
+            continue
         poly = edge_polyline(geo, e)
         if len(poly) < 3:
             continue
@@ -3605,6 +4295,10 @@ def check_edge_jog(geo: DiagramGeometry) -> List[Tuple[str, str]]:
     exit, top entry, shared column)."""
     out: List[Tuple[str, str]] = []
     for e in geo.edges:
+        # A boundary-to-boundary edge (container endpoint, WS10) is not a
+        # node-facing jog: the "directly facing nodes" test does not apply.
+        if e.source not in geo.nodes or e.target not in geo.nodes:
+            continue
         contacts = _edge_contacts(geo, e)
         if contacts is None:
             continue
