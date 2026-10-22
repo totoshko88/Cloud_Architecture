@@ -1,6 +1,6 @@
 {
   "library": "mxgraph.aws4",
-  "count": 519,
+  "count": 518,
   "ids": [
     "a1_instance",
     "access_analyzer",
@@ -43,7 +43,6 @@
     "backup",
     "bank",
     "batch",
-    "bedrock",
     "blockchain",
     "bottlerocket",
     "braket",

@@ -55,6 +55,78 @@ resources:
     brand_hex: "#0078D4"
     style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/ai_machine_learning/Azure_OpenAI.svg"
 
+  # --- Common-service roles (WS9 icon-coverage fill-in) ---
+  # Each references a built-in azure2 image shape verified present in
+  # mappings/azure2-shapes.json, same scheme as the 8 roles above.
+  compute_instance:
+    icon_id: azure2.virtual_machine
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/compute/Virtual_Machine.svg"
+  lb:
+    icon_id: azure2.load_balancers
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/networking/Load_Balancers.svg"
+  app_gateway:
+    icon_id: azure2.application_gateways
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/networking/Application_Gateways.svg"
+  dynamodb:
+    icon_id: azure2.azure_cosmos_db
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/databases/Azure_Cosmos_DB.svg"
+  cloudwatch:
+    icon_id: azure2.monitor
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/management_governance/Monitor.svg"
+  firewall:
+    icon_id: azure2.firewalls
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/networking/Firewalls.svg"
+  api_gateway:
+    icon_id: azure2.api_management_services
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/app_services/API_Management_Services.svg"
+  ecr:
+    icon_id: azure2.container_registries
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/containers/Container_Registries.svg"
+  cdn:
+    icon_id: azure2.front_doors
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/networking/Front_Doors.svg"
+  iam:
+    icon_id: azure2.azure_active_directory
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/identity/Azure_Active_Directory.svg"
+  log_analytics:
+    icon_id: azure2.log_analytics_workspaces
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/management_governance/Log_Analytics_Workspaces.svg"
+  container_apps:
+    icon_id: azure2.container_app_environments
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/other/Container_App_Environments.svg"
+  cognitive_services:
+    icon_id: azure2.cognitive_services
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/ai_machine_learning/Cognitive_Services.svg"
+  bastion:
+    icon_id: azure2.bastions
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/networking/Bastions.svg"
+  app_service:
+    icon_id: azure2.app_services
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/app_services/App_Services.svg"
+  eventbridge:
+    icon_id: azure2.event_grid_topics
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/integration/Event_Grid_Topics.svg"
+  dns:
+    icon_id: azure2.dns_zones
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/networking/DNS_Zones.svg"
+
   # --- External / third-party systems (Theme 1) ---
   external_system:
     icon_id: external.system

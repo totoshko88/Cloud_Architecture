@@ -421,6 +421,73 @@ resources:
     brand_hex: "#333333"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/education/mortarboard.svg"
 
+  # --- WS9 icon-coverage fill-in (common-service roles, service icons) ---
+  # Management & Governance family pink (#E7157B), Containers orange (#ED7100),
+  # Security-Identity red (#DD344C), Analytics purple (#8C4FFF), AI teal
+  # (#01A88D). Each brand_hex matches the category background of its own
+  # Arch_*_48.svg. SageMaker's base service glyph ships as
+  # Arch_Amazon-SageMaker-AI_48.svg (AWS renamed the service to "SageMaker AI");
+  # that is the real asset, not a look-alike.
+  cloudtrail:                # AWS CloudTrail (service, Management & Governance)
+    icon_id: aws.cloudtrail
+    icon_provenance: service
+    brand_hex: "#E7157B"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Management-Tools/48/Arch_AWS-CloudTrail_48.svg"
+
+  config:                    # AWS Config (service, Management & Governance)
+    icon_id: aws.config
+    icon_provenance: service
+    brand_hex: "#E7157B"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Management-Tools/48/Arch_AWS-Config_48.svg"
+
+  ecs:                       # Amazon Elastic Container Service (service, Containers)
+    icon_id: aws.ecs
+    icon_provenance: service
+    brand_hex: "#ED7100"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Containers/48/Arch_Amazon-Elastic-Container-Service_48.svg"
+
+  fargate:                   # AWS Fargate (service, Containers)
+    icon_id: aws.fargate
+    icon_provenance: service
+    brand_hex: "#ED7100"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Containers/48/Arch_AWS-Fargate_48.svg"
+
+  kms:                       # AWS Key Management Service (service, Security & Identity)
+    icon_id: aws.kms
+    icon_provenance: service
+    brand_hex: "#DD344C"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Security-Identity/48/Arch_AWS-Key-Management-Service_48.svg"
+
+  guardduty:                 # Amazon GuardDuty (service, Security & Identity)
+    icon_id: aws.guardduty
+    icon_provenance: service
+    brand_hex: "#DD344C"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Security-Identity/48/Arch_Amazon-GuardDuty_48.svg"
+
+  kinesis:                   # Amazon Kinesis (service, Analytics)
+    icon_id: aws.kinesis
+    icon_provenance: service
+    brand_hex: "#8C4FFF"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Analytics/48/Arch_Amazon-Kinesis_48.svg"
+
+  athena:                    # Amazon Athena (service, Analytics)
+    icon_id: aws.athena
+    icon_provenance: service
+    brand_hex: "#8C4FFF"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Analytics/48/Arch_Amazon-Athena_48.svg"
+
+  glue:                      # AWS Glue (service, Analytics)
+    icon_id: aws.glue
+    icon_provenance: service
+    brand_hex: "#8C4FFF"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Analytics/48/Arch_AWS-Glue_48.svg"
+
+  sagemaker:                 # Amazon SageMaker AI (service, AI/ML)
+    icon_id: aws.sagemaker
+    icon_provenance: service
+    brand_hex: "#01A88D"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Artificial-Intelligence/48/Arch_Amazon-SageMaker-AI_48.svg"
+
 # Container styles for boundaries (using mxgraph.aws4.group for proper draw.io
 # group behavior — these are structural elements, not service icons)
 # `brand_hex` on a container entry is the PROVIDER ANCHOR (AWS Squid Ink
