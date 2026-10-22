@@ -131,6 +131,57 @@ _TEXT_STYLE = (
     f"spacingLeft={GRID};spacingRight={GRID};spacingTop={GRID};spacingBottom={GRID}"
 )
 
+# ---------------------------------------------------------------------------
+# Presentation skin (1.11.0 WS1) — style channels ONLY, never geometry.
+# ---------------------------------------------------------------------------
+# A Skin restyles furniture borders, edge colour, and (later) numeric markers
+# without moving a single node or edge coordinate. Every field defaults to the
+# value that reproduces the 1.10.12 byte output, so a diagram with no Skin — or
+# the default Skin — renders byte-identically (proven by regen_examples.py
+# --check). The furniture/edge channels are pure style: no geometry consumer
+# (legend-placement, marker-*, container-*) reads a furniture or edge COLOUR, so
+# changing them cannot shift a verdict. The marker badge is a separate,
+# geometry-bearing feature (WS1 task 2) and is not carried here yet.
+
+#: Furniture border presets for the Flow/Legend text boxes.
+_FURNITURE_STROKE = {
+    "black": "#000000",   # 1.10.12 default — byte-identical
+    "light": "#B3B3B3",   # neutral light grey
+    "none": "none",       # borderless
+    # "brand" is resolved per diagram from the provider boundary stroke by the
+    # caller (draw_cli), which knows the provider; the renderer receives the
+    # already-resolved hex via edge_stroke/furniture overrides.
+}
+
+
+@dataclass(frozen=True)
+class Skin:
+    """Presentation-only style choices. Defaults reproduce 1.10.12 exactly.
+
+    - ``furniture_stroke``: border of the Flow/Legend boxes
+      (``black`` default | ``light`` | ``none`` | an explicit ``#RRGGBB``).
+    - ``edge_stroke``: edge line colour. ``None`` (default) emits NO
+      ``strokeColor`` token, byte-identical to today (draw.io default black);
+      a hex adds ``strokeColor=<hex>`` to every edge.
+    - ``marker_badge``: numeric-marker form (``none`` default = inline bold
+      text, the only byte-inert value). ``circle``/``square`` are the
+      geometry-bearing badge forms delivered by WS1 task 2; carried here so the
+      field exists, but the renderer treats any non-``none`` value as a no-op
+      until the badge renderer lands.
+    """
+
+    furniture_stroke: str = "black"
+    edge_stroke: Optional[str] = None
+    marker_badge: str = "none"
+
+    def furniture_stroke_hex(self) -> str:
+        """The resolved stroke colour token for a furniture box style."""
+        return _FURNITURE_STROKE.get(self.furniture_stroke, self.furniture_stroke)
+
+
+#: The default Skin — every field at its 1.10.12 byte-identical value.
+DEFAULT_SKIN = Skin()
+
 
 # ---------------------------------------------------------------------------
 # Data model
@@ -986,10 +1037,15 @@ def _orthogonalised(
     return out
 
 
-def edge_cell(e: Edge, parent: str = "1", origin: Tuple[float, float] = (0, 0)) -> str:
+def edge_cell(e: Edge, parent: str = "1", origin: Tuple[float, float] = (0, 0),
+              skin: "Skin | None" = None) -> str:
     """Emit one edge cell. ``parent`` / ``origin``: the cell the edge is a child
     of and that cell's absolute origin — draw.io stores an edge's waypoints
-    relative to its parent, so they are written as ``point - origin``."""
+    relative to its parent, so they are written as ``point - origin``.
+
+    ``skin``: when it carries ``edge_stroke`` a ``strokeColor=<hex>`` token is
+    appended; ``None`` / an unset ``edge_stroke`` emits NO colour token — the
+    exact 1.10.12 byte output (draw.io default black)."""
     dash = "dashed=1;" if (e.dashed or e.peering) else ""
     ex, ey = e.exit
     nx, ny = e.entry
@@ -1005,9 +1061,14 @@ def edge_cell(e: Edge, parent: str = "1", origin: Tuple[float, float] = (0, 0)) 
         # arrow-style lint rule): open pointers read cleaner than heavy filled
         # heads and the stroke stays visible when scaled down.
         heads = "endArrow=open;endFill=0;"
+    # Style channel: an explicit edge colour from the skin. Appended LAST so it
+    # never reorders the existing tokens; absent → no token (byte-identical).
+    stroke = ""
+    if skin is not None and skin.edge_stroke:
+        stroke = f"strokeColor={skin.edge_stroke};"
     style = (
         f"edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;{heads}"
-        f"strokeWidth={EDGE_STROKE_WIDTH};{dash}"
+        f"strokeWidth={EDGE_STROKE_WIDTH};{dash}{stroke}"
         f"exitX={ex};exitY={ey};exitDx=0;exitDy=0;exitPerimeter=0;"
         f"entryX={nx};entryY={ny};entryDx=0;entryDy=0;"
         "fontSize=12;fontStyle=1"
@@ -1034,10 +1095,18 @@ def edge_cell(e: Edge, parent: str = "1", origin: Tuple[float, float] = (0, 0)) 
     return head + '          <mxGeometry relative="1" as="geometry" />\n        </mxCell>\n'
 
 
-def text_cell(cid: str, lines: Sequence[str], x: int, y: int, w: int = 320, h: int = 200) -> str:
+def text_cell(cid: str, lines: Sequence[str], x: int, y: int, w: int = 320, h: int = 200,
+              skin: "Skin | None" = None) -> str:
     value = "&#10;".join(_xml_escape(line) for line in lines)
+    style = _TEXT_STYLE
+    # Style channel: swap the furniture border colour. Default skin (or None)
+    # keeps strokeColor=#000000, so the emitted style is byte-identical. Only a
+    # non-black furniture_stroke rewrites the single strokeColor token in place,
+    # preserving token order (fillColor and spacing are untouched).
+    if skin is not None and skin.furniture_stroke != "black":
+        style = _TEXT_STYLE.replace("strokeColor=#000000", f"strokeColor={skin.furniture_stroke_hex()}")
     return (
-        f'        <mxCell id="{cid}" value="{value}" style="{_TEXT_STYLE}" '
+        f'        <mxCell id="{cid}" value="{value}" style="{style}" '
         f'vertex="1" parent="1">\n'
         f'          <mxGeometry x="{x}" y="{y}" width="{w}" height="{h}" as="geometry" />\n'
         "        </mxCell>\n"
@@ -1226,6 +1295,7 @@ def build_diagram(
     page_h: int = 950,
     caption_safe: bool = True,
     caption_plan=None,
+    skin: "Skin | None" = None,
 ) -> str:
     """Assemble a full ``.drawio`` document from the standard building blocks.
 
@@ -1261,6 +1331,7 @@ def build_diagram(
         legend_y_legend=legend_y_legend, legend_w=legend_w,
         legend_lines=legend_lines, legend_mode=legend_mode,
         page_w=page_w, page_h=page_h,
+        skin=skin,
     )
     routed = _orthogonalised(edges, nodes)
     text = _assemble_document(routed=routed, **kwargs)
@@ -1496,6 +1567,7 @@ def _assemble_document(
     legend_mode: str,
     page_w: int,
     page_h: int,
+    skin: "Skin | None" = None,
 ) -> str:
     """Emit the ``.drawio`` document for already-routed edges (no hygiene)."""
     parts: List[str] = []
@@ -1525,7 +1597,7 @@ def _assemble_document(
         ]
     for e in routed:
         if slots.get(e.id, -1) < 0:
-            parts.append(edge_cell(e))
+            parts.append(edge_cell(e, skin=skin))
     parts.append("\n")
     for b in _clear_container_captions(boundaries, nodes, routed):
         parts.append(boundary_cell(b))
@@ -1534,7 +1606,7 @@ def _assemble_document(
         k = slots.get(e.id, -1)
         if k >= 0:
             b = boundaries[k]
-            parts.append(edge_cell(e, parent=b.id, origin=(b.x, b.y)))
+            parts.append(edge_cell(e, parent=b.id, origin=(b.x, b.y), skin=skin))
     parts.append("\n")
     # Wave C: emit each node as a structural child of its tightest enclosing
     # boundary (``parent=<id>`` + geometry relative to the host origin), so
@@ -1602,8 +1674,8 @@ def _assemble_document(
         # drives the canvas width, so a flow raster stays under its 1600px budget.
         flow_x = legend_x
         legend2_x = int(legend_x + box_w + GRID)
-        parts.append(text_cell("flow-legend", flow_lines, flow_x, legend_y_flow, box_w, flow_h))
-        parts.append(text_cell("legend", legend_body, legend2_x, legend_y_flow, box_w, legend_h))
+        parts.append(text_cell("flow-legend", flow_lines, flow_x, legend_y_flow, box_w, flow_h, skin=skin))
+        parts.append(text_cell("legend", legend_body, legend2_x, legend_y_flow, box_w, legend_h, skin=skin))
     else:
         # Mode A (default, stack): the Legend stacks BELOW the Flow box. A caller's
         # ``legend_y_legend`` is a hint, not a guarantee: a long Flow list (or a
@@ -1612,8 +1684,8 @@ def _assemble_document(
         # geometry rule would catch it. Push the Legend down to clear the Flow box
         # by one grid step.
         legend_y = max(legend_y_legend, legend_y_flow + flow_h + GRID)
-        parts.append(text_cell("flow-legend", flow_lines, legend_x, legend_y_flow, box_w, flow_h))
-        parts.append(text_cell("legend", legend_body, legend_x, legend_y, box_w, legend_h))
+        parts.append(text_cell("flow-legend", flow_lines, legend_x, legend_y_flow, box_w, flow_h, skin=skin))
+        parts.append(text_cell("legend", legend_body, legend_x, legend_y, box_w, legend_h, skin=skin))
     parts.append(
         "      </root>\n    </mxGraphModel>\n  </diagram>\n</mxfile>\n"
     )
