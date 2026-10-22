@@ -616,6 +616,32 @@
         "source": "stencil"
       }
     },
+    "direct_connect": {
+      "aws": {
+        "display_name": "AWS Direct Connect",
+        "note": "resolved 'Direct Connect'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Networking-Content-Delivery/32/Arch_AWS-Direct-Connect_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "ExpressRoute Circuits",
+        "note": "resolved 'ExpressRoute Circuits'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/networking/10079-icon-service-ExpressRoute-Circuits.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "Networking",
+        "note": "category icon (Networking) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Special Connectors - FastConnect - Vertical",
+        "note": "resolved 'special-connectors-fastconnect-vertical'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#special-connectors-fastconnect-vertical",
+        "source": "stencil"
+      }
+    },
     "dns": {
       "aws": {
         "display_name": "Amazon Route 53",
@@ -1370,6 +1396,32 @@
         "source": "stencil"
       }
     },
+    "network_firewall": {
+      "aws": {
+        "display_name": "AWS Network Firewall",
+        "note": "resolved 'Network Firewall'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Security-Identity/32/Arch_AWS-Network-Firewall_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Firewalls",
+        "note": "resolved 'Firewalls'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/networking/10084-icon-service-Firewalls.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "SecurityIdentity",
+        "note": "category icon (Security Identity) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Firewall",
+        "note": "resolved 'firewall'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#firewall",
+        "source": "stencil"
+      }
+    },
     "object_store": {
       "aws": {
         "display_name": "Amazon Simple Storage Service",
@@ -1445,6 +1497,32 @@
         "display_name": "Autonomous DB",
         "note": "resolved 'autonomous-db'",
         "ref": "assets/vendor/oci-stencils/stencils.json#autonomous-db",
+        "source": "stencil"
+      }
+    },
+    "route_table": {
+      "aws": {
+        "display_name": "Amazon Route 53 Route Table",
+        "note": "resolved 'Route Table'",
+        "ref": "assets/vendor/aws-icons/Resource-Icons_07312026/Res_Networking-Content-Delivery/Res_Amazon-Route-53_Route-Table_48.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Route Tables",
+        "note": "resolved 'Route Tables'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/networking/10082-icon-service-Route-Tables.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "Networking",
+        "note": "category icon (Networking) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Route Table",
+        "note": "resolved 'route-table'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#route-table",
         "source": "stencil"
       }
     },
@@ -1682,6 +1760,32 @@
         "source": "stencil"
       }
     },
+    "transit_gateway": {
+      "aws": {
+        "display_name": "AWS Transit Gateway",
+        "note": "resolved 'Transit Gateway'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Networking-Content-Delivery/32/Arch_AWS-Transit-Gateway_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Virtual WANs",
+        "note": "resolved 'Virtual WANs'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/networking/10353-icon-service-Virtual-WANs.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "Networking",
+        "note": "category icon (Networking) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Dynamic Routing Gateway DRG",
+        "note": "resolved 'dynamic-routing-gateway-drg'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#dynamic-routing-gateway-drg",
+        "source": "stencil"
+      }
+    },
     "vpc": {
       "aws": {
         "display_name": "Amazon Virtual Private Cloud",
@@ -1757,6 +1861,32 @@
         "display_name": "Remote Peering Gateway",
         "note": "resolved 'remote-peering-gateway'",
         "ref": "assets/vendor/oci-stencils/stencils.json#remote-peering-gateway",
+        "source": "stencil"
+      }
+    },
+    "vpn_gateway": {
+      "aws": {
+        "display_name": "Amazon VPC VPN Gateway",
+        "note": "resolved 'VPC VPN Gateway'",
+        "ref": "assets/vendor/aws-icons/Resource-Icons_07312026/Res_Networking-Content-Delivery/Res_Amazon-VPC_VPN-Gateway_48.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Virtual Network Gateways",
+        "note": "resolved 'Virtual Network Gateways'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/networking/10063-icon-service-Virtual-Network-Gateways.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "Networking",
+        "note": "category icon (Networking) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Special Connectors - Site-to-site-VPN - Vertical",
+        "note": "resolved 'special-connectors-site-to-site-vpn-vertical'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#special-connectors-site-to-site-vpn-vertical",
         "source": "stencil"
       }
     },

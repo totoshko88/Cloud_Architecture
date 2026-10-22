@@ -244,6 +244,11 @@ containers:
     icon_id: gcp.virtual_private_cloud
     brand_hex: "#4285F4"
     style: "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#34A853;fillColor=none;verticalAlign=top;align=left;spacingLeft=8;fontColor=#188038;fontSize=12"
+  # 1.11.0 WS6: firewall-rule / security scope — dashed red rect, no fill, leaf.
+  security_group:
+    icon_id: gcp.security_group
+    brand_hex: "#EA4335"
+    style: "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#EA4335;fillColor=none;verticalAlign=top;align=left;spacingLeft=8;fontColor=#C5221F;fontSize=12"
   # Optional nested levels, following Google Cloud architecture diagrams: a
   # Region is a dashed neutral-grey frame, a Zone a borderless light-grey block.
   # Neutral #5F6368 keeps lines and captions above 4.5:1 on white (the old

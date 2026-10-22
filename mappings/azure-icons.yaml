@@ -244,3 +244,8 @@ containers:
     brand_hex: "#0078D4"
     # Subnet — borderless light-grey block with the Subnet icon, bold caption.
     style: "shape=label;image=img/lib/azure2/networking/Subnet.svg;imageWidth=20;imageHeight=12;imageAlign=left;imageVerticalAlign=top;rounded=0;whiteSpace=wrap;html=1;fillColor=#F2F2F2;strokeColor=none;verticalAlign=top;align=left;spacingLeft=30;fontColor=#000000;fontStyle=1;fontSize=12"
+  # 1.11.0 WS6: Network Security Group — dashed Azure-blue rect, no fill, leaf.
+  security_group:
+    icon_id: azure.security_group
+    brand_hex: "#0078D4"
+    style: "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#0078D4;fillColor=none;verticalAlign=top;align=left;spacingLeft=8;fontColor=#000000;fontSize=12"

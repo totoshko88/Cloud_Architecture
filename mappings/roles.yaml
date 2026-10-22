@@ -302,6 +302,34 @@ roles:
     azure: "Virtual Networks"
     gcp_category: "Networking"
     oci: "remote-peering-gateway"
+  # --- WS6 network diagram-type roles (1.11.0) -------------------------------
+  # Extended roles for the `network` diagram type (TGW, VPN GW, DX, route table,
+  # network firewall). EXTENDED roles only — the 16-value core invariant holds.
+  transit_gateway:
+    aws: "Transit Gateway"
+    azure: "Virtual WANs"
+    gcp_category: "Networking"
+    oci: "dynamic-routing-gateway-drg"
+  vpn_gateway:
+    aws: "VPC VPN Gateway"
+    azure: "Virtual Network Gateways"
+    gcp_category: "Networking"
+    oci: "special-connectors-site-to-site-vpn-vertical"
+  direct_connect:
+    aws: "Direct Connect"
+    azure: "ExpressRoute Circuits"
+    gcp_category: "Networking"
+    oci: "special-connectors-fastconnect-vertical"
+  route_table:
+    aws: "Route Table"
+    azure: "Route Tables"
+    gcp_category: "Networking"
+    oci: "route-table"
+  network_firewall:
+    aws: "Network Firewall"
+    azure: "Firewalls"
+    gcp_category: "Security Identity"
+    oci: "firewall"
   # --- WS9 icon-coverage fill-in (1.11.0) ------------------------------------
   # Common services that had an official icon in every indexed pack but no role,
   # so the render path raised DrawError. Each is an EXTENDED role (the 16-value

@@ -567,3 +567,9 @@ containers:
     brand_hex: "#232F3E"
     # Corporate data center — the official on-premises group.
     style: "shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_corporate_data_center;grStroke=1;whiteSpace=wrap;fillColor=none;strokeColor=#7D8998;dashed=0;verticalAlign=top;align=left;spacingLeft=30;fontColor=#5A6C86;fontSize=12;html=1"
+  # 1.11.0 WS6: Security Group — official AWS SG group (padlock), dashed border,
+  # no fill so member nodes show through. A LEAF boundary (nodes nest directly).
+  security_group:
+    icon_id: mxgraph.aws4.group_security_group
+    brand_hex: "#DD344C"
+    style: "shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_security_group;grStroke=1;fillColor=none;strokeColor=#DD344C;dashed=1;verticalAlign=top;align=left;spacingLeft=30;fontColor=#C7314A;fontSize=12;html=1"
