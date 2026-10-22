@@ -95,6 +95,13 @@ class NodeSpec:
     #: ordering never changes ``sub``. Coordinate-free: it fixes an index, never
     #: a coordinate.
     pinned: bool = False
+    #: Optional **foreign-profile override** (1.11.0 WS3). Names a provider
+    #: profile whose icon/style this node resolves against, instead of the
+    #: diagram's primary provider — so a Kubernetes workload can render in k8s
+    #: blue inside an AWS diagram. Coordinate-free: it names a profile, never a
+    #: coordinate. ``None`` (default) → the diagram's primary provider, so every
+    #: existing spec is byte-identical.
+    provider: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -139,6 +146,12 @@ class ContainerSpec:
     region: str
     parent: Optional[str]  # nesting: az.parent = vpc, vpc.parent = account
     label_key: str  # the skin fills the concrete label
+    #: Optional **foreign-profile override** (1.11.0 WS3). Names a provider
+    #: profile whose container style this box resolves against, so a Kubernetes
+    #: deployment block can render as a k8s-blue boundary nested inside an AWS
+    #: VPC. Coordinate-free. ``None`` (default) → the diagram's primary provider,
+    #: so every existing spec is byte-identical.
+    provider: Optional[str] = None
 
 
 @dataclass(frozen=True)

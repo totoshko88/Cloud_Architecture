@@ -30,7 +30,12 @@ def test_c4_box_renderer_emits_box_with_stereotype_and_no_icon():
 
 
 def test_skin_renderers_c4_uses_box_for_every_role():
-    renderers = dc._skin_renderers("aws", ["serverless_fn", "object_store"], style="c4")
+    from rule_engine.layout.model import NodeSpec
+    nodes = [
+        NodeSpec(id="a", role="serverless_fn", lane="workers", region="", slot=0),
+        NodeSpec(id="b", role="object_store", lane="data", region="", slot=0),
+    ]
+    renderers = dc._skin_renderers("aws", nodes, style="c4")
     for role, render in renderers.items():
         node = Node(id="x", label="x", x=0, y=0, render=render)
         xml = render(node, "1")
@@ -39,7 +44,10 @@ def test_skin_renderers_c4_uses_box_for_every_role():
 
 def test_skin_renderers_icon_default_is_unchanged():
     # default style resolves provider glyphs (image shapes), not C4 boxes.
-    renderers = dc._skin_renderers("aws", ["serverless_fn"], style="icon")
-    node = Node(id="x", label="x", x=0, y=0, render=renderers["serverless_fn"])
-    xml = renderers["serverless_fn"](node, "1")
+    from rule_engine.layout.model import NodeSpec
+    nodes = [NodeSpec(id="a", role="serverless_fn", lane="workers", region="", slot=0)]
+    renderers = dc._skin_renderers("aws", nodes, style="icon")
+    key = dc._renderer_key("serverless_fn", None)
+    node = Node(id="x", label="x", x=0, y=0, render=renderers[key])
+    xml = renderers[key](node, "1")
     assert "image=" in xml and "[Container:" not in xml

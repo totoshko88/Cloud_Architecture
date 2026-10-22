@@ -168,29 +168,43 @@ def _label_of(node_spec) -> str:
     return label
 
 
-def _skin_renderers(provider: str, roles: Sequence[str], style: str = "icon") -> Dict[str, Any]:
-    """Resolve one icon renderer per distinct ``role`` used, via the mappings.
+def _renderer_key(role: str, node_provider: Optional[str]) -> str:
+    """Key a renderer by role, or by role@provider for a foreign-profile node
+    (1.11.0 WS3). A node with no provider override keys by its bare role, so
+    every existing diagram's renderer map is byte-identical."""
+    return role if not node_provider else f"{role}@{node_provider}"
 
-    ``style='icon'`` (default) resolves each role to its provider glyph via the
-    committed mapping — fail-honest (raises :class:`DrawError` naming the role)
-    rather than drawing a look-alike. ``style='c4'`` (1.11.0 WS4) ignores the
-    provider icon and returns a C4 box renderer per role (``[Container: role]``),
-    so a C4 diagram reads as boxes with no cloud glyphs.
+
+def _skin_renderers(primary: str, nodes, style: str = "icon") -> Dict[str, Any]:
+    """Resolve one renderer per (role, effective-provider) used, via the mappings.
+
+    ``nodes`` is the spec's node sequence (each carries ``role`` and an optional
+    ``provider`` override). A node's effective provider is ``node.provider or
+    primary`` (1.11.0 WS3): a Kubernetes workload inside an AWS diagram resolves
+    its k8s glyph while every un-overridden node resolves the AWS glyph.
+
+    ``style='icon'`` (default) resolves each (role, provider) to its glyph via
+    the committed mapping — fail-honest (raises :class:`DrawError` naming the
+    role) rather than drawing a look-alike. ``style='c4'`` ignores the icon and
+    returns a C4 box renderer per role.
     """
     renderers: Dict[str, Any] = {}
-    for role in sorted(set(roles)):
-        if role in renderers:
+    for n in nodes:
+        role = n.role
+        eff_provider = getattr(n, "provider", None) or primary
+        key = _renderer_key(role, getattr(n, "provider", None))
+        if key in renderers:
             continue
         if style == "c4":
-            renderers[role] = _c4_box_renderer(role)
+            renderers[key] = _c4_box_renderer(role)
             continue
         try:
-            resolved = resolve_icon(role, provider)
+            resolved = resolve_icon(role, eff_provider)
         except IconResolverError as exc:
             raise DrawError(
-                f"no icon for role {role!r} under provider {provider!r}: {exc}"
+                f"no icon for role {role!r} under provider {eff_provider!r}: {exc}"
             ) from exc
-        renderers[role] = _node_renderer(resolved["style_string"])
+        renderers[key] = _node_renderer(resolved["style_string"])
     return renderers
 
 
@@ -253,6 +267,7 @@ def _container_style(kind: str, provider: str) -> str:
 
 def _nodes_from(placed: PlacedDiagram, renderers: Dict[str, Any]) -> List[Node]:
     role_of = {n.id: n.role for n in placed.spec.nodes}
+    provider_of = {n.id: getattr(n, "provider", None) for n in placed.spec.nodes}
     overlay_of = {n.id: getattr(n, "overlay", None) for n in placed.spec.nodes}
     label_of = {n.id: _label_of(n) for n in placed.spec.nodes}
     return [
@@ -261,7 +276,7 @@ def _nodes_from(placed: PlacedDiagram, renderers: Dict[str, Any]) -> List[Node]:
             label=label_of[n.id],
             x=int(placed.nodes[n.id].x),
             y=int(placed.nodes[n.id].y),
-            render=renderers[role_of[n.id]],
+            render=renderers[_renderer_key(role_of[n.id], provider_of[n.id])],
             overlay=overlay_of[n.id],
         )
         for n in placed.spec.nodes
@@ -375,7 +390,7 @@ def build_drawio(
     for warning in placed.layout_warnings:
         print(f"rule-engine-draw: layout WARNING: {warning}", file=sys.stderr)
 
-    renderers = _skin_renderers(provider, [n.role for n in spec.nodes], style=style)
+    renderers = _skin_renderers(provider, spec.nodes, style=style)
     nodes = _nodes_from(placed, renderers)
     edges = _edges_from(placed)
 
