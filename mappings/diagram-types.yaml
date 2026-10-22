@@ -1,0 +1,40 @@
+# Data-defined diagram-type profiles (1.11.0 WS6, Requirement 6 AC1).
+#
+# Each profile names how a user-facing `diagram_type` maps onto an engine lint
+# `base_class` plus type-scoped knobs the generator and linter read, WITHOUT a
+# code edit per type. A profile is DESCRIPTIVE: it does not override the class a
+# diagram declares (`diagram_class` still wins); it supplies defaults and the
+# lint profile the type carries. Absent / unknown `diagram_type` => no profile
+# is applied and behaviour is exactly 1.10.12 (byte-inert).
+#
+# Fields:
+#   base_class          lint class the type belongs to (flow | landscape).
+#   node_cap            soft node budget for the type (null = class default).
+#   axis               preferred layout axis (left-right | top-bottom | null).
+#   allowed_roles       roles the type expects to see (advisory; [] = any).
+#   special_containers  container kinds the type introduces (leaf boundaries).
+#   lint_profile        named lint profile the linter scopes on for the type.
+
+version: 1
+profiles:
+  network:
+    base_class: landscape
+    node_cap: null
+    axis: left-right
+    allowed_roles:
+      - network_boundary
+      - vpc
+      - transit_gateway
+      - vpn_gateway
+      - direct_connect
+      - route_table
+      - network_firewall
+      - nat_gateway
+      - internet_gateway
+      - vpc_endpoint
+      - vpc_peering
+      - lb
+      - compute_instance
+    special_containers:
+      - security_group
+    lint_profile: network
