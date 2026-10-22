@@ -113,6 +113,12 @@ ROLE_SCOPE: Dict[str, str] = {
     "vpc": "network", "nat_gateway": "network",
     "internet_gateway": "network", "vpc_endpoint": "network",
     "vpc_peering": "network", "batch": "network",
+    # 1.11.0 WS6 network diagram type — gateways/plumbing live at the VPC edge,
+    # route table and firewall inside it; all network-scoped. Extended roles
+    # only (never added to constants.RESOURCE_TYPES; the 16-value core holds).
+    "transit_gateway": "network", "vpn_gateway": "network",
+    "direct_connect": "network", "route_table": "network",
+    "network_firewall": "network",
     # regional managed services
     "object_store": "regional", "obj": "regional",
     "message_queue": "regional", "queue": "regional",

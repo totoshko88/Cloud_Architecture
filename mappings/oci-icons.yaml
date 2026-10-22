@@ -39,6 +39,33 @@ resources:
     brand_hex: "#F80000"
     stencil: "assets/vendor/oci-stencils/stencils.json#object-storage"  # Storage - Object Storage
     style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans,Helvetica,Arial,sans-serif;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  # --- 1.11.0 WS6: network diagram-type roles (extended roles only; not in
+  # constants.RESOURCE_TYPES). OCI stencils keyed in stencils.json. ----------
+  transit_gateway:
+    icon_id: oci.transit_gateway
+    brand_hex: "#F80000"
+    stencil: "assets/vendor/oci-stencils/stencils.json#dynamic-routing-gateway-drg"  # Networking - Dynamic Routing Gateway (DRG)
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans,Helvetica,Arial,sans-serif;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  vpn_gateway:
+    icon_id: oci.vpn_gateway
+    brand_hex: "#F80000"
+    stencil: "assets/vendor/oci-stencils/stencils.json#special-connectors-site-to-site-vpn-vertical"  # Networking - Site-to-Site VPN
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans,Helvetica,Arial,sans-serif;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  direct_connect:
+    icon_id: oci.direct_connect
+    brand_hex: "#F80000"
+    stencil: "assets/vendor/oci-stencils/stencils.json#special-connectors-fastconnect-vertical"  # Networking - FastConnect
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans,Helvetica,Arial,sans-serif;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  route_table:
+    icon_id: oci.route_table
+    brand_hex: "#F80000"
+    stencil: "assets/vendor/oci-stencils/stencils.json#route-table"  # Networking - Route Table
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans,Helvetica,Arial,sans-serif;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
+  network_firewall:
+    icon_id: oci.network_firewall
+    brand_hex: "#F80000"
+    stencil: "assets/vendor/oci-stencils/stencils.json#firewall"  # Networking - Firewall
+    style: "rounded=0;whiteSpace=wrap;html=1;fontFamily=Oracle Sans,Helvetica,Arial,sans-serif;fillColor=#FFFFFF;strokeColor=#F80000;fontColor=#312D2A;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center"
   managed_sql:
     icon_id: oci.managed_sql
     brand_hex: "#F80000"

@@ -319,6 +319,35 @@ resources:
     brand_hex: "#8C4FFF"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_Networking-Content-Delivery/Res_Amazon-VPC_Peering-Connection_48.svg"
 
+  # --- 1.11.0 WS6: network diagram-type roles (extended roles only; not in
+  # constants.RESOURCE_TYPES). All AWS networking purple #8C4FFF; Network
+  # Firewall is a Security-Identity service (brand #DD344C). ------------------
+  transit_gateway:           # AWS Transit Gateway (architecture icon)
+    icon_id: aws.arch.transit_gateway
+    icon_provenance: architecture
+    brand_hex: "#8C4FFF"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Networking-Content-Delivery/48/Arch_AWS-Transit-Gateway_48.svg"
+  vpn_gateway:               # VPC VPN Gateway (resource icon)
+    icon_id: aws.res.vpn_gateway
+    icon_provenance: resource
+    brand_hex: "#8C4FFF"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_Networking-Content-Delivery/Res_Amazon-VPC_VPN-Gateway_48.svg"
+  direct_connect:            # AWS Direct Connect (architecture icon)
+    icon_id: aws.arch.direct_connect
+    icon_provenance: architecture
+    brand_hex: "#8C4FFF"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Networking-Content-Delivery/48/Arch_AWS-Direct-Connect_48.svg"
+  route_table:               # VPC Route Table (resource icon)
+    icon_id: aws.res.route_table
+    icon_provenance: resource
+    brand_hex: "#8C4FFF"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_Networking-Content-Delivery/Res_Amazon-Route-53_Route-Table_48.svg"
+  network_firewall:          # AWS Network Firewall (architecture icon)
+    icon_id: aws.arch.network_firewall
+    icon_provenance: architecture
+    brand_hex: "#DD344C"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Security-Identity/48/Arch_AWS-Network-Firewall_48.svg"
+
   # --- External / third-party systems (Theme 1) ---
   # Vendor-neutral node for an EXTERNAL (non-AWS) system — neutral dashed box,
   # drawn OUTSIDE every cloud boundary. No AWS brand (it is not an AWS service).

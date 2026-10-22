@@ -109,6 +109,36 @@ resources:
     icon_provenance: category
     brand_hex: "#4285F4"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg"
+
+  # --- 1.11.0 WS6: network diagram-type roles (extended roles only; not in
+  # constants.RESOURCE_TYPES). GCP ships no flagship glyph for these, so they
+  # resolve to the Networking product-category icon (the documented fallback),
+  # except network_firewall -> Security Identity category. ------------------
+  transit_gateway:
+    icon_id: gcp-category.transit_gateway
+    icon_provenance: category
+    brand_hex: "#4285F4"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg"
+  vpn_gateway:
+    icon_id: gcp-category.vpn_gateway
+    icon_provenance: category
+    brand_hex: "#4285F4"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg"
+  direct_connect:
+    icon_id: gcp-category.direct_connect
+    icon_provenance: category
+    brand_hex: "#4285F4"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg"
+  route_table:
+    icon_id: gcp-category.route_table
+    icon_provenance: category
+    brand_hex: "#4285F4"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg"
+  network_firewall:
+    icon_id: gcp-category.network_firewall
+    icon_provenance: category
+    brand_hex: "#4285F4"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg"
   cache:
     icon_id: gcp-category.cache
     icon_provenance: category

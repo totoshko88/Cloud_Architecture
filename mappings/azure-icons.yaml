@@ -82,6 +82,30 @@ resources:
     icon_id: azure2.firewalls
     brand_hex: "#0078D4"
     style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/networking/Firewalls.svg"
+
+  # --- 1.11.0 WS6: network diagram-type roles (extended roles only; not in
+  # constants.RESOURCE_TYPES). Azure networking blue #0078D4, built-in azure2
+  # shapes. ------------------------------------------------------------------
+  transit_gateway:
+    icon_id: azure2.virtual_wans
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/networking/Virtual_WANs.svg"
+  vpn_gateway:
+    icon_id: azure2.virtual_network_gateways
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/networking/Virtual_Network_Gateways.svg"
+  direct_connect:
+    icon_id: azure2.expressroute_circuits
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/networking/ExpressRoute_Circuits.svg"
+  route_table:
+    icon_id: azure2.route_tables
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/networking/Route_Tables.svg"
+  network_firewall:
+    icon_id: azure2.firewalls
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/networking/Firewalls.svg"
   api_gateway:
     icon_id: azure2.api_management_services
     brand_hex: "#0078D4"
