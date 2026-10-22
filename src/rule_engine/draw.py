@@ -381,7 +381,7 @@ def spec_from_snapshot(
         )
     # 1.11.0 WS4: C4 type names reuse an existing flow geometry; the C4 LOOK is
     # applied by --style c4 at render time, not by a different spec shape.
-    diagram_type = {"c4-context": "context", "c4-container": "summary"}.get(
+    diagram_type = {"c4-context": "context", "c4-container": "c4-container"}.get(
         diagram_type, diagram_type
     )
 
@@ -408,6 +408,15 @@ def spec_from_snapshot(
     # the per-lane subset-and-slot assembly below.
     if diagram_type == "context":
         return _context_spec(provider, boundary_id, region, resolved, relationships)
+
+    # 1.11.0 WS4: C4 Container view — one level inside the system box. In-cloud
+    # resources become NEUTRAL container boxes (no provider icon) grouped in a
+    # single system boundary, external actors around them. Built separately for
+    # the same reason as Context.
+    if diagram_type == "c4-container":
+        return _c4_container_spec(
+            provider, boundary_id, region, resolved, relationships
+        )
 
     # Stable ordering: sort every resolved resource by (lane index, identity) so
     # slot assignment is deterministic and independent of file/dict order.
@@ -583,6 +592,117 @@ def _context_spec(
         containers=(),  # C4 Context does not open the system box
         flow_lines=(),
         title=f"{provider} context — {boundary_id} / {region}",
+    )
+
+
+def _c4_container_spec(
+    provider: str,
+    boundary_id: str,
+    region: str,
+    resolved: Sequence[Tuple[Any, str]],
+    relationships: Optional[Sequence[Mapping[str, Any]]],
+) -> "DiagramSpec":
+    """Build a C4 **Container** spec (1.11.0 WS4): one level inside the system.
+
+    Where C4 Context (``_context_spec``) draws the whole cloud as ONE black box,
+    the Container view opens that box exactly one level: every in-cloud resource
+    becomes a NEUTRAL container box — the ``external_system`` presentation role,
+    so **no provider icon** stands in for it (C4 is implementation-agnostic) —
+    nested inside a single system boundary, with the external actors / consumers
+    drawn around it (same external-lane rule as Context). The ``style=c4`` box
+    renderer then paints each as a labelled box with ``[Container: role]``.
+
+    ``flow`` class, left→right axis. In-cloud boxes are capped at the flow node
+    budget (a Container view is a summary, not an inventory); the companion
+    carries ``diagram_type: c4-container`` (``_CLASS_OF`` → ``flow``). Byte-inert
+    for every non-C4 type — this path is only reached for ``c4-container``.
+    """
+    try:
+        from rule_engine.layout.base import EXTERNAL_LANES
+    except ImportError:  # pragma: no cover - flat-module fallback
+        from layout.base import EXTERNAL_LANES  # type: ignore[no-redef]
+
+    lane_names = _lane_order()
+    lane_rank = {name: i for i, name in enumerate(lane_names)}
+    ordered = sorted(
+        resolved,
+        key=lambda pair: (
+            lane_rank.get(lane_of(pair[1]), len(lane_names)),
+            _resource_identity(pair[0]),
+        ),
+    )
+
+    SYSTEM_BOUNDARY = "system-boundary"
+    nodes: List[NodeSpec] = []
+    slot_by_lane: Dict[str, int] = {}
+    used_ids: Dict[str, int] = {}
+    # A resource-identity slug → node id map, so a relationship naming a raw
+    # identity still connects after the per-lane slot assignment.
+    id_by_slug: Dict[str, str] = {}
+    # External actors stay outside the system boundary; in-cloud resources become
+    # neutral container boxes nested inside it. Both carry the neutral
+    # ``external_system`` role so no provider glyph is emitted.
+    in_cloud_count = 0
+    for resource, role in ordered:
+        lane = lane_of(role)
+        is_external = lane in EXTERNAL_LANES
+        if not is_external:
+            if in_cloud_count >= _FLOW_NODE_BUDGET:
+                continue  # a Container view is a summary, not an inventory
+            in_cloud_count += 1
+        base_id = _slug(_resource_identity(resource))
+        node_id = base_id
+        if node_id in used_ids:
+            used_ids[base_id] += 1
+            node_id = f"{base_id}-{used_ids[base_id]}"
+        else:
+            used_ids[base_id] = 0
+        id_by_slug.setdefault(base_id, node_id)
+        slot = slot_by_lane.get(lane, 0)
+        slot_by_lane[lane] = slot + 1
+        nodes.append(
+            NodeSpec(
+                id=node_id,
+                # C4 is implementation-agnostic: every box is the neutral
+                # presentation role, never the resource's provider role.
+                role=_CONTEXT_SYSTEM_ROLE,
+                lane=lane,
+                region="",
+                slot=slot,
+                # In-cloud boxes nest in the system boundary; actors do not.
+                sub=0,
+                container=None if is_external else SYSTEM_BOUNDARY,
+            )
+        )
+
+    node_ids = {n.id for n in nodes}
+    edges = _edges_from_relationships(relationships, node_ids)
+
+    # One system boundary that holds the container boxes. It must be a MEMBERSHIP
+    # container (a region kind — ``vpc``), not the ``account`` envelope: the spec
+    # validator only lets a node belong to a region container, never the account
+    # box. C4 names the system, so the boundary is labelled as the system, not a
+    # cloud account.
+    containers: Tuple[ContainerSpec, ...] = (
+        ContainerSpec(
+            id=SYSTEM_BOUNDARY,
+            kind="vpc",
+            region="",
+            parent=None,
+            label_key="account",
+        ),
+    )
+
+    diagram_id = f"{provider}-{_slug(boundary_id)}-c4-container"
+    return DiagramSpec(
+        diagram_id=diagram_id,
+        diagram_name=diagram_id,
+        axis="left-right",
+        nodes=tuple(nodes),
+        edges=edges,
+        containers=containers,
+        flow_lines=(),
+        title=f"{provider} container — {boundary_id} / {region}",
     )
 
 

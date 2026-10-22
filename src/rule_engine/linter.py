@@ -378,6 +378,22 @@ _EXTRA_NONPUBLIC_RANGES = tuple(
 # class, make a diagram a Network_Diagram for the ``ip-range`` rule (R3.3).
 _NETWORK_DIAGRAM_TYPES = frozenset({"network", "infrastructure", "deployment"})
 
+# 1.11.0 WS4: the C4 diagram types render NEUTRAL boxes (no provider icon) under
+# ``style=c4`` — C4 is implementation-agnostic. The provider-icon rules
+# (``icon-resolved``, ``container-style``) are therefore suppressed for them:
+# there is no provider glyph to resolve and no provider container colour to
+# match. Any other type is unaffected (byte-inert).
+_C4_DIAGRAM_TYPES = frozenset({"c4-context", "c4-container"})
+
+
+def _is_c4_diagram(a: Artifact) -> bool:
+    """True when ``a`` is a C4 diagram (``c4-context`` / ``c4-container``).
+
+    C4 boxes are neutral (no provider icon), so the provider-icon lint rules do
+    not apply. Recognised from the companion ``diagram_type``; a type outside the
+    C4 set returns False and leaves every rule exactly as before."""
+    return (a.diagram_type or "").strip().lower() in _C4_DIAGRAM_TYPES
+
 # Conservative IPv4 / IPv6 literal matcher used to pull candidate addresses out
 # of on-diagram text. A match that does not parse under ``ipaddress`` is ignored
 # (never a finding), so prose that merely looks address-like is not mis-flagged.
@@ -988,6 +1004,9 @@ def _check_icon_resolved(a: Artifact):
     """
     if not _is_diagram(a):
         return False
+    # 1.11.0 WS4: C4 boxes carry no provider icon — nothing to resolve.
+    if _is_c4_diagram(a):
+        return False
 
     hits: List[RuleHit] = []
 
@@ -1326,6 +1345,10 @@ def _check_container_style(a: Artifact):
     ``strokeColor`` / ``fontColor`` differ from the declared style is a finding.
     An unrecognised container is skipped (``geometry.check_container_style``).
     """
+    # 1.11.0 WS4: a C4 container is a neutral box, not a provider boundary —
+    # there is no declared provider colour to match it against.
+    if _is_c4_diagram(a):
+        return False
     geo = _geometry_of(a)
     if geo is None or not getattr(geo, "container_styles", None):
         return False

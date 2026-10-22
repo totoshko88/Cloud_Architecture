@@ -144,12 +144,15 @@ workstream to ship; property tests name the design property they validate.
     - _Requirements: 4.3_
     - _Partial: `_c4_box_renderer` (box + `[Container: role]`, no provider glyph)
       done (`1149128`); dashed labelled relationship edges deferred._
-  - [ ] 6.3 Write `_c4_container_spec` modelled on `_context_spec`.
+  - [x] 6.3 Write `_c4_container_spec` modelled on `_context_spec`.
     - _Requirements: 4.1_
-    - _Deferred (type currently normalises to `summary`)._
-  - [ ] 6.4 Suppress provider-icon rules for C4 diagram types in the linter.
+    - _Done: `_c4_container_spec` — neutral boxes (no provider icon) nested in a
+      single `vpc`-kind system boundary, external actors around them, capped at
+      the flow budget; `c4-container` routes to it instead of `summary`._
+  - [x] 6.4 Suppress provider-icon rules for C4 diagram types in the linter.
     - _Requirements: 4.6_
-    - _Deferred._
+    - _Done: `_is_c4_diagram` gates `icon-resolved` and `container-style` off for
+      `c4-context` / `c4-container`; non-C4 types byte-inert._
   - [ ] 6.5 Add a `c4-context` + `c4-container` golden (aws + cross-cloud);
     confirm `style=icon` byte-inert.
     - _Requirements: 4.4, 4.7_
