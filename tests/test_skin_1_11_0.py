@@ -73,3 +73,33 @@ def test_marker_badge_none_is_byte_inert_default():
     # change nothing in the edge cell today.
     base = dl.edge_cell(_edge())
     assert dl.edge_cell(_edge(), skin=dl.Skin(marker_badge="none")) == base
+
+
+def test_marker_badge_circle_renders_disc_and_square_box():
+    circ = dl.edge_cell(_edge(), skin=dl.Skin(marker_badge="circle"))
+    sq = dl.edge_cell(_edge(), skin=dl.Skin(marker_badge="square"))
+    assert "border-radius:50%" in circ and "background:#1A1A1A" in circ
+    assert "border-radius:3px" in sq
+
+
+def test_marker_badge_label_still_reads_as_a_digit():
+    """The badge wraps the number in HTML; the drawio parser strips HTML, so the
+    marker is still detected (node-count, marker-* rules keep working)."""
+    import re
+    from html import unescape
+
+    circ = dl.edge_cell(_edge(), skin=dl.Skin(marker_badge="circle"))
+    val = re.search(r'value="([^"]*)"', circ).group(1)
+    text = re.sub(r"<[^>]+>", "", unescape(val)).strip()
+    assert text == "1" and text.isdigit()
+
+
+def test_marker_badge_does_not_move_the_edge_geometry():
+    e = _edge(points=((120.0, 200.0), (120.0, 360.0)))
+    base = dl.edge_cell(e)
+    badged = dl.edge_cell(e, skin=dl.Skin(marker_badge="circle"))
+    pts = lambda s: re.findall(r'<mxPoint x="([-\d.]+)" y="([-\d.]+)"', s)
+    assert pts(base) == pts(badged)
+    for tok in ("exitX=1.0", "entryX=0.0"):
+        assert tok in base and tok in badged
+

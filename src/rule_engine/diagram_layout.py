@@ -1037,6 +1037,34 @@ def _orthogonalised(
     return out
 
 
+def _marker_value(marker: str, skin: "Skin | None") -> str:
+    """The edge-label value for a numbered marker.
+
+    ``marker_badge='none'`` (default) → the bare escaped number, byte-identical
+    to 1.10.12. ``circle``/``square`` wrap the number in an HTML label that
+    draws a filled badge with a white numeral BESIDE the line (an edge label is
+    offset from the stroke, not painted on it). Crucially the badge keeps the
+    number as the edge's LABEL: the parser strips HTML (`drawio_model` label
+    decoding), so ``label.strip().isdigit()`` still holds and every marker check
+    (``marker-label-collision``, ``marker-collision``, the hygiene pass) sees the
+    marker at the same ``label_pos`` anchor — no geometry is re-pointed, and the
+    badge is a pure presentation wrapper around the existing marker label."""
+    esc = _xml_escape(marker)
+    if skin is None or skin.marker_badge in ("none", "", None):
+        return esc
+    radius = "50%" if skin.marker_badge == "circle" else "3px"
+    # Inline-styled span: filled dark disc/box, white bold numeral. Single
+    # quotes inside so the double-quoted XML attribute stays well-formed; the
+    # whole value is XML-escaped (& < >) by wrapping the pre-built markup.
+    span = (
+        "&lt;span style='display:inline-block;min-width:16px;height:16px;"
+        "line-height:16px;padding:0 2px;border-radius:" + radius + ";"
+        "background:#1A1A1A;color:#FFFFFF;font-weight:bold;text-align:center;"
+        "font-size:11px'&gt;" + esc + "&lt;/span&gt;"
+    )
+    return span
+
+
 def edge_cell(e: Edge, parent: str = "1", origin: Tuple[float, float] = (0, 0),
               skin: "Skin | None" = None) -> str:
     """Emit one edge cell. ``parent`` / ``origin``: the cell the edge is a child
@@ -1074,7 +1102,7 @@ def edge_cell(e: Edge, parent: str = "1", origin: Tuple[float, float] = (0, 0),
         "fontSize=12;fontStyle=1"
     )
     head = (
-        f'        <mxCell id="{e.id}" value="{_xml_escape(e.marker)}" style="{style}" '
+        f'        <mxCell id="{e.id}" value="{_marker_value(e.marker, skin)}" style="{style}" '
         f'edge="1" parent="{parent}" source="{e.source}" target="{e.target}">\n'
     )
     if e.points:
