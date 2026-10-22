@@ -330,6 +330,24 @@ roles:
     azure: "Firewalls"
     gcp_category: "Security Identity"
     oci: "firewall"
+  # --- 1.11.0 WS7 access diagram type (principal / policy / resource) --------
+  # Identity/IAM across the four providers. Extended roles only (the 16-value
+  # core invariant holds). GCP falls back to the Security Identity category.
+  principal:
+    aws: "IAM Role"
+    azure: "Managed Identities"
+    gcp_category: "Security Identity"
+    oci: "user"
+  policy:
+    aws: "Permissions"
+    azure: "Policy"
+    gcp_category: "Security Identity"
+    oci: "iam-identity-and-access-management"
+  resource:
+    aws: "Generic Application"
+    azure: "All Resources"
+    gcp_category: "Security Identity"
+    oci: "resource-manager"
   # --- WS9 icon-coverage fill-in (1.11.0) ------------------------------------
   # Common services that had an official icon in every indexed pack but no role,
   # so the render path raised DrawError. Each is an EXTENDED role (the 16-value

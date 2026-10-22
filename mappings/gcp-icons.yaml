@@ -139,6 +139,25 @@ resources:
     icon_provenance: category
     brand_hex: "#4285F4"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg"
+  # --- 1.11.0 WS7 access diagram type: principal / policy / resource ---
+  # GCP ships a minimal icon set, so the access roles fall back to the
+  # Security Identity CATEGORY glyph (the documented pattern — many roles to one
+  # category icon, as network_firewall already does). Extended roles only.
+  principal:
+    icon_id: gcp-category.principal
+    icon_provenance: category
+    brand_hex: "#4285F4"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg"
+  policy:
+    icon_id: gcp-category.policy
+    icon_provenance: category
+    brand_hex: "#4285F4"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg"
+  resource:
+    icon_id: gcp-category.resource
+    icon_provenance: category
+    brand_hex: "#4285F4"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg"
   cache:
     icon_id: gcp-category.cache
     icon_provenance: category

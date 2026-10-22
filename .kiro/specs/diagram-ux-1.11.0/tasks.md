@@ -222,13 +222,15 @@ workstream to ship; property tests name the design property they validate.
       axis=left-right, node_cap=12, lint_profile=access) + a new
       `aggregation_key` field on `TypeProfile` (=`principal`), parsed by the
       reader; `network.aggregation_key` stays `None`. Byte-inert._
-  - [-] 8.2 Add extended roles `principal`, `policy`, `resource`,
+  - [x] 8.2 Add extended roles `principal`, `policy`, `resource`,
     `trust_boundary`.
     - _Requirements: 7.2_
-    - _Partial: code side done — `principal`/`policy`/`resource` in `ROLE_SCOPE`
-      (global), `trust_boundary` a leaf-boundary `CONTAINER_KINDS` kind;
-      `RESOURCE_TYPES` unchanged. The per-provider icon mappings (×4 profiles)
-      and `roles.yaml` native types are the remaining asset side._
+    - _Done: `principal`/`policy`/`resource` in `ROLE_SCOPE` (global) + per-provider
+      icon mappings ×4 (all 12 resolve: AWS IAM Role/Permissions/generic-app,
+      Azure Managed-Identity/Policy/All-Resources, GCP Security-Identity category,
+      OCI User/IAM/Resource-Manager stencils) + `roles.yaml` native types +
+      icon-index rebuilt 73→76; `trust_boundary` a leaf-boundary `CONTAINER_KINDS`
+      kind. `RESOURCE_TYPES` unchanged; byte-inert._
   - [ ] 8.3 Add the `access-aggregation` lint rule (class-aware severity).
     - _Requirements: 7.3_
   - [ ] 8.4 Render `principal -> policy -> resource` left-to-right; ship an

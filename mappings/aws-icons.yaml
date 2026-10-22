@@ -348,6 +348,26 @@ resources:
     brand_hex: "#DD344C"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Security-Identity/48/Arch_AWS-Network-Firewall_48.svg"
 
+  # --- 1.11.0 WS7 access diagram type: principal / policy / resource ---
+  # IAM is the AWS access model: a principal is an IAM Role, a policy is an IAM
+  # Permissions document, and a resource is a neutral generic-application glyph
+  # (the thing a policy grants access to — role-agnostic). Extended roles only.
+  principal:                 # IAM Role (resource icon) — the access subject
+    icon_id: aws.res.iam_role
+    icon_provenance: resource
+    brand_hex: "#DD344C"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_Security-Identity/Res_AWS-Identity-Access-Management_Role_48.svg"
+  policy:                    # IAM Permissions (resource icon) — the grant
+    icon_id: aws.res.iam_permissions
+    icon_provenance: resource
+    brand_hex: "#DD344C"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_Security-Identity/Res_AWS-Identity-Access-Management_Permissions_48.svg"
+  resource:                  # generic application (resource icon) — the object
+    icon_id: aws.res.generic_application
+    icon_provenance: resource
+    brand_hex: "#232F3E"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_General-Icons/Res_48_Light/Res_Generic-Application_48_Light.svg"
+
   # --- External / third-party systems (Theme 1) ---
   # Vendor-neutral node for an EXTERNAL (non-AWS) system — neutral dashed box,
   # drawn OUTSIDE every cloud boundary. No AWS brand (it is not an AWS service).

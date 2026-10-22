@@ -1474,6 +1474,58 @@
         "source": "stencil"
       }
     },
+    "policy": {
+      "aws": {
+        "display_name": "Amazon Verified Permissions",
+        "note": "resolved 'Permissions'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Security-Identity/32/Arch_Amazon-Verified-Permissions_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Policy",
+        "note": "resolved 'Policy'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/management + governance/10316-icon-service-Policy.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "SecurityIdentity",
+        "note": "category icon (Security Identity) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "IAM Identity and Access Management",
+        "note": "resolved 'iam-identity-and-access-management'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#iam-identity-and-access-management",
+        "source": "stencil"
+      }
+    },
+    "principal": {
+      "aws": {
+        "display_name": "AWS Identity Access Management IAM Roles Anywhere",
+        "note": "resolved 'IAM Role'",
+        "ref": "assets/vendor/aws-icons/Resource-Icons_07312026/Res_Security-Identity/Res_AWS-Identity-Access-Management_IAM-Roles-Anywhere_48.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Managed Identities",
+        "note": "resolved 'Managed Identities'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/identity/10227-icon-service-Managed-Identities.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "SecurityIdentity",
+        "note": "category icon (Security Identity) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "User",
+        "note": "resolved 'user'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#user",
+        "source": "stencil"
+      }
+    },
     "rds_instance": {
       "aws": {
         "display_name": "Amazon Aurora Amazon RDS Instance",
@@ -1497,6 +1549,32 @@
         "display_name": "Autonomous DB",
         "note": "resolved 'autonomous-db'",
         "ref": "assets/vendor/oci-stencils/stencils.json#autonomous-db",
+        "source": "stencil"
+      }
+    },
+    "resource": {
+      "aws": {
+        "display_name": "Generic Application 48 Light",
+        "note": "resolved 'Generic Application'",
+        "ref": "assets/vendor/aws-icons/Resource-Icons_07312026/Res_General-Icons/Res_48_Light/Res_Generic-Application_48_Light.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "All Resources",
+        "note": "resolved 'All Resources'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/general/10001-icon-service-All-Resources.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "SecurityIdentity",
+        "note": "category icon (Security Identity) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Resource Manager",
+        "note": "resolved 'resource-manager'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#resource-manager",
         "source": "stencil"
       }
     },
