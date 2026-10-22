@@ -58,6 +58,7 @@ from rule_engine.diagram_layout import (
     overlay_suffix,
 )
 from rule_engine.draw import DrawError, SnapshotSplitRequired, spec_from_snapshot
+from rule_engine.layout.clarify import ClarifyRequired
 from rule_engine.icon_resolver import (
     IconResolverError,
     UnresolvedTypeError,
@@ -298,6 +299,8 @@ def build_drawio(
     diagram_type: str,
     basename: str,
     relationships: Optional[Sequence[Mapping[str, Any]]] = None,
+    assume: str = "auto",
+    assumption_sink: Optional[list] = None,
 ) -> str:
     """Build the ``.drawio`` text for a Snapshot (spec → layout → build_diagram).
 
@@ -305,13 +308,27 @@ def build_drawio(
     Snapshot, the skin is read from committed mappings, and the title carries a
     fixed date. Raises :class:`DrawError` / :class:`SnapshotSplitRequired` from
     the translator (an over-budget landscape emits no diagram).
+
+    ``assume`` (1.11.0 WS5) runs the clarify gate on the spec before layout:
+    ``ask`` / ``error`` raise :class:`ClarifyRequired` listing the assumptions;
+    ``auto`` (default) collects them into ``assumption_sink`` (when given) and
+    prints a one-line notice, then proceeds. The gate NEVER mutates the spec or
+    the geometry, so the ``.drawio`` output is byte-identical regardless of
+    policy — it only surfaces/records what the engine would assume.
     """
+    from rule_engine.layout.clarify import clarify_gate
+
     spec = spec_from_snapshot(snapshot_dir, provider, diagram_type, relationships)
     # 1.10.7: hand the engine the labels this skin will draw, so the Flow/Legend
     # clears a long slug caption that overhangs the rightmost icon.
     spec = dataclasses.replace(
         spec, node_labels=tuple((n.id, _label_of(n)) for n in spec.nodes)
     )
+    # 1.11.0 WS5: surface the spec's assumptions before drawing. Read-only.
+    _assumptions = clarify_gate(spec, assume, sink=assumption_sink)
+    if _assumptions and assume == "auto":
+        print(f"rule-engine-draw: {len(_assumptions)} assumption(s) recorded "
+              f"(see the companion Assumptions section)", file=sys.stderr)
     placed = layout(spec)
     # 1.10.7: a layout the repair loop could not make oracle-clean is returned
     # degraded rather than raised; say so (the exit code is unchanged — the
@@ -603,6 +620,7 @@ def generate(
     *,
     export: bool = True,
     drawio: str = "drawio",
+    assume: str = "auto",
 ) -> Dict[str, Any]:
     """Write the ``.drawio`` + companion (+ best-effort raster) for a Snapshot.
 
@@ -616,10 +634,19 @@ def generate(
     out_basename = Path(out_basename)
     basename = out_basename.name
 
+    _assumptions: list = []
     drawio_text = build_drawio(
-        snapshot_dir, provider, diagram_type, basename, relationships
+        snapshot_dir, provider, diagram_type, basename, relationships,
+        assume=assume, assumption_sink=_assumptions,
     )
     companion_text = build_companion(provider, diagram_type, basename)
+    # 1.11.0 WS5: record applied assumptions as a structured companion section.
+    # Appended only when non-empty, so a fully-specified spec leaves the
+    # companion byte-identical.
+    if _assumptions:
+        from rule_engine.layout.clarify import format_assumptions_markdown
+        companion_text = companion_text.rstrip("\n") + "\n\n" + \
+            format_assumptions_markdown(_assumptions) + "\n"
 
     out_basename.parent.mkdir(parents=True, exist_ok=True)
     drawio_path = out_basename.with_name(f"{basename}.drawio")
@@ -689,6 +716,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--drawio", default="drawio",
                     help="path to the draw.io CLI for raster export "
                     "(default: 'drawio' on PATH)")
+    ap.add_argument("--assume", default="auto", choices=("ask", "auto", "error"),
+                    help="clarify-gate policy (1.11.0 WS5): ask halts and lists "
+                    "the spec's assumptions; auto (default) records them and "
+                    "proceeds; error fails the build if any assumption exists")
     args = ap.parse_args(list(sys.argv[1:] if argv is None else argv))
 
     relationships: Optional[List[Mapping[str, Any]]] = None
@@ -708,6 +739,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             relationships,
             export=not args.no_export,
             drawio=args.drawio,
+            assume=args.assume,
         )
     except SnapshotSplitRequired as exc:
         print(f"rule-engine-draw: {exc}", file=sys.stderr)
@@ -715,6 +747,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     except DrawError as exc:
         print(f"rule-engine-draw: {exc}", file=sys.stderr)
         return 2
+    except ClarifyRequired as exc:
+        # 1.11.0 WS5: --assume ask/error halts before drawing and lists the
+        # spec's assumptions for the owner to resolve.
+        print(f"rule-engine-draw: {exc}", file=sys.stderr)
+        for a in exc.assumptions:
+            print(f"  - {a.kind.value} on {a.target_id}: {a.question} "
+                  f"[default: {a.default}]", file=sys.stderr)
+        return 3
 
     print(f"rule-engine-draw: wrote {result['drawio']}")
     print(f"rule-engine-draw: wrote {result['companion']}")
