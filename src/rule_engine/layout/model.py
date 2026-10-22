@@ -247,6 +247,19 @@ class DiagramSpec:
     #: right. ``"auto"`` (default) means ``"left"`` unless the automatic ordering
     #: finds that ``"right"`` removes back-edges. Not a coordinate.
     vpc_side: str = "auto"
+    #: 1.11.0 WS2: optional **logical groups** for a flow diagram — a tuple of
+    #: ``(label, (member_node_id, ...))`` pairs. Each draws one light-grey box
+    #: enclosing its named members plus a caption band, WITHOUT moving any member
+    #: node (presentation only — the engine reads no coordinate from it). Never
+    #: inferred: a group exists only when a spec declares it. ``()`` (default) ⇒
+    #: no group boxes, byte-identical to 1.10.12. The semi-automatic authoring
+    #: flow proposes a draft list the owner confirms before it is written here.
+    flow_groups: Tuple[Tuple[str, Tuple[str, ...]], ...] = ()
+    #: 1.11.0 WS2: where the numbered step descriptions render —
+    #: ``"box"`` (default) the in-canvas Flow box (1.10.12 behaviour),
+    #: ``"document"`` the companion ``.diagram.md`` only (no in-canvas box),
+    #: ``"panel"`` a full-height furniture strip. ``"box"`` ⇒ byte-identical.
+    flow_steps: str = "box"
 
 
 # ---------------------------------------------------------------------------

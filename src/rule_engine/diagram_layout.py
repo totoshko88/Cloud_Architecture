@@ -979,6 +979,48 @@ def boundary_cell(b: Boundary) -> str:
     )
 
 
+#: Light-grey logical-group box style (1.11.0 WS2): a named context group drawn
+#: BEHIND the nodes, caption top-left, no fill (so icons and edges show through).
+_FLOW_GROUP_STYLE = (
+    "rounded=1;whiteSpace=wrap;html=1;dashed=0;strokeColor=#9AA5B1;"
+    "fillColor=none;verticalAlign=top;align=left;fontColor=#5A6B7B;fontSize=12;"
+    "spacingLeft=6;spacingTop=4"
+)
+#: padding (px) from the member bbox to the group box edge, and the caption band.
+_FLOW_GROUP_PAD = 16
+_FLOW_GROUP_CAPTION = 22
+
+
+def flow_group_cells(
+    groups: Sequence[Tuple[str, Sequence[str]]], nodes: Sequence[Node],
+) -> str:
+    """Emit one grey box per logical group (1.11.0 WS2), sized to enclose its
+    named member nodes' footprints plus a caption band. Members not present are
+    skipped; a group with no present member draws nothing. Pure presentation —
+    no node is moved. Returns '' when ``groups`` is empty (byte-inert)."""
+    if not groups:
+        return ""
+    from rule_engine.geometry import caption_band
+    pos = {n.id: n for n in nodes}
+    out: List[str] = []
+    for gi, (label, members) in enumerate(groups):
+        boxes = [pos[m] for m in members if m in pos]
+        if not boxes:
+            continue
+        x0 = min(n.x for n in boxes) - _FLOW_GROUP_PAD
+        y0 = min(n.y for n in boxes) - _FLOW_GROUP_PAD - _FLOW_GROUP_CAPTION
+        x1 = max(n.x + ICON_SIZE for n in boxes) + _FLOW_GROUP_PAD
+        y1 = max(n.y + ICON_SIZE + caption_band(n.label) for n in boxes) + _FLOW_GROUP_PAD
+        out.append(
+            f'        <mxCell id="flowgroup-{gi}" value="{_xml_escape(label)}" '
+            f'style="{_FLOW_GROUP_STYLE}" vertex="1" parent="1">\n'
+            f'          <mxGeometry x="{int(x0)}" y="{int(y0)}" '
+            f'width="{int(x1 - x0)}" height="{int(y1 - y0)}" as="geometry" />\n'
+            "        </mxCell>\n"
+        )
+    return "".join(out)
+
+
 def _orthogonalised(
     edges: Sequence[Edge], nodes: Sequence[Node]
 ) -> List[Edge]:
@@ -1324,6 +1366,7 @@ def build_diagram(
     caption_safe: bool = True,
     caption_plan=None,
     skin: "Skin | None" = None,
+    flow_groups: Sequence[Tuple[str, Sequence[str]]] = (),
 ) -> str:
     """Assemble a full ``.drawio`` document from the standard building blocks.
 
@@ -1360,6 +1403,7 @@ def build_diagram(
         legend_lines=legend_lines, legend_mode=legend_mode,
         page_w=page_w, page_h=page_h,
         skin=skin,
+        flow_groups=flow_groups,
     )
     routed = _orthogonalised(edges, nodes)
     text = _assemble_document(routed=routed, **kwargs)
@@ -1596,6 +1640,7 @@ def _assemble_document(
     page_w: int,
     page_h: int,
     skin: "Skin | None" = None,
+    flow_groups: Sequence[Tuple[str, Sequence[str]]] = (),
 ) -> str:
     """Emit the ``.drawio`` document for already-routed edges (no hygiene)."""
     parts: List[str] = []
@@ -1630,6 +1675,11 @@ def _assemble_document(
     for b in _clear_container_captions(boundaries, nodes, routed):
         parts.append(boundary_cell(b))
     parts.append("\n")
+    # 1.11.0 WS2: light-grey logical-group boxes, drawn after boundaries and
+    # before nodes so icons/edges paint over them. No-op (byte-inert) when empty.
+    if flow_groups:
+        parts.append(flow_group_cells(flow_groups, nodes))
+        parts.append("\n")
     for e in routed:
         k = slots.get(e.id, -1)
         if k >= 0:
