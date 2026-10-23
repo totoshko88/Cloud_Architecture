@@ -35,7 +35,9 @@ from .model import DiagramSpec, PlacedDiagram
 
 try:  # package-relative import when used as ``rule_engine.layout``
     from .pipeline import layout
+    from .peering import materialize_peerings
 except ImportError:  # pragma: no cover - fallback for flat-module execution
     from layout.pipeline import layout  # type: ignore[no-redef]
+    from layout.peering import materialize_peerings  # type: ignore[no-redef]
 
-__all__ = ["layout", "DiagramSpec", "PlacedDiagram"]
+__all__ = ["layout", "DiagramSpec", "PlacedDiagram", "materialize_peerings"]

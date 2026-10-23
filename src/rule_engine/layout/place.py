@@ -645,7 +645,20 @@ def size_containers(
         if members and pitch and not child_containers.get(cid):
             xs = sorted({placed[i].x for i in members})
             left = _snap(xs[0] + ICON_SIZE / 2.0 - pitch / 2.0 - pad)
-            box = Box(cid, left, box.y, len(xs) * pitch + 2 * pad, box.h)
+            # Width is the slot-pitch grid (``len(xs) * pitch``) OR the actual
+            # member extent, whichever is WIDER, so the band box always encloses
+            # its rightmost member. A scored placement can spread a band's slots
+            # wider than the nominal pitch (SEP 09's ingress row: actorsbox 40,
+            # cloudfront 480, dns 700, atlas 920 — gaps of 440/220/220, not a
+            # uniform pitch), and a pitch-only width then clips the last node
+            # OUTSIDE its own box. An orphaned node (outside every container)
+            # trips ``container-padding`` against the account it x-overlaps, and
+            # the repair loop grows the account to "pad" it — stretching the
+            # account into the external bands (``container-overlap``). Enclosing
+            # the member keeps the node housed, so neither finding fires.
+            right_members = max(_snap(placed[i].x + ICON_SIZE) for i in members) + pad
+            width = max(len(xs) * pitch + 2 * pad, right_members - left)
+            box = Box(cid, left, box.y, width, box.h)
         if box.w < min_w.get(cid, 0):
             box = Box(cid, box.x, box.y, min_w[cid], box.h)
         boxes[cid] = box

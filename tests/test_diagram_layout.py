@@ -339,13 +339,19 @@ def test_build_diagram_uses_the_conditional_legend_by_default():
 def test_peering_edge_is_a_symmetric_headless_dashed_line():
     """A peering edge (VPC/VCN peering, cross-cloud peering) renders as a dashed
     line with NO arrowhead on either end, so it reads as an undirected
-    network-level relationship rather than a directional data-flow step."""
+    network-level relationship rather than a directional data-flow step.
+
+    1.11.0 (G23): the Theme-16 on-canvas ``peering`` marker word is removed — the
+    edge carries an EMPTY ``value`` (a peering is documented in the Flow
+    narrative, or materialized into a ``vpc_peering`` resource node). The STYLE
+    is unchanged (symmetric dashed, no heads)."""
     cell = dl.edge_cell(
         dl.Edge(id="px", source="a", target="b", marker="peering", peering=True)
     )
     assert "startArrow=none" in cell and "endArrow=none" in cell
     assert "dashed=1" in cell
-    assert 'value="peering"' in cell
+    assert 'value=""' in cell          # G23: no on-canvas 'peering' word
+    assert ">peering<" not in cell     # not painted anywhere on the line
     # A peering line passes arrow-style (none is an accepted head) and
     # edge-bidirectional (either-end-none ⇒ not double-headed).
     assert "endArrow=open" not in cell

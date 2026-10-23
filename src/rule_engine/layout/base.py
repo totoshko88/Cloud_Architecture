@@ -1692,14 +1692,23 @@ def _assign_nodes_to_leaves(
             assignment[n.container].append(n.id)
 
     # 1b. Account-level (region "") cloud services are wrapped by the account
-    #     envelope so it contains its own top edge row — except the genuinely
-    #     external actors / on-premises lanes, which stay outside every boundary.
+    #     envelope so it contains its own top edge row — except (i) the genuinely
+    #     external actors / on-premises lanes, which stay outside every boundary,
+    #     and (ii) a materialized ``vpc_peering`` resource node (G23), which is a
+    #     peering sitting BETWEEN two boundaries: it is placed region-less in the
+    #     lane between a cloud VPC source and an external peer, and must NOT be
+    #     wrapped by the account (doing so grows the account around it and makes
+    #     the VPC box overlap it — the G23 dense-case defect on the 08/10 network
+    #     diagrams). Keeping it container-free leaves it between the boundaries,
+    #     not inside either.
     if account_id is not None:
+        role_of = {n.id: n.role for n in spec.nodes}
         for n in spec.nodes:
             if (
                 n.region == ""
                 and n.container is None
                 and n.lane not in external_lanes
+                and role_of[n.id] != "vpc_peering"
             ):
                 assignment[account_id].append(n.id)
 

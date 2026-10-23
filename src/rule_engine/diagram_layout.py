@@ -279,8 +279,13 @@ class Edge:
     #: head would misstate it and a double head trips ``edge-bidirectional``.
     #: ``startArrow=none`` + ``endArrow=none`` passes both ``arrow-style`` (none
     #: is an accepted head) and ``edge-bidirectional`` (either end none → not
-    #: double-headed). The marker is a text label (e.g. ``peering``), not a
-    #: numeric flow step, so it never enters the flow-marker hygiene passes.
+    #: double-headed). **1.11.0 G23:** a peering edge emits an EMPTY on-canvas
+    #: value — the Theme-16 marker word (``peering``) is no longer painted on the
+    #: line (out of standard); a peering is documented in the Flow narrative, or
+    #: materialized into a ``vpc_peering`` resource node on a network topology
+    #: view (:mod:`rule_engine.layout.peering`). The marker is still carried on
+    #: the spec (never a numeric flow step), so it never enters the flow-marker
+    #: hygiene passes.
     peering: bool = False
     exit: Tuple[float, float] = (1.0, 0.5)
     entry: Tuple[float, float] = (0.0, 0.5)
@@ -1091,6 +1096,15 @@ def _marker_value(marker: str, skin: "Skin | None") -> str:
     (``marker-label-collision``, ``marker-collision``, the hygiene pass) sees the
     marker at the same ``label_pos`` anchor — no geometry is re-pointed, and the
     badge is a pure presentation wrapper around the existing marker label."""
+    # An empty / blank marker has no number to show, so it must render as
+    # NOTHING — never a badge disc. G23 (1.11.0): the two legs of a materialized
+    # vpc_peering node (and any peering leg) carry an empty marker; with a
+    # geometry-bearing badge skin (``circle``/``square``) a blank marker would
+    # otherwise draw a meaningless empty dark disc on each leg before/after the
+    # VPC Peering icon. Returning "" here suppresses the badge for every
+    # empty-marker edge, so a peering leg is a clean line into the icon.
+    if marker is None or str(marker).strip() == "":
+        return ""
     esc = _xml_escape(marker)
     if skin is None or skin.marker_badge in ("none", "", None):
         return esc
@@ -1143,8 +1157,15 @@ def edge_cell(e: Edge, parent: str = "1", origin: Tuple[float, float] = (0, 0),
         f"entryX={nx};entryY={ny};entryDx=0;entryDy=0;"
         "fontSize=12;fontStyle=1"
     )
+    # G23 (1.11.0): a peering edge keeps its symmetric dashed no-arrow STYLE but
+    # prints NO on-canvas word. Theme 16 drew the marker text ("peering") on the
+    # line; that is out of standard — a peering is documented in the Flow
+    # narrative (or, on a network topology view, materialized as a vpc_peering
+    # resource node, see layout.peering). So emit an empty value when
+    # peering=True; every non-peering edge keeps its numbered marker verbatim.
+    value = "" if e.peering else _marker_value(e.marker, skin)
     head = (
-        f'        <mxCell id="{e.id}" value="{_marker_value(e.marker, skin)}" style="{style}" '
+        f'        <mxCell id="{e.id}" value="{value}" style="{style}" '
         f'edge="1" parent="{parent}" source="{e.source}" target="{e.target}">\n'
     )
     if e.points:
