@@ -17,12 +17,31 @@ Three mechanisms, each pinned here on a small synthetic diagram:
 from __future__ import annotations
 
 import re
+from contextlib import contextmanager
 
+from rule_engine import caption_routing as _cr
 from rule_engine import diagram_layout as dl
 from rule_engine import geometry as geo
 from rule_engine.cli import parse_artifacts
 from rule_engine.drawio_model import parse_drawio
 from rule_engine.linter import lint
+
+
+@contextmanager
+def _corner_exit_fallback():
+    """Enable the pre-1.11.0 corner-exit (D) / caption-wrap fallback.
+
+    ENG-R1 (1.11.0, REVIEW.md G25) turns the corner-exit fallback OFF by
+    default — an overloaded bottom exit keeps its ``exit-thirds`` band and is
+    masked by its caption (ENG-R2) instead of being pushed into a corner. The
+    two legacy-behaviour tests below opt the fallback back ON to pin that the
+    corner-band / caption-wrap machinery still works when enabled."""
+    prev = _cr._CORNER_EXIT_FALLBACK[0]
+    _cr._CORNER_EXIT_FALLBACK[0] = True
+    try:
+        yield
+    finally:
+        _cr._CORNER_EXIT_FALLBACK[0] = prev
 
 _ICON = dl.builtin_icon(
     "shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;"
@@ -100,9 +119,7 @@ def test_edge_touching_a_filled_boundary_is_its_first_child():
     assert geo.edge_polyline(g, g.edges[0])[0] == (240.0, 278.0)
 
 
-def test_overloaded_source_uses_a_corner_band_outside_the_text():
-    """Three right exits are taken, so ``exit-thirds`` leaves the bottom face;
-    the short name ("hub", 21px) leaves a corner band beside the text."""
+def _overloaded_short():
     nodes = [dl.Node("hub", "hub", 200, 300, render=_ICON),
              dl.Node("t1", "t1", 500, 100, render=_ICON),
              dl.Node("t2", "t2", 500, 300, render=_ICON),
@@ -116,11 +133,33 @@ def test_overloaded_source_uses_a_corner_band_outside_the_text():
                 points=((330, 360), (330, 540))),
         dl.Edge("e4", "hub", "d", "4", exit=(0.5, 1.0), entry=(0.5, 0.0)),
     ]
-    g = _geo(_build(nodes, edges))
+    return nodes, edges
+
+
+def test_overloaded_source_uses_a_corner_band_outside_the_text():
+    """LEGACY (fallback ON): three right exits are taken, so ``exit-thirds``
+    leaves the bottom face; the short name ("hub", 21px) leaves a corner band
+    beside the text. Pins that the corner-exit (D) machinery still works when
+    the fallback is explicitly enabled (ENG-R1 default-off)."""
+    nodes, edges = _overloaded_short()
+    with _corner_exit_fallback():
+        g = _geo(_build(nodes, edges))
     e4 = next(e for e in g.edges if e.id == "e4")
     assert e4.exit[1] >= 1.0, e4.exit                    # still the bottom face
     assert geo.check_edge_strikes_own_text(g) == []      # but clear of the text
     assert geo.check_exit_thirds(g) == []
+
+
+def test_overloaded_source_default_keeps_thirds_and_masks_caption():
+    """DEFAULT (ENG-R1, fallback OFF): the unavoidable bottom exit keeps a
+    distinct ``exit-thirds`` band (not a corner) and its caption is masked
+    (ENG-R2), so the diagram stays ``exit-thirds``-clean without the corner
+    dodge. A short caption fits inside the icon, so there is no text strike."""
+    nodes, edges = _overloaded_short()
+    g = _geo(_build(nodes, edges))
+    e4 = next(e for e in g.edges if e.id == "e4")
+    assert e4.exit[1] >= 1.0, e4.exit                    # still the bottom face
+    assert geo.check_exit_thirds(g) == []                # distinct band, not merged
 
 
 def test_container_grows_to_hold_the_side_corridor():
@@ -186,11 +225,14 @@ def _overloaded_wide(label: str):
 
 
 def test_overloaded_source_with_a_wide_caption_wraps_it():
-    """Decision 2 amended (WS2): three right exits, an unavoidable bottom exit
-    and a caption wider than the icon -> the caption wraps onto two lines and
-    the bottom exit leaves past the narrower text."""
+    """LEGACY (fallback ON): three right exits, an unavoidable bottom exit and
+    a caption wider than the icon -> the caption wraps onto two lines and the
+    bottom exit leaves past the narrower text. Pins the caption-wrap macro-move
+    still works when the corner-exit fallback is explicitly enabled (ENG-R1
+    default-off)."""
     nodes, edges = _overloaded_wide("Lambda core (13 fns)")
-    text = _build(nodes, edges)
+    with _corner_exit_fallback():
+        text = _build(nodes, edges)
     assert 'value="Lambda core&#10;(13 fns)"' in text
     g = _geo(text)
     assert g.node_labels["hub"] == "Lambda core\n(13 fns)"
@@ -199,6 +241,20 @@ def test_overloaded_source_with_a_wide_caption_wraps_it():
     assert geo.check_edge_strikes_own_text(g) == []
     assert geo.check_exit_thirds(g) == []
     assert geo.check_container_padding(g) == [] and geo.check_node_overlap(g) == []
+
+
+def test_overloaded_wide_caption_default_masks_instead_of_wrapping():
+    """DEFAULT (ENG-R1, fallback OFF): with the corner/wrap fallback off, a wide
+    caption is NOT wrapped; the bottom exit keeps its ``exit-thirds`` band and
+    the caption is masked (ENG-R2) so the line passes behind the name."""
+    nodes, edges = _overloaded_wide("Lambda core (13 fns)")
+    text = _build(nodes, edges)
+    assert 'value="Lambda core&#10;(13 fns)"' not in text   # NOT wrapped
+    g = _geo(text)
+    assert g.node_labels["hub"] == "Lambda core (13 fns)"
+    e4 = next(e for e in g.edges if e.id == "e4")
+    assert e4.exit[1] >= 1.0, e4.exit
+    assert geo.check_exit_thirds(g) == []
 
 
 def test_overloaded_source_without_a_break_point_keeps_its_label():

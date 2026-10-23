@@ -1623,8 +1623,20 @@ def _edge_slots(
                 slot = max(slot, i)
         slots[e.id] = slot
         for nid, cap in captions.items():
-            if host.get(nid, len(boundaries)) < slot:
-                continue  # painted before the edge: it cannot mask it
+            # R2 (1.11.0, ENG-R2): mask ANY node whose caption this edge's
+            # polyline crosses — including an UNRELATED node's caption, not only
+            # the edge's own source/target, and regardless of the node's host
+            # boundary. ``_assemble_document`` emits every node AFTER every edge
+            # (slot -1 edges, then boundaries, then flow-groups, then slot k
+            # edges, then nodes), so in draw.io document order a caption always
+            # paints OVER the edge; the remaining gap was simply not giving the
+            # crossed caption an opaque ``labelBackgroundColor``. The old
+            # ``host.get(nid) < slot`` guard skipped captions whose host boundary
+            # painted before the edge's slot, leaving them unmasked even though
+            # the node itself paints last — the defect the owner flagged on 02
+            # (edge 8 under a caption). Dropping the guard sets the opaque
+            # background on every genuinely-crossed caption; it is byte-inert
+            # where no edge crosses a caption.
             if any(segment_crosses_box(p, q, cap) for p, q in zip(poly, poly[1:])):
                 masked.add(nid)
     return slots, masked
@@ -1665,6 +1677,19 @@ def _assemble_document(
     )
     parts.append(title_cell(title))
     parts.append("\n")
+    # R3 (1.11.0, ENG-R3): the light-grey logical-group boxes (WS2) are purely
+    # DECORATIVE context frames (``fillColor=none``). Emit them at the very BACK
+    # — before every edge and every boundary — so that EVERY edge, including a
+    # slot -1 edge on the root layer, paints OVER the group box. Previously they
+    # were emitted after the boundaries and after the slot -1 edges, so the box's
+    # grey border/caption overdrew a slot -1 edge's line on its turn (the owner's
+    # "edge 8 overlapped the Workers box" on 02). Being ``fillColor=none`` the box
+    # never hides a node or an edge — only its thin border and caption draw — so
+    # putting it at the back keeps those edges legible with no node occlusion.
+    # No-op (byte-inert) when there are no flow groups.
+    if flow_groups:
+        parts.append(flow_group_cells(flow_groups, nodes))
+        parts.append("\n")
     # Edges beneath vertices (1.10.12 WS2): each edge is emitted either on the
     # root layer BEFORE every boundary (slot -1) or as the FIRST child of the
     # last filled boundary it touches (listed after the boundary cells, before
@@ -1684,11 +1709,6 @@ def _assemble_document(
     for b in _clear_container_captions(boundaries, nodes, routed):
         parts.append(boundary_cell(b))
     parts.append("\n")
-    # 1.11.0 WS2: light-grey logical-group boxes, drawn after boundaries and
-    # before nodes so icons/edges paint over them. No-op (byte-inert) when empty.
-    if flow_groups:
-        parts.append(flow_group_cells(flow_groups, nodes))
-        parts.append("\n")
     for e in routed:
         k = slots.get(e.id, -1)
         if k >= 0:
