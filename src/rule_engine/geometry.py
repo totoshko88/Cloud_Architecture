@@ -3857,6 +3857,24 @@ def resolve_marker_collisions(
                 return False
         return True
 
+    def on_container_border(p: Point) -> bool:
+        """True when ``p`` lies within ``clearance`` of any Boundary container
+        border (the same predicate :func:`check_marker_on_container_border`
+        flags). Phase 3 (FEAT-002) slides a marker off such a border."""
+        if clearance <= 0:
+            return False
+        tol = clearance - AXIS_EPS
+        px, py = p
+        for cid in sorted(geo.containers):
+            c = geo.containers[cid]
+            if c.y - clearance <= py <= c.bottom + clearance:
+                if abs(px - c.x) <= tol or abs(px - c.right) <= tol:
+                    return True
+            if c.x - clearance <= px <= c.right + clearance:
+                if abs(py - c.y) <= tol or abs(py - c.bottom) <= tol:
+                    return True
+        return False
+
     for eid in ids:
         here = anchor_of(eid)
         if here is None:
@@ -3879,6 +3897,44 @@ def resolve_marker_collisions(
                 p = anchor_of(eid)
                 pos[eid] = start
                 if p is None:
+                    continue
+                if _dist_to_foreign_edges(p, eid, polys)[0] < clearance - AXIS_EPS:
+                    continue
+                if not clear_of_markers(eid, p) or in_box(p) or on_container_border(p):
+                    continue
+                chosen = cand
+                break
+            if chosen is not None:
+                pos[eid] = chosen
+                break
+
+    # Phase 3 — slide a marker off a Boundary container BORDER (FEAT-002 /
+    # backlog G30). A numbered marker whose anchor lands within one grid step of
+    # an account / VPC / region frame prints the step number along the box edge
+    # (the owner's 09 marker-25-on-the-Sandbox-mgmt-box finding). It slides along
+    # its OWN edge, nearest candidate first (``pos ∓ k·step``, toward the source
+    # before the target, ``|pos| ≤`` :data:`_MARKER_SLIDE_LIMIT`), accepting the
+    # first spot that clears every container border AND every foreign segment,
+    # other marker, node icon and caption. When none qualifies the marker stays
+    # put and lint (``marker-on-container-border``) still reports it. Lint-only
+    # rule, so this nudge is the engine's own remedy — never a hand coordinate.
+    for eid in ids:
+        here = anchor_of(eid)
+        if here is None or not on_container_border(here):
+            continue
+        start = pos[eid]
+        for k in range(1, 5):
+            chosen = None
+            for sign in (-1.0, 1.0):
+                cand = round(start + sign * k * step, 6)
+                if abs(cand) > _MARKER_SLIDE_LIMIT + 1e-9:
+                    continue
+                pos[eid] = cand
+                p = anchor_of(eid)
+                pos[eid] = start
+                if p is None:
+                    continue
+                if on_container_border(p):
                     continue
                 if _dist_to_foreign_edges(p, eid, polys)[0] < clearance - AXIS_EPS:
                     continue

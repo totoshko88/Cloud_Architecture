@@ -133,6 +133,34 @@ def test_linter_wrapper_is_false_when_clear():
     assert _check_marker_on_container_border(_FakeDiagram(_geo_with_border_at(620))) is False
 
 
+def test_phase3_nudge_slides_a_marker_off_a_container_border():
+    """FEAT-002 / backlog G30: ``resolve_marker_collisions`` phase 3 slides a
+    marker whose anchor rides a Boundary container border along its OWN edge to
+    a clear spot. A build-time pass (``build_diagram`` → ``marker_hygiene_text``),
+    so new diagrams never ship a marker on a frame; the detector/rule stay the
+    gate for a hand-authored or not-yet-rebuilt source."""
+    from rule_engine.geometry import resolve_marker_collisions
+
+    geo = _geo_with_border_at(600)
+    assert check_marker_on_container_border(geo) == [("e", "boundary-account.right")]
+    moved = resolve_marker_collisions(geo)
+    assert "e" in moved, "the border-riding marker must be nudged"
+    # Apply the nudge and confirm the finding clears.
+    for e in geo.edges:
+        if e.id in moved:
+            e.label_pos = moved[e.id]
+    assert check_marker_on_container_border(geo) == []
+
+
+def test_phase3_leaves_a_clear_marker_untouched():
+    """A marker already clear of every border is not moved (idempotent)."""
+    from rule_engine.geometry import resolve_marker_collisions
+
+    geo = _geo_with_border_at(620)  # border a comfortable 2 grid steps off
+    assert check_marker_on_container_border(geo) == []
+    assert resolve_marker_collisions(geo) == {}
+
+
 def test_rule_is_lint_only_not_in_rule_violations():
     """Like the other marker-* rules, this one is lint-only — it must NOT appear
     in the solver oracle (``rule_violations``), even on a geometry that trips it."""
@@ -141,14 +169,16 @@ def test_rule_is_lint_only_not_in_rule_violations():
     assert "marker-on-container-border" not in joined
 
 
-# Two shipped goldens genuinely carry a marker on a Boundary border, so the new
-# rule reports a real WARNING on them — the marker IS a readability defect there.
+# Two shipped goldens genuinely carry a marker on a Boundary border, so the rule
+# reports a real WARNING on them — the marker IS a readability defect there.
 # Both are WARNING (non-blocking: ``test_golden_examples`` still passes), and the
-# finding stays VISIBLE on purpose. Sliding the marker along its own edge
-# off-border (a ``resolve_marker_collisions`` phase-2-style nudge) changes golden
-# bytes and is a separate layout pass, deferred as a backlog follow-up — see
-# docs/REVIEW.md. These are tolerated by id, not by weakening the detector or
-# removing the rule:
+# finding stays VISIBLE on the COMMITTED bytes. FEAT-002 added the off-border
+# nudge (``resolve_marker_collisions`` phase 3, backlog G30) so a FRESH build no
+# longer parks a marker on a frame — but it only takes effect at build time, and
+# these two goldens are NOT regenerated this wave, so their committed bytes (and
+# this finding) are unchanged. They are tolerated by id, not by weakening the
+# detector or removing the rule; regenerating either golden would clear its
+# finding:
 #   * gcp/01-gcp-vertex-pipeline — e2 anchor 2px off boundary-vpc-a.right
 #   * oci/01-oci-genai-stack     — e1 anchor on boundary-region-a.top
 _KNOWN_MARKER_ON_BORDER = {
