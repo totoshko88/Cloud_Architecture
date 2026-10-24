@@ -525,6 +525,28 @@ def route_spine(
     if exit_pt[1] >= 1.0 and entry_pt[1] <= 0.0 and abs(src.x - tgt.x) < 1e-9:
         return []
 
+    # Level-run shortcut (wave-4 ITEM 4b): a spine whose SOURCE right-face exit
+    # and TARGET left-face entry already resolve to the SAME absolute y, and
+    # whose direct horizontal crosses no unrelated icon, is a straight single
+    # segment — not a side-corridor jog. This fires when two nodes are classed
+    # `spine` only because their ICON TOPS differ by a few px (a band-packing
+    # quirk, e.g. a VPC data column sitting 20px above the workers column) while
+    # their contact rows coincide, so the router otherwise jogged up to a lane
+    # and back for nothing. Guarded on a right→left contract and a clear run, so
+    # a genuine tier hop (contacts on different rows, or an icon in the way)
+    # falls through to the side-corridor route below. Returns [] (the single
+    # centred segment draw.io draws between the two pinned contacts).
+    exit_abs = _contact_point(src, exit_pt)
+    entry_abs = _contact_point(tgt, entry_pt)
+    if (
+        exit_pt[0] is not None and exit_pt[0] >= 1.0
+        and entry_pt[0] is not None and entry_pt[0] <= 0.0
+        and tgt.x > src.x
+        and abs(exit_abs[1] - entry_abs[1]) < 1e-9
+        and not _obstacles_between(exit_abs, entry_abs, others)
+    ):
+        return []
+
     # Adaptive LEFT corridor for a same-column tier-skip past an intermediate
     # node (edge-4 generalisation). The caller (_place_and_route) pins a bottom
     # exit + LEFT entry when the left gap is free; honour that here by dropping
@@ -667,6 +689,28 @@ def route_fan_out_row(
 
     entry = _contact_point(tgt, entry_pt)
     exit_abs = _contact_point(src, exit_pt)
+
+    # Level-run shortcut (wave-4 ITEM 4b): a fan-out-row edge whose right-face
+    # exit and left-face entry already resolve to the SAME absolute y, and whose
+    # direct horizontal crosses no unrelated icon, is a straight single segment —
+    # not an off-row lane jog. A node classed `fan-out-row` only because its
+    # target's ICON TOP sits a few px off (the Req-7.4b "upward hop to the right"
+    # when the two icons are effectively on one row — a VPC data column 20px
+    # above the workers column, SEP 13 lambda→rds) is really a level run: both
+    # contacts coincide at one y, so the up-to-the-target-row-and-back lane was a
+    # redundant jog. Guarded on a right→left contract, coincident contact y, and
+    # a clear run, so a genuine fan-out (parallel same-row targets, or a target
+    # whose contact is on a different row, or an icon in the way) falls through to
+    # the off-row lane route below. Mirrors the `route_spine` shortcut.
+    if (
+        not (exit_pt[1] is not None and exit_pt[1] >= 1.0)   # not a bottom-face spill
+        and exit_pt[0] is not None and exit_pt[0] >= 1.0
+        and entry_pt[0] is not None and entry_pt[0] <= 0.0
+        and tgt.x > src.x
+        and abs(exit_abs[1] - entry[1]) < 1e-9
+        and not _obstacles_between(exit_abs, entry, others)
+    ):
+        return []
 
     bottom_exit = exit_pt[1] is not None and exit_pt[1] >= 1.0
 
