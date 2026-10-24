@@ -1389,6 +1389,7 @@ def build_diagram(
     skin: "Skin | None" = None,
     flow_groups: Sequence[Tuple[str, Sequence[str]]] = (),
     flow_steps: str = "box",
+    flow_columns: int | None = None,
 ) -> str:
     """Assemble a full ``.drawio`` document from the standard building blocks.
 
@@ -1412,12 +1413,26 @@ def build_diagram(
     own edge off any foreign edge's line (``orthogonalise.marker_hygiene_text``,
     1.10.7). The pass is idempotent and leaves the document byte-identical when
     no marker collides.
+
+    ``flow_columns`` (FEAT-001 B, backlog item G22) reflows a long numbered
+    ``Flow`` list into ``N`` balanced side-by-side columns on canvas instead of
+    one tall box. ``None`` (the default) keeps the single Flow box and is
+    **byte-identical** to prior output; ``N`` (``>= 1``) splits the marker lines
+    (every line after the ``Flow`` header) across ``N`` columns, each a separate
+    text cell sized to its own longest line, preserving **every** marker line so
+    ``flow-legend`` coverage still holds. The column block keeps the Flow+Legend
+    pair sharing one aligned right-margin silhouette (or the row-below mode).
     """
     # 1.11.0 WS2: fail-honest on an unknown flow_steps presentation mode.
     if flow_steps not in ("box", "document", "panel"):
         raise ValueError(
             f"unknown flow_steps {flow_steps!r}; must be one of "
             "'box' (default), 'document', 'panel'"
+        )
+    # FEAT-001 (B) / backlog G22: fail-honest on an invalid flow_columns count.
+    if flow_columns is not None and flow_columns < 1:
+        raise ValueError(
+            f"flow_columns must be >= 1 (or None for a single box); got {flow_columns!r}"
         )
     # 1.10.12 WS6: a boundary narrower than its caption grows right into free
     # space or wraps the caption (a no-op on layout() output, which is fitted).
@@ -1433,6 +1448,7 @@ def build_diagram(
         skin=skin,
         flow_groups=flow_groups,
         flow_steps=flow_steps,
+        flow_columns=flow_columns,
     )
     routed = _orthogonalised(edges, nodes)
     text = _assemble_document(routed=routed, **kwargs)
@@ -1683,6 +1699,7 @@ def _assemble_document(
     skin: "Skin | None" = None,
     flow_groups: Sequence[Tuple[str, Sequence[str]]] = (),
     flow_steps: str = "box",
+    flow_columns: int | None = None,
 ) -> str:
     """Emit the ``.drawio`` document for already-routed edges (no hygiene)."""
     parts: List[str] = []
@@ -1782,6 +1799,56 @@ def _assemble_document(
         raw = int(longest * 5.6) + 2 * GRID
         return int(-(-raw // GRID) * GRID)  # round up to a grid multiple
 
+    def _flow_split(lines: Sequence[str], n: int) -> List[List[str]]:
+        """Split a ``Flow`` cell's lines into ``n`` balanced side-by-side columns.
+
+        Line 0 is the ``Flow`` header; it leads the FIRST column. The remaining
+        (marker) lines are distributed round-robin-balanced so each column holds
+        ``ceil`` or ``floor`` of them and the ascending order reads top-to-bottom
+        within a column, left-to-right across columns. Every marker line is kept
+        (so ``flow-legend`` coverage holds); every column repeats the ``Flow``
+        header so the parser (`cli._FLOW_HEADING`) reads each column's lines into
+        the aggregated Flow legend. ``n == 1`` returns the single original list.
+        """
+        lines = list(lines)
+        if n <= 1 or len(lines) <= 1:
+            return [lines]
+        header, markers = lines[0], lines[1:]
+        n = min(n, len(markers)) or 1
+        per = -(-len(markers) // n)  # ceil
+        cols: List[List[str]] = []
+        for i in range(n):
+            chunk = markers[i * per : (i + 1) * per]
+            if not chunk and cols:
+                break
+            cols.append([header] + chunk)
+        return cols
+
+    def _emit_flow_columns(x: int, y: int) -> int:
+        """Emit the Flow box as ``flow_columns`` side-by-side text cells.
+
+        Returns the x just past the right edge of the last column. The first
+        column keeps id ``flow-legend`` (the cell the parser/linter read first);
+        continuation columns are ``flow-legend-2 ...`` and also lead with the
+        ``Flow`` header, so the aggregating parser unions every marker line."""
+        cols = _flow_split(flow_lines, flow_columns or 1)
+        cur_x = x
+        for i, col in enumerate(cols):
+            cw = legend_w if legend_w is not None else _text_w(col)
+            ch = _text_h(col, legend_w)
+            cid = "flow-legend" if i == 0 else f"flow-legend-{i + 1}"
+            parts.append(text_cell(cid, col, cur_x, y, cw, ch, skin=skin))
+            cur_x += cw + GRID
+        return cur_x - GRID
+
+    #: Multi-column Flow is active only when a caller asked for >1 columns and
+    #: the Flow box is actually drawn on canvas (not ``flow_steps='document'``).
+    _multi_col = (
+        flow_columns is not None
+        and flow_columns > 1
+        and flow_steps != "document"
+    )
+
     # A caller may extend the standard Legend (e.g. a diagram that uses an
     # overlay marker must document it — ``overlay-legend-coverage``).
     # Without an explicit list the Legend names only the boundaries drawn
@@ -1809,7 +1876,12 @@ def _assemble_document(
         # drives the canvas width, so a flow raster stays under its 1600px budget.
         flow_x = legend_x
         legend2_x = int(legend_x + box_w + GRID)
-        if _draw_flow_box:
+        if _draw_flow_box and _multi_col:
+            # The Flow columns run left-to-right from flow_x; the Legend follows
+            # one grid step past the last column so the block stays one aligned row.
+            right = _emit_flow_columns(flow_x, legend_y_flow)
+            parts.append(text_cell("legend", legend_body, int(right + GRID), legend_y_flow, box_w, legend_h, skin=skin))
+        elif _draw_flow_box:
             parts.append(text_cell("flow-legend", flow_lines, flow_x, legend_y_flow, box_w, flow_h, skin=skin))
             parts.append(text_cell("legend", legend_body, legend2_x, legend_y_flow, box_w, legend_h, skin=skin))
         else:
@@ -1823,7 +1895,17 @@ def _assemble_document(
         # two boxes would overlap — silently, because neither is a node, so no
         # geometry rule would catch it. Push the Legend down to clear the Flow box
         # by one grid step.
-        if _draw_flow_box:
+        if _draw_flow_box and _multi_col:
+            # Multi-column Flow (FEAT-001 B / G22): the columns run left-to-right
+            # at legend_y_flow; the Legend stacks below the TALLEST column so it
+            # never overlaps a column. box_w (the single-box width) is unused for
+            # the Flow block here but still sizes the Legend below it.
+            cols = _flow_split(flow_lines, flow_columns or 1)
+            tallest = max((_text_h(c, legend_w) for c in cols), default=flow_h)
+            _emit_flow_columns(legend_x, legend_y_flow)
+            legend_y = max(legend_y_legend, legend_y_flow + tallest + GRID)
+            parts.append(text_cell("legend", legend_body, legend_x, legend_y, box_w, legend_h, skin=skin))
+        elif _draw_flow_box:
             legend_y = max(legend_y_legend, legend_y_flow + flow_h + GRID)
             # Panel mode: stretch the Flow box into a full-height furniture strip
             # (top of the Flow slot down to one container-pad above the page
