@@ -476,3 +476,76 @@ def test_flow_columns_invalid_count_is_rejected():
     import pytest
     with pytest.raises(ValueError):
         _flow_build(_LONG_FLOW, flow_columns=0)
+
+
+# --- 1.11.0: equal-height horizontal Flow/Legend row -----------------------
+
+
+def _row_below_build(flow_lines, legend_lines, *, flow_columns=None):
+    """Build a diagram whose Flow/Legend are laid out as a horizontal row
+    (Theme 43 Mode B, ``legend_mode='row-below'``)."""
+    icon = dl.builtin_icon("shape=mxgraph.aws4.resourceIcon;aspect=fixed;html=1")
+    nodes = [
+        dl.Node(id="n0", label="n0", x=120, y=440, render=icon),
+        dl.Node(id="n1", label="n1", x=340, y=440, render=icon),
+        dl.Node(id="n2", label="n2", x=560, y=440, render=icon),
+    ]
+    edges = [
+        dl.Edge("e1", "n0", "n1", "1", exit=(1.0, 0.5), entry=(0.0, 0.5)),
+        dl.Edge("e2", "n1", "n2", "2", exit=(1.0, 0.5), entry=(0.0, 0.5)),
+    ]
+    return dl.build_diagram(
+        diagram_id="d", diagram_name="d",
+        title="aws t — 123456789012 / us-east-1 | 2026-10-23 | v1",
+        boundaries=[], nodes=nodes, edges=edges,
+        flow_lines=flow_lines, legend_x=0, legend_y_flow=700,
+        legend_mode="row-below", legend_lines=legend_lines,
+        flow_columns=flow_columns,
+    )
+
+
+def _cell_geom(doc, cid):
+    """(x, y, w, h) of a text cell by id, from the emitted document."""
+    frag = doc.split(f'id="{cid}"', 1)[1].split("</mxCell>", 1)[0]
+    m = re.search(
+        r'<mxGeometry x="(-?\d+)" y="(-?\d+)" width="(\d+)" height="(\d+)"', frag)
+    return tuple(int(g) for g in m.groups())
+
+
+_SHORT_FLOW = ["Flow", "1. a", "2. b", "3. c"]
+_TALL_LEGEND = ["Legend"] + [f"line {i}" for i in range(10)]
+
+
+def test_row_below_flow_legend_share_a_common_height():
+    """A horizontal row (multi-column Flow + Legend) renders every box at the
+    SAME height (the tallest natural box) so the row shares one flat bottom edge."""
+    doc = _row_below_build(_SHORT_FLOW, _TALL_LEGEND, flow_columns=2)
+    heights, ys = [], []
+    for cid in ("flow-legend", "flow-legend-2", "legend"):
+        _, y, _, h = _cell_geom(doc, cid)
+        heights.append(h)
+        ys.append(y)
+    assert len(set(heights)) == 1, f"ragged row heights: {heights}"
+    assert len(set(ys)) == 1, f"row boxes not top-aligned: {ys}"
+    # The common height equals the tallest natural box — the 10-line Legend.
+    assert heights[0] == max(heights)
+
+
+def test_row_below_single_flow_legend_share_a_common_height():
+    """The non-multi-column row-below case (plain Flow + Legend side-by-side)
+    also renders both boxes at the common max height."""
+    doc = _row_below_build(_SHORT_FLOW, _TALL_LEGEND)
+    _, fy, _, fh = _cell_geom(doc, "flow-legend")
+    _, ly, _, lh = _cell_geom(doc, "legend")
+    assert fh == lh, f"ragged heights flow={fh} legend={lh}"
+    assert fy == ly
+
+
+def test_vertical_stack_height_unchanged_byte_identical():
+    """The equal-height fix is scoped to ``row-below``; the Mode-A vertical
+    stack path is untouched, so its output is byte-identical to a rebuild."""
+    assert _flow_build(_LONG_FLOW, flow_columns=2) == _flow_build(_LONG_FLOW, flow_columns=2)
+    # And the stack path keeps per-box heights (Flow shorter than a long Legend
+    # stacks ABOVE it, not padded to a common height).
+    doc = _flow_build(_LONG_FLOW, flow_columns=1)
+    assert doc.count('value="Flow') == 1

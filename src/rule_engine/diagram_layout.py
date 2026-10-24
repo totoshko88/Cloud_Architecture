@@ -1824,18 +1824,25 @@ def _assemble_document(
             cols.append([header] + chunk)
         return cols
 
-    def _emit_flow_columns(x: int, y: int) -> int:
+    def _emit_flow_columns(x: int, y: int, row_h: int | None = None) -> int:
         """Emit the Flow box as ``flow_columns`` side-by-side text cells.
 
         Returns the x just past the right edge of the last column. The first
         column keeps id ``flow-legend`` (the cell the parser/linter read first);
         continuation columns are ``flow-legend-2 ...`` and also lead with the
-        ``Flow`` header, so the aggregating parser unions every marker line."""
+        ``Flow`` header, so the aggregating parser unions every marker line.
+
+        When ``row_h`` is given (the horizontal ``row-below`` arrangement, where
+        the Flow columns and the Legend sit side-by-side in one row), every
+        column is emitted at that COMMON height so the whole row shares one flat
+        bottom edge; shorter columns gain bottom whitespace. ``row_h is None``
+        (the Mode-A vertical stack) keeps each column's own per-content height,
+        so that path stays byte-identical."""
         cols = _flow_split(flow_lines, flow_columns or 1)
         cur_x = x
         for i, col in enumerate(cols):
             cw = legend_w if legend_w is not None else _text_w(col)
-            ch = _text_h(col, legend_w)
+            ch = row_h if row_h is not None else _text_h(col, legend_w)
             cid = "flow-legend" if i == 0 else f"flow-legend-{i + 1}"
             parts.append(text_cell(cid, col, cur_x, y, cw, ch, skin=skin))
             cur_x += cw + GRID
@@ -1879,11 +1886,23 @@ def _assemble_document(
         if _draw_flow_box and _multi_col:
             # The Flow columns run left-to-right from flow_x; the Legend follows
             # one grid step past the last column so the block stays one aligned row.
-            right = _emit_flow_columns(flow_x, legend_y_flow)
-            parts.append(text_cell("legend", legend_body, int(right + GRID), legend_y_flow, box_w, legend_h, skin=skin))
+            # Equal-height row (owner finding, 1.11.0): the Flow columns and the
+            # Legend are a horizontal row, so every box renders at a COMMON
+            # height = the tallest natural box in the row. Shorter boxes gain
+            # bottom whitespace and the whole row shares one flat bottom edge.
+            cols = _flow_split(flow_lines, flow_columns or 1)
+            row_h = max(
+                max((_text_h(c, legend_w) for c in cols), default=flow_h),
+                legend_h,
+            )
+            right = _emit_flow_columns(flow_x, legend_y_flow, row_h=row_h)
+            parts.append(text_cell("legend", legend_body, int(right + GRID), legend_y_flow, box_w, row_h, skin=skin))
         elif _draw_flow_box:
-            parts.append(text_cell("flow-legend", flow_lines, flow_x, legend_y_flow, box_w, flow_h, skin=skin))
-            parts.append(text_cell("legend", legend_body, legend2_x, legend_y_flow, box_w, legend_h, skin=skin))
+            # Equal-height row (owner finding, 1.11.0): Flow and Legend sit
+            # side-by-side, so both render at the common max height.
+            row_h = max(flow_h, legend_h)
+            parts.append(text_cell("flow-legend", flow_lines, flow_x, legend_y_flow, box_w, row_h, skin=skin))
+            parts.append(text_cell("legend", legend_body, legend2_x, legend_y_flow, box_w, row_h, skin=skin))
         else:
             # 1.11.0 WS2 document mode: the steps live in the companion; only the
             # Legend stays on-canvas, taking the left (Flow) slot.
