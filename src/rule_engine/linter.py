@@ -269,6 +269,14 @@ RULE_EDGE_JOG = "edge-jog"
 #                            WARNING, both classes.
 RULE_CONTAINER_STYLE = "container-style"
 RULE_MARKER_LABEL_COLLISION = "marker-label-collision"
+# FEAT-001 (E). The container-border sibling of marker-label-collision (node
+# caption) and marker-on-icon (node glyph):
+#   marker-on-container-border — a numbered flow-marker whose rendered anchor
+#                                lies within one grid step of a Boundary
+#                                container border; WARNING, both classes.
+#                                Lint-only (NOT in rule_violations / the solver
+#                                oracle), like the other marker-* rules.
+RULE_MARKER_ON_CONTAINER_BORDER = "marker-on-container-border"
 # 1.10.12 WS3 (C7). A crossing a single legal face swap removes:
 #   edge-crossing-avoidable — one edge re-routed onto another legal exit/entry
 #                             face pair (exit right/bottom, entry left/top)
@@ -2457,6 +2465,23 @@ def _check_marker_label_collision(a: Artifact):
     return hits[0] if len(hits) == 1 else hits
 
 
+def _check_marker_on_container_border(a: Artifact):
+    """marker-on-container-border: a numbered flow-marker renders within one
+    grid step of a Boundary container border and overprints the account / VPC
+    frame (WARNING, both classes). The container-border sibling of
+    marker-label-collision (a marker on a node caption) and marker-on-icon (a
+    marker on a node glyph). offenders = the marker edge and the
+    ``<container>.<side>`` it sits on."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    findings = _geo.check_marker_on_container_border(geo)
+    if not findings:
+        return False
+    return RuleHit(offenders=_offender_ids(findings), reason="marker-on-border")
+
+
 def _check_detour_hook(a: Artifact):
     """detour-hook: an edge's routed length far exceeds the manhattan distance
     between its contacts — it loops out and back (WARNING). offenders = the
@@ -2673,6 +2698,13 @@ RULES: Tuple[Tuple[RuleSpec, Callable[[Artifact], _PredicateResult]], ...] = (
     (
         RuleSpec(RULE_MARKER_LABEL_COLLISION, Severity.WARNING),
         _check_marker_label_collision,
+    ),
+    # marker-on-container-border (FEAT-001 E): a flow-marker on a Boundary
+    # border (WARNING, both classes). Lint-only, sibling of
+    # marker-label-collision / edge-on-container-border.
+    (
+        RuleSpec(RULE_MARKER_ON_CONTAINER_BORDER, Severity.WARNING),
+        _check_marker_on_container_border,
     ),
     # edge-crossing-excess: WARNING above ceil(0.25 x E) on both classes; the
     # 1.10.7 landscape hard cap (> 0.5 x E) is an ERROR carried by the hit's own
