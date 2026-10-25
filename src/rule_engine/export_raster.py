@@ -442,31 +442,56 @@ def export_one(
     # a dark/light-safe raster (alpha channel, no forced white); "white"/absent
     # keeps the existing opaque-white export unchanged (AC 4.3, 4.4).
     background = _diagram_background_of(source)
-    cmd = [
-        drawio, "--export", "--format", "png",
-        "--scale", _format_scale(scale),
-        "--border", EXPORT_BORDER,
-        "--theme", EXPORT_THEME,
-    ]
-    # Opt-in Electron sandbox bypass for a confined dev host. Some sandboxed
-    # environments (a hardened macOS seatbelt, a container without the setuid
-    # chrome-sandbox) make the draw.io CLI fail at startup with "Failed to
-    # initialize sandbox". Setting RULE_ENGINE_DRAWIO_NO_SANDBOX=1 passes
-    # --no-sandbox so a raster can still be exported locally. It is OFF by
-    # default, so CI and a normal desktop export are byte-for-byte unchanged;
-    # the flag only affects Electron startup, never the rendered pixels.
-    if os.environ.get("RULE_ENGINE_DRAWIO_NO_SANDBOX") == "1":
-        cmd.append("--no-sandbox")
-    if background == "transparent":
-        cmd.append("--transparent")
-    cmd += ["--output", str(out_png), export_input]
+
+    def _run_export(at_scale: float) -> None:
+        cmd = [
+            drawio, "--export", "--format", "png",
+            "--scale", _format_scale(at_scale),
+            "--border", EXPORT_BORDER,
+            "--theme", EXPORT_THEME,
+        ]
+        # Opt-in Electron sandbox bypass for a confined dev host. Some sandboxed
+        # environments (a hardened macOS seatbelt, a container without the setuid
+        # chrome-sandbox) make the draw.io CLI fail at startup with "Failed to
+        # initialize sandbox". Setting RULE_ENGINE_DRAWIO_NO_SANDBOX=1 passes
+        # --no-sandbox so a raster can still be exported locally. It is OFF by
+        # default, so CI and a normal desktop export are byte-for-byte unchanged;
+        # the flag only affects Electron startup, never the rendered pixels.
+        if os.environ.get("RULE_ENGINE_DRAWIO_NO_SANDBOX") == "1":
+            cmd.append("--no-sandbox")
+        if background == "transparent":
+            cmd.append("--transparent")
+        cmd += ["--output", str(out_png), export_input]
+        subprocess.run(cmd, check=True, timeout=EXPORT_TIMEOUT)
 
     try:
-        subprocess.run(
-            cmd,
-            check=True,
-            timeout=EXPORT_TIMEOUT,
-        )
+        _run_export(scale)
+        # G35 (1.11.0, FEAT-001): export-overshoot correction. The width model
+        # in ``_canvas_width`` estimates a wrapped Flow/Legend box's render with
+        # a fixed model-space allowance (``_WRAPPED_TEXT_RENDER_OVERSHOOT``), but
+        # the draw.io CLI's real wrap render of some boxes runs a few px PAST that
+        # estimate; multiplied by the mandatory upscale, that can push a flow
+        # raster a handful of px over its budget (01-sep-context rendered 1608px
+        # vs the 1600px flow budget — the estimate said 1600). Rather than inflate
+        # the global allowance (which would re-scale and re-render every within-
+        # budget golden — forbidden), measure the ACTUAL exported PNG width and,
+        # when it exceeds the class budget, re-export ONCE at a scale corrected by
+        # the real overshoot: ``scale * budget_px / actual_px`` (a hair tighter via
+        # the 1px floor so rounding never lands back on the budget). This is
+        # self-correcting from the real render and fires ONLY for a raster that
+        # actually overshoots, so every within-budget golden exports exactly once
+        # at the unchanged scale and stays byte-identical. The downscale correction
+        # never trips the legibility floor in practice (it is a sub-1% nudge), and
+        # an ``--max-width`` override opts out (the caller set the width
+        # explicitly).
+        if max_width_override is None:
+            dclass_w = _diagram_class_of(source)
+            budget_px = LANDSCAPE_MAX_WIDTH if dclass_w == "landscape" else FLOW_MAX_WIDTH
+            actual_px = _png_width(out_png)
+            if actual_px > budget_px:
+                corrected = scale * (budget_px - 1) / actual_px
+                if corrected >= MIN_EXPORT_SCALE and corrected < scale:
+                    _run_export(corrected)
     finally:
         if tmp_dir is not None:
             shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -485,6 +510,22 @@ def _format_scale(scale: float) -> str:
     if math.isclose(scale, round(scale)):
         return str(int(round(scale)))
     return f"{scale:.3f}"
+
+
+def _png_width(png: Path) -> int:
+    """The pixel width of a PNG from its IHDR chunk (0 when unreadable).
+
+    Used by the G35 export-overshoot correction to read the ACTUAL rendered
+    width (a 24-byte header read, no image library), so a raster that overran its
+    budget by a few px of wrapped-text render overshoot is re-exported at a
+    corrected scale."""
+    try:
+        head = png.read_bytes()[:24]
+    except OSError:
+        return 0
+    if len(head) < 24 or head[:8] != b"\x89PNG\r\n\x1a\n":
+        return 0
+    return int.from_bytes(head[16:20], "big")
 
 
 def _stamp_provenance(png: Path, source: Path) -> None:
