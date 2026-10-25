@@ -2387,9 +2387,29 @@ def _check_edge_crossing_excess(a: Artifact):
     # 1.10.7 hard cap: a LANDSCAPE whose crossings exceed half its routable
     # edges is an ERROR (``geometry.HARD_CROSSING_RATIO``) — its routing has
     # collapsed (the quick landscape: 28 crossings on 28 edges).
+    #
+    # G34 (1.11.0, FEAT-002): converging-external-datastore / dense-external
+    # headroom. A dense as-built that draws many genuine cross-band edges — the
+    # account reaching several disjoint external sibling bands, e.g. the SEP
+    # cross-cloud landscape where BOTH the Lambda app and the EC2 Syndicate
+    # Server reach the MongoDB Atlas band and the account fans out to DIAL /
+    # License / sandbox-org bands — unavoidably crosses those cross-band legs in
+    # the gap between the account and the bands, and crosses the internal edges
+    # each cross-band leg passes on its way out. That is the honest cost of
+    # showing every integration on one wall, NOT a collapsed routing, so the hard
+    # cap is given extra headroom equal to the number of crossing PAIRS that
+    # involve a cross-band edge (``geometry.cross_band_crossing_count``). The
+    # relief is CLASS-SCOPED by construction: a diagram with no external sibling
+    # bands has no cross-band edge, so the count is 0 and its cap is exactly
+    # ``0.5 * E`` as before — every shipped golden and HA landscape is
+    # unaffected. An internally-collapsed landscape, whose crossings are
+    # internal-only, gets no headroom and still trips the cap.
+    hard_cap = _geo.HARD_CROSSING_RATIO * n_edges
+    if (a.diagram_class or DIAGRAM_CLASS_FLOW).lower() == DIAGRAM_CLASS_LANDSCAPE:
+        hard_cap += _geo.cross_band_crossing_count(geo)
     if (
         (a.diagram_class or DIAGRAM_CLASS_FLOW).lower() == DIAGRAM_CLASS_LANDSCAPE
-        and crossings > _geo.HARD_CROSSING_RATIO * n_edges
+        and crossings > hard_cap
     ):
         return RuleHit(
             offenders=_offender_ids(pairs),

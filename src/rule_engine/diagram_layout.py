@@ -100,6 +100,19 @@ MIN_FONT_SIZE = 12
 #: builder draws edges at this width; the ``arrow-style`` lint rule flags thinner.
 EDGE_STROKE_WIDTH = 1.5
 
+#: G33 (1.11.0, FEAT-002): dense-landscape finishing gate for ``build_diagram``.
+#: At or above this many service nodes, the greedy Variant A finishing
+#: (caption-safe + crossing-repair + collinear re-route) is SKIPPED and the
+#: crossing-minimised ``layout()`` geometry is kept as-is. It mirrors
+#: ``ordering.FINISH_NODE_BUDGET`` (the same value and rationale: only a dense
+#: landscape reaches it, so every flow golden is well under it and byte-
+#: identical). On a dense cross-band landscape the unbounded finishing pass both
+#: overran the 300s build guard (260s on 09-crosscloud) and NET-WORSENED the
+#: geometry (crossings ~9 -> 19, SEP account grown into the external sibling
+#: bands), so keeping the authoritative scored placement is both faster and
+#: better. An explicit ``caption_plan`` is never gated.
+_FINISH_NODE_GATE = 20
+
 #: Standard node label style suffix (label sits directly under the icon). The
 #: label font is held at ``MIN_FONT_SIZE`` so node captions clear the 12px floor.
 #: Every service/resource node caption renders on an opaque white background so
@@ -1452,7 +1465,35 @@ def build_diagram(
     )
     routed = _orthogonalised(edges, nodes)
     text = _assemble_document(routed=routed, **kwargs)
-    if caption_safe:
+    # G33 (1.11.0, FEAT-002): dense-landscape finishing gate. The Variant A
+    # finishing (`_plan_from_text` = caption-safe + crossing-repair + collinear)
+    # is a greedy, whole-diagram re-route planned on the ASSEMBLED document. On a
+    # SMALL flow diagram it cheaply removes the last own-caption strike or
+    # crossing and never worsens the picture — that is the case it was built for.
+    # On a DENSE landscape with many long cross-band edges converging on a shared
+    # external datastore (09-crosscloud: Lambda AND the EC2 Syndicate Server both
+    # reaching the MongoDB Atlas band, plus the sandbox-control fan-out) it does
+    # the opposite: measured on 09 it ran 260s (over the 300s build guard) AND it
+    # NET-WORSENED the geometry — the layout() output crosses ~9 pairs, but the
+    # finishing plan's container growth + re-routes pushed it to 19 crossings and
+    # grew the SEP account box into the external sibling bands (container-overlap,
+    # an ERROR on a landscape). The scored solver in `layout()` already
+    # crossing-minimises the placement for such a diagram (it is the authoritative
+    # geometry), so for a dense diagram the right move is to KEEP it rather than
+    # let an unbounded greedy finishing pass worsen it. This mirrors the existing
+    # `ordering.FINISH_NODE_BUDGET` gate, which already skips the per-candidate
+    # finishing MEASUREMENT in the auto-order loop at the same size — here we skip
+    # the APPLY in the standalone build_diagram path too. Scoped to >= the node
+    # budget (only a dense landscape reaches it): every shipped flow golden is far
+    # under it, so their output is byte-identical. A residual own-caption strike
+    # on the dense landscape degrades to a WARNING (edge-crosses-own-label), which
+    # a landscape already tolerates, in exchange for a clean crossing/overlap
+    # result that publishes and a build that stays under the guard.
+    # An explicitly-supplied caption_plan is always honoured (the caller chose
+    # it deliberately); the gate applies only to the AUTO-planned path, where the
+    # cost and the net-worsening both live.
+    _gated = caption_plan is None and len(nodes) >= _FINISH_NODE_GATE
+    if caption_safe and not _gated:
         plan = caption_plan if caption_plan is not None else _plan_from_text(text)
         safe = _apply_plan(plan, routed, boundaries, legend_x)
         if safe is not None:

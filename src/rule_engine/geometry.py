@@ -4216,6 +4216,153 @@ def edge_crossing_stats(
     return cost.crossings, n_edges, pairs  # type: ignore[return-value]
 
 
+def cross_band_edge_ids(geo: DiagramGeometry) -> frozenset:
+    """The ids of edges that span two DISJOINT top-level container clusters
+    (G34, 1.11.0). See :func:`cross_band_edge_count` for the full rationale; this
+    returns the id SET so a caller can tell which crossing pairs involve a
+    cross-band leg."""
+    conts = geo.containers
+    if not conts:
+        return frozenset()
+
+    def _inside(a: Box, b: Box) -> bool:
+        return (b.x <= a.x and a.x + a.w <= b.x + b.w
+                and b.y <= a.y and a.y + a.h <= b.y + b.h)
+
+    top_ids = []
+    for cid, c in conts.items():
+        enclosed = any(
+            oid != cid and _inside(c, o) and (o.w * o.h) > (c.w * c.h)
+            for oid, o in conts.items()
+        )
+        if not enclosed:
+            top_ids.append(cid)
+
+    def _cluster(node_id: str) -> Optional[str]:
+        # The top-level container (smallest by area, when nested boxes overlap)
+        # whose box contains the node centre, or None when the node is in no
+        # top-level container (a bare external actor). A bare node is NOT a
+        # band, so it never makes an edge "cross-band" — the relief is for edges
+        # that span two distinct CONTAINER bands, not every edge to a loose
+        # external icon.
+        box = geo.nodes.get(node_id)
+        if box is None:
+            return None
+        cx, cy = box.x + box.w / 2.0, box.y + box.h / 2.0
+        best = None
+        best_area = None
+        for cid in top_ids:
+            c = conts[cid]
+            if c.x <= cx <= c.x + c.w and c.y <= cy <= c.y + c.h:
+                area = c.w * c.h
+                if best_area is None or area < best_area:
+                    best, best_area = cid, area
+        return best
+
+    # At least TWO distinct top-level container bands must exist for an edge to
+    # be cross-band; a diagram with a single account box (the collapsed-routing
+    # quick landscape: one boundary, every other node a bare actor) has no
+    # second band, so every edge is intra-cluster and the count is 0 — the hard
+    # cap bites unchanged on a genuinely collapsed diagram.
+    if len(top_ids) < 2:
+        return frozenset()
+
+    out = set()
+    for e in geo.edges:
+        if len(edge_polyline(geo, e)) < 2:
+            continue
+        cs, ct = _cluster(e.source), _cluster(e.target)
+        # Cross-band ONLY when BOTH endpoints sit in a (different) top-level
+        # container band. An endpoint in no container (a loose external actor)
+        # never qualifies.
+        if cs is not None and ct is not None and cs != ct:
+            out.add(e.id)
+    return frozenset(out)
+
+
+def cross_band_crossing_count(geo: DiagramGeometry) -> int:
+    """Count crossing PAIRS in which at least one edge is cross-band (G34).
+
+    These are the crossings the dense-external as-built unavoidably incurs when
+    the account reaches several disjoint external sibling bands: a cross-band leg
+    traversing the gap to a band crosses both other cross-band legs AND the
+    internal account edges it passes. Excusing exactly these pairs (and no
+    internal-only pair) gives the landscape hard cap headroom that scales with a
+    diagram's genuine external-integration complexity, while an
+    internally-collapsed routing — whose crossings are internal-only — still
+    trips the cap. Zero for any diagram without external sibling bands (no
+    cross-band edge exists), so goldens and HA landscapes are unaffected."""
+    cb = cross_band_edge_ids(geo)
+    if not cb:
+        return 0
+    _, _, pairs = edge_crossing_stats(geo)
+    return sum(1 for a, b in pairs if a in cb or b in cb)
+
+
+def cross_band_edge_count(geo: DiagramGeometry) -> int:
+    """Count edges that span between two DISJOINT top-level container clusters
+    (G34, 1.11.0, FEAT-002).
+
+    This is the structural signature of a **cross-band / external-integration**
+    edge: one endpoint lives in the main nested account cluster and the other in
+    a disjoint external sibling band (``peer_account`` / ``external_cloud`` box
+    drawn beside the account), so the edge MUST traverse the gap between them.
+    Such edges unavoidably cross one another on a dense as-built with many
+    external integrations — that crossing field is not a "collapsed routing", it
+    is the honest cost of showing every integration on one wall. It is used only
+    to grant the landscape hard-cap (``edge-crossing-excess``) extra headroom
+    proportional to a diagram's genuine external-integration count; it never
+    affects a diagram with no external sibling bands (every endpoint then shares
+    the one account cluster, so the count is 0 and the cap is unchanged).
+
+    A node's *cluster* is the TOP-LEVEL container (one nested in no other
+    container) whose box geometrically contains it; a node in no top-level
+    container is its own singleton cluster (keyed by its id). An edge is
+    cross-band when its two endpoints resolve to different clusters. Deterministic
+    and purely geometric, so the linter and any caller agree by construction.
+    """
+    conts = geo.containers
+    if not conts:
+        return 0
+    # Top-level containers: those not strictly inside another container.
+    def _inside(a: Box, b: Box) -> bool:
+        return (b.x <= a.x and a.x + a.w <= b.x + b.w
+                and b.y <= a.y and a.y + a.h <= b.y + b.h)
+
+    top_ids = []
+    for cid, c in conts.items():
+        enclosed = any(
+            oid != cid and _inside(c, o) and (o.w * o.h) > (c.w * c.h)
+            for oid, o in conts.items()
+        )
+        if not enclosed:
+            top_ids.append(cid)
+
+    def _cluster(node_id: str) -> str:
+        box = geo.nodes.get(node_id)
+        if box is None:
+            return f"__node__{node_id}"
+        cx, cy = box.x + box.w / 2.0, box.y + box.h / 2.0
+        # Smallest top-level container whose box contains the node centre.
+        best = None
+        best_area = None
+        for cid in top_ids:
+            c = conts[cid]
+            if c.x <= cx <= c.x + c.w and c.y <= cy <= c.y + c.h:
+                area = c.w * c.h
+                if best_area is None or area < best_area:
+                    best, best_area = cid, area
+        return best if best is not None else f"__node__{node_id}"
+
+    n = 0
+    for e in geo.edges:
+        if len(edge_polyline(geo, e)) < 2:
+            continue
+        if _cluster(e.source) != _cluster(e.target):
+            n += 1
+    return n
+
+
 def check_detour_hook(
     geo: DiagramGeometry, coeff: float = DETOUR_HOOK_COEFF
 ) -> List[Tuple[str, str]]:
