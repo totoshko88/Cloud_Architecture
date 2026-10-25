@@ -78,6 +78,7 @@ try:  # package-relative import when used as ``rule_engine.layout.pipeline``
         decide_converging_turns,
         _exit_band_rank,
         _assign_exit_bands,
+        exit_direction_key,
         _has_free_left_approach,
         route_edge,
         nudge_off_container_borders,
@@ -123,6 +124,7 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
         decide_converging_turns,
         _exit_band_rank,
         _assign_exit_bands,
+        exit_direction_key,
         _has_free_left_approach,
         route_edge,
         nudge_off_container_borders,
@@ -563,6 +565,25 @@ def _global_contacts(
                     continue
         if side == "right" and len(eids) > 1:
             eids_sorted = sorted(eids, key=_spread_key)
+        elif len(eids) > 1:
+            # SYS-B (G36): order the generic same-side spread by the TARGET's
+            # direction along the face, not the marker number — so the edge whose
+            # target sits higher (right/left face) or farther left (top/bottom
+            # face) keeps the upper/left band and the two stubs never cross. This
+            # generalises the proven 2a-bottom direction ordering to every face
+            # the special cases above do NOT already handle (the right face is
+            # ranked by route lane in step 2b4; the left+straight bottom mix is
+            # handled by 2a-bottom). The marker is the stable tiebreak so two
+            # same-direction siblings keep distinct bands. The spread assigns only
+            # the along-face BAND; the exit FACE is unchanged, so edge-direction
+            # and exit-thirds stay clean by construction.
+            eids_sorted = sorted(
+                eids,
+                key=lambda eid: (
+                    exit_direction_key(spec.edges[order_index[eid]], placed, side),
+                    _mk(eid),
+                ),
+            )
         else:
             eids_sorted = sorted(eids, key=_mk)
         group = [(eid, exits[eid]) for eid in eids_sorted]
@@ -688,7 +709,18 @@ def _global_contacts(
                 classify_edge(spec.edges[order_index[eid]], placed),
                 placed, lane_sides,
             )) for eid in eids),
-            key=lambda pair: (pair[1], _mk(pair[0])),
+            # SYS-B (G36): within ONE route-lane rank, break the tie by the
+            # TARGET's vertical direction (upper target → upper band) before the
+            # marker, so two same-rank right-face branches whose targets are in
+            # reverse marker order (07's 3/4) leave uncrossed. The primary key is
+            # still the route-lane rank, so the above/level/below ordering the
+            # 2b4 pass depends on is unchanged; only the same-rank tiebreak moves
+            # from marker to direction.
+            key=lambda pair: (
+                pair[1],
+                exit_direction_key(spec.edges[order_index[pair[0]]], placed, "right"),
+                _mk(pair[0]),
+            ),
         )
         for eid, band in _assign_exit_bands(ranked).items():
             exits[eid] = _with_band(exits[eid], "right", band)

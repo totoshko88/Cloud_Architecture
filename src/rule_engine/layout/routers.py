@@ -884,6 +884,29 @@ def _exit_band_rank(
     return 2 if back else 1
 
 
+def exit_direction_key(edge: EdgeSpec, placed: Dict[str, Box], side: str) -> float:
+    """Order same-side exits by the TARGET's direction, not the marker (SYS-B, G36).
+
+    The owner's rule R3 — "exit nearer the target" — means that when several edges
+    leave ONE node on ONE face, which edge keeps the centre and which takes which
+    quarter must follow where each target sits, so the upper-target edge gets the
+    upper band and the two stubs never cross. The engine already did this on the
+    BOTTOM face (pipeline step 2a-bottom) and ranked the RIGHT face by route lane
+    (:func:`_exit_band_rank`); this is the shared key that generalises it to the
+    generic same-side spread.
+
+    The key is the target's centre coordinate ALONG the face: the vertical
+    position (centre-y) for a right/left face (so a target higher up sorts first →
+    upper band), the horizontal position (centre-x) for a top/bottom face (so a
+    target farther left sorts first → left band). It is a pure read of the placed
+    boxes, so it is deterministic; the caller pairs it with the marker as a
+    tiebreak so two same-direction siblings keep a stable, distinct order."""
+    tgt = placed[edge.target]
+    if side in ("top", "bottom"):
+        return tgt.x + tgt.w / 2.0
+    return tgt.y + tgt.h / 2.0
+
+
 def decide_lane_sides(
     spec: DiagramSpec,
     placed: Dict[str, Box],
