@@ -140,6 +140,20 @@ _MAX_GROWTH = 6 * GRID
 #: narrower), and a grid-resolved corner contact strictly outside it never
 #: touches the letters.
 _TEXT_CLEARANCE = 0.0
+#: R1 (1.11.0, ENG-R1): the corner-exit (D) fallback — on an OVERLOADED source
+#: whose caption TEXT a bottom exit strikes, shove that exit into a bottom
+#: CORNER past the text. It was introduced only because "the mask did not work
+#: because edges rendered above vertices" (see the module docstring). Variant A
+#: (1.10.12) made edges render BENEATH vertices and ENG-R2 (1.11.0) made the
+#: opaque caption background mask ANY crossed caption, so a bottom exit at its
+#: distinct ``exit-thirds`` band is now LEGIBLE where it crosses the icon-wide
+#: caption — the owner's requirement for 02 (edges 8/9 must leave from thirds,
+#: not the node edges; bring the caption to the foreground instead of dodging
+#: it). With the fallback OFF, an overloaded bottom exit that has no clean
+#: side-corridor route keeps the pipeline's distinct-thirds spread and is masked
+#: by its caption, instead of being pushed to a corner. Flip to ``True`` to
+#: restore the pre-1.11.0 corner-exit behaviour.
+_CORNER_EXIT_FALLBACK = [False]
 #: Clearance kept between a run and a container caption's text.
 _TEXT_CLEARANCE_C = 4.0
 #: Joint search: partners tried, and candidates kept per edge in a combination.
@@ -1311,8 +1325,12 @@ def _find_move(work: DiagramGeometry, e: EdgeGeom, base: _Score) -> Optional[Mov
         if found is not None:
             break
     _CORRIDOR_START[0] = 2 * GRID
-    if found is None and _overloaded(work, e) and e.id in {
-            x for x, _ in check_edge_strikes_own_text(work)}:
+    if (
+        found is None
+        and _CORNER_EXIT_FALLBACK[0]
+        and _overloaded(work, e)
+        and e.id in {x for x, _ in check_edge_strikes_own_text(work)}
+    ):
         found = (_best_single(work, e, base, True)
                  or _best_joint(work, e, base, True, 2))
     return found

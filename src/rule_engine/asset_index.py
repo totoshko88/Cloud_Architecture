@@ -876,6 +876,105 @@ def icon_index_to_json(payload: Dict[str, object]) -> str:
     return json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True)
 
 
+# ---------------------------------------------------------------------------
+# Render -> index bridge (1.11.0 WS10, Requirement 9.5 / 9.6)
+# ---------------------------------------------------------------------------
+#
+# The generation path (icon_resolver.resolve_icon) reads only the curated
+# mappings/<provider>-icons.yaml. A role that is not in that table raises
+# UnresolvedTypeError and the draw fails. WS10 adds a SAFETY NET: before failing,
+# consult the per-slug asset index for an EXACT-name match and synthesise an
+# ``image=<official file>`` style from it. The match is exact-slug ONLY — never a
+# token/substring near-match — so the bridge can only ever draw the service the
+# author actually named, never a look-alike (Req 9.6). When no exact asset is
+# found the bridge returns None and the resolver stays fail-honest.
+
+#: Provider -> ordered pack keys to try for an exact-slug asset (GCP is
+#: product-first then category, mirroring resolve_role_icon). OCI is a shape
+#: library, not per-service files, so it has no file-bridge.
+_BRIDGE_PACKS: Dict[str, tuple] = {
+    "aws": ("aws",),
+    "azure": ("azure",),
+    "gcp": ("gcp-core", "gcp-category"),
+}
+
+
+def _committed_packs() -> Dict[str, Dict[str, dict]]:
+    """Read the per-slug ``packs`` table from the committed icon-index.json, if
+    it was built with ``full_packs=True`` (Req 10.1). Returns ``{}`` when the
+    index is absent or carries no per-slug table (then the bridge falls back to
+    an on-disk pack index). Never raises."""
+    path = resolve_bundled_dir("mappings") / "icon-index.json"
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    packs = data.get("packs") if isinstance(data, dict) else None
+    return packs if isinstance(packs, dict) else {}
+
+
+def _exact_asset(pack_key: str, slug: str) -> Optional[AssetEntry]:
+    """Return the EXACT-slug :class:`AssetEntry` for ``slug`` in ``pack_key``,
+    or ``None``. Tries the committed per-slug table first, then an on-disk pack
+    index. Never a token/substring match — exact slug only (Req 9.6)."""
+    committed = _committed_packs().get(pack_key)
+    if isinstance(committed, dict):
+        raw = committed.get(slug)
+        if isinstance(raw, dict):
+            try:
+                return AssetEntry(**raw)
+            except TypeError:
+                return None
+        return None
+    # Fallback: build the pack index from disk (packs may be absent in a
+    # repo-less install, in which case there is nothing to bridge against).
+    rel = _PACK_PREFIX.get(pack_key)
+    if not rel:
+        return None
+    root = Path.cwd() / rel
+    try:
+        index = index_provider(pack_key, str(root))
+    except (FileNotFoundError, OSError, ValueError):
+        return None
+    entry = index.get(slug)
+    return entry if isinstance(entry, AssetEntry) else None
+
+
+def bridge_resolve_style(resource_type: str, provider: str) -> Optional[Dict[str, str]]:
+    """EXACT-name render->index bridge (Req 9.5/9.6), or ``None`` fail-honest.
+
+    Called by :func:`icon_resolver.resolve_icon` when the curated mapping has no
+    entry for ``resource_type``. Resolves the type's slug against the provider's
+    per-slug asset index (committed full-packs table, else an on-disk pack) by
+    EXACT slug only, and synthesises an ``image=<official file>`` draw.io style
+    from the matched asset. Returns ``{style_string, brand_hex, icon_source}``
+    on an exact hit, else ``None`` — the resolver then raises
+    ``UnresolvedTypeError`` unchanged. Never substitutes a look-alike."""
+    from rule_engine.constants import BRAND_HEX
+
+    pack_keys = _BRIDGE_PACKS.get(provider)
+    if not pack_keys:
+        return None  # oci is a shape library; no per-service file bridge
+    slug = normalize_slug(resource_type, strip_vendor=True)
+    if not slug:
+        return None
+    for pack_key in pack_keys:
+        entry = _exact_asset(pack_key, slug)
+        if entry is None:
+            continue
+        ref = _prefixed(pack_key, entry)
+        brand = BRAND_HEX.get(provider, "#000000")
+        style = (
+            "image;html=1;aspect=fixed;points=[];align=center;"
+            "verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;"
+            f"image={ref}"
+        )
+        return {"style_string": style, "brand_hex": brand, "icon_source": "custom"}
+    return None
+
+
 __all__ = [
     "PROVIDERS",
     "AssetEntry",
@@ -886,6 +985,7 @@ __all__ = [
     "index_provider",
     "resolve_asset",
     "resolve_role_icon",
+    "bridge_resolve_style",
     "build_index",
     "build_icon_index",
     "index_to_json",

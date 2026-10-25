@@ -19,7 +19,7 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="e2" value="2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.2564102564102564;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.2564102564102564;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="lb" target="hub">
-          <mxGeometry x="-0.2" relative="1" as="geometry">
+          <mxGeometry x="-0.4" relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="240.00" y="400.00" />
               <mxPoint x="240.00" y="350.00" />

@@ -213,7 +213,7 @@ def _build(spec: DS) -> str:
     for warning in placed.layout_warnings:
         print(f"build_kubernetes_example: layout WARNING: {warning}", file=sys.stderr)
 
-    renderers = dc._skin_renderers(PROVIDER, [n.role for n in spec.nodes])
+    renderers = dc._skin_renderers(PROVIDER, spec.nodes)
     nodes = dc._nodes_from(placed, renderers)
     edges = dc._edges_from(placed)
     boundaries = dc._boundaries_from(placed, PROVIDER, _CONTAINER_LABELS)

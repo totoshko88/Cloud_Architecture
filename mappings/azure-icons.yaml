@@ -55,6 +55,119 @@ resources:
     brand_hex: "#0078D4"
     style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/ai_machine_learning/Azure_OpenAI.svg"
 
+  # --- Common-service roles (WS9 icon-coverage fill-in) ---
+  # Each references a built-in azure2 image shape verified present in
+  # mappings/azure2-shapes.json, same scheme as the 8 roles above.
+  compute_instance:
+    icon_id: azure2.virtual_machine
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/compute/Virtual_Machine.svg"
+  lb:
+    icon_id: azure2.load_balancers
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/networking/Load_Balancers.svg"
+  app_gateway:
+    icon_id: azure2.application_gateways
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/networking/Application_Gateways.svg"
+  dynamodb:
+    icon_id: azure2.azure_cosmos_db
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/databases/Azure_Cosmos_DB.svg"
+  cloudwatch:
+    icon_id: azure2.monitor
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/management_governance/Monitor.svg"
+  firewall:
+    icon_id: azure2.firewalls
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/networking/Firewalls.svg"
+
+  # --- 1.11.0 WS6: network diagram-type roles (extended roles only; not in
+  # constants.RESOURCE_TYPES). Azure networking blue #0078D4, built-in azure2
+  # shapes. ------------------------------------------------------------------
+  transit_gateway:
+    icon_id: azure2.virtual_wans
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/networking/Virtual_WANs.svg"
+  vpn_gateway:
+    icon_id: azure2.virtual_network_gateways
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/networking/Virtual_Network_Gateways.svg"
+  direct_connect:
+    icon_id: azure2.expressroute_circuits
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/networking/ExpressRoute_Circuits.svg"
+  route_table:
+    icon_id: azure2.route_tables
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/networking/Route_Tables.svg"
+  network_firewall:
+    icon_id: azure2.firewalls
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/networking/Firewalls.svg"
+  # --- 1.11.0 WS7 access diagram type: principal / policy / resource ---
+  # Azure's access model: a principal is a Managed Identity, a policy is an
+  # Azure Policy, a resource is the generic All-Resources glyph. Built-in
+  # azure2 shape paths (the convention every azure entry here uses), subdir
+  # mirrors the vendor tree (identity/ , general/). Extended roles only.
+  principal:                 # Managed Identity — the access subject
+    icon_id: azure2.managed_identities
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/identity/Managed_Identities.svg"
+  policy:                    # Azure Policy — the grant
+    icon_id: azure2.policy
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/general/Policy.svg"
+  resource:                  # All Resources — the object
+    icon_id: azure2.all_resources
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/general/All_Resources.svg"
+  api_gateway:
+    icon_id: azure2.api_management_services
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/app_services/API_Management_Services.svg"
+  ecr:
+    icon_id: azure2.container_registries
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/containers/Container_Registries.svg"
+  cdn:
+    icon_id: azure2.front_doors
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/networking/Front_Doors.svg"
+  iam:
+    icon_id: azure2.azure_active_directory
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/identity/Azure_Active_Directory.svg"
+  log_analytics:
+    icon_id: azure2.log_analytics_workspaces
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/management_governance/Log_Analytics_Workspaces.svg"
+  container_apps:
+    icon_id: azure2.container_app_environments
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/other/Container_App_Environments.svg"
+  cognitive_services:
+    icon_id: azure2.cognitive_services
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/ai_machine_learning/Cognitive_Services.svg"
+  bastion:
+    icon_id: azure2.bastions
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/networking/Bastions.svg"
+  app_service:
+    icon_id: azure2.app_services
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/app_services/App_Services.svg"
+  eventbridge:
+    icon_id: azure2.event_grid_topics
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/integration/Event_Grid_Topics.svg"
+  dns:
+    icon_id: azure2.dns_zones
+    brand_hex: "#0078D4"
+    style: "image;aspect=fixed;html=1;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=img/lib/azure2/networking/DNS_Zones.svg"
+
   # --- External / third-party systems (Theme 1) ---
   external_system:
     icon_id: external.system
@@ -148,3 +261,8 @@ containers:
     brand_hex: "#0078D4"
     # Subnet — borderless light-grey block with the Subnet icon, bold caption.
     style: "shape=label;image=img/lib/azure2/networking/Subnet.svg;imageWidth=20;imageHeight=12;imageAlign=left;imageVerticalAlign=top;rounded=0;whiteSpace=wrap;html=1;fillColor=#F2F2F2;strokeColor=none;verticalAlign=top;align=left;spacingLeft=30;fontColor=#000000;fontStyle=1;fontSize=12"
+  # 1.11.0 WS6: Network Security Group — dashed Azure-blue rect, no fill, leaf.
+  security_group:
+    icon_id: azure.security_group
+    brand_hex: "#0078D4"
+    style: "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#0078D4;fillColor=none;verticalAlign=top;align=left;spacingLeft=8;fontColor=#000000;fontSize=12"

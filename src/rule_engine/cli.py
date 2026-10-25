@@ -235,8 +235,21 @@ def _parse_drawio_page(path: str, page: Page, text: str) -> Artifact:
         heading = _first_nonempty_line(cell)
         if heading == _LEGEND_HEADING and legend_lines is None:
             legend_lines = [line.strip() for line in cell.lines]
-        elif heading == _FLOW_HEADING and not flow_legend_lines:
-            flow_legend_lines = [line.strip() for line in cell.lines]
+        elif heading == _FLOW_HEADING:
+            # A diagram may split a long Flow list into several side-by-side
+            # ``Flow`` column cells (``build_diagram(flow_columns=N)``, FEAT-001
+            # B / G22). The first cell contributes its header + markers; every
+            # later Flow cell contributes only its marker lines (its repeated
+            # ``Flow`` header is dropped), so the aggregated legend covers every
+            # marker across all columns. A single-column diagram reads exactly
+            # one cell, so its ``flow_legend_lines`` is byte-identical to before.
+            col_lines = [line.strip() for line in cell.lines]
+            if not flow_legend_lines:
+                flow_legend_lines = col_lines
+            else:
+                flow_legend_lines.extend(
+                    ln for ln in col_lines if ln.casefold() != _FLOW_HEADING
+                )
         if title_cell is None:
             match = TITLE_RE.match(cell.label)
             if match:
@@ -279,6 +292,14 @@ def _parse_drawio_page(path: str, page: Page, text: str) -> Artifact:
         if not cell.vertex:
             continue
         if cid in boundary_ids:
+            continue
+        if (cid or "").startswith("flowgroup-"):
+            # 1.11.0 WS2 flow-group box: a decorative grey context box behind the
+            # member nodes (``flow_group_cells``), not a service node. It must not
+            # inflate node-count, be read as an unresolved ``icon-resolved``
+            # placeholder (it names no icon), or trip ``node-connectivity`` (it
+            # carries no edge by design). Matches the geometry-side skip in
+            # ``geometry.build_geometry`` so the two parsers cannot drift.
             continue
         if _is_text_cell_style(cell.style) or cid == title_cell_id:
             continue

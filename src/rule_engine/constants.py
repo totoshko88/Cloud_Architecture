@@ -126,6 +126,18 @@ CONTAINER_KINDS: Tuple[str, ...] = (
     # members directly (not via a nested region/vpc), so it reuses the
     # sibling-leaf-boundary placement + bottom-up sizing added in 1.10.10.
     "namespace",
+    # 1.11.0 WS6 (network diagram type): a Security Group drawn as a LEAF
+    # boundary — a dashed rectangle whose member nodes nest directly inside it,
+    # like `namespace`. It is a boundary-ONLY kind: there is no `security_group`
+    # node glyph (a SG is a scope, not a service). Default-inert: no shipped
+    # golden declares it, so every golden `.drawio` stays byte-identical.
+    "security_group",
+    # 1.11.0 WS7 (access diagram type): a Trust Boundary drawn as a LEAF
+    # boundary — the account / identity-provider / federation perimeter an
+    # access diagram groups principals inside, like `security_group`. A
+    # boundary-ONLY kind (a trust perimeter is a scope, not a service node).
+    # Default-inert: no shipped golden declares it.
+    "trust_boundary",
 )
 
 #: The two container kinds EVERY profile must declare (Requirement 2 AC6). The

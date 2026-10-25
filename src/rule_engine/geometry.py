@@ -256,6 +256,20 @@ def build_geometry(page: Page) -> DiagramGeometry:
         if not cell.vertex or cid in boundary_ids:
             continue
         g = cell.geom
+        if (cid or "").startswith("flowgroup-"):
+            # A 1.11.0 WS2 flow-group box (``flow_group_cells``) is a purely
+            # DECORATIVE grey context box drawn BEHIND its member nodes with no
+            # node shift. It is neither a node (it must not be counted by
+            # node-count, nor read as pierced by its members' own edges ->
+            # ``straight-through``/``knee-through`` ERRORs) nor a Boundary
+            # container (its members are parented to the root layer, not to it,
+            # so promoting it would raise spurious ``geometric-containment`` /
+            # ``container-padding`` findings on an intentional overlap). It has
+            # ``fillColor=none`` and carries a non-Flow/Legend caption, so it is
+            # not Flow/Legend furniture either. Skip it from every geometry set.
+            # Mirrors the CLI-side skip in ``cli._parse_drawio_page`` so the two
+            # parsers cannot drift.
+            continue
         if _is_text_style(cell.style.lower()):
             # A text cell is NOT a node (it must never be counted by node-count),
             # but its box is recorded separately so the Flow/Legend furniture can
@@ -3641,6 +3655,50 @@ def check_marker_icon_collision(geo: DiagramGeometry) -> List[Tuple[str, str]]:
     return out
 
 
+def check_marker_on_container_border(
+    geo: DiagramGeometry, clearance: float = MARKER_EDGE_CLEARANCE
+) -> List[Tuple[str, str]]:
+    """Return ``(edge_id, "<container>.<side>")`` for flow-markers drawn on a
+    Boundary container border.
+
+    The container-border sibling of :func:`check_marker_label_collision` (on a
+    node caption) and :func:`check_marker_icon_collision` (on a node icon): a
+    numbered flow-marker whose rendered anchor (:func:`marker_anchors`) lies
+    within one grid step (``clearance`` = :data:`MARKER_EDGE_CLEARANCE`, with
+    :data:`AXIS_EPS` tolerance) of a Boundary container's left / right / top /
+    bottom border — and within that border's extent along the border axis —
+    overprints the box edge, so the reader sees the step number smeared along the
+    account / VPC frame rather than on its edge. This is the defect the 01 /
+    01b review surfaced: marker "9" rendered on the SEP account box border.
+
+    Modelled on :func:`check_edge_on_container_border` (which flags a long edge
+    *leg* that rides a border); here the anchor *point* is what sits on the
+    border. A vertical border (left / right) is judged only when the anchor's y
+    lies within the border's y-extent; a horizontal border (top / bottom) only
+    when the anchor's x lies within its x-extent, so a marker beside — but off
+    the end of — a border is not flagged. Every container is checked; sorted and
+    de-duplicated. Lint-only — **not** part of :func:`rule_violations` (the
+    solver oracle)."""
+    out: List[Tuple[str, str]] = []
+    tol = clearance - AXIS_EPS
+    for eid, (px, py) in sorted(marker_anchors(geo).items()):
+        for cid in sorted(geo.containers):
+            c = geo.containers[cid]
+            # vertical borders (left / right): anchor must sit within the y-extent
+            if c.y - clearance <= py <= c.bottom + clearance:
+                if abs(px - c.x) <= tol:
+                    out.append((eid, f"{cid}.left"))
+                elif abs(px - c.right) <= tol:
+                    out.append((eid, f"{cid}.right"))
+            # horizontal borders (top / bottom): anchor must sit within the x-extent
+            if c.x - clearance <= px <= c.right + clearance:
+                if abs(py - c.y) <= tol:
+                    out.append((eid, f"{cid}.top"))
+                elif abs(py - c.bottom) <= tol:
+                    out.append((eid, f"{cid}.bottom"))
+    return sorted(set(out))
+
+
 def _edge_polylines(geo: DiagramGeometry) -> Dict[str, List[Point]]:
     """Return ``{edge_id: [exit, *waypoints, entry]}`` for every resolved edge.
 
@@ -3799,6 +3857,24 @@ def resolve_marker_collisions(
                 return False
         return True
 
+    def on_container_border(p: Point) -> bool:
+        """True when ``p`` lies within ``clearance`` of any Boundary container
+        border (the same predicate :func:`check_marker_on_container_border`
+        flags). Phase 3 (FEAT-002) slides a marker off such a border."""
+        if clearance <= 0:
+            return False
+        tol = clearance - AXIS_EPS
+        px, py = p
+        for cid in sorted(geo.containers):
+            c = geo.containers[cid]
+            if c.y - clearance <= py <= c.bottom + clearance:
+                if abs(px - c.x) <= tol or abs(px - c.right) <= tol:
+                    return True
+            if c.x - clearance <= px <= c.right + clearance:
+                if abs(py - c.y) <= tol or abs(py - c.bottom) <= tol:
+                    return True
+        return False
+
     for eid in ids:
         here = anchor_of(eid)
         if here is None:
@@ -3821,6 +3897,44 @@ def resolve_marker_collisions(
                 p = anchor_of(eid)
                 pos[eid] = start
                 if p is None:
+                    continue
+                if _dist_to_foreign_edges(p, eid, polys)[0] < clearance - AXIS_EPS:
+                    continue
+                if not clear_of_markers(eid, p) or in_box(p) or on_container_border(p):
+                    continue
+                chosen = cand
+                break
+            if chosen is not None:
+                pos[eid] = chosen
+                break
+
+    # Phase 3 — slide a marker off a Boundary container BORDER (FEAT-002 /
+    # backlog G30). A numbered marker whose anchor lands within one grid step of
+    # an account / VPC / region frame prints the step number along the box edge
+    # (the owner's 09 marker-25-on-the-Sandbox-mgmt-box finding). It slides along
+    # its OWN edge, nearest candidate first (``pos ∓ k·step``, toward the source
+    # before the target, ``|pos| ≤`` :data:`_MARKER_SLIDE_LIMIT`), accepting the
+    # first spot that clears every container border AND every foreign segment,
+    # other marker, node icon and caption. When none qualifies the marker stays
+    # put and lint (``marker-on-container-border``) still reports it. Lint-only
+    # rule, so this nudge is the engine's own remedy — never a hand coordinate.
+    for eid in ids:
+        here = anchor_of(eid)
+        if here is None or not on_container_border(here):
+            continue
+        start = pos[eid]
+        for k in range(1, 5):
+            chosen = None
+            for sign in (-1.0, 1.0):
+                cand = round(start + sign * k * step, 6)
+                if abs(cand) > _MARKER_SLIDE_LIMIT + 1e-9:
+                    continue
+                pos[eid] = cand
+                p = anchor_of(eid)
+                pos[eid] = start
+                if p is None:
+                    continue
+                if on_container_border(p):
                     continue
                 if _dist_to_foreign_edges(p, eid, polys)[0] < clearance - AXIS_EPS:
                     continue

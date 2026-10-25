@@ -44,6 +44,84 @@
         "source": "stencil"
       }
     },
+    "app_gateway": {
+      "aws": {
+        "display_name": "Elastic Load Balancing",
+        "note": "resolved 'Elastic Load Balancing'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Networking-Content-Delivery/32/Arch_Elastic-Load-Balancing_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Application Gateways",
+        "note": "resolved 'Application Gateways'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/networking/10076-icon-service-Application-Gateways.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "Networking",
+        "note": "category icon (Networking) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Flexible Load Balancer",
+        "note": "resolved 'flexible-load-balancer'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#flexible-load-balancer",
+        "source": "stencil"
+      }
+    },
+    "app_service": {
+      "aws": {
+        "display_name": "AWS Elastic Beanstalk",
+        "note": "resolved 'Elastic Beanstalk'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Compute/32/Arch_AWS-Elastic-Beanstalk_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "App Services",
+        "note": "resolved 'App Services'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/web/10035-icon-service-App-Services.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "ServerlessComputing",
+        "note": "category icon (Serverless Computing) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Serverless Computing/SVG/ServerlessComputing-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Functions",
+        "note": "resolved 'functions'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#functions",
+        "source": "stencil"
+      }
+    },
+    "athena": {
+      "aws": {
+        "display_name": "Amazon Athena",
+        "note": "resolved 'Athena'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Analytics/32/Arch_Amazon-Athena_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Azure Synapse Analytics",
+        "note": "resolved 'Synapse Analytics'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/databases/00606-icon-service-Azure-Synapse-Analytics.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "DataAnalytics",
+        "note": "category icon (Data Analytics) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Data Analytics/SVG/DataAnalytics-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Analytics and AI -&amp;nbsp;Data Flow",
+        "note": "resolved 'data-flow'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#analytics-and-ai-amp-nbsp-data-flow",
+        "source": "stencil"
+      }
+    },
     "aurora": {
       "aws": {
         "display_name": "Amazon Aurora",
@@ -67,6 +145,32 @@
         "display_name": "Autonomous DB",
         "note": "resolved 'autonomous-db'",
         "ref": "assets/vendor/oci-stencils/stencils.json#autonomous-db",
+        "source": "stencil"
+      }
+    },
+    "bastion": {
+      "aws": {
+        "display_name": "Amazon EC2",
+        "note": "resolved 'EC2'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Compute/32/Arch_Amazon-EC2_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Bastions",
+        "note": "resolved 'Bastions'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/networking/02422-icon-service-Bastions.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "SecurityIdentity",
+        "note": "category icon (Security Identity) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Bastion",
+        "note": "resolved 'bastion'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#bastion",
         "source": "stencil"
       }
     },
@@ -119,6 +223,58 @@
         "display_name": "Artificial Intelligence",
         "note": "resolved 'artificial-intelligence'",
         "ref": "assets/vendor/oci-stencils/stencils.json#artificial-intelligence",
+        "source": "stencil"
+      }
+    },
+    "bigquery": {
+      "aws": {
+        "display_name": "Amazon Athena",
+        "note": "resolved 'Athena'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Analytics/32/Arch_Amazon-Athena_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Azure Synapse Analytics",
+        "note": "resolved 'Synapse Analytics'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/databases/00606-icon-service-Azure-Synapse-Analytics.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "BigQuery",
+        "note": "flagship product icon",
+        "ref": "assets/vendor/gcp-core/Unique Icons/BigQuery/SVG/BigQuery-512-color.svg",
+        "source": "product"
+      },
+      "oci": {
+        "display_name": "Analytics and AI -&amp;nbsp;Data Flow",
+        "note": "resolved 'data-flow'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#analytics-and-ai-amp-nbsp-data-flow",
+        "source": "stencil"
+      }
+    },
+    "block_volume": {
+      "aws": {
+        "display_name": "Amazon Elastic Block Store",
+        "note": "resolved 'Elastic Block Store'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Storage/32/Arch_Amazon-Elastic-Block-Store_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Disks",
+        "note": "resolved 'Disks'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/compute/10032-icon-service-Disks.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "Storage",
+        "note": "category icon (Storage) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Storage/SVG/Storage-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Block Storage",
+        "note": "resolved 'block-storage'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#block-storage",
         "source": "stencil"
       }
     },
@@ -200,6 +356,32 @@
         "source": "stencil"
       }
     },
+    "cloudtrail": {
+      "aws": {
+        "display_name": "AWS CloudTrail",
+        "note": "resolved 'CloudTrail'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Management-Tools/32/Arch_AWS-CloudTrail_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Monitor",
+        "note": "resolved 'Monitor'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/monitor/00001-icon-service-Monitor.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "ManagementTools",
+        "note": "category icon (Management Tools) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Management Tools/SVG/ManagementTools-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Auditing",
+        "note": "resolved 'auditing'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#auditing",
+        "source": "stencil"
+      }
+    },
     "cloudwatch": {
       "aws": {
         "display_name": "Amazon CloudWatch",
@@ -223,6 +405,32 @@
         "display_name": "Monitoring",
         "note": "resolved 'monitoring'",
         "ref": "assets/vendor/oci-stencils/stencils.json#monitoring",
+        "source": "stencil"
+      }
+    },
+    "cognitive_services": {
+      "aws": {
+        "display_name": "Amazon SageMaker AI",
+        "note": "resolved 'SageMaker AI'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Artificial-Intelligence/32/Arch_Amazon-SageMaker-AI_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Cognitive Services",
+        "note": "resolved 'Cognitive Services'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/web/10162-icon-service-Cognitive-Services.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "AIMachineLearning",
+        "note": "category icon (AI _ Machine Learning) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/AI _ Machine Learning/SVG/AIMachineLearning-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Artificial Intelligence",
+        "note": "resolved 'artificial-intelligence'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#artificial-intelligence",
         "source": "stencil"
       }
     },
@@ -252,6 +460,32 @@
         "source": "stencil"
       }
     },
+    "compute": {
+      "aws": {
+        "display_name": "Amazon EC2",
+        "note": "resolved 'EC2'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Compute/32/Arch_Amazon-EC2_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Virtual Machine",
+        "note": "resolved 'Virtual Machines'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/compute/10021-icon-service-Virtual-Machine.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "Compute",
+        "note": "category icon (Compute) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Compute/SVG/Compute-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Virtual Machine VM",
+        "note": "resolved 'virtual-machine-vm'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#virtual-machine-vm",
+        "source": "stencil"
+      }
+    },
     "compute_instance": {
       "aws": {
         "display_name": "Amazon EC2",
@@ -275,6 +509,136 @@
         "display_name": "Bare Metal Compute",
         "note": "resolved 'compute'",
         "ref": "assets/vendor/oci-stencils/stencils.json#bare-metal-compute",
+        "source": "stencil"
+      }
+    },
+    "config": {
+      "aws": {
+        "display_name": "AWS Config",
+        "note": "resolved 'Config'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Management-Tools/32/Arch_AWS-Config_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Policy",
+        "note": "resolved 'Policy'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/management + governance/10316-icon-service-Policy.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "ManagementTools",
+        "note": "category icon (Management Tools) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Management Tools/SVG/ManagementTools-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Resource Manager",
+        "note": "resolved 'resource-manager'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#resource-manager",
+        "source": "stencil"
+      }
+    },
+    "container_apps": {
+      "aws": {
+        "display_name": "AWS Fargate",
+        "note": "resolved 'Fargate'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Containers/32/Arch_AWS-Fargate_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Container Apps Environments",
+        "note": "resolved 'Container App Environments'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/other/02989-icon-service-Container-Apps-Environments.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "ServerlessComputing",
+        "note": "category icon (Serverless Computing) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Serverless Computing/SVG/ServerlessComputing-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Container",
+        "note": "resolved 'container'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#container",
+        "source": "stencil"
+      }
+    },
+    "container_registry": {
+      "aws": {
+        "display_name": "Amazon Elastic Container Registry",
+        "note": "resolved 'Elastic Container Registry'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Containers/32/Arch_Amazon-Elastic-Container-Registry_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Container Registries",
+        "note": "resolved 'Container Registries'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/containers/10105-icon-service-Container-Registries.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "Containers",
+        "note": "category icon (Containers) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Containers/SVG/Containers-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Container Registry",
+        "note": "resolved 'container-registry'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#container-registry",
+        "source": "stencil"
+      }
+    },
+    "data_science": {
+      "aws": {
+        "display_name": "Amazon SageMaker AI",
+        "note": "resolved 'SageMaker AI'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Artificial-Intelligence/32/Arch_Amazon-SageMaker-AI_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Azure Machine Learning",
+        "note": "resolved 'Machine Learning'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/ai + machine learning/038470510-icon-service-Azure-Machine-Learning.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "VertexAI",
+        "note": "flagship product icon",
+        "ref": "assets/vendor/gcp-core/Unique Icons/Vertex AI/SVG/VertexAI-512-color.svg",
+        "source": "product"
+      },
+      "oci": {
+        "display_name": "Data Science",
+        "note": "resolved 'data-science'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#data-science",
+        "source": "stencil"
+      }
+    },
+    "direct_connect": {
+      "aws": {
+        "display_name": "AWS Direct Connect",
+        "note": "resolved 'Direct Connect'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Networking-Content-Delivery/32/Arch_AWS-Direct-Connect_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "ExpressRoute Circuits",
+        "note": "resolved 'ExpressRoute Circuits'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/networking/10079-icon-service-ExpressRoute-Circuits.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "Networking",
+        "note": "category icon (Networking) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Special Connectors - FastConnect - Vertical",
+        "note": "resolved 'special-connectors-fastconnect-vertical'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#special-connectors-fastconnect-vertical",
         "source": "stencil"
       }
     },
@@ -382,6 +746,32 @@
         "source": "stencil"
       }
     },
+    "ecs": {
+      "aws": {
+        "display_name": "Amazon Elastic Container Service",
+        "note": "resolved 'Elastic Container Service'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Containers/32/Arch_Amazon-Elastic-Container-Service_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Container Instances",
+        "note": "resolved 'Container Instances'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/containers/10104-icon-service-Container-Instances.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "Containers",
+        "note": "category icon (Containers) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Containers/SVG/Containers-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Container Engine for Kubernetes",
+        "note": "resolved 'container-engine-for-kubernetes'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#container-engine-for-kubernetes",
+        "source": "stencil"
+      }
+    },
     "education": {
       "aws": {
         "display_name": "Education (mortarboard)",
@@ -434,6 +824,32 @@
         "source": "stencil"
       }
     },
+    "fargate": {
+      "aws": {
+        "display_name": "AWS Fargate",
+        "note": "resolved 'Fargate'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Containers/32/Arch_AWS-Fargate_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Container Instances",
+        "note": "resolved 'Container Instances'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/containers/10104-icon-service-Container-Instances.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "Containers",
+        "note": "category icon (Containers) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Containers/SVG/Containers-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Container Engine for Kubernetes",
+        "note": "resolved 'container-engine-for-kubernetes'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#container-engine-for-kubernetes",
+        "source": "stencil"
+      }
+    },
     "file_system": {
       "aws": {
         "display_name": "Amazon Elastic File System File System",
@@ -457,6 +873,84 @@
         "display_name": "File Storage",
         "note": "resolved 'file-storage'",
         "ref": "assets/vendor/oci-stencils/stencils.json#file-storage",
+        "source": "stencil"
+      }
+    },
+    "firewall": {
+      "aws": {
+        "display_name": "AWS Network Firewall",
+        "note": "resolved 'Network Firewall'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Security-Identity/32/Arch_AWS-Network-Firewall_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Firewalls",
+        "note": "resolved 'Firewalls'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/networking/10084-icon-service-Firewalls.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "Networking",
+        "note": "category icon (Networking) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "WAF",
+        "note": "resolved 'waf'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#waf",
+        "source": "stencil"
+      }
+    },
+    "glue": {
+      "aws": {
+        "display_name": "AWS Glue",
+        "note": "resolved 'Glue'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Analytics/32/Arch_AWS-Glue_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "",
+        "note": "no query declared",
+        "ref": "",
+        "source": "unresolved"
+      },
+      "gcp": {
+        "display_name": "DataAnalytics",
+        "note": "category icon (Data Analytics) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Data Analytics/SVG/DataAnalytics-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Analytics and AI -&amp;nbsp;Data Integration",
+        "note": "resolved 'data-integration'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#analytics-and-ai-amp-nbsp-data-integration",
+        "source": "stencil"
+      }
+    },
+    "guardduty": {
+      "aws": {
+        "display_name": "Amazon GuardDuty",
+        "note": "resolved 'GuardDuty'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Security-Identity/32/Arch_Amazon-GuardDuty_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Defender HMI",
+        "note": "resolved 'Defender'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/other/03406-icon-service-Defender-HMI.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "SecurityIdentity",
+        "note": "category icon (Security Identity) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Cloud Guard",
+        "note": "resolved 'cloud-guard'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#cloud-guard",
         "source": "stencil"
       }
     },
@@ -509,6 +1003,58 @@
         "display_name": "Internet Gateway",
         "note": "resolved 'internet-gateway'",
         "ref": "assets/vendor/oci-stencils/stencils.json#internet-gateway",
+        "source": "stencil"
+      }
+    },
+    "kinesis": {
+      "aws": {
+        "display_name": "Amazon Kinesis",
+        "note": "resolved 'Kinesis'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Analytics/32/Arch_Amazon-Kinesis_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Event Hubs",
+        "note": "resolved 'Event Hubs'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/iot/00039-icon-service-Event-Hubs.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "DataAnalytics",
+        "note": "category icon (Data Analytics) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Data Analytics/SVG/DataAnalytics-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Streaming",
+        "note": "resolved 'streaming'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#streaming",
+        "source": "stencil"
+      }
+    },
+    "kms": {
+      "aws": {
+        "display_name": "AWS Key Management Service",
+        "note": "resolved 'Key Management Service'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Security-Identity/32/Arch_AWS-Key-Management-Service_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Key Vaults",
+        "note": "resolved 'Key Vaults'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/security/10245-icon-service-Key-Vaults.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "SecurityIdentity",
+        "note": "category icon (Security Identity) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Vault",
+        "note": "resolved 'vault'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#vault",
         "source": "stencil"
       }
     },
@@ -590,6 +1136,84 @@
         "source": "stencil"
       }
     },
+    "load_balancer": {
+      "aws": {
+        "display_name": "Elastic Load Balancing",
+        "note": "resolved 'Elastic Load Balancing'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Networking-Content-Delivery/32/Arch_Elastic-Load-Balancing_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Load Balancers",
+        "note": "resolved 'Load Balancers'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/networking/10062-icon-service-Load-Balancers.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "Networking",
+        "note": "category icon (Networking) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Flexible Load Balancer",
+        "note": "resolved 'flexible-load-balancer'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#flexible-load-balancer",
+        "source": "stencil"
+      }
+    },
+    "log_analytics": {
+      "aws": {
+        "display_name": "Amazon CloudWatch",
+        "note": "resolved 'CloudWatch'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Management-Tools/32/Arch_Amazon-CloudWatch_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Log Analytics Workspaces",
+        "note": "resolved 'Log Analytics Workspaces'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/monitor/00009-icon-service-Log-Analytics-Workspaces.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "ManagementTools",
+        "note": "category icon (Management Tools) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Management Tools/SVG/ManagementTools-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Logging Analytics",
+        "note": "resolved 'logging-analytics'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#logging-analytics",
+        "source": "stencil"
+      }
+    },
+    "logging": {
+      "aws": {
+        "display_name": "Amazon CloudWatch",
+        "note": "resolved 'CloudWatch'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Management-Tools/32/Arch_Amazon-CloudWatch_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Log Analytics Workspaces",
+        "note": "resolved 'Log Analytics Workspaces'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/monitor/00009-icon-service-Log-Analytics-Workspaces.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "ManagementTools",
+        "note": "category icon (Management Tools) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Management Tools/SVG/ManagementTools-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Logging",
+        "note": "resolved 'logging'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#logging",
+        "source": "stencil"
+      }
+    },
     "managed_k8s": {
       "aws": {
         "display_name": "Amazon Elastic Kubernetes Service",
@@ -613,6 +1237,32 @@
         "display_name": "Container Engine for Kubernetes",
         "note": "resolved 'container-engine-for-kubernetes'",
         "ref": "assets/vendor/oci-stencils/stencils.json#container-engine-for-kubernetes",
+        "source": "stencil"
+      }
+    },
+    "managed_mysql": {
+      "aws": {
+        "display_name": "Amazon RDS",
+        "note": "resolved 'RDS'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Databases/32/Arch_Amazon-RDS_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Azure Database MySQL Server",
+        "note": "resolved 'Azure Database MySQL Server'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/databases/10122-icon-service-Azure-Database-MySQL-Server.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "CloudSQL",
+        "note": "flagship product icon",
+        "ref": "assets/vendor/gcp-core/Unique Icons/Cloud SQL/SVG/CloudSQL-512-color.svg",
+        "source": "product"
+      },
+      "oci": {
+        "display_name": "MySQL",
+        "note": "resolved 'mysql'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#mysql",
         "source": "stencil"
       }
     },
@@ -668,6 +1318,32 @@
         "source": "stencil"
       }
     },
+    "monitoring": {
+      "aws": {
+        "display_name": "Amazon CloudWatch",
+        "note": "resolved 'CloudWatch'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Management-Tools/32/Arch_Amazon-CloudWatch_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Monitor",
+        "note": "resolved 'Monitor'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/monitor/00001-icon-service-Monitor.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "ManagementTools",
+        "note": "category icon (Management Tools) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Management Tools/SVG/ManagementTools-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Monitoring",
+        "note": "resolved 'monitoring'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#monitoring",
+        "source": "stencil"
+      }
+    },
     "nat_gateway": {
       "aws": {
         "display_name": "Amazon VPC NAT Gateway",
@@ -717,6 +1393,32 @@
         "display_name": "Virtual Cloud Network VCN",
         "note": "resolved 'virtual-cloud-network-vcn'",
         "ref": "assets/vendor/oci-stencils/stencils.json#virtual-cloud-network-vcn",
+        "source": "stencil"
+      }
+    },
+    "network_firewall": {
+      "aws": {
+        "display_name": "AWS Network Firewall",
+        "note": "resolved 'Network Firewall'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Security-Identity/32/Arch_AWS-Network-Firewall_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Firewalls",
+        "note": "resolved 'Firewalls'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/networking/10084-icon-service-Firewalls.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "SecurityIdentity",
+        "note": "category icon (Security Identity) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Firewall",
+        "note": "resolved 'firewall'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#firewall",
         "source": "stencil"
       }
     },
@@ -772,6 +1474,58 @@
         "source": "stencil"
       }
     },
+    "policy": {
+      "aws": {
+        "display_name": "Amazon Verified Permissions",
+        "note": "resolved 'Permissions'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Security-Identity/32/Arch_Amazon-Verified-Permissions_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Policy",
+        "note": "resolved 'Policy'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/management + governance/10316-icon-service-Policy.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "SecurityIdentity",
+        "note": "category icon (Security Identity) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "IAM Identity and Access Management",
+        "note": "resolved 'iam-identity-and-access-management'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#iam-identity-and-access-management",
+        "source": "stencil"
+      }
+    },
+    "principal": {
+      "aws": {
+        "display_name": "AWS Identity Access Management IAM Roles Anywhere",
+        "note": "resolved 'IAM Role'",
+        "ref": "assets/vendor/aws-icons/Resource-Icons_07312026/Res_Security-Identity/Res_AWS-Identity-Access-Management_IAM-Roles-Anywhere_48.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Managed Identities",
+        "note": "resolved 'Managed Identities'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/identity/10227-icon-service-Managed-Identities.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "SecurityIdentity",
+        "note": "category icon (Security Identity) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "User",
+        "note": "resolved 'user'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#user",
+        "source": "stencil"
+      }
+    },
     "rds_instance": {
       "aws": {
         "display_name": "Amazon Aurora Amazon RDS Instance",
@@ -795,6 +1549,58 @@
         "display_name": "Autonomous DB",
         "note": "resolved 'autonomous-db'",
         "ref": "assets/vendor/oci-stencils/stencils.json#autonomous-db",
+        "source": "stencil"
+      }
+    },
+    "resource": {
+      "aws": {
+        "display_name": "Generic Application 48 Light",
+        "note": "resolved 'Generic Application'",
+        "ref": "assets/vendor/aws-icons/Resource-Icons_07312026/Res_General-Icons/Res_48_Light/Res_Generic-Application_48_Light.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "All Resources",
+        "note": "resolved 'All Resources'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/general/10001-icon-service-All-Resources.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "SecurityIdentity",
+        "note": "category icon (Security Identity) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Resource Manager",
+        "note": "resolved 'resource-manager'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#resource-manager",
+        "source": "stencil"
+      }
+    },
+    "route_table": {
+      "aws": {
+        "display_name": "Amazon Route 53 Route Table",
+        "note": "resolved 'Route Table'",
+        "ref": "assets/vendor/aws-icons/Resource-Icons_07312026/Res_Networking-Content-Delivery/Res_Amazon-Route-53_Route-Table_48.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Route Tables",
+        "note": "resolved 'Route Tables'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/networking/10082-icon-service-Route-Tables.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "Networking",
+        "note": "category icon (Networking) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Route Table",
+        "note": "resolved 'route-table'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#route-table",
         "source": "stencil"
       }
     },
@@ -847,6 +1653,32 @@
         "display_name": "Buckets",
         "note": "resolved 'bucket'",
         "ref": "assets/vendor/oci-stencils/stencils.json#buckets",
+        "source": "stencil"
+      }
+    },
+    "sagemaker": {
+      "aws": {
+        "display_name": "Amazon SageMaker AI",
+        "note": "resolved 'SageMaker AI'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Artificial-Intelligence/32/Arch_Amazon-SageMaker-AI_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Azure Machine Learning",
+        "note": "resolved 'Machine Learning'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/ai + machine learning/038470510-icon-service-Azure-Machine-Learning.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "VertexAI",
+        "note": "flagship product icon",
+        "ref": "assets/vendor/gcp-core/Unique Icons/Vertex AI/SVG/VertexAI-512-color.svg",
+        "source": "product"
+      },
+      "oci": {
+        "display_name": "Data Science",
+        "note": "resolved 'data-science'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#data-science",
         "source": "stencil"
       }
     },
@@ -928,6 +1760,32 @@
         "source": "stencil"
       }
     },
+    "spanner": {
+      "aws": {
+        "display_name": "Amazon Aurora",
+        "note": "resolved 'Aurora'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Databases/32/Arch_Amazon-Aurora_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Azure Cosmos DB",
+        "note": "resolved 'Cosmos DB'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/iot/10121-icon-service-Azure-Cosmos-DB.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "CloudSpanner",
+        "note": "flagship product icon",
+        "ref": "assets/vendor/gcp-core/Unique Icons/Cloud Spanner/SVG/CloudSpanner-512-color.svg",
+        "source": "product"
+      },
+      "oci": {
+        "display_name": "Autonomous DB",
+        "note": "resolved 'autonomous-db'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#autonomous-db",
+        "source": "stencil"
+      }
+    },
     "ssm": {
       "aws": {
         "display_name": "AWS Systems Manager",
@@ -977,6 +1835,32 @@
         "display_name": "Resource Manager",
         "note": "resolved 'resource-manager'",
         "ref": "assets/vendor/oci-stencils/stencils.json#resource-manager",
+        "source": "stencil"
+      }
+    },
+    "transit_gateway": {
+      "aws": {
+        "display_name": "AWS Transit Gateway",
+        "note": "resolved 'Transit Gateway'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Networking-Content-Delivery/32/Arch_AWS-Transit-Gateway_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Virtual WANs",
+        "note": "resolved 'Virtual WANs'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/networking/10353-icon-service-Virtual-WANs.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "Networking",
+        "note": "category icon (Networking) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Dynamic Routing Gateway DRG",
+        "note": "resolved 'dynamic-routing-gateway-drg'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#dynamic-routing-gateway-drg",
         "source": "stencil"
       }
     },
@@ -1055,6 +1939,32 @@
         "display_name": "Remote Peering Gateway",
         "note": "resolved 'remote-peering-gateway'",
         "ref": "assets/vendor/oci-stencils/stencils.json#remote-peering-gateway",
+        "source": "stencil"
+      }
+    },
+    "vpn_gateway": {
+      "aws": {
+        "display_name": "Amazon VPC VPN Gateway",
+        "note": "resolved 'VPC VPN Gateway'",
+        "ref": "assets/vendor/aws-icons/Resource-Icons_07312026/Res_Networking-Content-Delivery/Res_Amazon-VPC_VPN-Gateway_48.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Virtual Network Gateways",
+        "note": "resolved 'Virtual Network Gateways'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/networking/10063-icon-service-Virtual-Network-Gateways.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "Networking",
+        "note": "category icon (Networking) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Special Connectors - Site-to-site-VPN - Vertical",
+        "note": "resolved 'special-connectors-site-to-site-vpn-vertical'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#special-connectors-site-to-site-vpn-vertical",
         "source": "stencil"
       }
     },

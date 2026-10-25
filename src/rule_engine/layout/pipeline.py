@@ -1112,6 +1112,22 @@ def layout(
     re-entering the placement loop, keeping the ``layout`` / ``solve_placement``
     load- and call-time graph acyclic.
     """
+    # G23 (1.11.0): peering-as-resource materialization. AFTER validation,
+    # BEFORE placement, and GUARDED by the explicit ``spec.peering_as_node``
+    # switch — so a spec that does not opt in is byte-identical (the transform is
+    # the identity) and a nested ``layout()`` is unaffected (the transform is
+    # idempotent: after it runs no node-to-node peering edge remains). The flag
+    # is a spec-level choice a build script makes for a network topology view,
+    # NOT an inference from the (layout-invisible) diagram_type. Validate the
+    # FULL spec first so ``materialize_peerings`` only ever reads a real node id;
+    # the transform then replaces each node-to-node peering edge with a
+    # ``vpc_peering`` resource node + two plain legs, and the rest of the
+    # pipeline below places/routes the result like any other spec.
+    if getattr(spec, "peering_as_node", False) and _placement:
+        from .base import _validate_spec
+        from .peering import materialize_peerings
+        _validate_spec(spec)
+        spec = materialize_peerings(spec)
     # WS10 (1.10.12, C15): an edge endpoint may be a CONTAINER id — a
     # boundary-to-boundary relationship (VPC/VCN peering, a TGW attachment)
     # drawn between two container faces, not attached to a proxy node. The whole

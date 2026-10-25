@@ -178,7 +178,10 @@ def lane_of(role: str) -> str:
 #: class; ``landscape`` is the ``landscape`` class. ``context`` is the C4
 #: Context level (feedback Theme 2): the widest single view — external actors
 #: around ONE system block — also the ``flow`` class.
-DIAGRAM_TYPES: Tuple[str, ...] = ("context", "simple", "summary", "landscape")
+DIAGRAM_TYPES: Tuple[str, ...] = (
+    "context", "simple", "summary", "landscape", "c4-context", "c4-container",
+    "access", "dataflow",
+)
 
 #: The ``flow`` node budget (diagram-standards → Node Limit). A ``simple`` /
 #: ``summary`` diagram shows the in-scope subset up to this many nodes.
@@ -334,6 +337,12 @@ def spec_from_snapshot(
 ) -> DiagramSpec:
     """Build a coordinate-free :class:`DiagramSpec` from a committed Snapshot.
 
+    1.11.0 WS4: ``c4-context`` is an alias of ``context`` (one system black-box
+    + external actors), and ``c4-container`` reuses the ``summary`` geometry;
+    the C4 LOOK is applied separately by ``--style c4`` at render time, so the
+    GEOMETRY of a C4 diagram is the same flow geometry — C4 is a style mode, not
+    a new geometry class.
+
     This is the design's J4/J5 assembly, reusing J2 (``reconcile.role_of``) and
     J3 (:func:`lane_of`):
 
@@ -371,6 +380,11 @@ def spec_from_snapshot(
         raise DrawError(
             f"unknown diagram type {diagram_type!r} (expected one of {DIAGRAM_TYPES})"
         )
+    # 1.11.0 WS4: C4 type names reuse an existing flow geometry; the C4 LOOK is
+    # applied by --style c4 at render time, not by a different spec shape.
+    diagram_type = {"c4-context": "context", "c4-container": "c4-container"}.get(
+        diagram_type, diagram_type
+    )
 
     snap = Path(snapshot_dir)
     if not snap.is_dir():
@@ -381,7 +395,11 @@ def spec_from_snapshot(
     resolved = _iter_snapshot_resources(snap, provider)
 
     # Coverage-by-type + over-budget guard (Requirement 10.4, 10.7).
-    is_landscape = diagram_type == "landscape"
+    # 1.11.0 WS8: a dataflow diagram is a landscape-class as-built (completeness
+    # on one canvas, like a network as-built), so it reuses the landscape
+    # geometry path — it is the companion diagram_type + the data-classification
+    # lint that make it a dataflow, not a different spec shape.
+    is_landscape = diagram_type in ("landscape", "dataflow")
     if is_landscape:
         if len(resolved) > LANDSCAPE_NODE_ERROR:
             raise SnapshotSplitRequired(
@@ -395,6 +413,21 @@ def spec_from_snapshot(
     # the per-lane subset-and-slot assembly below.
     if diagram_type == "context":
         return _context_spec(provider, boundary_id, region, resolved, relationships)
+
+    # 1.11.0 WS4: C4 Container view — one level inside the system box. In-cloud
+    # resources become NEUTRAL container boxes (no provider icon) grouped in a
+    # single system boundary, external actors around them. Built separately for
+    # the same reason as Context.
+    if diagram_type == "c4-container":
+        return _c4_container_spec(
+            provider, boundary_id, region, resolved, relationships
+        )
+
+    # 1.11.0 WS7: access diagram type — aggregate the account into a small
+    # principal → policy → resource graph read left-to-right. Built separately
+    # (its own role/lane mapping), reached only for diagram_type == "access".
+    if diagram_type == "access":
+        return _access_spec(provider, boundary_id, region, resolved, relationships)
 
     # Stable ordering: sort every resolved resource by (lane index, identity) so
     # slot assignment is deterministic and independent of file/dict order.
@@ -573,6 +606,117 @@ def _context_spec(
     )
 
 
+def _c4_container_spec(
+    provider: str,
+    boundary_id: str,
+    region: str,
+    resolved: Sequence[Tuple[Any, str]],
+    relationships: Optional[Sequence[Mapping[str, Any]]],
+) -> "DiagramSpec":
+    """Build a C4 **Container** spec (1.11.0 WS4): one level inside the system.
+
+    Where C4 Context (``_context_spec``) draws the whole cloud as ONE black box,
+    the Container view opens that box exactly one level: every in-cloud resource
+    becomes a NEUTRAL container box — the ``external_system`` presentation role,
+    so **no provider icon** stands in for it (C4 is implementation-agnostic) —
+    nested inside a single system boundary, with the external actors / consumers
+    drawn around it (same external-lane rule as Context). The ``style=c4`` box
+    renderer then paints each as a labelled box with ``[Container: role]``.
+
+    ``flow`` class, left→right axis. In-cloud boxes are capped at the flow node
+    budget (a Container view is a summary, not an inventory); the companion
+    carries ``diagram_type: c4-container`` (``_CLASS_OF`` → ``flow``). Byte-inert
+    for every non-C4 type — this path is only reached for ``c4-container``.
+    """
+    try:
+        from rule_engine.layout.base import EXTERNAL_LANES
+    except ImportError:  # pragma: no cover - flat-module fallback
+        from layout.base import EXTERNAL_LANES  # type: ignore[no-redef]
+
+    lane_names = _lane_order()
+    lane_rank = {name: i for i, name in enumerate(lane_names)}
+    ordered = sorted(
+        resolved,
+        key=lambda pair: (
+            lane_rank.get(lane_of(pair[1]), len(lane_names)),
+            _resource_identity(pair[0]),
+        ),
+    )
+
+    SYSTEM_BOUNDARY = "system-boundary"
+    nodes: List[NodeSpec] = []
+    slot_by_lane: Dict[str, int] = {}
+    used_ids: Dict[str, int] = {}
+    # A resource-identity slug → node id map, so a relationship naming a raw
+    # identity still connects after the per-lane slot assignment.
+    id_by_slug: Dict[str, str] = {}
+    # External actors stay outside the system boundary; in-cloud resources become
+    # neutral container boxes nested inside it. Both carry the neutral
+    # ``external_system`` role so no provider glyph is emitted.
+    in_cloud_count = 0
+    for resource, role in ordered:
+        lane = lane_of(role)
+        is_external = lane in EXTERNAL_LANES
+        if not is_external:
+            if in_cloud_count >= _FLOW_NODE_BUDGET:
+                continue  # a Container view is a summary, not an inventory
+            in_cloud_count += 1
+        base_id = _slug(_resource_identity(resource))
+        node_id = base_id
+        if node_id in used_ids:
+            used_ids[base_id] += 1
+            node_id = f"{base_id}-{used_ids[base_id]}"
+        else:
+            used_ids[base_id] = 0
+        id_by_slug.setdefault(base_id, node_id)
+        slot = slot_by_lane.get(lane, 0)
+        slot_by_lane[lane] = slot + 1
+        nodes.append(
+            NodeSpec(
+                id=node_id,
+                # C4 is implementation-agnostic: every box is the neutral
+                # presentation role, never the resource's provider role.
+                role=_CONTEXT_SYSTEM_ROLE,
+                lane=lane,
+                region="",
+                slot=slot,
+                # In-cloud boxes nest in the system boundary; actors do not.
+                sub=0,
+                container=None if is_external else SYSTEM_BOUNDARY,
+            )
+        )
+
+    node_ids = {n.id for n in nodes}
+    edges = _edges_from_relationships(relationships, node_ids)
+
+    # One system boundary that holds the container boxes. It must be a MEMBERSHIP
+    # container (a region kind — ``vpc``), not the ``account`` envelope: the spec
+    # validator only lets a node belong to a region container, never the account
+    # box. C4 names the system, so the boundary is labelled as the system, not a
+    # cloud account.
+    containers: Tuple[ContainerSpec, ...] = (
+        ContainerSpec(
+            id=SYSTEM_BOUNDARY,
+            kind="vpc",
+            region="",
+            parent=None,
+            label_key="account",
+        ),
+    )
+
+    diagram_id = f"{provider}-{_slug(boundary_id)}-c4-container"
+    return DiagramSpec(
+        diagram_id=diagram_id,
+        diagram_name=diagram_id,
+        axis="left-right",
+        nodes=tuple(nodes),
+        edges=edges,
+        containers=containers,
+        flow_lines=(),
+        title=f"{provider} container — {boundary_id} / {region}",
+    )
+
+
 def _lane_order() -> Tuple[str, ...]:
     """Return the canonical lane order (LANES), for stable per-lane ranking."""
     try:
@@ -580,6 +724,85 @@ def _lane_order() -> Tuple[str, ...]:
     except ImportError:  # pragma: no cover - flat-module fallback
         from layout.base import LANES  # type: ignore[no-redef]
     return tuple(LANES)
+
+
+# 1.11.0 WS7 — access diagram role/lane mapping. An access diagram reads
+# left→right as principal → policy → resource (Req 7 AC4). The three access
+# roles are placed in three lanes whose LANES ordinals ascend left→right, so the
+# left-right axis lays them out in that order: a principal in ``actors`` (0), a
+# policy in ``router`` (2), a resource in ``data`` (6).
+_ACCESS_ROLE_LANE = {"principal": "actors", "policy": "router", "resource": "data"}
+
+#: Map a resolved resource's ORIGINAL lane to its aggregated access role. An
+#: external actor / on-premises caller is a ``principal``; a control-plane / edge
+#: / routing service is a ``policy`` (the grant point); everything that holds or
+#: processes state is a ``resource`` (the object access is granted to). This is
+#: the aggregation that collapses a large account into the small graph.
+_ACCESS_LANE_TO_ROLE = {
+    "actors": "principal", "on-premises": "principal",
+    "edge": "policy", "router": "policy", "platform": "policy",
+    "async": "resource", "workers": "resource", "data": "resource",
+}
+
+
+def _access_spec(
+    provider: str,
+    boundary_id: str,
+    region: str,
+    resolved: Sequence[Tuple[Any, str]],
+    relationships: Optional[Sequence[Mapping[str, Any]]],
+) -> "DiagramSpec":
+    """Build an ``access`` spec (1.11.0 WS7, Req 7 AC4): a small IAM-style graph.
+
+    An access diagram answers "who can reach what", so a large account is
+    AGGREGATED into three columns read left→right — **principal → policy →
+    resource** — rather than drawn as an exploded service mesh. Each resolved
+    resource is mapped to one of the three access roles by its original lane
+    (:data:`_ACCESS_LANE_TO_ROLE`): an external/on-prem caller is a principal, a
+    control-plane/edge/routing service is a policy, a stateful service is a
+    resource. Each role lands in a lane whose ordinal ascends left→right
+    (:data:`_ACCESS_ROLE_LANE`), so the ``left-right`` axis renders the chain in
+    order. Capped at the flow node budget (the ``access`` profile's node_cap) —
+    the whole point is a SMALL graph; the ``access-aggregation`` lint rule flags
+    a diagram that overflows the cap. ``flow`` class. Reached only for
+    ``diagram_type == "access"``, so byte-inert for every other type.
+    """
+    ordered = sorted(resolved, key=lambda pair: _resource_identity(pair[0]))
+    nodes: List[NodeSpec] = []
+    slot_by_lane: Dict[str, int] = {}
+    used_ids: Dict[str, int] = {}
+    count = 0
+    for resource, orig_role in ordered:
+        if count >= _FLOW_NODE_BUDGET:
+            break  # an access diagram is a small aggregated graph, not inventory
+        access_role = _ACCESS_LANE_TO_ROLE.get(lane_of(orig_role), "resource")
+        lane = _ACCESS_ROLE_LANE[access_role]
+        base_id = _slug(_resource_identity(resource))
+        node_id = base_id
+        if node_id in used_ids:
+            used_ids[base_id] += 1
+            node_id = f"{base_id}-{used_ids[base_id]}"
+        else:
+            used_ids[base_id] = 0
+        slot = slot_by_lane.get(lane, 0)
+        slot_by_lane[lane] = slot + 1
+        nodes.append(
+            NodeSpec(id=node_id, role=access_role, lane=lane, region="", slot=slot)
+        )
+        count += 1
+
+    edges = _edges_from_relationships(relationships, {n.id for n in nodes})
+    diagram_id = f"{provider}-{_slug(boundary_id)}-access"
+    return DiagramSpec(
+        diagram_id=diagram_id,
+        diagram_name=diagram_id,
+        axis="left-right",
+        nodes=tuple(nodes),
+        edges=edges,
+        containers=(),
+        flow_lines=(),
+        title=f"{provider} access — {boundary_id} / {region}",
+    )
 
 
 def _edges_from_relationships(

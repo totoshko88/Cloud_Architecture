@@ -51,6 +51,9 @@ class ExampleSkin:
     flow_lines: Sequence[str]
     title: str
     diagram_id: str
+    #: Optional presentation skin (1.11.0 WS1). Default None reproduces the
+    #: 1.10.12 byte output; a generator may opt into a badge/furniture/edge skin.
+    skin: Optional["object"] = None
 
 
 def _edge_from_placed(pe) -> Edge:
@@ -108,6 +111,7 @@ def build(skin: ExampleSkin) -> str:
         legend_x=placed.legend_x, legend_w=placed.legend_w,
         page_w=max(right, placed.legend_x + placed.legend_w) + _PAGE_MARGIN,
         page_h=bottom + _PAGE_MARGIN,
+        skin=skin.skin,
     )
 
 

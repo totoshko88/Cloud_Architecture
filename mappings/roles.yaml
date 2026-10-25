@@ -302,6 +302,222 @@ roles:
     azure: "Virtual Networks"
     gcp_category: "Networking"
     oci: "remote-peering-gateway"
+  # --- WS6 network diagram-type roles (1.11.0) -------------------------------
+  # Extended roles for the `network` diagram type (TGW, VPN GW, DX, route table,
+  # network firewall). EXTENDED roles only — the 16-value core invariant holds.
+  transit_gateway:
+    aws: "Transit Gateway"
+    azure: "Virtual WANs"
+    gcp_category: "Networking"
+    oci: "dynamic-routing-gateway-drg"
+  vpn_gateway:
+    aws: "VPC VPN Gateway"
+    azure: "Virtual Network Gateways"
+    gcp_category: "Networking"
+    oci: "special-connectors-site-to-site-vpn-vertical"
+  direct_connect:
+    aws: "Direct Connect"
+    azure: "ExpressRoute Circuits"
+    gcp_category: "Networking"
+    oci: "special-connectors-fastconnect-vertical"
+  route_table:
+    aws: "Route Table"
+    azure: "Route Tables"
+    gcp_category: "Networking"
+    oci: "route-table"
+  network_firewall:
+    aws: "Network Firewall"
+    azure: "Firewalls"
+    gcp_category: "Security Identity"
+    oci: "firewall"
+  # --- 1.11.0 WS7 access diagram type (principal / policy / resource) --------
+  # Identity/IAM across the four providers. Extended roles only (the 16-value
+  # core invariant holds). GCP falls back to the Security Identity category.
+  principal:
+    aws: "IAM Role"
+    azure: "Managed Identities"
+    gcp_category: "Security Identity"
+    oci: "user"
+  policy:
+    aws: "Permissions"
+    azure: "Policy"
+    gcp_category: "Security Identity"
+    oci: "iam-identity-and-access-management"
+  resource:
+    aws: "Generic Application"
+    azure: "All Resources"
+    gcp_category: "Security Identity"
+    oci: "resource-manager"
+  # --- WS9 icon-coverage fill-in (1.11.0) ------------------------------------
+  # Common services that had an official icon in every indexed pack but no role,
+  # so the render path raised DrawError. Each is an EXTENDED role (the 16-value
+  # core invariant is untouched). Queries resolve against each provider's pack;
+  # a provider with no distinct glyph falls back to its category (GCP) or the
+  # closest family stencil (OCI), never a look-alike.
+
+  # AWS CloudTrail — Management & Governance (pink)
+  cloudtrail:
+    aws: "CloudTrail"
+    azure: "Monitor"
+    gcp_category: "Management Tools"
+    oci: "auditing"
+  # AWS Config — Management & Governance (pink)
+  config:
+    aws: "Config"
+    azure: "Policy"
+    gcp_category: "Management Tools"
+    oci: "resource-manager"
+  # Amazon ECS — Containers (orange)
+  ecs:
+    aws: "Elastic Container Service"
+    azure: "Container Instances"
+    gcp_category: "Containers"
+    oci: "container-engine-for-kubernetes"
+  # AWS Fargate — Containers (orange)
+  fargate:
+    aws: "Fargate"
+    azure: "Container Instances"
+    gcp_category: "Containers"
+    oci: "container-engine-for-kubernetes"
+  # AWS KMS — Security & Identity (red)
+  kms:
+    aws: "Key Management Service"
+    azure: "Key Vaults"
+    gcp_category: "Security Identity"
+    oci: "vault"
+  # Amazon GuardDuty — Security & Identity (red)
+  guardduty:
+    aws: "GuardDuty"
+    azure: "Defender"
+    gcp_category: "Security Identity"
+    oci: "cloud-guard"
+  # Amazon Kinesis — Analytics (purple)
+  kinesis:
+    aws: "Kinesis"
+    azure: "Event Hubs"
+    gcp_category: "Data Analytics"
+    oci: "streaming"
+  # Amazon Athena — Analytics (purple)
+  athena:
+    aws: "Athena"
+    azure: "Synapse Analytics"
+    gcp_category: "Data Analytics"
+    oci: "data-flow"
+  # AWS Glue — Analytics (purple)
+  glue:
+    aws: "Glue"
+    gcp_category: "Data Analytics"
+    oci: "data-integration"
+  # Amazon SageMaker AI — AI/ML (teal)
+  sagemaker:
+    aws: "SageMaker AI"
+    azure: "Machine Learning"
+    gcp: "Vertex AI"
+    oci: "data-science"
+  # Application Gateway (Azure) / L7 app gateway — Networking
+  app_gateway:
+    aws: "Elastic Load Balancing"
+    azure: "Application Gateways"
+    gcp_category: "Networking"
+    oci: "flexible-load-balancer"
+  # PaaS app host (Azure App Service and peers) — web/app tier
+  app_service:
+    aws: "Elastic Beanstalk"
+    azure: "App Services"
+    gcp_category: "Serverless Computing"
+    oci: "functions"
+  # Bastion / secure admin jump host — Security & Identity
+  bastion:
+    aws: "EC2"
+    azure: "Bastions"
+    gcp_category: "Security Identity"
+    oci: "bastion"
+  # Firewall / network firewall — Networking
+  firewall:
+    aws: "Network Firewall"
+    azure: "Firewalls"
+    gcp_category: "Networking"
+    oci: "waf"
+  # Managed log analytics workspace — Observability
+  log_analytics:
+    aws: "CloudWatch"
+    azure: "Log Analytics Workspaces"
+    gcp_category: "Management Tools"
+    oci: "logging-analytics"
+  # Container apps / serverless containers — Containers
+  container_apps:
+    aws: "Fargate"
+    azure: "Container App Environments"
+    gcp_category: "Serverless Computing"
+    oci: "container"
+  # Cognitive / AI services (vision, speech, language) — AI/ML
+  cognitive_services:
+    aws: "SageMaker AI"
+    azure: "Cognitive Services"
+    gcp_category: "AI _ Machine Learning"
+    oci: "artificial-intelligence"
+  # Managed MySQL (OCI MySQL HeatWave and peers) — Databases
+  managed_mysql:
+    aws: "RDS"
+    azure: "Azure Database MySQL Server"
+    gcp: "Cloud SQL"
+    oci: "mysql"
+  # Load balancer resource node (OCI flexible LB; distinct from the lb role so a
+  # connectivity view can place an LB appliance explicitly) — Networking
+  load_balancer:
+    aws: "Elastic Load Balancing"
+    azure: "Load Balancers"
+    gcp_category: "Networking"
+    oci: "flexible-load-balancer"
+  # Compute node alias (OCI Compute) — Compute family
+  compute:
+    aws: "EC2"
+    azure: "Virtual Machines"
+    gcp_category: "Compute"
+    oci: "virtual-machine-vm"
+  # Monitoring service — Observability
+  monitoring:
+    aws: "CloudWatch"
+    azure: "Monitor"
+    gcp_category: "Management Tools"
+    oci: "monitoring"
+  # Logging service — Observability
+  logging:
+    aws: "CloudWatch"
+    azure: "Log Analytics Workspaces"
+    gcp_category: "Management Tools"
+    oci: "logging"
+  # Data science / ML workbench — AI/ML
+  data_science:
+    aws: "SageMaker AI"
+    azure: "Machine Learning"
+    gcp: "Vertex AI"
+    oci: "data-science"
+  # Block volume / managed block storage — Storage
+  block_volume:
+    aws: "Elastic Block Store"
+    azure: "Disks"
+    gcp_category: "Storage"
+    oci: "block-storage"
+  # Container registry (OCI OCIR; distinct ecr alias) — Containers
+  container_registry:
+    aws: "Elastic Container Registry"
+    azure: "Container Registries"
+    gcp_category: "Containers"
+    oci: "container-registry"
+  # Cloud Spanner — distributed SQL (GCP product glyph) — Databases
+  spanner:
+    aws: "Aurora"
+    azure: "Cosmos DB"
+    gcp: "Cloud Spanner"
+    oci: "autonomous-db"
+  # BigQuery — analytics warehouse (GCP product glyph) — Data Analytics
+  bigquery:
+    aws: "Athena"
+    azure: "Synapse Analytics"
+    gcp: "BigQuery"
+    oci: "data-flow"
+
   # --- Organization / education (1.10.12, SEP feedback §1 / §2.1) -----------
   # The ORGANIZATION-level service (an org / management scope as one node).
   # Distinct from the single-account peer_account glyph. Azure's analogue is

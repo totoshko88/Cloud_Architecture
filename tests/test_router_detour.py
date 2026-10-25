@@ -87,3 +87,79 @@ def _blocks(route, obstacle) -> bool:
         segment_crosses_box(route[i], route[i + 1], obstacle)
         for i in range(len(route) - 1)
     )
+
+
+# --- wave-4 ITEM 4b: spine level-run shortcut ------------------------------
+
+
+def _spine(src, tgt, exit_pt, entry_pt, extra=()):
+    from rule_engine.layout_engine import CorridorAllocator, route_spine
+    from rule_engine.layout.model import EdgeSpec
+    alloc = CorridorAllocator()
+    edge = EdgeSpec(id="e", source=src.id, target=tgt.id, marker="1")
+    return route_spine(edge, exit_pt, entry_pt, alloc, [src, tgt, *extra])
+
+
+def test_spine_level_run_with_aligned_contacts_is_a_straight_segment():
+    # Two 78px icons whose TOPS differ by 20px (a band-packing quirk) but whose
+    # right-face exit and left-face entry resolve to the SAME absolute y: the
+    # spine router returns no interior waypoints (a single straight segment),
+    # not a jog up to a corridor and back.
+    src = Box("src", x=100.0, y=240.0, w=78.0, h=78.0)   # right face at y 240..318
+    tgt = Box("tgt", x=600.0, y=220.0, w=78.0, h=78.0)   # left face at y 220..298
+    # exitY=0.2564 -> 240 + 0.2564*78 = 260 ; entryY=0.5128 -> 220 + 0.5128*78 = 260
+    exit_pt = (1.0256410256410255, 0.2564102564102564)
+    entry_pt = (0.0, 0.5128205128205128)
+    assert _spine(src, tgt, exit_pt, entry_pt) == []
+
+
+def test_spine_level_run_with_an_obstacle_between_still_jogs():
+    # Same aligned contacts, but an icon stands on the direct run: the shortcut
+    # must NOT fire — the edge falls through to the side-corridor route (which
+    # emits interior waypoints to go around).
+    src = Box("src", x=100.0, y=240.0, w=78.0, h=78.0)
+    tgt = Box("tgt", x=600.0, y=220.0, w=78.0, h=78.0)
+    blocker = Box("mid", x=360.0, y=230.0, w=78.0, h=78.0)  # covers y=260 at x~360
+    exit_pt = (1.0256410256410255, 0.2564102564102564)
+    entry_pt = (0.0, 0.5128205128205128)
+    assert _spine(src, tgt, exit_pt, entry_pt, extra=(blocker,)) != []
+
+
+def test_spine_different_rows_still_jogs():
+    # Contacts on genuinely different rows (a real tier hop): the shortcut does
+    # not fire, so the side-corridor route is used (interior waypoints emitted).
+    src = Box("src", x=100.0, y=60.0, w=78.0, h=78.0)
+    tgt = Box("tgt", x=600.0, y=400.0, w=78.0, h=78.0)
+    exit_pt = (1.0256410256410255, 0.5)
+    entry_pt = (0.0, 0.5)
+    assert _spine(src, tgt, exit_pt, entry_pt) != []
+
+
+def _fanout(src, tgt, exit_pt, entry_pt, extra=()):
+    from rule_engine.layout_engine import CorridorAllocator, route_fan_out_row
+    from rule_engine.layout.model import EdgeSpec
+    alloc = CorridorAllocator()
+    edge = EdgeSpec(id="e", source=src.id, target=tgt.id, marker="1")
+    return route_fan_out_row(edge, exit_pt, entry_pt, alloc, [src, tgt, *extra])
+
+
+def test_fanout_row_level_run_with_aligned_contacts_is_a_straight_segment():
+    # SEP 13 lambda→rds: the target's icon top sits 20px above the source's, so
+    # classify_edge calls it fan-out-row (an upward hop to the right), but the
+    # right-face exit and left-face entry both resolve to y=260. The fan-out
+    # router returns no interior waypoints (a straight segment), not a jog up to
+    # the target's row and back.
+    src = Box("src", x=910.0, y=240.0, w=78.0, h=78.0)
+    tgt = Box("tgt", x=1350.0, y=220.0, w=78.0, h=78.0)
+    exit_pt = (1.0256410256410255, 0.2564102564102564)   # -> y 260
+    entry_pt = (0.0, 0.5128205128205128)                 # -> y 260
+    assert _fanout(src, tgt, exit_pt, entry_pt) == []
+
+
+def test_fanout_row_with_obstacle_between_still_lanes():
+    src = Box("src", x=910.0, y=240.0, w=78.0, h=78.0)
+    tgt = Box("tgt", x=1350.0, y=220.0, w=78.0, h=78.0)
+    blocker = Box("mid", x=1120.0, y=230.0, w=78.0, h=78.0)
+    exit_pt = (1.0256410256410255, 0.2564102564102564)
+    entry_pt = (0.0, 0.5128205128205128)
+    assert _fanout(src, tgt, exit_pt, entry_pt, extra=(blocker,)) != []

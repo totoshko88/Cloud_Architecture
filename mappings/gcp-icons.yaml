@@ -73,6 +73,127 @@ resources:
     brand_hex: "#4285F4"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-core/Unique Icons/Vertex AI/SVG/VertexAI-512-color.svg"
 
+  # --- WS9 icon-coverage fill-in (product-first, category-fallback) ---
+  api_gateway:
+    icon_id: gcp-core.apigee
+    icon_provenance: product
+    brand_hex: "#4285F4"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-core/Unique Icons/Apigee/SVG/Apigee-512-color-rgb.svg"
+  compute_instance:
+    icon_id: gcp-category.compute_instance
+    icon_provenance: category
+    brand_hex: "#4285F4"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Compute/SVG/Compute-512-color.svg"
+  lb:
+    icon_id: gcp-category.lb
+    icon_provenance: category
+    brand_hex: "#4285F4"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg"
+  cdn:
+    icon_id: gcp-category.cdn
+    icon_provenance: category
+    brand_hex: "#4285F4"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg"
+  dns:
+    icon_id: gcp-category.dns
+    icon_provenance: category
+    brand_hex: "#4285F4"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg"
+  iam:
+    icon_id: gcp-category.iam
+    icon_provenance: category
+    brand_hex: "#4285F4"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg"
+  waf:
+    icon_id: gcp-category.waf
+    icon_provenance: category
+    brand_hex: "#4285F4"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg"
+
+  # --- 1.11.0 WS6: network diagram-type roles (extended roles only; not in
+  # constants.RESOURCE_TYPES). GCP ships no flagship glyph for these, so they
+  # resolve to the Networking product-category icon (the documented fallback),
+  # except network_firewall -> Security Identity category. ------------------
+  transit_gateway:
+    icon_id: gcp-category.transit_gateway
+    icon_provenance: category
+    brand_hex: "#4285F4"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg"
+  vpn_gateway:
+    icon_id: gcp-category.vpn_gateway
+    icon_provenance: category
+    brand_hex: "#4285F4"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg"
+  direct_connect:
+    icon_id: gcp-category.direct_connect
+    icon_provenance: category
+    brand_hex: "#4285F4"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg"
+  route_table:
+    icon_id: gcp-category.route_table
+    icon_provenance: category
+    brand_hex: "#4285F4"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg"
+  network_firewall:
+    icon_id: gcp-category.network_firewall
+    icon_provenance: category
+    brand_hex: "#4285F4"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg"
+  # --- 1.11.0 WS7 access diagram type: principal / policy / resource ---
+  # GCP ships a minimal icon set, so the access roles fall back to the
+  # Security Identity CATEGORY glyph (the documented pattern — many roles to one
+  # category icon, as network_firewall already does). Extended roles only.
+  principal:
+    icon_id: gcp-category.principal
+    icon_provenance: category
+    brand_hex: "#4285F4"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg"
+  policy:
+    icon_id: gcp-category.policy
+    icon_provenance: category
+    brand_hex: "#4285F4"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg"
+  resource:
+    icon_id: gcp-category.resource
+    icon_provenance: category
+    brand_hex: "#4285F4"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg"
+  cache:
+    icon_id: gcp-category.cache
+    icon_provenance: category
+    brand_hex: "#4285F4"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Databases/SVG/Databases-512-color.svg"
+  dynamodb:
+    icon_id: gcp-category.dynamodb
+    icon_provenance: category
+    brand_hex: "#4285F4"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Databases/SVG/Databases-512-color.svg"
+  ecr:
+    icon_id: gcp-category.ecr
+    icon_provenance: category
+    brand_hex: "#4285F4"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Containers/SVG/Containers-512-color.svg"
+  cloudwatch:
+    icon_id: gcp-category.cloudwatch
+    icon_provenance: category
+    brand_hex: "#4285F4"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Observability/SVG/Observability-512-color.svg"
+  file_system:
+    icon_id: gcp-category.file_system
+    icon_provenance: category
+    brand_hex: "#4285F4"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Storage/SVG/Storage-512-color.svg"
+  spanner:
+    icon_id: gcp-core.cloud_spanner
+    icon_provenance: product
+    brand_hex: "#4285F4"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-core/Unique Icons/Cloud Spanner/SVG/CloudSpanner-512-color.svg"
+  bigquery:
+    icon_id: gcp-core.bigquery
+    icon_provenance: product
+    brand_hex: "#4285F4"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-core/Unique Icons/BigQuery/SVG/BigQuery-512-color.svg"
+
   # --- External / third-party systems (Theme 1) ---
   external_system:
     icon_id: external.system
@@ -142,6 +263,11 @@ containers:
     icon_id: gcp.virtual_private_cloud
     brand_hex: "#4285F4"
     style: "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#34A853;fillColor=none;verticalAlign=top;align=left;spacingLeft=8;fontColor=#188038;fontSize=12"
+  # 1.11.0 WS6: firewall-rule / security scope — dashed red rect, no fill, leaf.
+  security_group:
+    icon_id: gcp.security_group
+    brand_hex: "#EA4335"
+    style: "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#EA4335;fillColor=none;verticalAlign=top;align=left;spacingLeft=8;fontColor=#C5221F;fontSize=12"
   # Optional nested levels, following Google Cloud architecture diagrams: a
   # Region is a dashed neutral-grey frame, a Zone a borderless light-grey block.
   # Neutral #5F6368 keeps lines and captions above 4.5:1 on white (the old

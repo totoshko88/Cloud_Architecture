@@ -55,6 +55,8 @@ every applicable rule against every artifact.
 | `edge-bidirectional` | A diagram edge is double-headed: its style sets both a non-`none` `startArrow` and a non-`none` `endArrow`. Draw a two-way relationship as two single-ended edges instead. | WARNING | diagram-standards Edge Routing (no double-headed arrow) / R1 |
 | `node-label-length` | A service-node label exceeds the length cap: more than 4 words or more than 40 characters. Node labels stay short (the service name); explanation goes in a `callout`. Legend/Flow/title/callout text cells are not node labels and are exempt. | WARNING | diagram-standards Overlay Vocabulary (short labels + callout) / R2 |
 | `ip-range` | On-diagram text in a Network_Diagram carries a public IP literal (a routable global IPv4/IPv6 that is neither a documentation range — 192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24, 2001:db8::/32 — nor private). Only a Network_Diagram (`landscape` class OR companion `diagram_type` in network/infrastructure/deployment) is evaluated. | WARNING | diagram-standards Documentation IP Ranges / R3 |
+| `access-aggregation` | An access diagram (companion `diagram_type` resolves to `TypeProfile.lint_profile == access`) whose drawn node count exceeds the access profile's `node_cap` (default 12) — it was not collapsed into a small `principal → policy → resource` graph. Only an access diagram is evaluated; every other diagram is unaffected. Raised to ERROR for `landscape`. | WARNING/ERROR | diagram-standards Diagram Class / R7 AC3 |
+| `data-classification` | A dataflow diagram (companion `diagram_type` resolves to `TypeProfile.lint_profile == dataflow`) names a data store flagged as PII (`pii`/`personal`/`gdpr`/`pci`/`phi`/`sensitive`/`ccpa`) with no classification marker (`encrypted`/`classified`/`confidential`/`restricted`/`tokenized`/`anonymized`/`redacted`/`public-data`). Only a dataflow diagram is evaluated; every other diagram is unaffected. Raised to ERROR for `landscape`. | WARNING/ERROR | diagram-standards Diagram Class / R8 AC3 |
 | `orphan-landscape` | A `landscape`-class diagram declares no valid `summary_of` cross-link to a `flow` summary. | ERROR | diagram-standards Diagram Class |
 | `overlay-legend-coverage` | A diagram carries an overlay marker (findings/state vocabulary) whose term does not appear as a whole token in a Legend line. | WARNING | diagram-standards Overlay Vocabulary / R1 AC12 |
 | `exit-thirds` | A node fans out **more than three** edges on one side, or two same-side exits sit closer than ~⅕ of the side (they merge into one doubled line). **Raised to ERROR** when two exits share the **exact same** contact point (identical `exitX` and `exitY`). | WARNING/ERROR | diagram-standards Label-safe exits |
@@ -81,6 +83,7 @@ every applicable rule against every artifact.
 | `source-format` | A diagram is authored in a non-canonical source (`.puml` / `.mmd`); draw.io is the only publishable diagram source (D1). | ERROR | R10 AC3 / diagram-standards Source Format |
 | `marker-collision` | Two edge flow-markers (the numbered labels) render closer than the merge threshold (`MARKER_MIN_SEP` = 24px) and overprint into one number. offenders = the colliding edge ids. Companion to the deterministic marker de-collision pass (`orthogonalise.resolve_marker_collisions`). **1.10.7:** a marker whose anchor lies within one grid step (`MARKER_EDGE_CLEARANCE` = 10px, strict) of a **different** edge's segment, so that edge's line strikes the number, is reported with reason `marker-on-edge-<id>`. | WARNING | diagram-standards Numbered Flow Legend / edge-hygiene 1.10.5 B1 |
 | `marker-label-collision` | A numbered flow-marker's rendered anchor falls inside a node's caption rectangle (centred under the icon, as wide as its text at 7.0px/char), so the number overprints the service name (reason `marker-on-caption`); **new in 1.10.12 (WS7)** the anchor falling inside the node's 78×78 icon box is reported under reason `marker-on-icon`. offenders = the marker edge and the node. | WARNING | diagram-standards Numbered Flow Legend / hotfix 1.10.7 |
+| `marker-on-container-border` | A numbered flow-marker's rendered anchor falls within one grid step (`MARKER_EDGE_CLEARANCE` = 10px, with `AXIS_EPS` tolerance) of a Boundary container's left / right / top / bottom border — and within that border's extent along its axis — so the number overprints the account / VPC frame (reason `marker-on-border`). The container-border sibling of `marker-label-collision` (a marker on a node caption) and `marker-on-icon` (a marker on a node glyph); modelled on `edge-on-container-border` (a marker point, not a long leg, rides the border). offenders = the marker edge and the `<container>.<side>`. Lint-only (NOT in `rule_violations` / the solver oracle). New in FEAT-001. | WARNING | diagram-standards Numbered Flow Legend / Edge Routing (a long vertical never coincides with a container border) |
 | `edge-crossing-excess` | The diagram's edge-crossing count exceeds a per-diagram cap proportional to the edge count (`ceil(0.25 × E)`), reason `crossings-over-cap:X/E`. **Hard cap (1.10.7):** on a `landscape`, more than `0.5 × E` crossings is an **ERROR** (reason `crossings-over-hard-cap:X/E`) — the routing has collapsed. offenders = the crossing edge-id pairs. Uses the same crossing detection `route_cost` minimises. | WARNING/ERROR | diagram-standards Edge Routing (minimise crossings) / edge-hygiene 1.10.5 B2 |
 | `edge-crossing-avoidable` | A crossing that a **single legal face swap** removes: one edge of a crossing pair, re-routed onto another legal exit/entry face pair (exit right, or bottom from a source with no caption; entry left/top) with a stub + one-lane route, lowers the crossing count **without adding a routing finding** (no icon, caption, text box, foreign container or container caption crossed; no shared corridor, border ride, detour hook; no new oracle finding). Reason `avoidable:<removed>/<crossings>`; offenders = the edges whose swap removes it. The same test (`crossing_repair.avoidable_crossings`) the engine's final crossing-repair pass and the `Xav` metric use. New in 1.10.12 (WS3). | WARNING | diagram-standards Edge Routing (crossing-aware contact selection) |
 | `collinear-edges` | Two **unrelated** edges whose parallel legs (each at least two grid steps long) sit **under two grid steps apart** with overlapping extents, so the two lines read as **one** (the one-line illusion, defect C5). Two legs meeting at a shared point of edges sharing an endpoint (a sanctioned trunk junction), and a gap a node icon visibly terminates, are exempt. Reason `collinear:<pairs>`; offenders = the two edge ids of each pair. The same `geometry.collinear_edge_pairs` the `col` metric and the engine's collinear-shift pass (`collinear_repair`) use, so what lint flags is what the engine tries to separate. New in 1.10.12 (WS8). | WARNING | diagram-standards Edge Routing (one edge per corridor) |
@@ -415,6 +418,22 @@ every applicable rule against every artifact.
   is the canonical defect). WARNING for `flow`; **ERROR for `landscape`**, where
   the nested boundary hierarchy is the primary device that keeps a large
   as-built legible.
+- **`access-aggregation` (WARNING/ERROR)** — An access diagram's job is to
+  collapse a large account into a small `principal → policy → resource` graph.
+  When the drawn node count exceeds the access profile's `node_cap` (default
+  12), the diagram is an exploded mesh rather than an aggregated view. Only an
+  access diagram (companion `diagram_type` resolving to `lint_profile: access`)
+  is evaluated; every other diagram is unaffected. WARNING for `flow`; **ERROR
+  for `landscape`**, where an un-aggregated as-built access view is a harder
+  failure. New in 1.11.0 (WS7).
+- **`data-classification` (WARNING/ERROR)** — A data-flow audit must state, for
+  every store of regulated data, how it is classified. The rule fires when a
+  dataflow diagram (companion `diagram_type` resolving to `lint_profile:
+  dataflow`) names a data store flagged as PII (`pii` / `personal` / `gdpr` / …)
+  with no classification marker (`encrypted` / `classified` / `tokenized` / …).
+  Only a dataflow diagram is evaluated; every other diagram is unaffected.
+  WARNING for `flow`; **ERROR for `landscape`**, where an unclassified PII store
+  on the audit as-built is a harder failure. New in 1.11.0 (WS8).
 - **`edge-direction` (WARNING/ERROR)** — *Geometry-enforced.* The **directional
   contract**: every edge that declares explicit contact points must **exit** its
   source on the **right or bottom** face and **enter** its target on the **left or
@@ -529,6 +548,7 @@ every applicable rule against every artifact.
   overprints the glyph; `check_marker_icon_collision` reports it alongside the
   caption case. Lint-only (the engine's scored objective does not read it).
   WARNING on both classes.
+- **`marker-on-container-border` (WARNING)** — *New in FEAT-001. Geometry-enforced.* The container-border sibling of `marker-label-collision` (a numbered flow-marker on a node caption) and `marker-on-icon` (a marker on a node glyph), modelled on `edge-on-container-border` — but it is the marker's rendered **anchor** point, not a long edge leg, that sits on the border. A marker whose anchor (`marker_anchors`) lies within one grid step (`MARKER_EDGE_CLEARANCE` = 10px, with `AXIS_EPS` tolerance) of a Boundary container's left / right / top / bottom edge overprints the account / VPC frame — the defect the 01 / 01b review surfaced, marker `9` smeared on the SEP account box border. A vertical border (left / right) is judged only when the anchor's y lies within the border's y-extent; a horizontal border (top / bottom) only when the anchor's x lies within its x-extent, so a marker beside but off the end of a border is not flagged. Every container is checked; reason `marker-on-border`, offenders = the marker edge and the `<container>.<side>`. Lint-only — **not** part of `rule_violations` (the solver oracle), like the other `marker-*` rules. WARNING on both classes.
 - **`marker-collision` (WARNING)** — *Geometry-enforced (1.10.5; foreign-edge
   reason 1.10.7).* Two reasons. `markers-overprint`: two markers render closer
   than `MARKER_MIN_SEP` (24px) and read as one number. `marker-on-edge-<id>`: a
@@ -730,6 +750,8 @@ keeps its exact behavior.
 | `edge-float` | WARNING | **ERROR** (every edge must pin its contact points) |
 | `entry-thirds` | WARNING | **ERROR** (arrivals on one face must stay distinct) |
 | `edge-endpoint` | WARNING | **ERROR** (a dense as-built must resolve every endpoint) |
+| `access-aggregation` | WARNING | **ERROR** (an un-aggregated as-built access view is a harder failure) |
+| `data-classification` | WARNING | **ERROR** (an unclassified PII store on a dataflow as-built is a harder failure) |
 | `edge-crossing-excess` | WARNING (> ⌈0.25×E⌉) | WARNING (> ⌈0.25×E⌉), **ERROR** (> 0.5×E) |
 | `edge-routing` (icon crossing) | **ERROR** | **ERROR** (a run through an icon it does not connect / into its target from the wrong side) |
 | `geometric-containment` | WARNING | **ERROR** (a hidden non-membership is a correctness failure; also ERROR on a network diagram) |

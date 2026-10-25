@@ -95,6 +95,13 @@ class NodeSpec:
     #: ordering never changes ``sub``. Coordinate-free: it fixes an index, never
     #: a coordinate.
     pinned: bool = False
+    #: Optional **foreign-profile override** (1.11.0 WS3). Names a provider
+    #: profile whose icon/style this node resolves against, instead of the
+    #: diagram's primary provider — so a Kubernetes workload can render in k8s
+    #: blue inside an AWS diagram. Coordinate-free: it names a profile, never a
+    #: coordinate. ``None`` (default) → the diagram's primary provider, so every
+    #: existing spec is byte-identical.
+    provider: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -115,8 +122,12 @@ class EdgeSpec:
     #: Theme 16 (1.10.10): a network-level PEERING relationship (VPC/VCN peering,
     #: a cross-cloud peering link) rather than a directional data-flow step. The
     #: skin renders it as a symmetric dashed line with no arrowhead on either end
-    #: (see ``diagram_layout.Edge.peering`` / ``edge_cell``). Presentation only —
-    #: the engine routes it exactly like any other edge; not a coordinate.
+    #: (see ``diagram_layout.Edge.peering`` / ``edge_cell``) and, since 1.11.0
+    #: (G23), with NO on-canvas word. Presentation only — the engine routes it
+    #: exactly like any other edge; not a coordinate. On a network topology view
+    #: a build script sets :attr:`DiagramSpec.peering_as_node` to materialize
+    #: each node-to-node peering into a ``vpc_peering`` resource node instead
+    #: (:func:`rule_engine.layout.peering.materialize_peerings`).
     peering: bool = False
     #: Engine-derived (never authored): ``True`` when both endpoints belong to
     #: the same non-empty region, ``False`` for two different regions, ``None``
@@ -139,6 +150,12 @@ class ContainerSpec:
     region: str
     parent: Optional[str]  # nesting: az.parent = vpc, vpc.parent = account
     label_key: str  # the skin fills the concrete label
+    #: Optional **foreign-profile override** (1.11.0 WS3). Names a provider
+    #: profile whose container style this box resolves against, so a Kubernetes
+    #: deployment block can render as a k8s-blue boundary nested inside an AWS
+    #: VPC. Coordinate-free. ``None`` (default) → the diagram's primary provider,
+    #: so every existing spec is byte-identical.
+    provider: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -234,6 +251,40 @@ class DiagramSpec:
     #: right. ``"auto"`` (default) means ``"left"`` unless the automatic ordering
     #: finds that ``"right"`` removes back-edges. Not a coordinate.
     vpc_side: str = "auto"
+    #: 1.11.0 WS2: optional **logical groups** for a flow diagram — a tuple of
+    #: ``(label, (member_node_id, ...))`` pairs. Each draws one light-grey box
+    #: enclosing its named members plus a caption band, WITHOUT moving any member
+    #: node (presentation only — the engine reads no coordinate from it). Never
+    #: inferred: a group exists only when a spec declares it. ``()`` (default) ⇒
+    #: no group boxes, byte-identical to 1.10.12. The semi-automatic authoring
+    #: flow proposes a draft list the owner confirms before it is written here.
+    flow_groups: Tuple[Tuple[str, Tuple[str, ...]], ...] = ()
+    #: 1.11.0 WS2: where the numbered step descriptions render —
+    #: ``"box"`` (default) the in-canvas Flow box (1.10.12 behaviour),
+    #: ``"document"`` the companion ``.diagram.md`` only (no in-canvas box),
+    #: ``"panel"`` a full-height furniture strip. ``"box"`` ⇒ byte-identical.
+    flow_steps: str = "box"
+    #: 1.11.0 G23: materialize every ``EdgeSpec.peering=True`` relationship as a
+    #: first-class ``vpc_peering`` **resource node** between its two endpoints,
+    #: instead of drawing a bare peering line (the Theme-16 edge). A network
+    #: topology diagram reads a VPC/VCN peering as a *resource* — an AWS *VPC
+    #: Peering Connection* icon (and the per-provider equivalents) sitting
+    #: BETWEEN the two VPCs/accounts, with the two peering legs attaching to it —
+    #: matching the published AWS network diagrams. Normal data-flow diagrams
+    #: keep ``False`` and document a peering in the Flow narrative only.
+    #:
+    #: This is an **explicit spec-level switch**, not an inference from the
+    #: diagram type: ``diagram_type`` is companion-frontmatter metadata the
+    #: linter reads (``diagram_profiles.TypeProfile``) and is not visible to
+    #: :func:`~rule_engine.layout.layout`, so a build script that wants a network
+    #: topology view opts in by setting this flag. The transform itself is the
+    #: pure, deterministic, idempotent
+    #: :func:`~rule_engine.layout.peering.materialize_peerings`, wired into
+    #: ``layout()`` after validation and before placement and guarded by this
+    #: flag — so ``False`` (the default) leaves every existing spec BYTE-IDENTICAL
+    #: and never materializes a node. Coordinate-free: it names a presentation
+    #: choice, never an ``x``/``y``.
+    peering_as_node: bool = False
 
 
 # ---------------------------------------------------------------------------

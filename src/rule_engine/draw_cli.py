@@ -58,6 +58,7 @@ from rule_engine.diagram_layout import (
     overlay_suffix,
 )
 from rule_engine.draw import DrawError, SnapshotSplitRequired, spec_from_snapshot
+from rule_engine.layout.clarify import ClarifyRequired
 from rule_engine.icon_resolver import (
     IconResolverError,
     UnresolvedTypeError,
@@ -81,7 +82,16 @@ _PAGE_MARGIN = 2 * CONTAINER_PAD  # 60, a whole grid multiple
 
 #: The user-facing diagram types → the lint ``diagram_class`` they carry.
 #: ``context`` is the C4 Context level (feedback Theme 2), a ``flow`` class.
-_CLASS_OF = {"context": "flow", "simple": "flow", "summary": "flow", "landscape": "landscape"}
+#: ``c4-context`` / ``c4-container`` (1.11.0 WS4) are first-class C4 type names,
+#: both mapping to the ``flow`` geometry class — C4 is a STYLE mode over flow,
+#: not a new enforced diagram_class. ``context`` stays as an accepted alias of
+#: ``c4-context`` (keeps the shipped --type context CLI contract).
+_CLASS_OF = {
+    "context": "flow", "simple": "flow", "summary": "flow", "landscape": "landscape",
+    "c4-context": "flow", "c4-container": "flow",
+    "access": "flow",
+    "dataflow": "landscape",
+}
 
 #: A fixed date used for the companion frontmatter dates and the title, so the
 #: generated triple is byte-identical across runs (Requirement 10.6 — no
@@ -119,6 +129,33 @@ def _node_renderer(style_string: str):
     return render
 
 
+#: C4 box style (1.11.0 WS4) — reuses the sanctioned neutral external_system
+#: look (dashed white box, grey stroke) so C4 diagrams carry no provider icon.
+_C4_BOX_STYLE = (
+    "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;"
+    "fontColor=#333333;fontSize=12;verticalAlign=middle;align=center"
+)
+
+
+def _c4_box_renderer(tech: str):
+    """Return a C4 renderer: a box labelled ``<name>\\n[Container: <tech>]`` with
+    no provider icon (C4 Container grammar). ``tech`` is the node's role/tech
+    shown in the stereotype line. The box reuses the neutral external_system
+    style, so the diagram reads as C4 boxes, not cloud glyphs."""
+
+    def render(node: Node, parent_id: str) -> str:
+        label = f"{node.label}&#10;[Container: {tech}]" if tech else node.label
+        return (
+            f'        <mxCell id="{node.id}" value="{label}" style="{_C4_BOX_STYLE}" '
+            f'vertex="1" parent="{parent_id}">\n'
+            f'          <mxGeometry x="{node.x}" y="{node.y}" '
+            f'width="{ICON_SIZE}" height="{ICON_SIZE}" as="geometry" />\n'
+            f"        </mxCell>\n"
+        )
+
+    return render
+
+
 def _label_of(node_spec) -> str:
     """A short, quote-free display label for a node (its slugged node id).
 
@@ -133,25 +170,43 @@ def _label_of(node_spec) -> str:
     return label
 
 
-def _skin_renderers(provider: str, roles: Sequence[str]) -> Dict[str, Any]:
-    """Resolve one icon renderer per distinct ``role`` used, via the mappings.
+def _renderer_key(role: str, node_provider: Optional[str]) -> str:
+    """Key a renderer by role, or by role@provider for a foreign-profile node
+    (1.11.0 WS3). A node with no provider override keys by its bare role, so
+    every existing diagram's renderer map is byte-identical."""
+    return role if not node_provider else f"{role}@{node_provider}"
 
-    Raises :class:`DrawError` (naming the role) when the provider's mapping has
-    no resolved icon for a role — fail-honest rather than draw a look-alike
-    (Icon Fidelity). Each style comes from the committed
-    ``mappings/<provider>-icons.yaml``, so the resolution is offline.
+
+def _skin_renderers(primary: str, nodes, style: str = "icon") -> Dict[str, Any]:
+    """Resolve one renderer per (role, effective-provider) used, via the mappings.
+
+    ``nodes`` is the spec's node sequence (each carries ``role`` and an optional
+    ``provider`` override). A node's effective provider is ``node.provider or
+    primary`` (1.11.0 WS3): a Kubernetes workload inside an AWS diagram resolves
+    its k8s glyph while every un-overridden node resolves the AWS glyph.
+
+    ``style='icon'`` (default) resolves each (role, provider) to its glyph via
+    the committed mapping — fail-honest (raises :class:`DrawError` naming the
+    role) rather than drawing a look-alike. ``style='c4'`` ignores the icon and
+    returns a C4 box renderer per role.
     """
     renderers: Dict[str, Any] = {}
-    for role in sorted(set(roles)):
-        if role in renderers:
+    for n in nodes:
+        role = n.role
+        eff_provider = getattr(n, "provider", None) or primary
+        key = _renderer_key(role, getattr(n, "provider", None))
+        if key in renderers:
+            continue
+        if style == "c4":
+            renderers[key] = _c4_box_renderer(role)
             continue
         try:
-            resolved = resolve_icon(role, provider)
+            resolved = resolve_icon(role, eff_provider)
         except IconResolverError as exc:
             raise DrawError(
-                f"no icon for role {role!r} under provider {provider!r}: {exc}"
+                f"no icon for role {role!r} under provider {eff_provider!r}: {exc}"
             ) from exc
-        renderers[role] = _node_renderer(resolved["style_string"])
+        renderers[key] = _node_renderer(resolved["style_string"])
     return renderers
 
 
@@ -214,6 +269,7 @@ def _container_style(kind: str, provider: str) -> str:
 
 def _nodes_from(placed: PlacedDiagram, renderers: Dict[str, Any]) -> List[Node]:
     role_of = {n.id: n.role for n in placed.spec.nodes}
+    provider_of = {n.id: getattr(n, "provider", None) for n in placed.spec.nodes}
     overlay_of = {n.id: getattr(n, "overlay", None) for n in placed.spec.nodes}
     label_of = {n.id: _label_of(n) for n in placed.spec.nodes}
     return [
@@ -222,7 +278,7 @@ def _nodes_from(placed: PlacedDiagram, renderers: Dict[str, Any]) -> List[Node]:
             label=label_of[n.id],
             x=int(placed.nodes[n.id].x),
             y=int(placed.nodes[n.id].y),
-            render=renderers[role_of[n.id]],
+            render=renderers[_renderer_key(role_of[n.id], provider_of[n.id])],
             overlay=overlay_of[n.id],
         )
         for n in placed.spec.nodes
@@ -239,6 +295,14 @@ def _boundaries_from(
         box = placed.containers.get(c.id)
         if box is None:
             continue
+        # 1.11.0 WS3: resolve each container's style under its OWN provider when
+        # it declares one (hybrid diagrams), else the diagram's primary provider.
+        # This is the owner's closed rule, data-driven: a managed orchestration
+        # service in its own cloud (provider=aws) keeps the provider brand box,
+        # while a foreign / self-hosted cluster (provider=kubernetes) resolves the
+        # Kubernetes-blue #326CE5 box straight from kubernetes-icons.yaml. An
+        # unset provider yields the primary verbatim, so the default is byte-inert.
+        cell_provider = getattr(c, "provider", None) or provider
         out.append(
             Boundary(
                 id=c.id,
@@ -247,21 +311,26 @@ def _boundaries_from(
                 y=int(box.y),
                 w=int(box.w),
                 h=int(box.h),
-                style=_container_style(kind_of[c.id], provider),
+                style=_container_style(kind_of[c.id], cell_provider),
                 kind=kind_of[c.id],
             )
         )
     return out
 
 
-def _edges_from(placed: PlacedDiagram) -> List[Edge]:
+def _edges_from(placed: PlacedDiagram, style: str = "icon") -> List[Edge]:
+    # 1.11.0 WS4: under C4 style every relationship is a DASHED labelled arrow
+    # (the C4 notation for a relationship), regardless of the spec's own dashed
+    # flag. For style='icon' the spec's dashed/peering flags are used verbatim,
+    # so the default path stays byte-identical.
+    c4 = style == "c4"
     return [
         Edge(
             id=pe.spec.id,
             source=pe.spec.source,
             target=pe.spec.target,
             marker=pe.spec.marker,
-            dashed=pe.spec.dashed,
+            dashed=pe.spec.dashed or c4,
             peering=pe.spec.peering,
             exit=pe.exit,
             entry=pe.entry,
@@ -298,6 +367,9 @@ def build_drawio(
     diagram_type: str,
     basename: str,
     relationships: Optional[Sequence[Mapping[str, Any]]] = None,
+    assume: str = "auto",
+    assumption_sink: Optional[list] = None,
+    style: str = "icon",
 ) -> str:
     """Build the ``.drawio`` text for a Snapshot (spec → layout → build_diagram).
 
@@ -305,13 +377,27 @@ def build_drawio(
     Snapshot, the skin is read from committed mappings, and the title carries a
     fixed date. Raises :class:`DrawError` / :class:`SnapshotSplitRequired` from
     the translator (an over-budget landscape emits no diagram).
+
+    ``assume`` (1.11.0 WS5) runs the clarify gate on the spec before layout:
+    ``ask`` / ``error`` raise :class:`ClarifyRequired` listing the assumptions;
+    ``auto`` (default) collects them into ``assumption_sink`` (when given) and
+    prints a one-line notice, then proceeds. The gate NEVER mutates the spec or
+    the geometry, so the ``.drawio`` output is byte-identical regardless of
+    policy — it only surfaces/records what the engine would assume.
     """
+    from rule_engine.layout.clarify import clarify_gate
+
     spec = spec_from_snapshot(snapshot_dir, provider, diagram_type, relationships)
     # 1.10.7: hand the engine the labels this skin will draw, so the Flow/Legend
     # clears a long slug caption that overhangs the rightmost icon.
     spec = dataclasses.replace(
         spec, node_labels=tuple((n.id, _label_of(n)) for n in spec.nodes)
     )
+    # 1.11.0 WS5: surface the spec's assumptions before drawing. Read-only.
+    _assumptions = clarify_gate(spec, assume, sink=assumption_sink)
+    if _assumptions and assume == "auto":
+        print(f"rule-engine-draw: {len(_assumptions)} assumption(s) recorded "
+              f"(see the companion Assumptions section)", file=sys.stderr)
     placed = layout(spec)
     # 1.10.7: a layout the repair loop could not make oracle-clean is returned
     # degraded rather than raised; say so (the exit code is unchanged — the
@@ -319,9 +405,9 @@ def build_drawio(
     for warning in placed.layout_warnings:
         print(f"rule-engine-draw: layout WARNING: {warning}", file=sys.stderr)
 
-    renderers = _skin_renderers(provider, [n.role for n in spec.nodes])
+    renderers = _skin_renderers(provider, spec.nodes, style=style)
     nodes = _nodes_from(placed, renderers)
-    edges = _edges_from(placed)
+    edges = _edges_from(placed, style=style)
 
     # Container labels: the single account boundary the translator emits.
     boundary_id, region = _read_boundary_region(spec)
@@ -371,6 +457,7 @@ def _companion_frontmatter(
     provider: str,
     diagram_type: str,
     paired_basename: Optional[str],
+    assumptions: Sequence[Any] = (),
 ) -> Dict[str, Any]:
     """Assemble the twelve required frontmatter keys plus the class cross-links.
 
@@ -421,6 +508,15 @@ def _companion_frontmatter(
         elif diagram_type == "summary":
             fm["detailed_view"] = pair
         fm["related_docs"] = [f"{pair}.diagram.md"]
+    # 1.11.0 WS5: a machine-readable manifest of the assumptions `auto` applied,
+    # mirroring the human `## Assumptions` body section. One `kind:target` entry
+    # per assumption, so a KB reader (or the reconcile gate) can tell a stated
+    # fact from a guess without parsing prose. Emitted ONLY when non-empty, so a
+    # fully-specified spec leaves the frontmatter byte-identical.
+    if assumptions:
+        fm["recorded_assumptions"] = [
+            f"{a.kind.value}:{a.target_id}" for a in assumptions
+        ]
     return fm
 
 
@@ -462,6 +558,13 @@ def _yaml_frontmatter(fm: Mapping[str, Any]) -> str:
                 lines.append(f"  - {item}")
         else:
             lines.append(f"{key}: []")
+    # 1.11.0 WS5: recorded_assumptions is emitted ONLY when present (a
+    # fully-specified spec never sets it), so the key is absent from every
+    # pre-WS5 companion and those stay byte-identical.
+    if fm.get("recorded_assumptions"):
+        lines.append("recorded_assumptions:")
+        for item in fm["recorded_assumptions"]:
+            lines.append(f"  - {item}")
     lines.append("---")
     return "\n".join(lines) + "\n"
 
@@ -547,9 +650,16 @@ def build_companion(
     diagram_type: str,
     basename: str,
     paired_basename: Optional[str] = None,
+    assumptions: Sequence[Any] = (),
 ) -> str:
-    """Build the full companion ``.diagram.md`` text (frontmatter + four sections)."""
-    fm = _companion_frontmatter(basename, provider, diagram_type, paired_basename)
+    """Build the full companion ``.diagram.md`` text (frontmatter + four sections).
+
+    ``assumptions`` (1.11.0 WS5) — the applied-assumption records from the
+    clarify gate. When non-empty they add a ``recorded_assumptions:`` frontmatter
+    key (machine-readable manifest). Empty ⇒ byte-identical to the pre-WS5 output.
+    """
+    fm = _companion_frontmatter(basename, provider, diagram_type, paired_basename,
+                                assumptions)
     return _yaml_frontmatter(fm) + "\n" + _companion_body(provider, diagram_type, basename)
 
 
@@ -603,6 +713,8 @@ def generate(
     *,
     export: bool = True,
     drawio: str = "drawio",
+    assume: str = "auto",
+    style: str = "icon",
 ) -> Dict[str, Any]:
     """Write the ``.drawio`` + companion (+ best-effort raster) for a Snapshot.
 
@@ -616,10 +728,20 @@ def generate(
     out_basename = Path(out_basename)
     basename = out_basename.name
 
+    _assumptions: list = []
     drawio_text = build_drawio(
-        snapshot_dir, provider, diagram_type, basename, relationships
+        snapshot_dir, provider, diagram_type, basename, relationships,
+        assume=assume, assumption_sink=_assumptions, style=style,
     )
-    companion_text = build_companion(provider, diagram_type, basename)
+    companion_text = build_companion(provider, diagram_type, basename,
+                                     assumptions=_assumptions)
+    # 1.11.0 WS5: record applied assumptions as a structured companion section.
+    # Appended only when non-empty, so a fully-specified spec leaves the
+    # companion byte-identical.
+    if _assumptions:
+        from rule_engine.layout.clarify import format_assumptions_markdown
+        companion_text = companion_text.rstrip("\n") + "\n\n" + \
+            format_assumptions_markdown(_assumptions) + "\n"
 
     out_basename.parent.mkdir(parents=True, exist_ok=True)
     drawio_path = out_basename.with_name(f"{basename}.drawio")
@@ -674,9 +796,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--provider", required=True, choices=sorted(PROVIDERS),
                     help="provider profile of the Snapshot")
     ap.add_argument("--type", required=True, dest="diagram_type",
-                    choices=("context", "simple", "summary", "landscape"),
-                    help="diagram type: context (C4 Context) / simple / summary "
-                    "are flow-class, landscape is landscape-class")
+                    choices=("context", "simple", "summary", "landscape",
+                             "c4-context", "c4-container", "access", "dataflow"),
+                    help="diagram type: context / c4-context (C4 Context) and "
+                    "c4-container are flow-class; simple / summary are flow; "
+                    "access is a flow-class principal→policy→resource graph; "
+                    "dataflow is a landscape-class data-flow audit view; "
+                    "landscape is landscape-class")
     ap.add_argument("--out", required=True, dest="out_basename",
                     help="output path stem; writes <out>.drawio and "
                     "<out>.diagram.md")
@@ -689,6 +815,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--drawio", default="drawio",
                     help="path to the draw.io CLI for raster export "
                     "(default: 'drawio' on PATH)")
+    ap.add_argument("--assume", default="auto", choices=("ask", "auto", "error"),
+                    help="clarify-gate policy (1.11.0 WS5): ask halts and lists "
+                    "the spec's assumptions; auto (default) records them and "
+                    "proceeds; error fails the build if any assumption exists")
+    ap.add_argument("--style", default="icon", choices=("icon", "c4"),
+                    help="render style (1.11.0 WS4): icon (default) draws "
+                    "provider glyphs; c4 draws C4 boxes ([Container: role]) with "
+                    "no provider icon")
     args = ap.parse_args(list(sys.argv[1:] if argv is None else argv))
 
     relationships: Optional[List[Mapping[str, Any]]] = None
@@ -708,6 +842,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             relationships,
             export=not args.no_export,
             drawio=args.drawio,
+            assume=args.assume,
+            style=args.style,
         )
     except SnapshotSplitRequired as exc:
         print(f"rule-engine-draw: {exc}", file=sys.stderr)
@@ -715,6 +851,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     except DrawError as exc:
         print(f"rule-engine-draw: {exc}", file=sys.stderr)
         return 2
+    except ClarifyRequired as exc:
+        # 1.11.0 WS5: --assume ask/error halts before drawing and lists the
+        # spec's assumptions for the owner to resolve.
+        print(f"rule-engine-draw: {exc}", file=sys.stderr)
+        for a in exc.assumptions:
+            print(f"  - {a.kind.value} on {a.target_id}: {a.question} "
+                  f"[default: {a.default}]", file=sys.stderr)
+        return 3
 
     print(f"rule-engine-draw: wrote {result['drawio']}")
     print(f"rule-engine-draw: wrote {result['companion']}")

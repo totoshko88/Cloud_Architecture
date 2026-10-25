@@ -1,0 +1,82 @@
+# Data-defined diagram-type profiles (1.11.0 WS6, Requirement 6 AC1).
+#
+# Each profile names how a user-facing `diagram_type` maps onto an engine lint
+# `base_class` plus type-scoped knobs the generator and linter read, WITHOUT a
+# code edit per type. A profile is DESCRIPTIVE: it does not override the class a
+# diagram declares (`diagram_class` still wins); it supplies defaults and the
+# lint profile the type carries. Absent / unknown `diagram_type` => no profile
+# is applied and behaviour is exactly 1.10.12 (byte-inert).
+#
+# Fields:
+#   base_class          lint class the type belongs to (flow | landscape).
+#   node_cap            soft node budget for the type (null = class default).
+#   axis               preferred layout axis (left-right | top-bottom | null).
+#   allowed_roles       roles the type expects to see (advisory; [] = any).
+#   special_containers  container kinds the type introduces (leaf boundaries).
+#   lint_profile        named lint profile the linter scopes on for the type.
+#   aggregation_key     role dimension the type aggregates on before the node
+#                       cap (WS7 access); null for non-aggregating types.
+
+version: 1
+profiles:
+  network:
+    base_class: landscape
+    node_cap: null
+    axis: left-right
+    allowed_roles:
+      - network_boundary
+      - vpc
+      - transit_gateway
+      - vpn_gateway
+      - direct_connect
+      - route_table
+      - network_firewall
+      - nat_gateway
+      - internet_gateway
+      - vpc_endpoint
+      - vpc_peering
+      - lb
+      - compute_instance
+    special_containers:
+      - security_group
+    lint_profile: network
+  # 1.11.0 WS7 (Requirement 7): access diagrams aggregate a large account's
+  # principals, policies and resources into a small principal→policy→resource
+  # graph read left-to-right. base_class=flow (a readable chain, not a wide
+  # landscape); aggregation_key=principal is the dimension collapsed before the
+  # node_cap applies; trust_boundary is the leaf container an access diagram
+  # introduces. Byte-inert until a diagram declares diagram_type: access.
+  access:
+    base_class: flow
+    node_cap: 12
+    axis: left-right
+    aggregation_key: principal
+    allowed_roles:
+      - principal
+      - policy
+      - resource
+      - trust_boundary
+    special_containers:
+      - trust_boundary
+    lint_profile: access
+  # 1.11.0 WS8 (Requirement 8): dataflow diagrams show where data lives and
+  # moves, what is PII, and where data boundaries / encryption sit, for a
+  # GDPR/WAFR audit. base_class=landscape (completeness on one canvas, like a
+  # network as-built); axis left-right (source → processing → store). The
+  # linter applies ip-range PLUS data-classification to a dataflow diagram
+  # (lint_profile=dataflow). Byte-inert until a diagram declares
+  # diagram_type: dataflow.
+  dataflow:
+    base_class: landscape
+    node_cap: null
+    axis: left-right
+    allowed_roles:
+      - object_store
+      - managed_sql
+      - message_queue
+      - secrets_store
+      - serverless_fn
+      - llm_platform
+      - cache
+    special_containers: []
+    lint_profile: dataflow
