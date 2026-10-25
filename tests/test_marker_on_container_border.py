@@ -169,28 +169,22 @@ def test_rule_is_lint_only_not_in_rule_violations():
     assert "marker-on-container-border" not in joined
 
 
-# Two shipped goldens genuinely carry a marker on a Boundary border, so the rule
-# reports a real WARNING on them — the marker IS a readability defect there.
-# Both are WARNING (non-blocking: ``test_golden_examples`` still passes), and the
-# finding stays VISIBLE on the COMMITTED bytes. FEAT-002 added the off-border
-# nudge (``resolve_marker_collisions`` phase 3, backlog G30) so a FRESH build no
-# longer parks a marker on a frame — but it only takes effect at build time, and
-# these two goldens are NOT regenerated this wave, so their committed bytes (and
-# this finding) are unchanged. They are tolerated by id, not by weakening the
-# detector or removing the rule; regenerating either golden would clear its
-# finding:
-#   * gcp/01-gcp-vertex-pipeline — e2 anchor 2px off boundary-vpc-a.right
-#   * oci/01-oci-genai-stack     — e1 anchor on boundary-region-a.top
-_KNOWN_MARKER_ON_BORDER = {
-    "examples/gcp/01-gcp-vertex-pipeline.drawio",
-    "examples/oci/01-oci-genai-stack.drawio",
-}
+# Two shipped goldens — gcp/01-gcp-vertex-pipeline (e2) and oci/01-oci-genai-stack
+# (e1) — historically carried a marker on a Boundary border, a real non-blocking
+# WARNING. FEAT-002 added the off-border nudge (``resolve_marker_collisions``
+# phase 3, backlog G30) so a FRESH build no longer parks a marker on a frame.
+# Both goldens are REGENERATED this wave (each a single flow-marker label-offset
+# change, no topology change: gcp/01 e2 ``x="-0.2"→"-0.4"``, oci/01 e1 gains
+# ``x="-0.2"``), so the G30 nudge now clears the finding and their committed bytes
+# no longer trip the rule. The whole corpus is therefore clean of the finding.
+_KNOWN_MARKER_ON_BORDER: set[str] = set()
 
 
 @pytest.mark.parametrize("path", CORPUS, ids=lambda p: str(Path(p).relative_to(REPO_ROOT)))
 def test_corpus_marker_on_container_border(path):
-    """Every shipped diagram is clean of the finding EXCEPT the two documented
-    real cases, which stay visible as WARNINGs (never blocking)."""
+    """Every shipped diagram is clean of the finding. The two cases that once
+    carried it (gcp/01, oci/01) are regenerated this wave, so the G30 nudge has
+    slid both markers clear and ``_KNOWN_MARKER_ON_BORDER`` is now empty."""
     rel = str(Path(path).relative_to(REPO_ROOT))
     for art in parse_artifacts(path):
         findings = lint(art)["findings"]
