@@ -313,6 +313,74 @@ def test_peering_edge_has_no_on_canvas_word_and_is_dashed_no_arrow():
 
 
 # --------------------------------------------------------------------------- #
+# G38 (FEAT-003): per-peering caption via EdgeSpec.peering_label
+# --------------------------------------------------------------------------- #
+
+
+def _labelled_peering_spec(label: str | None) -> DiagramSpec:
+    """The single-peering spec, with an optional short peer-resource label on
+    the peering edge."""
+    spec = _peering_spec(peering_as_node=True)
+    edges = (replace(spec.edges[0], peering_label=label),)
+    return replace(spec, edges=edges)
+
+
+def test_peering_label_is_discoverable_on_materialized_pcx_node():
+    from rule_engine.layout import peering_label_for
+
+    m = materialize_peerings(_labelled_peering_spec("Atlas peering"))
+    # The short peer-resource name travels on the materialized spec, keyed by the
+    # pcx node id, and is read via the stable accessor the build scripts use.
+    assert peering_label_for(m, "p1-pcx") == "Atlas peering"
+    assert dict(m.peering_labels) == {"p1-pcx": "Atlas peering"}
+    # The label is the SHORT peer-resource name, NOT the raw pcx- id.
+    assert not peering_label_for(m, "p1-pcx").startswith("pcx-")
+
+
+def test_peering_label_passes_node_label_length():
+    """The caption must be short enough to pass ``node-label-length`` (≤ 4 words
+    AND ≤ 40 chars); a raw pcx-id would be too long."""
+    from rule_engine.layout import peering_label_for
+
+    m = materialize_peerings(_labelled_peering_spec("Atlas peering"))
+    caption = peering_label_for(m, "p1-pcx")
+    assert len(caption.split()) <= 4 and len(caption) <= 40
+
+
+def test_peering_without_label_is_backward_compatible():
+    """A peering edge with NO peering_label still materializes, carries no entry
+    in the mapping, and the accessor returns None (renderer falls back to its
+    generic caption)."""
+    from rule_engine.layout import peering_label_for
+
+    m = materialize_peerings(_labelled_peering_spec(None))
+    pcx = [n for n in m.nodes if n.role == "vpc_peering"]
+    assert len(pcx) == 1 and pcx[0].id == "p1-pcx"
+    assert m.peering_labels == ()
+    assert peering_label_for(m, "p1-pcx") is None
+
+
+def test_peering_label_keeps_word_suppression_and_empty_markers():
+    """Adding a peering_label does not reintroduce the 'peering' word or a marker
+    badge: the two legs stay non-peering with empty markers."""
+    m = materialize_peerings(_labelled_peering_spec("Atlas peering"))
+    legs = {e.id: e for e in m.edges if e.id in ("p1-a", "p1-b")}
+    assert len(legs) == 2
+    assert all(not e.peering for e in legs.values())
+    assert all(e.marker == "" for e in legs.values())
+
+
+def test_peering_label_default_keeps_edgespec_byte_identical():
+    """EdgeSpec.peering_label defaults to None, so a spec that never sets it is
+    unchanged (the field is additive and defaulted)."""
+    spec = _peering_spec(peering_as_node=False)
+    assert all(getattr(e, "peering_label", "sentinel") is None
+               for e in spec.edges)
+    # Identity is preserved when the flag is off.
+    assert materialize_peerings(spec) is spec
+
+
+# --------------------------------------------------------------------------- #
 # Helpers — build + parse a spec into a .drawio string / artifacts
 # --------------------------------------------------------------------------- #
 

@@ -129,6 +129,18 @@ class EdgeSpec:
     #: each node-to-node peering into a ``vpc_peering`` resource node instead
     #: (:func:`rule_engine.layout.peering.materialize_peerings`).
     peering: bool = False
+    #: 1.11.0 G38 (FEAT-003): the short PEER-RESOURCE name a materialized
+    #: ``vpc_peering`` resource node carries as its caption when
+    #: :attr:`DiagramSpec.peering_as_node` turns this ``peering=True`` edge into a
+    #: node (:func:`rule_engine.layout.peering.materialize_peerings`). It MUST be
+    #: the peer resource's short name (e.g. ``"Atlas peering"`` /
+    #: ``"CMTR-SRE peering"``), NOT the raw ``pcx-…`` id — a pcx-id is too long
+    #: and would trip ``node-label-length``; the pcx-id + CIDR stay in the Flow
+    #: legend. ``None`` (default) ⇒ the renderer falls back to the generic
+    #: caption, so every existing spec is byte-identical. Presentation only: it
+    #: names a caption, never a coordinate; ignored entirely when
+    #: ``peering_as_node`` is off (the edge is drawn as a bare peering line).
+    peering_label: Optional[str] = None
     #: Engine-derived (never authored): ``True`` when both endpoints belong to
     #: the same non-empty region, ``False`` for two different regions, ``None``
     #: when unknown. Set by ``layout()`` from the node declarations so the
@@ -285,6 +297,18 @@ class DiagramSpec:
     #: and never materializes a node. Coordinate-free: it names a presentation
     #: choice, never an ``x``/``y``.
     peering_as_node: bool = False
+    #: 1.11.0 G38 (FEAT-003): engine-derived (never authored) ``(pcx_node_id,
+    #: peering_label)`` pairs, stamped by
+    #: :func:`rule_engine.layout.peering.materialize_peerings` so a renderer can
+    #: discover the short peer-resource caption for each materialized
+    #: ``vpc_peering`` node. The key is the pcx node id (``"<edge-id>-pcx"``) and
+    #: the value is the originating :attr:`EdgeSpec.peering_label`; an edge that
+    #: carried no ``peering_label`` contributes no pair. A build script reads this
+    #: from the placed spec (``placed.spec.peering_labels``, or the accessor
+    #: :func:`rule_engine.layout.peering.peering_label_for`) to caption each pcx
+    #: node. ``()`` (default) on an un-materialized spec, so every existing spec
+    #: is byte-identical. Presentation only — never a coordinate.
+    peering_labels: Tuple[Tuple[str, str], ...] = ()
 
 
 # ---------------------------------------------------------------------------
