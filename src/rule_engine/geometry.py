@@ -64,7 +64,7 @@ GRID = 10
 # each child's footprint by this on all four sides to compute the container's
 # minimum legitimate area demand. ``diagram_layout`` imports ``geometry`` only
 # lazily (inside functions), so this top-level import is cycle-safe.
-from rule_engine.diagram_layout import CONTAINER_PAD, STAIR_STEP
+from rule_engine.diagram_layout import COL_STEP, CONTAINER_PAD, STAIR_STEP
 
 # The label band drawn *below* a node's icon (``verticalLabelPosition=bottom``).
 # A node's on-canvas footprint is not just its 78x78 icon box — the service name
@@ -3766,6 +3766,21 @@ MARKER_NUDGE_STEP = 0.2
 #: minimum offset diagram-standards already mandates for parallel corridors.
 PARALLEL_TRUNK_OFFSET = GRID
 
+#: Routed-polyline length (px) above which an unpinned flow-marker is anchored
+#: NEAR ITS SOURCE instead of at the geometric midpoint (ITEM C, audit E-08).
+#: A long edge's midpoint can land far from both endpoints — in dead space, on a
+#: container border, or on an unrelated caption — so a long run reads more
+#: clearly with its step number close to where the flow leaves. 2.5 x
+#: :data:`COL_STEP` is the same long-run threshold the detour / tier-skip rules
+#: use; a short edge keeps the midpoint, so no short-edge golden shifts.
+LONG_EDGE_MARKER_LEN = 2.5 * COL_STEP
+
+#: The arc-length offset (px) from the source at which a long unpinned marker is
+#: anchored: ~1.2 columns down the run, capped at half the route so the marker
+#: never passes the midpoint (which would defeat the "near the source" intent on
+#: a route only a little over the long threshold). Deterministic and pure.
+LONG_EDGE_MARKER_OFFSET = 1.2 * COL_STEP
+
 #: Detour coefficient: an edge whose routed (Manhattan) length exceeds the
 #: straight Manhattan distance between its contacts by more than this factor is
 #: a "detour hook" — it loops out and back instead of going where it is going
@@ -3791,10 +3806,20 @@ def marker_anchor(poly: Sequence[Point], label_pos: Optional[float]) -> Optional
     """Return the on-canvas point where an edge label renders.
 
     draw.io places an edge label at a signed arc-length fraction ``label_pos`` of
-    the full polyline: ``0`` (or ``None``) is the geometric midpoint, ``-1`` the
-    source end, ``+1`` the target end. This walks the polyline to the point at
-    normalized arc-length ``t = (label_pos + 1) / 2`` — the same point the reader
-    sees the number at. Returns ``None`` for a degenerate (zero-length) route.
+    the full polyline: ``0`` the geometric midpoint, ``-1`` the source end, ``+1``
+    the target end. This walks the polyline to the point at normalized arc-length
+    ``t = (label_pos + 1) / 2`` — the same point the reader sees the number at.
+    Returns ``None`` for a degenerate (zero-length) route.
+
+    ITEM C (audit E-08): an **unpinned** marker (``label_pos is None``) on a
+    **long** route (total length above :data:`LONG_EDGE_MARKER_LEN`) is anchored
+    NEAR ITS SOURCE — a fixed arc-length offset of
+    ``min(0.5 * total, LONG_EDGE_MARKER_OFFSET)`` from the exit — rather than at
+    the midpoint, which on a long run can land in dead space, on a container
+    border, or on an unrelated caption. A short route, or any route whose
+    ``label_pos`` is explicitly pinned (including ``0.0``), keeps the exact
+    midpoint / pinned point behaviour, so no short-edge or pinned-marker golden
+    shifts.
     """
     pts = [tuple(p) for p in poly]
     if len(pts) < 2:
@@ -3805,9 +3830,13 @@ def marker_anchor(poly: Sequence[Point], label_pos: Optional[float]) -> Optional
     total = sum(seg_len)
     if total <= 0:
         return pts[0]
-    t = ((label_pos if label_pos is not None else 0.0) + 1.0) / 2.0
-    t = min(1.0, max(0.0, t))
-    target = t * total
+    if label_pos is None and total > LONG_EDGE_MARKER_LEN:
+        # Unpinned long edge: anchor near the source, capped at the midpoint.
+        target = min(0.5 * total, LONG_EDGE_MARKER_OFFSET)
+    else:
+        t = ((label_pos if label_pos is not None else 0.0) + 1.0) / 2.0
+        t = min(1.0, max(0.0, t))
+        target = t * total
     run = 0.0
     for (a, b), ln in zip(zip(pts, pts[1:]), seg_len):
         if run + ln >= target or ln == 0:
@@ -4014,6 +4043,30 @@ def check_marker_on_edge(
 _MARKER_SLIDE_LIMIT = 0.8
 
 
+def _default_label_pos(poly: Sequence[Point], label_pos: Optional[float]) -> float:
+    """Return the effective signed ``label_pos`` an unpinned marker renders at.
+
+    Mirrors :func:`marker_anchor`'s ITEM C near-source rule in the ``label_pos``
+    domain: an explicitly pinned marker keeps its value; an unpinned marker on a
+    long route (> :data:`LONG_EDGE_MARKER_LEN`) resolves to the signed fraction
+    whose arc-length is the near-source offset (so the de-collision passes start
+    from the SAME near-source anchor the renderer draws); an unpinned marker on a
+    short route resolves to ``0.0`` (the midpoint). Used to seed and to diff
+    :func:`resolve_marker_collisions` so a long unpinned edge is not spuriously
+    reported as "moved" when it only sits at its own near-source default."""
+    if label_pos is not None:
+        return float(label_pos)
+    pts = [tuple(p) for p in poly]
+    if len(pts) < 2:
+        return 0.0
+    total = sum(abs(b[0] - a[0]) + abs(b[1] - a[1]) for a, b in zip(pts, pts[1:]))
+    if total <= 0 or total <= LONG_EDGE_MARKER_LEN:
+        return 0.0
+    target = min(0.5 * total, LONG_EDGE_MARKER_OFFSET)
+    # signed position: t in [0,1] along the route maps to label_pos = 2*t - 1
+    return round(2.0 * (target / total) - 1.0, 6)
+
+
 def resolve_marker_collisions(
     geo: DiagramGeometry,
     min_sep: float = MARKER_MIN_SEP,
@@ -4043,11 +4096,26 @@ def resolve_marker_collisions(
     markers = _marker_edges(geo)
     if not markers:
         return {}
-    pos: Dict[str, float] = {
-        e.id: (e.label_pos if e.label_pos is not None else 0.0) for e in markers
-    }
     by_id = {e.id: e for e in markers}
     contacts = {e.id: _edge_contacts(geo, e) for e in markers}
+
+    def _poly_of(e: EdgeGeom) -> Optional[List[Point]]:
+        c = contacts[e.id]
+        if c is None:
+            return None
+        return [c[0]] + [tuple(p) for p in e.points] + [c[1]]
+
+    # ITEM C: an unpinned LONG edge seeds from its near-source default anchor, so
+    # the de-collision passes (2 and 3) start from the SAME point the renderer
+    # draws, not the midpoint. A pinned or short edge seeds from its own value.
+    def _seed(e: EdgeGeom) -> float:
+        poly = _poly_of(e)
+        if poly is None:
+            return e.label_pos if e.label_pos is not None else 0.0
+        return _default_label_pos(poly, e.label_pos)
+
+    pos: Dict[str, float] = {e.id: _seed(e) for e in markers}
+    base: Dict[str, float] = dict(pos)
 
     def anchor_of(eid: str) -> Optional[Point]:
         c = contacts[eid]
@@ -4194,8 +4262,8 @@ def resolve_marker_collisions(
 
     return {
         eid: round(pos[eid], 4)
-        for eid, e in by_id.items()
-        if abs(pos[eid] - (e.label_pos if e.label_pos is not None else 0.0)) > 1e-9
+        for eid in by_id
+        if abs(pos[eid] - base[eid]) > 1e-9
     }
 
 

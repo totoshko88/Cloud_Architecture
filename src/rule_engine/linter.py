@@ -1555,6 +1555,42 @@ def _is_network_diagram(a: Artifact) -> bool:
     return dtype in _NETWORK_DIAGRAM_TYPES
 
 
+def _is_network_component_or_flow(a: Artifact) -> bool:
+    """True when ``a`` is a network, component, OR flow diagram (ITEM C,
+    audit E-08).
+
+    The class predicate the marker-overprint rules escalate on: a marker smeared
+    across an account / VPC frame or over a service name is a *correctness*
+    failure on the diagram kinds a reviewer reads a numbered flow off — a network
+    as-built, a C4 component view, or a flow — so ``marker-on-container-border``
+    and ``marker-label-collision`` are ERROR there and WARNING on a landscape
+    inventory / other classes.
+
+    ``component`` is deliberately NOT in :data:`_C4_DIAGRAM_TYPES` (those are the
+    neutral-box context/container views) nor in ``_is_network_diagram`` (R2
+    Finding 7), so it is recognised here by its own ``diagram_type`` token. A
+    ``flow`` is the default diagram class, so this reads the class directly.
+
+    A ``landscape`` inventory view is explicitly the WARNING side even though
+    ``_is_network_diagram`` counts a landscape as a network diagram (for the
+    ``ip-range`` scope): ITEM C wants a numbered-flow overprint to BLOCK only on
+    the diagrams a reviewer reads an ordered flow off — the ``flow`` class, a
+    ``component`` view, or a ``diagram_type``-declared network view — not on a
+    dense as-built where markers are optional. So the landscape class short-
+    circuits to False before the network test.
+
+    Attribute reads are defensive (``getattr``) so a minimal programmatic
+    diagram stand-in — which may carry only ``kind`` / ``geometry`` — still
+    resolves to the ``flow`` default rather than raising."""
+    dtype = (getattr(a, "diagram_type", None) or "").strip().lower()
+    dclass = (getattr(a, "diagram_class", None) or DIAGRAM_CLASS_FLOW).strip().lower()
+    if dclass == DIAGRAM_CLASS_LANDSCAPE:
+        return False
+    if dtype == "component" or dclass == DIAGRAM_CLASS_FLOW:
+        return True
+    return _is_network_diagram(a)
+
+
 def _network_lint_profile(a: Artifact) -> bool:
     """True when ``a``'s ``diagram_type`` resolves to a profile scoped on the
     ``network`` lint profile (1.11.0 WS6, Requirement 6 AC1).
@@ -2612,13 +2648,18 @@ def _check_marker_label_collision(a: Artifact):
     if geo is None:
         return False
     from rule_engine import geometry as _geo
+    # ITEM C: ERROR on a network / component / flow diagram (where a numbered
+    # flow is read), WARNING on a landscape inventory / other classes.
+    sev = Severity.ERROR if _is_network_component_or_flow(a) else None
     hits: List[RuleHit] = []
     on_caption = _geo.check_marker_label_collision(geo)
     if on_caption:
-        hits.append(RuleHit(offenders=_offender_ids(on_caption), reason="marker-on-caption"))
+        hits.append(RuleHit(offenders=_offender_ids(on_caption), reason="marker-on-caption",
+                            severity=sev))
     on_icon = _geo.check_marker_icon_collision(geo)
     if on_icon:
-        hits.append(RuleHit(offenders=_offender_ids(on_icon), reason="marker-on-icon"))
+        hits.append(RuleHit(offenders=_offender_ids(on_icon), reason="marker-on-icon",
+                            severity=sev))
     if not hits:
         return False
     return hits[0] if len(hits) == 1 else hits
@@ -2638,7 +2679,10 @@ def _check_marker_on_container_border(a: Artifact):
     findings = _geo.check_marker_on_container_border(geo)
     if not findings:
         return False
-    return RuleHit(offenders=_offender_ids(findings), reason="marker-on-border")
+    # ITEM C: ERROR on a network / component / flow diagram, WARNING otherwise.
+    sev = Severity.ERROR if _is_network_component_or_flow(a) else None
+    return RuleHit(offenders=_offender_ids(findings), reason="marker-on-border",
+                   severity=sev)
 
 
 def _check_detour_hook(a: Artifact):
