@@ -19,7 +19,7 @@ from their leaf modules, so it never participates in an import cycle.
 
 from __future__ import annotations
 
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Set, Tuple
 
 try:  # package-relative import when used as ``rule_engine.layout.contacts``
     from ..diagram_layout import COL_STEP
@@ -100,39 +100,117 @@ def _box_directly_below(a: Box, b: Box, others: Optional[list] = None) -> bool:
     return True
 
 
+#: SYS-A (1.11.0, G37): the horizontal band, as a fraction of one column step,
+#: within which a below target still counts as "mostly below" — close enough
+#: that a bottom-centre exit → top-centre entry reads as a clean descent rather
+#: than a sideways hop. Half a column step (|dx| <= COL_STEP/2) is the owner's
+#: "ціль знизу ⇒ лінія вниз" band: a target one full column over is a sideways
+#: fan-out, not a drop.
+_MOSTLY_BELOW_BAND = 0.5
+
+
+def _box_mostly_below(a: Box, b: Box, others: Optional[list] = None) -> bool:
+    """Return True when ``b`` sits MOSTLY below ``a`` and the drop column is clear
+    (SYS-A, 1.11.0 — owner Rule R3 "ціль знизу ⇒ вихід вниз").
+
+    "Mostly below" relaxes the strict same-column :func:`_box_directly_below` to
+    a narrow horizontal band: the target centre is below the source centre and
+    their centre-x differ by at most half a column step
+    (:data:`_MOSTLY_BELOW_BAND` * ``COL_STEP``). This is the exact shape the
+    owner asks to draw as a straight/bottom drop (comments 03, 08a, 10, 09-12/16,
+    the lower half of 02).
+
+    GUARD 1 (intervening icon): no other node's icon may sit in the vertical
+    corridor between the source bottom and the target top across the *union* of
+    the two glyphs' x-extents. A straight drop through a DIFFERENT node's icon is
+    an ``edge-routing`` ERROR the R5 caption mask cannot fix (it masks captions,
+    not icons), so the side corridor must stay in that case. This reuses the same
+    band/obstacle test as :func:`_box_directly_below`, widened to the union span
+    so the "mostly below" diagonal drop is still checked for an obstruction.
+    """
+    a_cx = a.x + a.w / 2.0
+    b_cx = b.x + b.w / 2.0
+    below = (b.y + b.h / 2.0) > (a.y + a.h / 2.0) and b.y > a.y
+    if not below:
+        return False
+    if abs(b_cx - a_cx) > _MOSTLY_BELOW_BAND * col_step():
+        return False
+    if not others:
+        return True
+    # GUARD 1: nothing in the vertical corridor over the union x-span of the two
+    # glyphs (the drop leg may lean up to half a column, so test the widest span
+    # the descending line can occupy, not just the source column).
+    lo, hi = a.y + a.h, b.y
+    left = min(a.x, b.x)
+    right = max(a.right, b.right)
+    for o in others:
+        if o.id in (a.id, b.id):
+            continue
+        if o.right > left and o.x < right and lo <= o.y < hi:
+            return False
+    return True
+
+
 def select_contacts(
-    edge: EdgeSpec, placed: Dict[str, Box]
+    edge: EdgeSpec,
+    placed: Dict[str, Box],
+    allow_downward: Optional[Set[str]] = None,
 ) -> Tuple[Contact, Contact]:
     """Return ``(exit, entry)`` contact points for ``edge`` via the ladder (Req 5).
 
-    **Rule A — always exit RIGHT, never the bottom.** The service name renders
-    in a caption band *below* the icon (``verticalLabelPosition=bottom``), so a
-    bottom exit crosses the node's own label. Every edge therefore leaves the
-    **right** face; a target that sits directly below is reached by exiting
-    right, stepping into a side corridor, and descending — not by a bottom stub.
-    This is the hand-routed reference's rule (edges 3/7/9 exit right, not bottom).
+    **Exit priority toward the target (owner Rule R3, SYS-A 1.11.0).** The
+    owner's rule is "вихід ближче до цілі": a target **below** the source is left
+    on the **bottom** face (a straight/downward drop), a target to the **side**
+    on the **right** face. This was impossible while the caption rendered *over*
+    the line, so the pre-1.11.0 Rule A exited every edge RIGHT to spare the node's
+    own name. Since ENG-R2 (1.11.0) paints an opaque background behind any caption
+    an edge crosses and ``_assemble_document`` emits edges BENEATH the vertices, a
+    bottom exit through the source's own caption is now LEGIBLE, so the exit side
+    follows the target direction.
 
-    **Exit ladder** (right face only):
+    **Exit ladder:**
 
-    1. **right-centre** ``(1.0, 0.5)`` — the first exit from a side (and the
-       straight-line case: a same-row adjacent target, or a target directly
-       below reached via the side corridor). A single edge always keeps the
-       centre.
+    1. **bottom-centre** ``(0.5, 1.0)`` + **top-centre entry** ``(0.5, 0.0)`` —
+       when the target sits MOSTLY BELOW the source (:func:`_box_mostly_below`:
+       below, within half a column step horizontally, and the drop column clear
+       of any other icon — GUARD 1) AND the SYS-A guards hold (``allow_downward``;
+       see below). This is the straight/downward drop the owner asks for — the
+       exact shape ``route_spine`` Exception I already draws.
 
-    2. **right, biased toward the FREE side** ``(1.0, 0.25|0.75)`` (Rule B) — a
-       second/third exit leans toward the side with fewer crossings: the **upper**
-       quarter when the target is above the source (or level), the **lower**
-       quarter when it is clearly below. :func:`spread_contacts` then finalises
-       the exact bands so several same-side exits stay distinct.
+    2. **right-centre** ``(1.0, 0.5)`` — otherwise, the first/straight-line exit
+       (a same-row adjacent target, or a below target the guards forbid dropping
+       into). A single edge always keeps the centre; :func:`spread_contacts`
+       shifts only the 2nd/3rd off-centre (Rule B).
+
+    **The SYS-A guards** (owner's R5 limit + the standard's hard rules):
+
+    * GUARD 1 (intervening icon) — a straight drop through a DIFFERENT node's
+      icon is an ``edge-routing`` ERROR the caption mask cannot fix; handled
+      inside :func:`_box_mostly_below`, which rejects the drop when the column is
+      obstructed, so the right exit stands.
+    * GUARD 2 (a foreign line also crosses the caption) — one opaque background
+      masks ONE caption but cannot disambiguate two different lines under one
+      name, so only ONE edge over a given source caption may take the downward
+      route; the rest keep the right/stair exit. Resolved by the caller
+      (:func:`rule_engine.layout.pipeline._global_contacts`) and passed in as
+      ``allow_downward`` — the set of edge ids cleared to drop. When
+      ``allow_downward`` is ``None`` (a synthetic caller / property test with no
+      cross-edge context) the per-edge GUARD 1 alone gates the drop.
+    * GUARD 3 (over-connected bottom) — a 4th bottom contact is spilled/valved by
+      the existing passes (``spill_over_connected_faces`` / pipeline step 1d), not
+      added here.
+    * GUARD 4 (target's own caption on entry) — a top-centre entry arrives ABOVE
+      the target icon, and the target's caption renders BELOW it, so the entry is
+      inherently clear of the target's own name.
 
     **Entry rule** (Req 5.2): a run arriving **horizontally** enters the target's
-    **left** ``(0.0, 0.5)``; a run **descending** into a target below (the spine
-    case) enters its **top** ``(0.5, 0.0)``. Cross-region / long over-row entries
-    are set to the top by their router (Rule C), overriding this default.
+    **left** ``(0.0, 0.5)``; a run **descending** into a target below (the spine /
+    downward case) enters its **top** ``(0.5, 0.0)``. Cross-region / long over-row
+    entries are set to the top by their router (Rule C), overriding this default.
 
     Both contact points are always explicitly set (never ``None``), so
-    ``check_edge_float`` is clean; every exit leans right and every entry leans
-    left/top, so ``check_edge_direction`` is clean (Req 5.5).
+    ``check_edge_float`` is clean; every exit leans right or bottom and every
+    entry leans left/top, so ``check_edge_direction`` is clean (Req 5.5).
     """
     src = placed[edge.source]
     tgt = placed[edge.target]
@@ -147,7 +225,19 @@ def select_contacts(
     # defect). Same-column ⇒ top entry, obstacle or not.
     same_column_below = (src.x == tgt.x) and (tgt.y > src.y)
 
-    # --- Exit: ALWAYS the right-CENTRE face (Rule A). --------------------------
+    # --- Exit (SYS-A, owner R3): prefer the BOTTOM face when the target is
+    # mostly below and the guards clear it. GUARD 1 is inside _box_mostly_below;
+    # GUARD 2 is resolved by the caller via ``allow_downward`` (when provided);
+    # GUARD 3 by the downstream spill passes; GUARD 4 is inherent (a top-centre
+    # entry is above the target icon, clear of the target's own caption below).
+    mostly_below = _box_mostly_below(src, tgt, others)
+    guard2_ok = allow_downward is None or edge.id in allow_downward
+    if mostly_below and guard2_ok:
+        # Bottom-centre exit → top-centre entry: the straight/downward drop the
+        # owner asks for, masked by R5 where it grazes the source's own caption.
+        return (0.5, 1.0), (0.5, 0.0)
+
+    # --- Exit: the right-CENTRE face otherwise (pre-SYS-A Rule A fallback). -----
     # The exit is centred here regardless of how many edges leave this side; the
     # spread pass (:func:`spread_contacts`, driven by edge-marker order in
     # :func:`_place_and_route`) keeps the FIRST edge centred and shifts only the

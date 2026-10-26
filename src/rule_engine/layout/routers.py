@@ -525,6 +525,29 @@ def route_spine(
     if exit_pt[1] >= 1.0 and entry_pt[1] <= 0.0 and abs(src.x - tgt.x) < 1e-9:
         return []
 
+    # SYS-A mostly-below drop (1.11.0, G37): a bottom-centre exit into a
+    # top-centre entry whose target is below but NOT in the exact same column
+    # (:func:`contacts._box_mostly_below` cleared it — within half a column step
+    # and the drop column free of any other icon). Draw the owner's straight
+    # descent as a clean DROP-then-STEP-then-DROP: fall straight from the source's
+    # bottom-centre, step across ABOVE the target in the inter-row gap, then
+    # descend into its top-centre. No side corridor and no stair past the glyph —
+    # the small horizontal lean the owner expects for "ціль знизу ⇒ вниз". GUARD 1
+    # (nothing in the column) is already assured by the caller, so the straight
+    # legs cross no icon.
+    if exit_pt[1] >= 1.0 and entry_pt[1] <= 0.0 and abs(src.x - tgt.x) >= 1e-9:
+        exit_src = _contact_point(src, exit_pt)
+        entry_top = _contact_point(tgt, entry_pt)
+        step_y = _snap(entry_top[1] - GRID)   # one grid above the target top
+        waypoints = [
+            (_snap(exit_src[0]), step_y),     # drop in the source's bottom column
+            (_snap(entry_top[0]), step_y),    # step across above the target
+        ]
+        waypoints = _dedupe_axis_collapse(waypoints, waypoints[0])
+        route = [exit_src] + waypoints + [entry_top]
+        route = _detour_clockwise_if_blocked(route, others)
+        return _interior_waypoints(route)
+
     # Level-run shortcut (wave-4 ITEM 4b): a spine whose SOURCE right-face exit
     # and TARGET left-face entry already resolve to the SAME absolute y, and
     # whose direct horizontal crosses no unrelated icon, is a straight single

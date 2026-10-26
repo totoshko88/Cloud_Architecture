@@ -59,6 +59,7 @@ try:  # package-relative import when used as ``rule_engine.layout.pipeline``
         _LOWER_QUARTER,
         OverConnectedError,
         _box_directly_below,
+        _box_mostly_below,
         select_contacts,
         _exit_side,
         _with_band,
@@ -105,6 +106,7 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
         _LOWER_QUARTER,
         OverConnectedError,
         _box_directly_below,
+        _box_mostly_below,
         select_contacts,
         _exit_side,
         _with_band,
@@ -167,10 +169,34 @@ def _global_contacts(
     stays byte-identical on the ``--legacy`` path (R1.5).
     """
     # 1. Select each edge's contact points via the ladder.
+    #
+    # SYS-A GUARD 2 pre-pass (1.11.0, G37): :func:`select_contacts` prefers a
+    # straight DOWNWARD exit (bottom-centre → top-centre) when the target is
+    # mostly below (owner Rule R3). The R5 opaque-caption mask keeps ONE such
+    # drop legible where it grazes the source's own caption, but it cannot
+    # disambiguate TWO different lines under one name (audit §3.4/§6). A downward
+    # drop passes through its SOURCE node's own caption band, so group the
+    # candidate downward edges by source and clear only ONE per source caption to
+    # drop; the rest fall back to the right/stair exit (a conscious keep-with-
+    # reason for the audit trail). Deterministic: the kept edge is the first in
+    # declared order, so the same spec always keeps the same edge.
+    _downward_candidates: Dict[str, List[str]] = {}
+    for edge in spec.edges:
+        if _box_mostly_below(
+            placed[edge.source], placed[edge.target],
+            [b for nid, b in placed.items()
+             if nid not in (edge.source, edge.target)],
+        ):
+            _downward_candidates.setdefault(edge.source, []).append(edge.id)
+    allow_downward: set = set()
+    for _src_id, _eids in _downward_candidates.items():
+        # At most ONE edge per source caption takes the downward route (GUARD 2).
+        allow_downward.add(_eids[0])
+
     exits: Dict[str, Contact] = {}
     entries: Dict[str, Contact] = {}
     for edge in spec.edges:
-        ex, en = select_contacts(edge, placed)
+        ex, en = select_contacts(edge, placed, allow_downward)
         exits[edge.id] = ex
         entries[edge.id] = en
 
