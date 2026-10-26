@@ -57,7 +57,7 @@ from rule_engine.diagram_layout import (  # noqa: E402
 REPO_ROOT = Path(__file__).resolve().parents[1]
 OUT = REPO_ROOT / "examples" / "cross-cloud" / "01-cross-cloud-composition.drawio"
 
-TITLE = "multicloud agent-platform — acme-multicloud / multi-region | 2026-09-22 | v1"
+TITLE = "multicloud agent-platform — acme-multicloud / multi-region | 2026-10-07 | v2"
 
 # ---------------------------------------------------------------------------
 # Icon styles — resolved via mappings/<provider>-icons.yaml so each node
@@ -109,9 +109,20 @@ X_AWS = 200
 X_AZ = 680
 X_GCP = 1160
 
+# 1.11.0 ITEM A re-baseline (scope-placement fix): the CDN edge-gateway is a
+# GLOBAL/edge service, so it must sit at the EDGE — OUTSIDE every cloud boundary
+# — not inside the AWS VPC. Drawing it in the VPC was a real defect (a global
+# service in a network boundary) that the new scope-placement rule flags as
+# ``global-in-region:edge-gateway``. It is relocated to the edge/actors column
+# to the LEFT of the AWS Account box (account left = 140), so it sits OUTSIDE
+# every cloud boundary (not spill-attributed to the account) and its validation
+# edge enters the account/VPC from the left. auth-lambda stays inside the VPC.
+# See docs/REVIEW.md G41 and the PNG justification in the SEPARCH feedback log.
+X_EDGE = 40
+
 # (node id, label, renderer-kind, style/path, x, y)
 NODE_SPECS = [
-    ("edge-gateway", "edge-gateway", "resolved", _AWS_CDN, X_AWS, ROW_TOP),
+    ("edge-gateway", "edge-gateway", "resolved", _AWS_CDN, X_EDGE, ROW_BOT),
     ("auth-lambda", "auth-lambda", "resolved", _AWS_LAMBDA, X_AWS, ROW_BOT),
     ("openai-service", "openai-service", "image", _AZ_OPENAI, X_AZ, ROW_TOP),
     ("service-bus", "service-bus", "image", _AZ_SERVICEBUS, X_AZ, ROW_BOT),
@@ -120,13 +131,17 @@ NODE_SPECS = [
 ]
 
 # Node centres (icon 78 -> +39):
-#   edge-gateway(239,359) auth-lambda(239,519)
+#   edge-gateway(239,99)  auth-lambda(239,519)
 #   openai(719,359)       service-bus(719,519)
 #   vertex-ai(1199,359)   cloud-storage(1199,519)
 EDGES: List[Edge] = [
-    # 1: within AWS — edge gateway validates via the auth lambda (straight drop).
+    # 1: AWS — the edge gateway (at the edge, left of the account) validates the
+    # caller via the auth lambda inside the VPC. A straight horizontal run at the
+    # node row (y=519), crossing the Account + VPC LEFT borders to enter the
+    # lambda (an external→internal edge legitimately crosses the boundary). The
+    # run is below the top captions, so it does not slice them.
     Edge("e1", "edge-gateway", "auth-lambda", "1",
-         exit=(0.5, 1.0), entry=(0.5, 0.0)),
+         exit=(1.0, 0.5), entry=(0.0, 0.5)),
     # 2: AWS -> Azure — the authenticated prompt crosses to Azure OpenAI. Exit
     # the lambda's right, rise in the gap corridor between the AWS Account
     # (right 338) and the Azure Subscription (left 620), enter OpenAI's left.
@@ -144,13 +159,14 @@ EDGES: List[Edge] = [
     Edge("e5", "vertex-ai", "cloud-storage", "5",
          exit=(0.5, 1.0), entry=(0.5, 0.0)),
     # 6: GCP -> AWS — the return loop. Cloud Storage returns a signed artifact URL
-    # to the AWS edge gateway. A long back-edge: exit the bottom, run in a
-    # dedicated low corridor (y=700, below every container bottom at 648), up the
-    # far-left riser (x=100, left of the AWS Account at 140), enter the gateway's
-    # left face.
+    # to the AWS edge gateway (now at the edge, left of the account). A long
+    # back-edge: exit the bottom, run in a dedicated low corridor (y=700, below
+    # every container bottom at 648), up the far-left riser (x=20, left of the
+    # edge gateway at 40), enter the gateway LEFT face (centre 40,519) — a
+    # contract-legal left entry.
     Edge("e6", "cloud-storage", "edge-gateway", "6",
          exit=(0.5, 1.0), entry=(0.0, 0.5),
-         points=[(1199, 700), (100, 700), (100, 359)]),
+         points=[(1199, 700), (20, 700), (20, 519)]),
 ]
 
 FLOW_LINES = [

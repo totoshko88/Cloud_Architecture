@@ -5,11 +5,18 @@ kb_namespace: architecture
 section: golden-examples
 category: diagram
 status: draft
-updated: 2026-09-22
+updated: 2026-10-07
 owner: platform-architecture-team
 author: rule-engine
 next_review_date: 2027-03-22
 diagram_class: flow
+change_log:
+  - date: 2026-10-07
+    note: >-
+      v2 re-baseline (1.11.0 ITEM A scope-placement). The CDN edge-gateway was
+      relocated from inside the AWS VPC to the edge/actors column OUTSIDE every
+      cloud boundary — a global/edge service must not sit in a network boundary.
+      Fixes the scope-placement global-in-region defect the new lint surfaced.
 tags:
   - cross-cloud
   - multicloud

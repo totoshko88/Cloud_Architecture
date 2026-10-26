@@ -71,6 +71,7 @@ every applicable rule against every artifact.
 | `edge-crosses-container` | A routed edge's polyline passes **through the interior of a Boundary container that neither endpoint belongs to** — e.g. a fan-out from a VPC-scoped node to a regional node outside the VPC that dips into the VPC band. A container either endpoint is inside (a legitimate border crossing to enter/leave) is exempt, as is a parent of such a box. The stronger companion to `edge-crosses-container-label`, which guards only the top caption strip. | WARNING | diagram-standards Edge Routing (route around a container, not through it) |
 | `edge-on-container-border` | A routed edge has a **long, axis-aligned leg that coincides with a Boundary container border** it does not belong to — a grid-aligned corridor (a whole grid multiple) allocated beside a non-grid-aligned container edge lands ~2px off it and reads as riding the border. A *parallel*-ride test (a vertical leg is judged only against left/right borders, a horizontal leg only against top/bottom), so a leg that merely crosses a border to enter/leave is never flagged; there is no endpoint-inside exemption because a run parallel to and coincident with a border reads as part of it even when one endpoint sits inside the box. | WARNING | diagram-standards Edge Routing (a long vertical never coincides with a container border) |
 | `geometric-containment` | A node drawn geometrically INSIDE a Boundary it is not a structural **member** of (Theme 27) — the "lint-clean but structurally wrong" class, e.g. an external peer-account node packed inside the account box. Membership is structural (Wave C: a node parented to a boundary id is a member; a flat node parented to the root layer whose icon box falls fully inside a boundary is a non-member interloper). A member is never flagged; a node outside every boundary is never flagged. **ERROR on `landscape` and on a network diagram** (a hidden non-membership is a correctness failure), WARNING otherwise. | WARNING/ERROR | diagram-standards Service Scope Placement / Container Nesting |
+| `scope-placement` | A node drawn geometrically inside a boundary **stricter than its EFFECTIVE role scope allows**, independent of the declared container (1.11.0 ITEM A): a global/edge service inside a region/VPC (`global-in-region`), a regional managed service inside a VPC/network boundary (`regional-in-vpc`), a VPC-scoped service outside **every** VPC (`vpc-scoped-outside-vpc`), or an external actor/system inside the account (`external-in-account`). Effective scope = the node's `scope=` style-token override else its role → `ROLE_SCOPE` (the role recovered from the node's `image=`/`resIcon=` icon reference via the committed `icon-index.json` reverse map); a node whose scope is not resolvable, or that sits only inside a container matching no declared `containers.*.style`, is **not judged** — the rule never invents a scope, so the clean corpus is inert except where it catches a real defect. A **WAF** is judged by its effective scope: WAF-on-CloudFront (default `global`) inside a region fires `global-in-region`; WAF-on-ALB (`scope=regional`) is fine in the region and fires `regional-in-vpc` only inside the VPC. An **external** node OUTSIDE the account raises nothing (R2-2). Complements the `layout()` SpecError, which catches only the DECLARED-container case. ERROR on a network diagram (companion `diagram_type` network/infrastructure/deployment OR `diagram_class` landscape); WARNING otherwise. Lint-only (NOT in `rule_violations` / the solver oracle). | WARNING/ERROR | provider-profiles Service Scope Classification / diagram-standards Service Scope Placement |
 | `edge-escapes-container` | A routed edge whose two endpoints share a Boundary container **leaves that container's interior** — a run stepping out of the innermost box holding both endpoints into the strip between a region and its account, or out of the account into the right margin. An edge whose endpoints share no container (an external actor, a cross-cloud hop) is not judged. New in 1.10.6: the engine minimises it in its scored objective, so engine output never trips it; published as a WARNING so a hand-authored diagram is held to the same standard. | WARNING | diagram-standards Edge Routing (route around a container, not through it) |
 | `edge-crosses-legend` | A routed edge runs **through, or along within one grid step of, a `Flow` / `Legend` box**. `edge-routing` always described keeping edges clear of the right-side furniture but never read the text boxes, so a run riding the Flow box's left border linted clean. New in 1.10.6. | WARNING | diagram-standards Edge Routing (no edge–label / edge–legend crossings) |
 | `edge-crosses-title` | A routed edge runs **through, or along within one grid step of, the reserved title band** at the top of the canvas (the `title` text cell). A run routed above the top node row overdraws the title and makes it hard to read. New in 1.10.10 (Theme 26). | WARNING | diagram-standards Edge Routing (title keep-out band) |
@@ -633,6 +634,45 @@ every applicable rule against every artifact.
   hand-authored Legend is held to the same standard. Reason
   `legend-names-undrawn-boundary`; offenders = the offending legend line(s).
   Advisory (WARNING) on both classes.
+- **`scope-placement` (WARNING/ERROR)** — *New in 1.11.0 (ITEM A).
+  Geometry-enforced from the parsed model.* The geometry companion to the
+  `layout()` SpecError. The engine already validates a node's **declared**
+  `container` against its role scope (a regional/global node declaring a
+  network-boundary container raises `SpecError` at `layout()` time); it does NOT
+  catch a node that ends up **geometrically** inside the wrong boundary via
+  layout / column packing with no (or a different) declared container — the gap
+  the owner named (an AWS WAF wrongly inside a region; an external actor drawn
+  inside the account). This rule closes it, modelled on `geometric-containment`
+  (Theme 27): for each role-bearing node it computes the node's icon box, the set
+  of Boundary containers that geometrically contain it (`_geom_inside`), and
+  classifies each container's kind by its **style signature** against the
+  per-provider `containers:` mapping — the same recognition `container-style`
+  uses (R2-med-2; there is no `container_kinds` map). The four reason tokens:
+  `global-in-region:<node>` (effective `global` inside a
+  region/vpc/az/subnet boundary — a global/edge service must sit at the edge),
+  `regional-in-vpc:<node>` (effective `regional` inside a vpc/az/subnet network
+  boundary — a regional service stays outside the VPC), `vpc-scoped-outside-vpc:<node>`
+  (effective `network` inside **no** network boundary — a VPC-scoped service must
+  be inside the VPC), and `external-in-account:<node>` (an `external=1` node
+  inside the account boundary; an external node OUTSIDE the account raises
+  nothing — R2-2). **Effective scope** comes from the parsed model: a
+  `scope=<network|regional|global>` style token (`effective_scope`'s override,
+  round-tripped by the builder) else the node's role → `base.ROLE_SCOPE` (the
+  role recovered from the node's `image=`/`resIcon=` icon reference via the
+  committed `icon-index.json` reverse map, as `rule-engine-verify-icon` does); a
+  node whose scope is not resolvable, or whose icon maps to roles that disagree
+  on scope, is **not judged**, so the rule never invents a scope — the default
+  that keeps the clean corpus inert except where it catches a real defect. A
+  container whose style matches no declared `containers.*.style` is unrecognised
+  and never classified. The **WAF** nuance lives entirely in the scope source:
+  `ROLE_SCOPE["waf"]` stays `global` (WAF-on-CloudFront), so a default WAF drawn
+  inside a region fires `global-in-region`; a WAF-on-ALB sets `scope=regional`
+  and is allowed inside the region, firing `regional-in-vpc` only when drawn
+  inside the VPC. ERROR on a network diagram (companion `diagram_type`
+  network/infrastructure/deployment OR `diagram_class` landscape, via
+  `_is_network_diagram`); WARNING otherwise. Lint-only — NOT in
+  `geometry.rule_violations` / the solver oracle; it reports a placement defect
+  the author fixes by moving the node to the correct scope tier.
 - **`flow-step-undrawn` (WARNING)** — *New in 1.10.12 (WS5, C2).* `flow-legend`
   checks that every edge marker has a Flow line; nothing checked the other
   direction, so a step whose edge was folded into the legend (the 1.10.11
@@ -755,6 +795,7 @@ keeps its exact behavior.
 | `edge-crossing-excess` | WARNING (> ⌈0.25×E⌉) | WARNING (> ⌈0.25×E⌉), **ERROR** (> 0.5×E) |
 | `edge-routing` (icon crossing) | **ERROR** | **ERROR** (a run through an icon it does not connect / into its target from the wrong side) |
 | `geometric-containment` | WARNING | **ERROR** (a hidden non-membership is a correctness failure; also ERROR on a network diagram) |
+| `scope-placement` | WARNING | **ERROR** (a node in a boundary stricter than its effective scope; also ERROR on a network diagram) |
 | `orphan-landscape` | n/a | ERROR unless `summary_of` names a `flow` summary |
 | `node-connectivity` | WARNING | WARNING (an overlay marker is the sanctioned exemption) |
 | `graph-islands` | n/a | WARNING (the connected nodes form one graph; `supporting` / `standby` nodes left out) |

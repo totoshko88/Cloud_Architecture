@@ -219,6 +219,16 @@ class Node:
     #: Caption background colour; set by ``build_diagram`` only for a node whose
     #: caption an edge painted beneath it crosses (see ``_edge_slots``).
     label_bg: Optional[str] = None
+    #: Optional **effective-scope override** (1.11.0 ITEM A). When a node carries
+    #: an explicit ``NodeSpec.scope`` (a VPC-attached ``serverless_fn``, a
+    #: ``scope=regional`` WAF-on-ALB — Theme 14), it is emitted as a
+    #: ``scope=<network|regional|global>`` style token so the ``scope-placement``
+    #: lint reads the node's effective scope straight from the parsed model
+    #: (round-tripping ``effective_scope``'s override). ``None`` emits NOTHING, so
+    #: a node with no override carries no token and the lint falls back to the
+    #: node's role → ``ROLE_SCOPE`` — which keeps every pre-ITEM-A golden
+    #: byte-identical.
+    scope: Optional[str] = None
 
 
 # Visual encoding of an overlay marker. diagram-standards → *Icon Fidelity*
@@ -273,6 +283,12 @@ def overlay_suffix(node: "Node") -> str:
         # it crosses: the caption is painted on the local background so the line
         # passes BEHIND the text instead of striking it through.
         out += f";labelBackgroundColor={node.label_bg}"
+    if node.scope:
+        # 1.11.0 ITEM A: round-trip an explicit effective-scope override so the
+        # ``scope-placement`` lint reads it from the parsed model. Emitted ONLY
+        # when set (a per-node override); an unset scope emits nothing, so a
+        # pre-ITEM-A golden carries no token (the lint falls back to role scope).
+        out += f";scope={node.scope}"
     return out
 
 

@@ -195,6 +195,16 @@ RULE_EDGE_CROSSES_CONTAINER = "edge-crosses-container"
 RULE_EDGE_CROSSES_TITLE = "edge-crosses-title"
 RULE_EDGE_ON_CONTAINER_BORDER = "edge-on-container-border"
 RULE_GEOMETRIC_CONTAINMENT = "geometric-containment"
+# 1.11.0 ITEM A. The geometry companion to the layout() SpecError:
+#   scope-placement — a node drawn geometrically inside a boundary STRICTER than
+#                     its EFFECTIVE role scope allows, independent of the
+#                     declared container (a global/edge service inside a
+#                     region/VPC, a regional service inside a VPC, a VPC-scoped
+#                     service outside every VPC, or an external actor/system
+#                     inside the account). ERROR on a network diagram, WARNING
+#                     otherwise. Lint-only (NOT in rule_violations / the solver
+#                     oracle).
+RULE_SCOPE_PLACEMENT = "scope-placement"
 RULE_LEGEND_PLACEMENT = "legend-placement"
 RULE_FLOW_LEGEND = "flow-legend"
 RULE_NODE_CONNECTIVITY = "node-connectivity"
@@ -1901,6 +1911,135 @@ def _check_geometric_containment(a: Artifact):
     return RuleHit(offenders=offenders, reason="node-inside-nonmember-boundary")
 
 
+def _node_roles_by_icon(a: Artifact, providers: Sequence[str]) -> Dict[str, "frozenset[str]"]:
+    """Map each service vertex's cell id to the set of diagram roles its icon can
+    stand for, reverse-mapped through the committed ``icon-index.json`` (1.11.0
+    ITEM A).
+
+    Reuses the exact reverse-map ``reconcile.drawn_roles`` uses — an icon can be
+    shared by several roles (a GCP CDN and load-balancer both use the Networking
+    category icon), so a node contributes the *set* of roles its icon can stand
+    for. The icon references are the ones the CLI already extracted onto the
+    Artifact (``a.icon_refs``), keyed by ``IconRef.cell_id``; providers are the
+    diagram's title provider(s). Pure and offline (no page re-parse)."""
+    from rule_engine import reconcile
+
+    refs_by_cell: Dict[str, List[Any]] = {}
+    for ref in getattr(a, "icon_refs", None) or []:
+        refs_by_cell.setdefault(getattr(ref, "cell_id", ""), []).append(ref)
+
+    reverse_by_provider = {}
+    for provider in providers:
+        try:
+            reverse_by_provider[provider] = reconcile._reverse_role_index(provider)
+        except Exception:
+            continue
+
+    out: Dict[str, "frozenset[str]"] = {}
+    for cid, refs in refs_by_cell.items():
+        roles: set = set()
+        for ref in refs:
+            signature = reconcile._drawn_signature(ref)
+            if signature is None:
+                continue
+            for reverse in reverse_by_provider.values():
+                roles |= reverse.get(signature, frozenset())
+        if roles:
+            out[cid] = frozenset(roles)
+    return out
+
+
+def _check_scope_placement(a: Artifact):
+    """scope-placement: a node drawn geometrically inside a boundary STRICTER
+    than its EFFECTIVE role scope allows, independent of the declared container
+    (1.11.0 ITEM A).
+
+    The geometry companion to the ``layout()`` ``SpecError`` (which catches only
+    the DECLARED-container case): a global/edge service inside a region/VPC
+    (``global-in-region``), a regional service inside a VPC/network boundary
+    (``regional-in-vpc``), a VPC-scoped service outside every VPC
+    (``vpc-scoped-outside-vpc``), or an external actor/system inside the account
+    (``external-in-account``). A node's effective scope is its ``scope=`` style
+    token (``effective_scope``'s override, round-tripped by the builder) else its
+    role → ``ROLE_SCOPE`` (role recovered from the node's icon reference via the
+    committed ``icon-index.json`` reverse map); an unresolvable scope is NOT
+    judged, so the rule never invents a scope and is default-inert on the clean
+    corpus. ERROR on a network diagram; WARNING otherwise. Lint-only (NOT in the
+    solver oracle)."""
+    # A C4 container is a neutral box, not a provider boundary — there is no
+    # declared container style to classify, so there is nothing to judge.
+    if _is_c4_diagram(a):
+        return False
+    geo = _geometry_of(a)
+    if geo is None or not getattr(geo, "nodes", None):
+        return False
+    from rule_engine import geometry as _geo
+    from rule_engine import icon_resolver
+    from rule_engine.layout.base import role_scope
+
+    providers = _container_style_providers(a)
+    mappings: Dict[str, Mapping[str, Any]] = {}
+    for provider in providers:
+        try:
+            mappings[provider] = icon_resolver.load_mapping(provider).get("containers") or {}
+        except icon_resolver.IconResolverError:
+            continue
+
+    node_styles = getattr(geo, "node_styles", {}) or {}
+    roles_by_cell = _node_roles_by_icon(a, providers)
+
+    def _style_token(nid: str, name: str) -> Optional[str]:
+        return _geo._style_token(node_styles.get(nid, ""), name)
+
+    def _explicit_scope(nid: str) -> Optional[str]:
+        tok = _style_token(nid, "scope")
+        return tok if tok in ("network", "regional", "global") else None
+
+    def scope_of(nid: str) -> Optional[str]:
+        # 1. explicit scope= override, faithfully round-tripped from NodeSpec.scope.
+        tok = _explicit_scope(nid)
+        if tok is not None:
+            return tok
+        # 2. role -> ROLE_SCOPE. The role is recovered from the icon reference;
+        #    an icon shared by roles that DISAGREE on scope (including a role with
+        #    no ROLE_SCOPE entry, e.g. the Azure Application Gateway icon that
+        #    reverse-maps to both app_gateway and waf) is ambiguous -> NOT judged,
+        #    so the rule never invents a scope.
+        roles = roles_by_cell.get(nid)
+        if roles:
+            scopes = {role_scope(r) for r in roles}
+            if len(scopes) == 1:
+                only = next(iter(scopes))
+                if only is not None:
+                    return only
+        # 3. unclassified -> not judged.
+        return None
+
+    def scope_is_explicit(nid: str) -> bool:
+        # The provider-DEPENDENT cases (regional-in-vpc, vpc-scoped-outside-vpc)
+        # fire ONLY when the node carries an explicit scope= override, because
+        # the provider-agnostic ROLE_SCOPE fallback cannot express per-provider
+        # nuance (Azure SQL regional; EFS correctly outside the VPC). The
+        # provider-INDEPENDENT cases (global-in-region, external-in-account) fire
+        # from the role fallback too — the owner's precision-over-noise rule.
+        return _explicit_scope(nid) is not None
+
+    def is_external(nid: str) -> bool:
+        return _style_token(nid, "external") == "1"
+
+    findings = _geo.check_scope_placement(
+        geo, scope_of, is_external, providers, mappings,
+        scope_is_explicit=scope_is_explicit,
+    )
+    if not findings:
+        return False
+    offenders = _offender_ids(findings)
+    reason = "; ".join(r for _nid, r in findings)
+    if _is_network_diagram(a):
+        return RuleHit(offenders=offenders, reason=reason, severity=Severity.ERROR)
+    return RuleHit(offenders=offenders, reason=reason)
+
+
 def _check_edge_crosses_title(a: Artifact):
     """edge-crosses-title: a route runs through the reserved title band (Theme 26,
     WARNING). The title cell sits in a band at the top of the canvas; an edge
@@ -2681,6 +2820,15 @@ RULES: Tuple[Tuple[RuleSpec, Callable[[Artifact], _PredicateResult]], ...] = (
         RuleSpec(RULE_GEOMETRIC_CONTAINMENT, Severity.WARNING, landscape=Severity.ERROR),
         _check_geometric_containment,
     ),
+    # scope-placement (1.11.0 ITEM A): a node geometrically inside a boundary
+    # stricter than its effective role scope allows. WARNING by default; ERROR
+    # on landscape (via RuleSpec) and on a network diagram (escalated in the
+    # predicate, which also covers landscape). The geometry companion to the
+    # layout() SpecError. Lint-only (NOT in rule_violations / the solver oracle).
+    (
+        RuleSpec(RULE_SCOPE_PLACEMENT, Severity.WARNING, landscape=Severity.ERROR),
+        _check_scope_placement,
+    ),
     # deterministic-engine 1.10.6: three advisory routing rules (both classes).
     (
         RuleSpec(RULE_EDGE_ESCAPES_CONTAINER, Severity.WARNING),
@@ -3026,6 +3174,7 @@ __all__ = [
     "RULE_EDGE_CROSSES_CONTAINER",
     "RULE_EDGE_ON_CONTAINER_BORDER",
     "RULE_GEOMETRIC_CONTAINMENT",
+    "RULE_SCOPE_PLACEMENT",
     "RULE_EDGE_ESCAPES_CONTAINER",
     "RULE_EDGE_CROSSES_LEGEND",
     "RULE_EDGE_CROSSES_TITLE",

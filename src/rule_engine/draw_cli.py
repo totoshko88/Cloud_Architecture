@@ -271,6 +271,10 @@ def _nodes_from(placed: PlacedDiagram, renderers: Dict[str, Any]) -> List[Node]:
     role_of = {n.id: n.role for n in placed.spec.nodes}
     provider_of = {n.id: getattr(n, "provider", None) for n in placed.spec.nodes}
     overlay_of = {n.id: getattr(n, "overlay", None) for n in placed.spec.nodes}
+    # 1.11.0 ITEM A: carry an explicit per-node scope override (NodeSpec.scope)
+    # onto the render Node so it is emitted as a ``scope=`` token the
+    # ``scope-placement`` lint reads. Unset -> None -> no token (byte-inert).
+    scope_of = {n.id: getattr(n, "scope", None) for n in placed.spec.nodes}
     label_of = {n.id: _label_of(n) for n in placed.spec.nodes}
     return [
         Node(
@@ -280,6 +284,7 @@ def _nodes_from(placed: PlacedDiagram, renderers: Dict[str, Any]) -> List[Node]:
             y=int(placed.nodes[n.id].y),
             render=renderers[_renderer_key(role_of[n.id], provider_of[n.id])],
             overlay=overlay_of[n.id],
+            scope=scope_of[n.id],
         )
         for n in placed.spec.nodes
         if n.id in placed.nodes
