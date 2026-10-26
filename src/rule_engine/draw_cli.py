@@ -275,6 +275,10 @@ def _nodes_from(placed: PlacedDiagram, renderers: Dict[str, Any]) -> List[Node]:
     # onto the render Node so it is emitted as a ``scope=`` token the
     # ``scope-placement`` lint reads. Unset -> None -> no token (byte-inert).
     scope_of = {n.id: getattr(n, "scope", None) for n in placed.spec.nodes}
+    # 1.11.0 ITEM B: carry the external placement flag (NodeSpec.external) onto
+    # the render Node so it is emitted as an ``external=1`` token the
+    # ``scope-placement`` lint reads. Unset -> False -> no token (byte-inert).
+    external_of = {n.id: bool(getattr(n, "external", False)) for n in placed.spec.nodes}
     label_of = {n.id: _label_of(n) for n in placed.spec.nodes}
     return [
         Node(
@@ -285,6 +289,7 @@ def _nodes_from(placed: PlacedDiagram, renderers: Dict[str, Any]) -> List[Node]:
             render=renderers[_renderer_key(role_of[n.id], provider_of[n.id])],
             overlay=overlay_of[n.id],
             scope=scope_of[n.id],
+            external=external_of[n.id],
         )
         for n in placed.spec.nodes
         if n.id in placed.nodes

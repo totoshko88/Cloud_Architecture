@@ -18,6 +18,32 @@
     }
   },
   "roles": {
+    "actor": {
+      "aws": {
+        "display_name": "User 48 Light",
+        "note": "resolved 'User'",
+        "ref": "assets/vendor/aws-icons/Resource-Icons_07312026/Res_General-Icons/Res_48_Light/Res_User_48_Light.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "",
+        "note": "no query declared",
+        "ref": "",
+        "source": "unresolved"
+      },
+      "gcp": {
+        "display_name": "",
+        "note": "no gcp product or category match",
+        "ref": "",
+        "source": "unresolved"
+      },
+      "oci": {
+        "display_name": "",
+        "note": "no query declared",
+        "ref": "",
+        "source": "unresolved"
+      }
+    },
     "api_gateway": {
       "aws": {
         "display_name": "Amazon API Gateway",
@@ -798,6 +824,32 @@
         "source": "bundled"
       }
     },
+    "egress_only_igw": {
+      "aws": {
+        "display_name": "Amazon VPC Internet Gateway",
+        "note": "resolved 'VPC Internet Gateway'",
+        "ref": "assets/vendor/aws-icons/Resource-Icons_07312026/Res_Networking-Content-Delivery/Res_Amazon-VPC_Internet-Gateway_48.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "",
+        "note": "no query declared",
+        "ref": "",
+        "source": "unresolved"
+      },
+      "gcp": {
+        "display_name": "",
+        "note": "no gcp product or category match",
+        "ref": "",
+        "source": "unresolved"
+      },
+      "oci": {
+        "display_name": "",
+        "note": "no query declared",
+        "ref": "",
+        "source": "unresolved"
+      }
+    },
     "eventbridge": {
       "aws": {
         "display_name": "Amazon EventBridge",
@@ -1448,6 +1500,32 @@
         "source": "stencil"
       }
     },
+    "on_prem_app": {
+      "aws": {
+        "display_name": "Server 48 Light",
+        "note": "resolved 'Server'",
+        "ref": "assets/vendor/aws-icons/Resource-Icons_07312026/Res_General-Icons/Res_48_Light/Res_Server_48_Light.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "",
+        "note": "no query declared",
+        "ref": "",
+        "source": "unresolved"
+      },
+      "gcp": {
+        "display_name": "",
+        "note": "no gcp product or category match",
+        "ref": "",
+        "source": "unresolved"
+      },
+      "oci": {
+        "display_name": "",
+        "note": "no query declared",
+        "ref": "",
+        "source": "unresolved"
+      }
+    },
     "organizations": {
       "aws": {
         "display_name": "AWS Organizations",
@@ -1656,6 +1734,32 @@
         "source": "stencil"
       }
     },
+    "saas": {
+      "aws": {
+        "display_name": "Client 48 Light",
+        "note": "resolved 'Client'",
+        "ref": "assets/vendor/aws-icons/Resource-Icons_07312026/Res_General-Icons/Res_48_Light/Res_Client_48_Light.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "",
+        "note": "no query declared",
+        "ref": "",
+        "source": "unresolved"
+      },
+      "gcp": {
+        "display_name": "",
+        "note": "no gcp product or category match",
+        "ref": "",
+        "source": "unresolved"
+      },
+      "oci": {
+        "display_name": "",
+        "note": "no query declared",
+        "ref": "",
+        "source": "unresolved"
+      }
+    },
     "sagemaker": {
       "aws": {
         "display_name": "Amazon SageMaker AI",
@@ -1862,6 +1966,32 @@
         "note": "resolved 'dynamic-routing-gateway-drg'",
         "ref": "assets/vendor/oci-stencils/stencils.json#dynamic-routing-gateway-drg",
         "source": "stencil"
+      }
+    },
+    "users": {
+      "aws": {
+        "display_name": "Users 48 Light",
+        "note": "resolved 'Users'",
+        "ref": "assets/vendor/aws-icons/Resource-Icons_07312026/Res_General-Icons/Res_48_Light/Res_Users_48_Light.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "",
+        "note": "no query declared",
+        "ref": "",
+        "source": "unresolved"
+      },
+      "gcp": {
+        "display_name": "",
+        "note": "no gcp product or category match",
+        "ref": "",
+        "source": "unresolved"
+      },
+      "oci": {
+        "display_name": "",
+        "note": "no query declared",
+        "ref": "",
+        "source": "unresolved"
       }
     },
     "vpc": {

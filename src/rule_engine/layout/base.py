@@ -119,6 +119,10 @@ ROLE_SCOPE: Dict[str, str] = {
     "transit_gateway": "network", "vpn_gateway": "network",
     "direct_connect": "network", "route_table": "network",
     "network_firewall": "network",
+    # 1.11.0 ITEM B (F7): egress-only IGW sits at the VPC edge. New, unused
+    # this wave (the AZ/subnet CORE is deferred, REVIEW.md G40) — added for
+    # completeness and default-inertness.
+    "egress_only_igw": "network",
     # 1.11.0 WS7 access diagram type — identity/IAM is account-wide, not pinned
     # to a region or network, so principal/policy/resource are global-scoped.
     # Extended roles only (constants.RESOURCE_TYPES stays the 16-value core).
@@ -1687,8 +1691,12 @@ def _assign_nodes_to_leaves(
     assignment: Dict[str, list] = {c.id: [] for c in spec.containers}
 
     # 1. Declared membership is authoritative — assign those nodes directly.
+    #    EXCEPT an ``external=True`` node (1.11.0 ITEM B, correction R2-2): it is
+    #    forced OUTSIDE every cloud boundary, so any declared cloud ``container``
+    #    is IGNORED for placement and the node is wrapped by no container (it is
+    #    parented to the root layer, exactly like an actors / on-premises node).
     for n in spec.nodes:
-        if n.container is not None:
+        if n.container is not None and not getattr(n, "external", False):
             assignment[n.container].append(n.id)
 
     # 1b. Account-level (region "") cloud services are wrapped by the account
@@ -1708,6 +1716,7 @@ def _assign_nodes_to_leaves(
                 n.region == ""
                 and n.container is None
                 and n.lane not in external_lanes
+                and not getattr(n, "external", False)
                 and role_of[n.id] != "vpc_peering"
             ):
                 assignment[account_id].append(n.id)
@@ -1717,7 +1726,9 @@ def _assign_nodes_to_leaves(
         members = [
             n.id
             for n in spec.nodes
-            if region_of[n.id] == region and declared_of[n.id] is None
+            if region_of[n.id] == region
+            and declared_of[n.id] is None
+            and not getattr(n, "external", False)
         ]
         if not members:
             continue

@@ -229,6 +229,14 @@ class Node:
     #: node's role → ``ROLE_SCOPE`` — which keeps every pre-ITEM-A golden
     #: byte-identical.
     scope: Optional[str] = None
+    #: 1.11.0 ITEM B (SEP audit E-02/E-03, correction R2-2). ``True`` when the
+    #: source ``NodeSpec.external`` is set. Emitted as an ``external=1`` style
+    #: token (see :func:`overlay_suffix`) so the ``scope-placement`` lint
+    #: (FEAT-001) can read, straight from the parsed model, that the node is an
+    #: external one placed outside the cloud boundaries — its external-in-account
+    #: case exempts an ``external=1`` node that sits OUTSIDE the account. ``False``
+    #: emits NOTHING, so a pre-ITEM-B golden carries no token.
+    external: bool = False
 
 
 # Visual encoding of an overlay marker. diagram-standards → *Icon Fidelity*
@@ -289,6 +297,12 @@ def overlay_suffix(node: "Node") -> str:
         # when set (a per-node override); an unset scope emits nothing, so a
         # pre-ITEM-A golden carries no token (the lint falls back to role scope).
         out += f";scope={node.scope}"
+    if node.external:
+        # 1.11.0 ITEM B: round-trip the external placement class so the
+        # ``scope-placement`` lint (FEAT-001) reads ``external=1`` from the
+        # parsed model. Emitted ONLY when set; an unset external emits nothing,
+        # so a pre-ITEM-B golden carries no token.
+        out += ";external=1"
     return out
 
 

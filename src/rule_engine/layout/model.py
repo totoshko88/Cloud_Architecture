@@ -102,6 +102,18 @@ class NodeSpec:
     #: coordinate. ``None`` (default) → the diagram's primary provider, so every
     #: existing spec is byte-identical.
     provider: Optional[str] = None
+    #: 1.11.0 ITEM B (SEP audit E-02/E-03, correction R2-2): an explicit
+    #: **external** flag. When ``True`` the node is forced OUTSIDE every cloud
+    #: boundary — parented to the root layer / a disjoint external sibling
+    #: boundary, never the account / region / VPC — **regardless of any declared
+    #: ``container``** (a cloud container on an ``external=True`` node is IGNORED
+    #: for placement; see :func:`rule_engine.layout.base._assign_nodes_to_leaves`).
+    #: It also emits an ``external=1`` style token (via
+    #: ``diagram_layout.overlay_suffix``) that the ``scope-placement`` lint reads
+    #: for its external-in-account case (FEAT-001). Coordinate-free: it names a
+    #: placement class, never geometry. ``False`` (default) is byte-identical to
+    #: every pre-ITEM-B spec.
+    external: bool = False
 
 
 @dataclass(frozen=True)

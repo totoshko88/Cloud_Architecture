@@ -275,6 +275,50 @@ resources:
     brand_hex: "#232F3E"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_General-Icons/Res_48_Light/Res_Server_48_Light.svg"
 
+  # --- External role classes (1.11.0 ITEM B, SEP audit E-02 / E-03 / F7) ---
+  # Neutral EXTERNAL glyphs. actor/users are AWS General *user* glyphs — NEVER
+  # the IAM Role shield (E-02). saas/on_prem_app are the NEUTRAL General
+  # Client/Server glyphs used for any SaaS/on-prem system that has no curated
+  # brand mark (R2-3: GitLab/Jenkins/Jira/Confluence/Slack use THESE, never a
+  # claimed brand mark and never a random AWS service icon; brand marks exist
+  # ONLY for the curated mongodb/redis/postgresql/keycloak roles). All carry
+  # brand_hex #232F3E Squid-Ink (neutral, white-background General glyphs — no
+  # service family).
+  actor:                     # External human actor (General User glyph)
+    icon_id: aws.res.user
+    icon_provenance: resource
+    brand_hex: "#232F3E"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_General-Icons/Res_48_Light/Res_User_48_Light.svg"
+
+  users:                     # Group of external users (General Users glyph, plural)
+    icon_id: aws.res.users
+    icon_provenance: resource
+    brand_hex: "#232F3E"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_General-Icons/Res_48_Light/Res_Users_48_Light.svg"
+
+  saas:                      # Third-party / SaaS system, NO brand mark (General Client glyph)
+    icon_id: aws.res.client
+    icon_provenance: resource
+    brand_hex: "#232F3E"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_General-Icons/Res_48_Light/Res_Client_48_Light.svg"
+
+  on_prem_app:               # Traditional on-prem application, NO brand mark (General Server glyph)
+    icon_id: aws.res.server
+    icon_provenance: resource
+    brand_hex: "#232F3E"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_General-Icons/Res_48_Light/Res_Server_48_Light.svg"
+
+  # Egress-only IGW — IPv6 outbound-only VPC edge (F7). AWS ships NO dedicated
+  # egress-only IGW icon; this uses the IGW-family glyph (closest official) and
+  # the egress-only identity is carried in the node caption, never a look-alike
+  # of a different service. Unused this wave (AZ/subnet CORE deferred, G40);
+  # added for completeness and default-inertness. Networking family purple.
+  egress_only_igw:
+    icon_id: aws.res.egress_only_igw
+    icon_provenance: resource
+    brand_hex: "#8C4FFF"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_Networking-Content-Delivery/Res_Amazon-VPC_Internet-Gateway_48.svg"
+
   # --- Compute / registry services (Theme 5) ---
   batch:                     # AWS Batch (service, Compute family — orange)
     icon_id: aws.batch
