@@ -293,9 +293,10 @@ def _parse_drawio_page(path: str, page: Page, text: str) -> Artifact:
             continue
         if cid in boundary_ids:
             continue
-        if (cid or "").startswith("flowgroup-"):
-            # 1.11.0 WS2 flow-group box: a decorative grey context box behind the
-            # member nodes (``flow_group_cells``), not a service node. It must not
+        if (cid or "").startswith(("flowgroup-", "bandgroup-")):
+            # 1.11.0 WS2 flow-group box / 1.13.0 band-group box: a decorative
+            # context box behind the member nodes (``flow_group_cells`` /
+            # ``band_group_cells``), not a service node. It must not
             # inflate node-count, be read as an unresolved ``icon-resolved``
             # placeholder (it names no icon), or trip ``node-connectivity`` (it
             # carries no edge by design). Matches the geometry-side skip in

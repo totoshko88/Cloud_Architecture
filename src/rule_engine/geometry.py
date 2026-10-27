@@ -263,10 +263,11 @@ def build_geometry(page: Page) -> DiagramGeometry:
         if not cell.vertex or cid in boundary_ids:
             continue
         g = cell.geom
-        if (cid or "").startswith("flowgroup-"):
-            # A 1.11.0 WS2 flow-group box (``flow_group_cells``) is a purely
-            # DECORATIVE grey context box drawn BEHIND its member nodes with no
-            # node shift. It is neither a node (it must not be counted by
+        if (cid or "").startswith(("flowgroup-", "bandgroup-")):
+            # A 1.11.0 WS2 flow-group box (``flow_group_cells``) or a 1.13.0
+            # band-group box (``band_group_cells``) is a purely DECORATIVE
+            # context box drawn BEHIND its member nodes with no node shift. It is
+            # neither a node (it must not be counted by
             # node-count, nor read as pierced by its members' own edges ->
             # ``straight-through``/``knee-through`` ERRORs) nor a Boundary
             # container (its members are parented to the root layer, not to it,

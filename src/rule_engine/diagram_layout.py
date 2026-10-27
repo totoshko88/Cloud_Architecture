@@ -1069,6 +1069,60 @@ def flow_group_cells(
     return "".join(out)
 
 
+#: 1.13.0 (regional-band): caption band height for a band group box. A band
+#: group is a horizontal row, so it reserves a taller caption strip than the
+#: decorative flow group and is sized to show the FULL caption (never
+#: truncated) — the member bbox or the caption text width, whichever is wider.
+_BAND_GROUP_PAD = 20
+_BAND_GROUP_CAPTION = 28
+
+
+def band_group_cells(
+    groups: Sequence[Tuple[str, Sequence[str]]],
+    nodes: Sequence[Node],
+    styles: Optional[dict] = None,
+) -> str:
+    """Emit one captioned boundary box per band group (1.13.0, regional-band).
+
+    Sized to enclose its named member nodes' footprints PLUS enough width to
+    show the full caption (never truncated) — unlike :func:`flow_group_cells`,
+    whose box is the member bbox and whose multi-word caption truncates on a
+    narrow run. ``styles`` maps ``group_id`` → draw.io style (from
+    ``DiagramSpec.band_group_styles``); a group with no style falls back to the
+    generic flow-group style. Members not present are skipped; a group with no
+    present member draws nothing. Pure presentation — no node is moved. Returns
+    '' when ``groups`` is empty (byte-inert)."""
+    if not groups:
+        return ""
+    from rule_engine.geometry import caption_band, _CAPTION_TEXT_CHAR_W
+    pos = {n.id: n for n in nodes}
+    styles = styles or {}
+    out: List[str] = []
+    for gi, (label, members) in enumerate(groups):
+        boxes = [pos[m] for m in members if m in pos]
+        if not boxes:
+            continue
+        x0 = min(n.x for n in boxes) - _BAND_GROUP_PAD
+        y0 = min(n.y for n in boxes) - _BAND_GROUP_PAD - _BAND_GROUP_CAPTION
+        x1 = max(n.x + ICON_SIZE for n in boxes) + _BAND_GROUP_PAD
+        y1 = max(n.y + ICON_SIZE + caption_band(n.label) for n in boxes) + _BAND_GROUP_PAD
+        # Never truncate the caption: widen the box to the right so the full
+        # caption text fits within it (the band group's whole purpose over a
+        # decorative flow group).
+        caption_w = len(label) * _CAPTION_TEXT_CHAR_W + 2 * _BAND_GROUP_PAD
+        if caption_w > (x1 - x0):
+            x1 = x0 + caption_w
+        style = styles.get(f"bandgroup-{gi}") or styles.get(label) or _FLOW_GROUP_STYLE
+        out.append(
+            f'        <mxCell id="bandgroup-{gi}" value="{_xml_escape(label)}" '
+            f'style="{style}" vertex="1" parent="1">\n'
+            f'          <mxGeometry x="{int(x0)}" y="{int(y0)}" '
+            f'width="{int(x1 - x0)}" height="{int(y1 - y0)}" as="geometry" />\n'
+            "        </mxCell>\n"
+        )
+    return "".join(out)
+
+
 def _orthogonalised(
     edges: Sequence[Edge], nodes: Sequence[Node]
 ) -> List[Edge]:
@@ -1433,6 +1487,8 @@ def build_diagram(
     flow_groups: Sequence[Tuple[str, Sequence[str]]] = (),
     flow_steps: str = "box",
     flow_columns: int | None = None,
+    band_groups: Sequence[Tuple[str, Sequence[str]]] = (),
+    band_group_styles: Optional[dict] = None,
 ) -> str:
     """Assemble a full ``.drawio`` document from the standard building blocks.
 
@@ -1492,6 +1548,8 @@ def build_diagram(
         flow_groups=flow_groups,
         flow_steps=flow_steps,
         flow_columns=flow_columns,
+        band_groups=band_groups,
+        band_group_styles=band_group_styles,
     )
     routed = _orthogonalised(edges, nodes)
     text = _assemble_document(routed=routed, **kwargs)
@@ -1771,6 +1829,8 @@ def _assemble_document(
     flow_groups: Sequence[Tuple[str, Sequence[str]]] = (),
     flow_steps: str = "box",
     flow_columns: int | None = None,
+    band_groups: Sequence[Tuple[str, Sequence[str]]] = (),
+    band_group_styles: Optional[dict] = None,
 ) -> str:
     """Emit the ``.drawio`` document for already-routed edges (no hygiene)."""
     parts: List[str] = []
@@ -1798,6 +1858,13 @@ def _assemble_document(
     # No-op (byte-inert) when there are no flow groups.
     if flow_groups:
         parts.append(flow_group_cells(flow_groups, nodes))
+        parts.append("\n")
+    # 1.13.0 (regional-band): captioned band-group boxes. Emitted at the BACK
+    # (with the decorative flow groups) so every member node and edge paints
+    # OVER the box; unlike a flow group it is sized to show its FULL caption.
+    # No-op (byte-inert) when there are no band groups.
+    if band_groups:
+        parts.append(band_group_cells(band_groups, nodes, band_group_styles))
         parts.append("\n")
     # Edges beneath vertices (1.10.12 WS2): each edge is emitted either on the
     # root layer BEFORE every boundary (slot -1) or as the FIRST child of the
