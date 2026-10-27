@@ -1686,9 +1686,11 @@ def _leaf_region_containers(spec: DiagramSpec) -> Dict[str, list]:
     """Return, per region, the ordered list of its **deepest** containers.
 
     A node of region *r* is wrapped by the deepest container of region *r*. When
-    a region has ``az`` containers, those are the leaves (nodes partition across
-    them by tier band); otherwise the region's ``vpc`` is the leaf. Declaration
-    order is preserved so az bands map deterministically to tier bands.
+    a region has ``subnet`` / ``public_subnet`` containers (G40), those are the
+    leaves; else when it has ``az`` containers, those are the leaves (nodes
+    partition across them by tier band); otherwise the region's ``vpc`` is the
+    leaf. Declaration order is preserved so az/subnet bands map deterministically
+    to tier bands.
     """
     by_region_kind: Dict[Tuple[str, str], list] = {}
     for c in spec.containers:
@@ -1697,8 +1699,19 @@ def _leaf_region_containers(spec: DiagramSpec) -> Dict[str, list]:
     for c in spec.containers:
         if c.kind == "account":
             continue
+        # G40: the deepest level wins. When a region has subnet containers, those
+        # are its leaves (so _assign_nodes_to_leaves populates leaf_nodes[subnet]
+        # and size_containers wraps each subnet around its own member nodes);
+        # otherwise the az boxes; otherwise the vpc. The subnet branch only fires
+        # when a region declares subnet containers, which no shipped spec does, so
+        # az / vpc leaves stay byte-identical.
+        subs = (by_region_kind.get((c.region, "subnet")) or []) + (
+            by_region_kind.get((c.region, "public_subnet")) or []
+        )
         azs = by_region_kind.get((c.region, "az"))
-        if azs is not None:
+        if subs:
+            leaves[c.region] = list(subs)
+        elif azs is not None:
             leaves[c.region] = list(azs)
         elif c.kind == "vpc":
             leaves[c.region] = [c]
@@ -1839,8 +1852,15 @@ def _stack_peer_azs_in_vpc(boxes: Dict[str, Box], spec: DiagramSpec, axis: str) 
     its AZ children's secondary extents, so ``az-a1`` and ``az-a2`` end up with
     identical secondary low/size (and likewise ``az-b1`` / ``az-b2``). The
     subsequent :func:`_equalize_peer_widths` then reconciles region A vs region B
-    so all four AZ boxes share one width."""
+    so all four AZ boxes share one width.
+
+    **G40 ([r3-nit5]):** the shared range is taken per **region group** — a VPC's
+    az children are partitioned by ``region`` and only a same-region group of
+    ≥ 2 shares an x-range. The SEP model (one az per region) yields two groups of
+    one, both skipped, so the two AZs keep their East-West region spread; the HA
+    model (two az of one region) keeps its N-S stack."""
     kind_of = {c.id: c.kind for c in spec.containers}
+    region_of = {c.id: c.region for c in spec.containers}
     child_containers = _children_of(spec)
     for c in spec.containers:
         if c.kind != "vpc":
@@ -1849,13 +1869,22 @@ def _stack_peer_azs_in_vpc(boxes: Dict[str, Box], spec: DiagramSpec, axis: str) 
             ch.id for ch in child_containers.get(c.id, [])
             if kind_of.get(ch.id) == "az" and ch.id in boxes
         ]
-        if len(az_ids) < 2:
-            continue
-        lo = min(_extent(boxes[a], axis)[0] for a in az_ids)
-        hi = max(_extent(boxes[a], axis)[0] + _extent(boxes[a], axis)[1] for a in az_ids)
-        low, size = _snap(lo), _snap(hi - lo)
+        # G40 ([r3-nit5]): PARTITION a VPC's az children BY REGION and share a
+        # secondary range only within a same-region group of >= 2. SEP (one az
+        # per region) → two groups of 1 → both skipped → the East-West region
+        # spread is preserved. HA (two az of one region) → each region-group of 2
+        # still shares its x-range → the N-S stack is preserved byte-identically.
+        by_region: Dict[Optional[str], list] = {}
         for a in az_ids:
-            boxes[a] = _with_extent(boxes[a], axis, low, size)
+            by_region.setdefault(region_of.get(a), []).append(a)
+        for group in by_region.values():
+            if len(group) < 2:
+                continue
+            lo = min(_extent(boxes[a], axis)[0] for a in group)
+            hi = max(_extent(boxes[a], axis)[0] + _extent(boxes[a], axis)[1] for a in group)
+            low, size = _snap(lo), _snap(hi - lo)
+            for a in group:
+                boxes[a] = _with_extent(boxes[a], axis, low, size)
 
 
 def _equalize_peer_widths(boxes: Dict[str, Box], spec: DiagramSpec, axis: str) -> None:
