@@ -545,6 +545,17 @@ def _secondary_axis(axis: str) -> str:
     )
 
 
+#: The container kinds whose member nodes are placed by the **band** machinery
+#: (``_node_az_band`` / ``_band_within`` / ``_band_packing``) rather than the
+#: absolute lane grid. ``az`` and ``vpc`` are the pre-G40 members; ``subnet`` /
+#: ``public_subnet`` (G40, 1.12.0) are the new banded leaf kind — the four AWS
+#: subnet tiers inside one AZ stack North-South by the same band mechanism.
+#: Additive and default-inert: no shipped spec declares a ``subnet`` /
+#: ``public_subnet`` container, so the two new members never change the band
+#: grouping of any golden (the ``{"az","vpc"}`` membership is preserved exactly).
+BANDED_KINDS: frozenset = frozenset({"az", "vpc", "subnet", "public_subnet"})
+
+
 def _az_ordinals(spec: DiagramSpec) -> Dict[str, int]:
     """Map each ``az`` container id → its 0-indexed ordinal within its parent VPC.
 
@@ -558,6 +569,27 @@ def _az_ordinals(spec: DiagramSpec) -> Dict[str, int]:
     seen: Dict[Optional[str], int] = {}
     for c in spec.containers:
         if c.kind != "az":
+            continue
+        ordinal[c.id] = seen.get(c.parent, 0)
+        seen[c.parent] = ordinal[c.id] + 1
+    return ordinal
+
+
+def _subnet_ordinals(spec: DiagramSpec) -> Dict[str, int]:
+    """Map each ``subnet`` / ``public_subnet`` container id → its 0-indexed
+    ordinal within its parent AZ (G40, 1.12.0).
+
+    The mirror of :func:`_az_ordinals`, keyed on the subnet-within-az ``parent``:
+    the subnets of one AZ are ordered by their **declaration order**, which gives
+    the North-South tier band (the AWS-reference order public→0, private-app→1,
+    private-batch→2, isolated-db→3). A build script MUST therefore declare the
+    four subnets per AZ in that canonical order so the tier bands read top→bottom
+    correctly; declaring them in another order silently re-orders the bands. Pure
+    and deterministic (Req 11.1)."""
+    ordinal: Dict[str, int] = {}
+    seen: Dict[Optional[str], int] = {}
+    for c in spec.containers:
+        if c.kind not in ("subnet", "public_subnet"):
             continue
         ordinal[c.id] = seen.get(c.parent, 0)
         seen[c.parent] = ordinal[c.id] + 1
@@ -635,7 +667,7 @@ def _band_within(spec: DiagramSpec) -> Dict[str, Tuple[int, int]]:
     """
     band_of = _node_az_band(spec)
     kind_of = {c.id: c.kind for c in spec.containers}
-    banded_kinds = {"az", "vpc"}
+    banded_kinds = BANDED_KINDS
     # Group banded nodes by (band, region, sub); within each group, rank by
     # (lane, slot) to assign the column. Region is part of the key so A and B
     # rank independently (identical structure → identical ranks → symmetric).
@@ -805,7 +837,7 @@ def _band_packing(spec: DiagramSpec) -> Tuple[Dict[int, int], Dict[int, int]]:
     and the zero start adds no offset)."""
     band_of = _node_az_band(spec)
     kind_of = {c.id: c.kind for c in spec.containers}
-    banded_kinds = {"az", "vpc"}
+    banded_kinds = BANDED_KINDS
     lanes_by_band: Dict[int, list] = {}
     # Whether a band's content is wrapped by its own container box. AZ nodes sit
     # inside an ``az`` box (top+bottom padding of their own); a VPC-direct
@@ -1133,7 +1165,7 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
     band_start, _band_min_lane = _band_packing(spec)
     band_within = _band_within(spec)
     kind_of = {c.id: c.kind for c in spec.containers}
-    banded_kinds = {"az", "vpc"}
+    banded_kinds = BANDED_KINDS
     # The primary axis (the one lanes/tiers step along) is y (ROW_STEP) for a
     # North–South diagram and x (COL_STEP) for a left→right diagram.
     primary_step = row_step() if spec.axis == "north-south" else col_step()
