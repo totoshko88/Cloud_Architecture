@@ -620,6 +620,11 @@ def _node_az_band(spec: DiagramSpec) -> Dict[str, int]:
     Bands stack a region's content down the primary axis (North–South: top→bottom)
     so distinct tiers never intermix on the same rows:
 
+    * A **subnet-member node** (declared ``container`` is a ``subnet`` /
+      ``public_subnet`` box, G40) takes that subnet's 0-indexed tier ordinal
+      within its AZ (:func:`_subnet_ordinals`): public→0, private-app→1,
+      private-batch→2, isolated-db→3, so the four tiers stack North-South. One AZ
+      per region means the AZ band itself is 0, so the subnet ordinal IS the band.
     * A **VPC-direct service-row node** (declared ``container`` is the region VPC)
       takes band ``0`` — the top region tier, between the VPC border and the AZs
       (Req 12.3).
@@ -634,13 +639,24 @@ def _node_az_band(spec: DiagramSpec) -> Dict[str, int]:
       band 0 and gets no primary-axis offset, so its placement is unchanged.
     """
     az_ord = _az_ordinals(spec)
+    sub_ord = _subnet_ordinals(spec)                    # G40, 1.12.0
     kind_of = {c.id: c.kind for c in spec.containers}
     parent_of = {c.id: c.parent for c in spec.containers}
     svc_vpcs = _vpcs_with_service_row(spec)
     band: Dict[str, int] = {}
     for node in spec.nodes:
         cid = node.container
-        if cid is not None and kind_of.get(cid) == "az":
+        k = kind_of.get(cid)
+        if k in ("subnet", "public_subnet"):
+            # G40: a subnet-member node takes its subnet's tier ordinal as its
+            # band (one az per region → the az band collapses to 0, so the
+            # subnet ordinal IS the North-South tier band 0..3). Gated on a kind
+            # no shipped spec declares, so the HA goldens never enter this branch.
+            band[node.id] = sub_ord.get(cid, 0)
+        elif k == "az":
+            # The HIGH R2-1 service-row offset: when the VPC carries a direct
+            # service row, the AZ bands descend below it (band 0 reserved). Kept
+            # so a VPC-edge band does not collide with public_subnet at band 0.
             offset = 1 if parent_of.get(cid) in svc_vpcs else 0
             band[node.id] = az_ord.get(cid, 0) + offset
         else:
@@ -840,7 +856,8 @@ def _band_packing(spec: DiagramSpec) -> Tuple[Dict[int, int], Dict[int, int]]:
     banded_kinds = BANDED_KINDS
     lanes_by_band: Dict[int, list] = {}
     # Whether a band's content is wrapped by its own container box. AZ nodes sit
-    # inside an ``az`` box (top+bottom padding of their own); a VPC-direct
+    # inside an ``az`` box, and (G40) subnet-member nodes inside a ``subnet`` /
+    # ``public_subnet`` box (top+bottom padding of their own); a VPC-direct
     # service-row band has NO box of its own (it lives loose in the VPC above the
     # AZ boxes), so it contributes no box padding to an inter-band gap.
     band_has_box: Dict[int, bool] = {}
@@ -853,7 +870,12 @@ def _band_packing(spec: DiagramSpec) -> Tuple[Dict[int, int], Dict[int, int]]:
         if n.container is not None and kind_of.get(n.container) in banded_kinds:
             b = band_of[n.id]
             lanes_by_band.setdefault(b, []).append(LANE_INDEX[n.lane])
-            band_has_box[b] = band_has_box.get(b, False) or kind_of.get(n.container) == "az"
+            # G40: a subnet / public_subnet band is boxed too (its own leaf
+            # container), so four stacked subnet bands sit 3*CONTAINER_PAD apart
+            # — identical inter-box geometry to the two stacked az bands.
+            band_has_box[b] = band_has_box.get(b, False) or kind_of.get(n.container) in (
+                "az", "subnet", "public_subnet"
+            )
             sub_rows_by_band[b] = max(sub_rows_by_band.get(b, 0), n.sub)
 
     band_min_lane: Dict[int, int] = {}
