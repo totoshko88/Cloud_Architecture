@@ -40,12 +40,16 @@ Export scale (1.10.12 decision 1)
 ---------------------------------
 The exporter parses the page, measures the natural canvas width ``W`` (the
 rendered extent of every vertex, captions included) and exports at
-``--scale = min(1.5, (max_width - 2*border) / W)`` with ``max_width`` the class
-budget (1600 flow / 3600 landscape). A canvas that fits its budget is never
-downscaled (the fit term is ≥ 1) and is upscaled by at most 1.5; a canvas over
-its budget is fitted down automatically, flow and landscape alike. Only when
-even the 0.5 legibility floor cannot fit (``fit < MIN_EXPORT_SCALE``) does the
-export **fail** with a "split the diagram" error and write no PNG.
+``--scale = min(cap, (max_width - 2*border) / W)`` with ``max_width`` the class
+budget (1600 flow / 3600 landscape) and ``cap`` the upscale ceiling — ``1.5`` by
+default, raised to ``2.5`` for a very small flow canvas (``W <=`` 1000px, 1.11.0
+E-04) so a tiny single-path diagram is not left a postage stamp. A canvas that
+fits its budget is never downscaled (the fit term is ≥ 1); a canvas over its
+budget is fitted down automatically, flow and landscape alike. The budget fit
+term always binds, so even at the raised cap a small flow stays within the
+1600px/500KB flow budget. Only when even the 0.5 legibility floor cannot fit
+(``fit < MIN_EXPORT_SCALE``) does the export **fail** with a "split the diagram"
+error and write no PNG.
 
 Hygiene (R8.5)
 --------------
@@ -99,6 +103,20 @@ LANDSCAPE_MAX_WIDTH = 3600
 #: canvas was used (defect C11). The scale is now ``min(1.5, fit)``: crisp on a
 #: HiDPI screen, never inflated to fill the budget.
 MAX_EXPORT_SCALE = 1.5
+
+#: 1.11.0 ITEM D (E-04): a VERY SMALL flow canvas gets a higher upscale cap so a
+#: tiny single-path diagram (a two/three-node context view) is not left a
+#: postage stamp. A flow whose natural width ``W`` is at or below
+#: :data:`FLOW_SMALL_WIDTH` may upscale up to :data:`FLOW_SMALL_MAX_SCALE`
+#: instead of the default :data:`MAX_EXPORT_SCALE`. This touches ONLY the scale
+#: ceiling in :func:`compute_scale`; the ``_canvas_width`` width model and the
+#: G35 ``_WRAPPED_TEXT_RENDER_OVERSHOOT`` correction are untouched, and the
+#: budget fit term ``(budget - 2*border) / W`` still binds, so a small flow
+#: never exceeds the 1600px / 500KB flow budget. Landscapes and any flow wider
+#: than :data:`FLOW_SMALL_WIDTH` keep the 1.5 cap, so every shipped golden whose
+#: canvas is wider than 1000px is byte-identical.
+FLOW_SMALL_WIDTH = 1000
+FLOW_SMALL_MAX_SCALE = 2.5
 
 EXPORT_BORDER = "8"
 EXPORT_THEME = "light"
@@ -372,7 +390,18 @@ def compute_scale(
         # Even at the legibility floor it will not fit: refuse rather than export
         # an illegible postage stamp (split or page the diagram instead).
         raise CanvasTooWideError(source, width, dclass, max_width)
-    scale = min(MAX_EXPORT_SCALE, fit)
+    # 1.11.0 ITEM D (E-04): a very small flow canvas may upscale past the default
+    # 1.5 cap (up to FLOW_SMALL_MAX_SCALE) so a tiny single-path diagram is not a
+    # postage stamp. Scoped to a non-landscape canvas at or under
+    # FLOW_SMALL_WIDTH; landscapes and wider flows keep the 1.5 cap, so every
+    # golden wider than 1000px is byte-identical. The budget fit term still binds
+    # below, so even at 2.5 a small flow cannot exceed the 1600px/500KB budget.
+    cap = (
+        FLOW_SMALL_MAX_SCALE
+        if (not is_landscape and width <= FLOW_SMALL_WIDTH)
+        else MAX_EXPORT_SCALE
+    )
+    scale = min(cap, fit)
 
     # 1.11.0 WS2: A4 soft target. When the caller opts in with ``--paper a4``,
     # pull a canvas that would otherwise upscale past an A4-printable width DOWN
