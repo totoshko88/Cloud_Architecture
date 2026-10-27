@@ -97,6 +97,16 @@ _ASSET_IMAGE_RE = re.compile(r"image=(assets/vendor/[^;\"]+)")
 FLOW_MAX_WIDTH = 1600
 LANDSCAPE_MAX_WIDTH = 3600
 
+#: 1.13.0 (regional-band): class-aware HEIGHT budgets, mirroring the raster
+#: gate's height budget (``raster_gate.MAX_HEIGHT_PX`` /
+#: ``LANDSCAPE_MAX_HEIGHT_PX``). The default export now fits the canvas to the
+#: SMALLER of the width and height budget scales, so a tall-but-narrow landscape
+#: auto-fits the height budget without a manual ``--max-width`` (engine feedback
+#: IHTC revision d, item 3). ``--max-width`` remains an explicit override that
+#: only constrains the width.
+FLOW_MAX_HEIGHT = 1600
+LANDSCAPE_MAX_HEIGHT = 3600
+
 #: Upper export scale (1.10.12 decision 1). Before 1.10.12 every raster was
 #: upscaled toward a class TARGET width (1600 flow / 3400 landscape), so a
 #: 1360px landscape exported at ~2.5x and the PNG said nothing about how the
@@ -343,6 +353,48 @@ def _canvas_width(source: Path) -> float:
     return max_right - min(0.0, min_left)
 
 
+def _canvas_height(source: Path) -> float:
+    """Return the natural canvas height ``H`` of ``source``: the bottommost
+    rendered extent minus the topmost (1.13.0, regional-band).
+
+    draw.io crops the export to the bounding box of everything it draws. Each
+    vertex contributes ``y .. y + h``; a bottom-positioned caption adds one
+    ``LABEL_BAND`` below the icon (the ``verticalLabelPosition=bottom`` case),
+    matching :func:`_canvas_width`'s caption-aware horizontal estimate. The
+    height fit in :func:`compute_scale` uses this so a tall-but-narrow landscape
+    is fitted DOWN to the height budget automatically, without a manual
+    ``--max-width``. A page with no vertices yields 0.0.
+    """
+    from rule_engine.drawio_model import DrawioParseError, absolute_origin, parse_drawio
+    from rule_engine.geometry import caption_lines, LABEL_BAND
+
+    try:
+        pages = parse_drawio(source.read_bytes(), path=str(source))
+    except DrawioParseError:
+        return 0.0
+    max_bottom = 0.0
+    min_top = 0.0
+    seen = False
+    for page in pages:
+        for cell in page.cells.values():
+            if not cell.vertex or cell.geom is None:
+                continue
+            _x, y = absolute_origin(page, cell.id)
+            h = cell.geom.h or 0.0
+            top, bottom = y, y + h
+            style = cell.style_map
+            longest = max((len(ln) for ln in caption_lines(cell.label)), default=0)
+            if longest and style.get("verticalLabelPosition") == "bottom":
+                # A bottom caption renders one label band below the icon box.
+                bottom = y + h + LABEL_BAND
+            if not seen:
+                min_top = top
+                seen = True
+            max_bottom = max(max_bottom, bottom)
+            min_top = min(min_top, top)
+    return max_bottom - min_top
+
+
 def compute_scale(
     source: Path,
     diagram_class: Optional[str] = None,
@@ -402,6 +454,24 @@ def compute_scale(
         else MAX_EXPORT_SCALE
     )
     scale = min(cap, fit)
+
+    # 1.13.0 (regional-band): HEIGHT-aware fit. A tall-but-narrow canvas can fit
+    # the width budget yet overshoot the class HEIGHT budget (the IHTC landscape
+    # with its supporting column), which ``rule-engine-check-rasters`` then
+    # blocks — previously only a manual ``--max-width`` fixed it. Fit the scale
+    # down to the height budget too: ``scale = min(scale, (max_height - border)
+    # / H)``. This ONLY ever REDUCES the scale, and only when the canvas would
+    # otherwise exceed the height budget at the width-chosen scale, so every
+    # golden that already fits its height budget is byte-identical. The floor
+    # still applies (a canvas that cannot fit even at the floor is a split
+    # signal). ``--max-width`` stays an explicit width-only override (above).
+    max_height = LANDSCAPE_MAX_HEIGHT if is_landscape else FLOW_MAX_HEIGHT
+    height = _canvas_height(source)
+    if height > 0 and height * scale > (max_height - border):
+        height_fit = (max_height - border) / height
+        if height_fit < MIN_EXPORT_SCALE:
+            raise CanvasTooWideError(source, width, dclass, max_width)
+        scale = min(scale, height_fit)
 
     # 1.11.0 WS2: A4 soft target. When the caller opts in with ``--paper a4``,
     # pull a canvas that would otherwise upscale past an A4-printable width DOWN
