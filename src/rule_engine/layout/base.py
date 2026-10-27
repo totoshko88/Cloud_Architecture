@@ -266,9 +266,13 @@ def _validate_spec(spec: DiagramSpec) -> None:
             # outside the network). A spec without region containers (every
             # synthetic layout spec) keeps its pre-1.10.3 behaviour.
             if (
-                target.kind in ("vpc", "az")
+                target.kind in ("vpc", "az", "subnet", "public_subnet")
                 and effective_scope(node) in ("regional", "global")
-                and any(c.kind == "region" and c.region == node.region for c in spec.containers)
+                and any(
+                    c.kind in ("region", "vpc", "az", "subnet", "public_subnet")
+                    and c.region == node.region
+                    for c in spec.containers
+                )
             ):
                 raise SpecError(
                     f"node {node.id!r} (role {node.role!r}, scope "
