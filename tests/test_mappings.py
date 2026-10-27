@@ -441,11 +441,23 @@ def test_aws_containers_use_official_group_shapes(kind: str) -> None:
 
 
 def test_aws_availability_zone_is_the_official_plain_dashed_box() -> None:
-    # AWS ships no AZ group icon: the official entry is a dashed #147EBA box.
+    # Wave-10 (G46): AWS ships no AZ group icon; the official entry is a plain
+    # DASHED box in the pack teal #00A4A6 (was #147EBA, a pre-pack value) per
+    # the official Icon-package_07312026 / awslabs Groups all.puml.
     style = _load("aws")["containers"]["availability_domain"]["style"]
     assert "grIcon" not in style
-    assert _style_token(style, "strokeColor") == "#147EBA"
+    assert _style_token(style, "strokeColor") == "#00A4A6"
+    assert "#147EBA" not in style
     assert _style_token(style, "dashed") == "1"
+
+
+def test_aws_region_border_is_dotted_teal() -> None:
+    # Wave-10 (G46): the official AWS Region group is teal #00A4A6 with a DOTTED
+    # border (not dashed); the engine's dotted convention is dashPattern=1 3.
+    style = _load("aws")["containers"]["region"]["style"]
+    assert _style_token(style, "strokeColor") == "#00A4A6"
+    assert _style_token(style, "dashed") == "1"
+    assert _style_token(style, "dashPattern") == "1 3"
 
 
 @pytest.mark.parametrize(
