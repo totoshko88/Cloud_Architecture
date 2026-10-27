@@ -211,7 +211,7 @@ def _skin_renderers(primary: str, nodes, style: str = "icon") -> Dict[str, Any]:
 
 
 def _container_style(kind: str, provider: str) -> str:
-    """Resolve the draw.io style for a container ``kind`` (account/vpc/az).
+    """Resolve the draw.io style for a container ``kind`` (account/vpc/az/subnet).
 
     The structural kinds map onto the profile's container conventions:
     an ``account`` boundary is the profile's ``boundary`` container style; a
@@ -233,6 +233,12 @@ def _container_style(kind: str, provider: str) -> str:
         preferred = ("availability_domain", "network_boundary")
     elif kind == "region":
         preferred = ("region", "network_boundary")
+    elif kind in ("subnet", "public_subnet"):
+        # G40 (1.12.0): the AWS subnet-tier leaf kind. A profile that declares a
+        # ``subnet`` / ``public_subnet`` container style (aws does) uses it; any
+        # other profile falls back to the generic network boundary, so the kind
+        # is default-inert for providers that do not model subnets.
+        preferred = (kind, "network_boundary")
     elif kind in ("peer_account", "external_cloud"):
         # Theme 20: a disjoint sibling peer boundary reads like an account-level
         # boundary (not a VPC). Prefer a profile-declared peer style if present,
