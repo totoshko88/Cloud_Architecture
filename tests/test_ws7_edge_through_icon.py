@@ -161,5 +161,8 @@ def test_lint_reports_marker_on_icon(tmp_path: Path) -> None:
     reasons = {f["reason"] for f in hits}
     assert "marker-on-icon" in reasons, hits
     (f,) = [h for h in hits if h["reason"] == "marker-on-icon"]
-    assert f["severity"] == "WARNING"
+    # G43 (1.11.0/1.12.0, ITEM C): marker-label-collision (incl. the marker-on-icon
+    # reason) is ERROR on a network / component / flow diagram. This fixture is a
+    # default flow diagram (no companion), so the reason is ERROR.
+    assert f["severity"] == "ERROR"
     assert f["offenders"] == ["e", "a"]
