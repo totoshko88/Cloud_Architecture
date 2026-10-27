@@ -1269,9 +1269,22 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
     #     placed neighbour at all (an isolated queue → worker → secrets chain)
     #     still stacks below everything, one ROW_STEP apart, as straight drops.
     # When one of the two columns is empty the other takes the inner position.
+    #
+    # 1.13.0 (regional-band): a region-direct node carrying ``band="south"`` /
+    # ``band="account-south"`` opts OUT of the columnar ``_REGIONAL_COLS`` logic
+    # — it is laid out as a horizontal row below the VPC (south) or below the
+    # Region inside the Account (account-south) by ``_place_south_band`` below.
+    # Excluding it here keeps the default columnar placement byte-identical for
+    # every spec that sets no ``band``.
+    _band_nodes = {
+        n.id: n.band for n in spec.nodes
+        if getattr(n, "band", None) in ("south", "account-south", "north")
+        and n.container is not None and kind_of.get(n.container) == "region"
+    }
     region_direct = {
         n.id for n in spec.nodes
         if n.container is not None and kind_of.get(n.container) == "region"
+        and n.id not in _band_nodes
     }
     regional_col_x: Dict[str, int] = {}
     regional_y: Dict[str, int] = {}
@@ -1489,6 +1502,102 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
                         else:
                             regional_abs_x[m.id] = abs_x
 
+    # 1.13.0 (regional-band): lay the opt-in south band(s) as HORIZONTAL rows.
+    # ``band="south"`` nodes sit below the VPC's banded content and inside the
+    # Region; ``band="account-south"`` nodes sit one row further down, below the
+    # whole Region block (used for a CI/CD strip inside the Account). Members are
+    # ordered left→right by (band_row, slot, id) and wrap to a new row when the
+    # running width would exceed the band width budget; a declared band group
+    # (``spec.band_groups``) keeps its members CONTIGUOUS (laid out as a block,
+    # never split across the wrap). Pure, deterministic function of the spec.
+    band_xy: Dict[str, Tuple[int, int]] = {}
+    if _band_nodes and spec.axis == "north-south":
+        # The banded (VPC/AZ/subnet) content top and bottom, and the
+        # regional-column content bottom, in model coordinates relative to
+        # base_y.
+        banded_bottom = base_y
+        banded_top = None
+        for n in spec.nodes:
+            if n.id in band_within and n.container is not None and n.id not in _band_nodes:
+                yb = base_y + band_start[az_band[n.id]] + band_within[n.id][1] * row_step()
+                banded_bottom = max(banded_bottom, yb + ICON_SIZE + LABEL_BAND)
+                banded_top = yb if banded_top is None else min(banded_top, yb)
+        if banded_top is None:
+            banded_top = base_y
+        region_bottom = banded_bottom
+        for nid, yv in regional_y.items():
+            region_bottom = max(region_bottom, yv + ICON_SIZE + LABEL_BAND)
+        # The widest banded column drives the band's left→right width budget so
+        # the band wraps at roughly the VPC width (it never runs narrower than a
+        # four-column row, so a short CI/CD strip stays on one row).
+        max_band_col = max(
+            (band_within[n.id][0] for n in spec.nodes
+             if n.id in band_within and n.id not in _band_nodes),
+            default=3,
+        )
+        # Width budget = VPC banded columns wide, at least 4 columns, so a band
+        # of up to that many icons fits one row.
+        width_cols = max(max_band_col + 1, 4)
+        # Group membership: a node in a declared band_group is laid as a
+        # contiguous block, ordered by the group's declaration index.
+        group_of: Dict[str, int] = {}
+        for gi, (_cap, members_ids) in enumerate(getattr(spec, "band_groups", ()) or ()):
+            for mid in members_ids:
+                group_of[mid] = gi
+        south_ids = [n.id for n in spec.nodes if _band_nodes.get(n.id) == "south"]
+        acct_ids = [n.id for n in spec.nodes if _band_nodes.get(n.id) == "account-south"]
+        north_ids = [n.id for n in spec.nodes if _band_nodes.get(n.id) == "north"]
+        slot_of = {n.id: (n.band_row, n.slot, n.id) for n in spec.nodes}
+
+        def _lay_band(ids: List[str], y0: int) -> int:
+            """Lay ``ids`` left→right from ``y0``, wrapping at ``width_cols``;
+            grouped members stay contiguous (sorted by group index). Returns the
+            bottom y used."""
+            def _order_key(nid: str):
+                # Grouped nodes sort ahead by group index; ungrouped follow by
+                # their own (band_row, slot, id). Within either, slot order wins.
+                gi = group_of.get(nid, 10_000 + slot_of[nid][1])
+                return (gi, slot_of[nid])
+            ordered = sorted(ids, key=_order_key)
+            col = 0
+            row = 0
+            bottom = y0
+            for nid in ordered:
+                if col >= width_cols:
+                    row += 1
+                    col = 0
+                x = base_x + col * col_step()
+                y = y0 + row * (row_step() + LABEL_BAND)
+                band_xy[nid] = (x, y)
+                bottom = max(bottom, y + ICON_SIZE + LABEL_BAND)
+                col += 1
+            return bottom
+
+        def _lay_band_up(ids: List[str], y_bottom: int) -> None:
+            """Lay ``ids`` as horizontal rows ABOVE ``y_bottom`` (band_row 0 just
+            above it, higher band_row further up), left→right by slot within each
+            declared band_row. Rows are the author's ``band_row`` groups so a
+            two-tier entry (edge above entry) reads top→down."""
+            rows = sorted({slot_of[n][0] for n in ids})
+            # band_row -> screen row from the bottom up: the smallest band_row
+            # sits just above y_bottom; larger band_row rises further.
+            step = row_step() + LABEL_BAND
+            for ri, br in enumerate(rows):
+                row_ids = sorted((n for n in ids if slot_of[n][0] == br),
+                                 key=lambda nid: slot_of[nid][1])
+                y = y_bottom - (ri + 1) * step
+                for col, nid in enumerate(row_ids):
+                    band_xy[nid] = (base_x + col * col_step(), y)
+
+        south_bottom = region_bottom
+        if north_ids:
+            _lay_band_up(north_ids, banded_top - row_step())
+        if south_ids:
+            south_bottom = _lay_band(south_ids, banded_bottom + row_step())
+        if acct_ids:
+            start = max(south_bottom, region_bottom) + row_step()
+            _lay_band(acct_ids, start)
+
     # 1.10.6: a region of container-free nodes whose box reserves a caption lane
     # (``_top_lane_containers``) starts its rows one lane lower, so the box's top
     # border stays put and the lane opens inside it.
@@ -1524,7 +1633,10 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
     for node in spec.nodes:
         lane_i = LANE_INDEX[node.lane]
         banded = node.container is not None and kind_of.get(node.container) in banded_kinds
-        if node.id in regional_y:
+        if node.id in band_xy:
+            # 1.13.0 (regional-band): opt-in horizontal south band.
+            x, y = band_xy[node.id]
+        elif node.id in regional_y:
             col = regional_col_x.get(node.region, 0) + regional_col[node.id]
             x = regional_abs_x.get(node.id, base_x + col * col_step() + 2 * CONTAINER_PAD)
             y = regional_y[node.id]
@@ -1777,9 +1889,18 @@ def _assign_nodes_to_leaves(
     #    forced OUTSIDE every cloud boundary, so any declared cloud ``container``
     #    is IGNORED for placement and the node is wrapped by no container (it is
     #    parented to the root layer, exactly like an actors / on-premises node).
+    #    1.13.0 (regional-band): a ``band="account-south"`` node declares the
+    #    region as its logical container but is laid out BELOW the Region box, so
+    #    for SIZING it is wrapped by the Account (not the Region) — otherwise the
+    #    Region box would grow down to enclose the CI/CD strip. ``band="south"``
+    #    stays inside its declared Region (wrapped by it, as declared).
     for n in spec.nodes:
         if n.container is not None and not getattr(n, "external", False):
-            assignment[n.container].append(n.id)
+            if (getattr(n, "band", None) == "account-south"
+                    and account_id is not None):
+                assignment[account_id].append(n.id)
+            else:
+                assignment[n.container].append(n.id)
 
     # 1b. Account-level (region "") cloud services are wrapped by the account
     #     envelope so it contains its own top edge row — except (i) the genuinely

@@ -114,6 +114,23 @@ class NodeSpec:
     #: placement class, never geometry. ``False`` (default) is byte-identical to
     #: every pre-ITEM-B spec.
     external: bool = False
+    #: 1.13.0 (regional-band): opt-in HORIZONTAL band placement for a
+    #: region-direct node. When set to ``"south"`` the node is laid out in a
+    #: horizontal row BELOW the VPC's bottom edge and inside the Region box
+    #: (ordered left→right by :attr:`band_row` then ``slot``, wrapping to a new
+    #: row when the band is wider than the Region), instead of being routed
+    #: through the vertical ``_REGIONAL_COLS`` column logic. ``"account-south"``
+    #: places the band BELOW the Region inside the Account (used for a CI/CD
+    #: strip). ``None`` (default) keeps the pre-1.13.0 columnar placement, so
+    #: every shipped golden is byte-identical. Only meaningful on a region-direct
+    #: node of a North–South diagram; ignored otherwise. Coordinate-free: it
+    #: names a placement class, never geometry.
+    band: Optional[str] = None
+    #: 1.13.0 (regional-band): the 0-indexed band ROW a ``band``-placed node
+    #: sits on before wrapping (its ``slot`` orders it left→right within the
+    #: row). ``0`` (default) ⇒ the first band row. Coordinate-free: it names a
+    #: row index within the band, never geometry.
+    band_row: int = 0
 
 
 @dataclass(frozen=True)
@@ -321,6 +338,22 @@ class DiagramSpec:
     #: node. ``()`` (default) on an un-materialized spec, so every existing spec
     #: is byte-identical. Presentation only — never a coordinate.
     peering_labels: Tuple[Tuple[str, str], ...] = ()
+    #: 1.13.0 (regional-band): optional CAPTIONED GROUP CONTAINERS for the
+    #: horizontal regional band — a tuple of ``(caption, (member_node_id, ...))``
+    #: pairs. Each draws one boundary box enclosing its named band members, sized
+    #: to the member bounding box PLUS room for the full caption (never
+    #: truncated), using the caller-supplied style. Unlike :attr:`flow_groups`
+    #: (a decorative box behind columnar nodes whose caption truncates to the
+    #: member bbox width), a band group reserves horizontal room for its whole
+    #: caption, because a south band lays its members out in a wide row. Never
+    #: inferred: a group exists only when a spec declares it. ``()`` (default) ⇒
+    #: no band-group boxes, byte-identical to 1.12.0. Presentation only — the
+    #: engine reads no coordinate from it. The ``(group_id, caption)`` and
+    #: ``(group_id, style)`` presentation pairs are carried in
+    #: :attr:`band_group_captions` / :attr:`band_group_styles`.
+    band_groups: Tuple[Tuple[str, Tuple[str, ...]], ...] = ()
+    band_group_captions: Tuple[Tuple[str, str], ...] = ()
+    band_group_styles: Tuple[Tuple[str, str], ...] = ()
 
 
 # ---------------------------------------------------------------------------
