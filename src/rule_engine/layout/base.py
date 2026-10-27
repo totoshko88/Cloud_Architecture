@@ -263,15 +263,26 @@ def _validate_spec(spec: DiagramSpec) -> None:
                 )
             # Scope is enforced once the spec models the region level: only then
             # does a regional service have a legal home (the region container,
-            # outside the network). A spec without region containers (every
-            # synthetic layout spec) keeps its pre-1.10.3 behaviour.
+            # outside the network). Two models express that region level:
+            #   * the classic region-kind container (a regional node then belongs
+            #     in the region container, outside the VPC); and
+            #   * the G40 locked AZ/subnet model, which has NO region-kind
+            #     container but nests account ⊃ vpc ⊃ az ⊃ subnet — there a
+            #     regional/global node declared directly in a ``subnet`` /
+            #     ``public_subnet`` tier is the violation (G40 step 4).
+            # A spec that models neither (only vpc/az, no region-kind container
+            # and no subnet membership — every pre-G40 synthetic layout spec)
+            # keeps its pre-1.10.3 behaviour and is NOT flagged here; the
+            # geometry ``scope-placement`` lint rule still judges it post-layout.
             if (
                 target.kind in ("vpc", "az", "subnet", "public_subnet")
                 and effective_scope(node) in ("regional", "global")
-                and any(
-                    c.kind in ("region", "vpc", "az", "subnet", "public_subnet")
-                    and c.region == node.region
-                    for c in spec.containers
+                and (
+                    target.kind in ("subnet", "public_subnet")
+                    or any(
+                        c.kind == "region" and c.region == node.region
+                        for c in spec.containers
+                    )
                 )
             ):
                 raise SpecError(
