@@ -2,6 +2,18 @@
 
 All notable changes to the Rule Engine are recorded here, per released version, in reverse chronological order.
 
+## [1.13.0] - 2026-10-27
+
+This release adds an opt-in horizontal "regional band" placement for region-direct managed services, a captioned group container for those bands, and a height-aware raster export. It is additive and default-inert: no shipped spec sets the new options, so every shipped example renders byte-identically.
+
+### Added
+
+- **Horizontal "regional band" placement (opt-in).** A region-direct node can now carry `band="south"` to be laid out in one or more horizontal rows directly below the VPC and inside the Region, ordered left→right by `band_row` then `slot` and wrapping when the band is wider than the Region, instead of stacking in the vertical right-hand regional column. `band="account-south"` places the band below the Region, inside the Account (for a CI/CD delivery strip). Members of a declared band group stay contiguous. Implemented in `src/rule_engine/layout/base.py` (`_place_base`/`_place_regional`: band nodes are excluded from the `_REGIONAL_COLS` columnar logic and laid out by a new `_lay_band` horizontal packer; `_assign_nodes_to_leaves` wraps a south band in its Region and an account-south band in the Account so the containers size around it) and the new `NodeSpec.band` / `NodeSpec.band_row` fields in `src/rule_engine/layout/model.py`. Default-inert: a spec that sets no `band` lays out exactly as in 1.12.0.
+
+- **Captioned band-group container.** A new `DiagramSpec.band_groups` (with `band_group_captions` / `band_group_styles`) draws one boundary box per band group, sized to its members plus enough width to show the FULL caption (never truncated) using the caller's style — unlike the decorative `flow_groups` box, whose multi-word caption truncates on a narrow run. Implemented as `diagram_layout.band_group_cells`, emitted at the back of the document by `build_diagram` / `_assemble_document`. Default-inert.
+
+- **Height-aware raster export.** `rule-engine-export-raster` now fits the canvas to the smaller of the width- and height-budget scales (`scale = min(width_budget/W, height_budget/H)`), so a tall-but-narrow landscape auto-fits the class height budget (1600px flow / 3600px landscape) without a manual `--max-width`. The height term only ever REDUCES the scale and only when the canvas would otherwise overshoot its height budget, so every raster already within its height budget is byte-identical. `--max-width` stays an explicit width-only override. Implemented in `src/rule_engine/export_raster.py` (`_canvas_height`, `compute_scale`).
+
 ## [1.12.0] - 2026-10-27
 
 This release gathers the diagram-quality and authoring work that continued after 1.11.0 shipped. It makes edge routing read more naturally, draws external systems and network tiers more accurately, adds new ways to author diagrams, and tightens the checks that catch a misleading diagram before it is published. Existing diagrams are unaffected — every shipped example renders identically.
