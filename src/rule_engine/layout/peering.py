@@ -90,6 +90,18 @@ def peering_label_for(spec: DiagramSpec, pcx_id: str) -> str | None:
     return dict(getattr(spec, "peering_labels", ())).get(pcx_id)
 
 
+def peering_id_for(spec: DiagramSpec, pcx_id: str) -> str | None:
+    """The raw ``pcx-…`` connection id for a materialized ``vpc_peering`` node.
+
+    The E-PCX (1.13.0) sibling of :func:`peering_label_for`: returns the
+    :attr:`EdgeSpec.peering_id` the originating peering edge carried (e.g.
+    ``"pcx-0e257b23d337fda0b"``), so a renderer can draw it on a SECOND
+    caption line below the short peer name, or ``None`` when the edge declared
+    no id (single-line fallback). ``pcx_id`` is the materialized node id
+    (``"<edge-id>-pcx"``)."""
+    return dict(getattr(spec, "peering_ids", ())).get(pcx_id)
+
+
 def _between_lane(source: NodeSpec, target: NodeSpec) -> str:
     """The lane that sits BETWEEN the two endpoints (deterministic).
 
@@ -258,6 +270,14 @@ def materialize_peerings(spec: DiagramSpec) -> DiagramSpec:
         for e in to_materialize
         if e.peering_label
     ]
+    # E-PCX: the raw pcx-id for each materialized peering that carried one,
+    # parallel to peering_labels. An edge WITHOUT a peering_id contributes no
+    # entry (single-line fallback), so an id-less peering stays byte-identical.
+    peering_ids: List[Tuple[str, str]] = [
+        (f"{e.id}-pcx", e.peering_id)
+        for e in to_materialize
+        if e.peering_id
+    ]
 
     # Build the replacement edge list in the ORIGINAL edge order: a materialized
     # peering edge is replaced in place by its two legs; every other edge is kept
@@ -291,4 +311,5 @@ def materialize_peerings(spec: DiagramSpec) -> DiagramSpec:
         nodes=tuple(new_nodes),
         edges=tuple(new_edges),
         peering_labels=tuple(peering_labels),
+        peering_ids=tuple(peering_ids),
     )

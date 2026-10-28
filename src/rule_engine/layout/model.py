@@ -170,6 +170,17 @@ class EdgeSpec:
     #: names a caption, never a coordinate; ignored entirely when
     #: ``peering_as_node`` is off (the edge is drawn as a bare peering line).
     peering_label: Optional[str] = None
+    #: 1.13.0 E-PCX: the raw ``pcx-…`` connection id surfaced on a SECOND
+    #: caption line of the materialized ``vpc_peering`` resource node (line 1
+    #: is :attr:`peering_label`, e.g. ``"Atlas peering"``; line 2 is this
+    #: id, e.g. ``"pcx-0e257b23d337fda0b"``). The two short lines keep the
+    #: node under ``node-label-length`` where a single line carrying the
+    #: ~21-char pcx-id would trip it. ``None`` (default) ⇒ no second line, so
+    #: a peering with no id stays single-line and byte-identical. Ignored when
+    #: ``peering_as_node`` is off (the edge is a bare peering line). Surfaced
+    #: on the placed spec via :attr:`DiagramSpec.peering_ids` /
+    #: :func:`rule_engine.layout.peering.peering_id_for`.
+    peering_id: Optional[str] = None
     #: Engine-derived (never authored): ``True`` when both endpoints belong to
     #: the same non-empty region, ``False`` for two different regions, ``None``
     #: when unknown. Set by ``layout()`` from the node declarations so the
@@ -338,6 +349,16 @@ class DiagramSpec:
     #: node. ``()`` (default) on an un-materialized spec, so every existing spec
     #: is byte-identical. Presentation only — never a coordinate.
     peering_labels: Tuple[Tuple[str, str], ...] = ()
+    #: 1.13.0 E-PCX: engine-derived (never authored) ``(pcx_node_id,
+    #: peering_id)`` pairs, stamped by
+    #: :func:`rule_engine.layout.peering.materialize_peerings` parallel to
+    #: :attr:`peering_labels`, so a renderer can put the raw ``pcx-…`` id on a
+    #: second caption line. The key is the pcx node id (``"<edge-id>-pcx"``);
+    #: an edge that carried no :attr:`EdgeSpec.peering_id` contributes no pair
+    #: (single-line fallback). Read via
+    #: :func:`rule_engine.layout.peering.peering_id_for`. ``()`` (default) on
+    #: an un-materialized spec, so every existing spec is byte-identical.
+    peering_ids: Tuple[Tuple[str, str], ...] = ()
     #: 1.13.0 (regional-band): optional CAPTIONED GROUP CONTAINERS for the
     #: horizontal regional band — a tuple of ``(caption, (member_node_id, ...))``
     #: pairs. Each draws one boundary box enclosing its named band members, sized
