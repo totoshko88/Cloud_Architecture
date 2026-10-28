@@ -141,6 +141,30 @@ ROLE_SCOPE: Dict[str, str] = {
 def role_scope(role: str) -> Optional[str]:
     """Return ``network`` / ``regional`` / ``global`` for ``role`` (else None)."""
     return ROLE_SCOPE.get(role)
+#: 1.13.0 E-EDGE (VPC-edge service scope). The VPC-edge devices — internet,
+#: NAT, VPN and transit gateways and the egress-only IGW — attach to the VPC and
+#: route traffic across its boundary, so they belong at the VPC level, OUTSIDE
+#: any subnet. They stay ``"network"`` scoped in :data:`ROLE_SCOPE` (so they are
+#: NOT flagged for sitting outside a subnet, which would be wrong); this set and
+#: the :func:`is_vpc_edge` predicate add the finer *placement* constraint "a
+#: VPC-edge device must not be drawn inside a subnet" without introducing a new
+#: scope tier. Additive and default-inert: nothing reads the predicate unless a
+#: caller opts in (the ``scope-placement`` lint passes it explicitly).
+VPC_EDGE_ROLES: frozenset = frozenset({
+    "internet_gateway",
+    "nat_gateway",
+    "vpn_gateway",
+    "transit_gateway",
+    "egress_only_igw",
+})
+def is_vpc_edge(role: str) -> bool:
+    """Return True when ``role`` is a VPC-edge device (see :data:`VPC_EDGE_ROLES`).
+
+    A VPC-edge device (IGW / NAT / VPN / Transit gateway / egress-only IGW)
+    attaches to the VPC and sits at its edge, outside every subnet. The scope
+    (``"network"``) is unchanged — this predicate only identifies the subset that
+    the ``edge-service-in-subnet`` placement rule guards (E-EDGE)."""
+    return role in VPC_EDGE_ROLES
 
 
 def effective_scope(node) -> Optional[str]:

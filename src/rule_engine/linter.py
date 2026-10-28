@@ -2011,7 +2011,7 @@ def _check_scope_placement(a: Artifact):
         return False
     from rule_engine import geometry as _geo
     from rule_engine import icon_resolver
-    from rule_engine.layout.base import role_scope
+    from rule_engine.layout.base import is_vpc_edge as _is_vpc_edge_role, role_scope
 
     providers = _container_style_providers(a)
     mappings: Dict[str, Mapping[str, Any]] = {}
@@ -2063,9 +2063,18 @@ def _check_scope_placement(a: Artifact):
     def is_external(nid: str) -> bool:
         return _style_token(nid, "external") == "1"
 
+    def is_vpc_edge(nid: str) -> bool:
+        # E-EDGE: a node is a VPC-edge device when ANY role its icon
+        # reverse-maps to is one (IGW / NAT / VPN / Transit gw / egress-only
+        # IGW). A cell with no resolvable role is not an edge device (not
+        # judged), so the new ``edge-service-in-subnet`` case is default-inert.
+        roles = roles_by_cell.get(nid) or set()
+        return any(_is_vpc_edge_role(r) for r in roles)
+
     findings = _geo.check_scope_placement(
         geo, scope_of, is_external, providers, mappings,
         scope_is_explicit=scope_is_explicit,
+        is_vpc_edge=is_vpc_edge,
     )
     if not findings:
         return False

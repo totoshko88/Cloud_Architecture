@@ -2,6 +2,10 @@
 
 All notable changes to the Rule Engine are recorded here, per released version, in reverse chronological order.
 
+## [Unreleased]
+Two additive, default-inert capabilities for the SEP network topology (Wave-11). No shipped spec uses either, so every shipped example renders byte-identically.
+### Added
+- **E-EDGE — VPC-edge service placement (`edge-service-in-subnet`).** A VPC-edge device (internet / NAT / VPN / transit gateway, egress-only IGW) attaches to the VPC and routes across its boundary, so it belongs at the VPC edge, OUTSIDE every subnet. These roles stay `network`-scoped in `ROLE_SCOPE` (so they are not wrongly flagged for sitting outside a subnet); the new `VPC_EDGE_ROLES` frozenset + `is_vpc_edge(role)` predicate in `src/rule_engine/layout/base.py` identify the subset, and `geometry.check_scope_placement` gains ONE new reason `edge-service-in-subnet:<node>` fired when an `is_vpc_edge` node is drawn geometrically inside a `subnet`/`public_subnet` container (being inside the VPC but not a subnet is clean). `linter._check_scope_placement` resolves the node's role from the committed icon reverse-map and passes the predicate; the reason rides the same severity join — ERROR on a network diagram, WARNING otherwise. The new `is_vpc_edge` parameter defaults to "never an edge device", so the four existing scope-placement reasons and every shipped golden are unaffected. Test: `tests/test_e_edge_scope.py`.
 ## [1.13.0] - 2026-10-27
 
 This release adds an opt-in horizontal "regional band" placement for region-direct managed services, a captioned group container for those bands, and a height-aware raster export. It is additive and default-inert: no shipped spec sets the new options, so every shipped example renders byte-identically.

@@ -2843,6 +2843,7 @@ def check_scope_placement(
     providers: Sequence[str],
     mappings: Mapping[str, Mapping[str, Any]],
     scope_is_explicit: "Optional[Callable[[str], bool]]" = None,
+    is_vpc_edge: "Optional[Callable[[str], bool]]" = None,
 ) -> List[Tuple[str, str]]:
     """Return ``(node_id, reason)`` for a node drawn geometrically inside a
     boundary STRICTER than its effective role scope allows (1.11.0 ITEM A).
@@ -2866,6 +2867,14 @@ def check_scope_placement(
     * ``external-in-account:<node>`` — an ``external`` node inside the account
       boundary (an external actor/system belongs OUTSIDE every cloud boundary;
       an external node OUTSIDE the account raises nothing — R2-2).
+    * ``edge-service-in-subnet:<node>`` — a VPC-edge device (IGW / NAT / VPN /
+      Transit gateway / egress-only IGW; ``is_vpc_edge(node)`` True) drawn
+      geometrically INSIDE a ``subnet`` / ``public_subnet`` container (E-EDGE,
+      1.13.0). A VPC-edge device attaches to the VPC and routes across its
+      boundary, so it belongs at the VPC level, outside every subnet; sitting in
+      the VPC/network boundary but NOT in a subnet is clean. ``is_vpc_edge`` is
+      ``None`` (default) => no node is ever an edge device => this case never
+      fires (the existing four callers are byte-inert).
 
     **Precision over noise (the owner's rule, round 3).** The rule becomes an
     ERROR on a network diagram, so a false ERROR is worse than a missed one. The
@@ -2890,6 +2899,8 @@ def check_scope_placement(
     Pure; lint-only (not in :func:`rule_violations`)."""
     if scope_is_explicit is None:
         scope_is_explicit = lambda _nid: False  # noqa: E731
+    if is_vpc_edge is None:
+        is_vpc_edge = lambda _nid: False  # noqa: E731
 
     def _inside(box: Box, c: Box) -> bool:
         return c.x <= box.x and box.x + box.w <= c.right and \
@@ -2899,10 +2910,11 @@ def check_scope_placement(
     # category; an ambiguous box (plain-rectangle region/vpc/account sharing one
     # signature) resolves to None and never narrows a node's scope.
     category_of: Dict[str, Optional[str]] = {}
+    kinds_of: Dict[str, Set[str]] = {}
     for cid, style in geo.container_styles.items():
-        category_of[cid] = _container_scope_category(
-            classify_container_kinds(style, providers, mappings)
-        )
+        kinds = classify_container_kinds(style, providers, mappings)
+        kinds_of[cid] = kinds
+        category_of[cid] = _container_scope_category(kinds)
     # Does the diagram draw ANY unambiguous network boundary at all? Case 3
     # (``vpc-scoped-outside-vpc``) only fires when a network boundary exists for
     # the node to be *outside of*: a VPC-less summary that draws only region
@@ -2918,12 +2930,21 @@ def check_scope_placement(
             continue
 
         categories: Set[str] = set()
+        in_subnet = False
         for cid, c in geo.containers.items():
             if cid in geo.nodes:  # a container is never a node, but be safe
                 continue
+            if not _inside(box, c):
+                continue
             cat = category_of.get(cid)
-            if cat is not None and _inside(box, c):
+            if cat is not None:
                 categories.add(cat)
+            # E-EDGE: a VPC-edge device drawn inside a subnet/public-subnet
+            # container is a placement defect, regardless of its (network) scope.
+            if kinds_of.get(cid, set()) & {"subnet", "public_subnet"}:
+                in_subnet = True
+        if is_vpc_edge(nid) and in_subnet:
+            out.append((nid, f"edge-service-in-subnet:{nid}"))
 
         if external:
             # Case 4: external node inside the account boundary. An external node
