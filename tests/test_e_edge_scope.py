@@ -48,6 +48,24 @@ def _vpc_with_subnet_geo():
     return g
 
 
+def _vpc_with_private_subnet_geo():
+    """account ⊃ region ⊃ vpc ⊃ (private) subnet, real AWS container styles."""
+    g = DiagramGeometry()
+    g.containers = {
+        "acct": Box("acct", 0, 0, 2000, 2000),
+        "region": Box("region", 100, 100, 1600, 1600),
+        "vpc": Box("vpc", 200, 200, 1200, 1200),
+        "priv": Box("priv", 300, 300, 400, 400),
+    }
+    g.container_styles = {
+        "acct": _cstyle("boundary"),
+        "region": _cstyle("region"),
+        "vpc": _cstyle("network_boundary"),
+        "priv": _cstyle("subnet"),
+    }
+    return g
+
+
 # --------------------------------------------------------------------------- #
 # The predicate.
 # --------------------------------------------------------------------------- #
@@ -71,14 +89,33 @@ def test_is_vpc_edge_predicate():
 # --------------------------------------------------------------------------- #
 
 
-def test_nat_inside_subnet_flags():
-    """(a) a NAT gateway inside a public_subnet -> edge-service-in-subnet."""
+def test_nat_inside_public_subnet_is_allowed():
+    """(a) a NAT gateway inside a PUBLIC subnet is the canonical AWS pattern ->
+    allowed (owner decision, 1.13.0): the rule no longer fires for a
+    ``public_subnet`` box."""
     g = _vpc_with_subnet_geo()
     g.nodes["nat"] = Box("nat", 330, 330, 78, 78)  # inside pub subnet
+    out = check_scope_placement(
+        g,
+        lambda n: "network",  # VPC-edge devices stay network-scoped
+        lambda n: False,
+        ["aws"],
+        _aws_containers(),
+        is_vpc_edge=lambda n: n == "nat",
+    )
+    assert out == []
+
+
+def test_nat_inside_private_subnet_flags():
+    """(a2) a NAT gateway inside a PRIVATE subnet is still a placement defect ->
+    edge-service-in-subnet (a NAT must sit in a public subnet / at the VPC
+    edge, never in a private subnet)."""
+    g = _vpc_with_private_subnet_geo()
+    g.nodes["nat"] = Box("nat", 330, 330, 78, 78)  # inside private subnet
     out = dict(
         check_scope_placement(
             g,
-            lambda n: "network",  # VPC-edge devices stay network-scoped
+            lambda n: "network",
             lambda n: False,
             ["aws"],
             _aws_containers(),
@@ -156,7 +193,7 @@ def _nat_ref(cell_id: str) -> IconRef:
 
 
 def test_edge_service_in_subnet_severity():
-    g = _vpc_with_subnet_geo()
+    g = _vpc_with_private_subnet_geo()
     g.nodes["nat"] = Box("nat", 330, 330, 78, 78)
     g.node_styles["nat"] = f"image;image={_NAT_ICON};"
     base = dict(
@@ -174,3 +211,21 @@ def test_edge_service_in_subnet_severity():
     flow = lint(Artifact(diagram_type="flow", **base))
     sp = [f for f in flow["findings"] if f["rule"] == "scope-placement"]
     assert len(sp) == 1 and sp[0]["severity"] == "WARNING", sp
+
+
+def test_edge_service_in_public_subnet_is_clean_e2e():
+    """A NAT gateway inside a PUBLIC subnet raises no scope-placement finding
+    end-to-end (the canonical AWS pattern — owner decision, 1.13.0)."""
+    g = _vpc_with_subnet_geo()  # pub = public_subnet
+    g.nodes["nat"] = Box("nat", 330, 330, 78, 78)
+    g.node_styles["nat"] = f"image;image={_NAT_ICON};"
+    base = dict(
+        kind="diagram",
+        node_names=[],
+        geometry=g,
+        icon_refs=[_nat_ref("nat")],
+        title_cell="aws x — a / b | 2026-10-23 | v1",
+    )
+    net = lint(Artifact(diagram_type="network", **base))
+    sp = [f for f in net["findings"] if f["rule"] == "scope-placement"]
+    assert sp == [], sp

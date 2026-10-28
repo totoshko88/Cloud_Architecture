@@ -2869,12 +2869,15 @@ def check_scope_placement(
       an external node OUTSIDE the account raises nothing — R2-2).
     * ``edge-service-in-subnet:<node>`` — a VPC-edge device (IGW / NAT / VPN /
       Transit gateway / egress-only IGW; ``is_vpc_edge(node)`` True) drawn
-      geometrically INSIDE a ``subnet`` / ``public_subnet`` container (E-EDGE,
-      1.13.0). A VPC-edge device attaches to the VPC and routes across its
-      boundary, so it belongs at the VPC level, outside every subnet; sitting in
-      the VPC/network boundary but NOT in a subnet is clean. ``is_vpc_edge`` is
-      ``None`` (default) => no node is ever an edge device => this case never
-      fires (the existing four callers are byte-inert).
+      geometrically INSIDE a PRIVATE ``subnet`` container (E-EDGE, 1.13.0). A
+      VPC-edge device attaches to the VPC and routes across its boundary, so it
+      belongs at the VPC level, outside every PRIVATE subnet; sitting in the
+      VPC/network boundary but NOT in a private subnet is clean. A ``public_subnet``
+      is an ALLOWED home: a NAT gateway (and any VPC-edge device) inside a public
+      subnet is the canonical AWS pattern, so the rule is suppressed when the
+      device sits inside a ``public_subnet`` box (owner decision, 1.13.0).
+      ``is_vpc_edge`` is ``None`` (default) => no node is ever an edge device =>
+      this case never fires (the existing four callers are byte-inert).
 
     **Precision over noise (the owner's rule, round 3).** The rule becomes an
     ERROR on a network diagram, so a false ERROR is worse than a missed one. The
@@ -2930,7 +2933,8 @@ def check_scope_placement(
             continue
 
         categories: Set[str] = set()
-        in_subnet = False
+        in_private_subnet = False
+        in_public_subnet = False
         for cid, c in geo.containers.items():
             if cid in geo.nodes:  # a container is never a node, but be safe
                 continue
@@ -2939,11 +2943,19 @@ def check_scope_placement(
             cat = category_of.get(cid)
             if cat is not None:
                 categories.add(cat)
-            # E-EDGE: a VPC-edge device drawn inside a subnet/public-subnet
-            # container is a placement defect, regardless of its (network) scope.
-            if kinds_of.get(cid, set()) & {"subnet", "public_subnet"}:
-                in_subnet = True
-        if is_vpc_edge(nid) and in_subnet:
+            # E-EDGE: a VPC-edge device belongs at the VPC edge, outside every
+            # PRIVATE subnet; but a NAT gateway (and any VPC-edge device) sitting
+            # inside a PUBLIC subnet is the canonical AWS pattern (a NAT needs a
+            # public-subnet route to the IGW), so a ``public_subnet`` is an
+            # allowed home. The rule therefore fires only for a private
+            # ``subnet`` and is suppressed when the device is drawn inside a
+            # ``public_subnet`` box (owner decision, 1.13.0).
+            kinds = kinds_of.get(cid, set())
+            if "public_subnet" in kinds:
+                in_public_subnet = True
+            elif "subnet" in kinds:
+                in_private_subnet = True
+        if is_vpc_edge(nid) and in_private_subnet and not in_public_subnet:
             out.append((nid, f"edge-service-in-subnet:{nid}"))
 
         if external:
