@@ -77,6 +77,31 @@ _EXTERNAL_CONTAINER_KINDS = frozenset({"external_cloud", "peer_account"})
 _PEERING_ROLE = "vpc_peering"
 
 
+def peering_label_for(spec: DiagramSpec, pcx_id: str) -> str | None:
+    """The short peer-resource caption for a materialized ``vpc_peering`` node.
+
+    Returns the :attr:`EdgeSpec.peering_label` the originating peering edge
+    carried (e.g. ``"Atlas peering"``), discoverable by a renderer from the
+    PLACED (materialized) spec, or ``None`` when the peering edge declared no
+    label — in which case the renderer should fall back to its generic caption.
+    ``pcx_id`` is the materialized node id (``"<edge-id>-pcx"``). This is the
+    stable accessor the SEP build scripts (08/10) use instead of hard-coding
+    ``"VPC Peering"`` (G38, FEAT-003)."""
+    return dict(getattr(spec, "peering_labels", ())).get(pcx_id)
+
+
+def peering_id_for(spec: DiagramSpec, pcx_id: str) -> str | None:
+    """The raw ``pcx-…`` connection id for a materialized ``vpc_peering`` node.
+
+    The E-PCX (1.13.0) sibling of :func:`peering_label_for`: returns the
+    :attr:`EdgeSpec.peering_id` the originating peering edge carried (e.g.
+    ``"pcx-0e257b23d337fda0b"``), so a renderer can draw it on a SECOND
+    caption line below the short peer name, or ``None`` when the edge declared
+    no id (single-line fallback). ``pcx_id`` is the materialized node id
+    (``"<edge-id>-pcx"``)."""
+    return dict(getattr(spec, "peering_ids", ())).get(pcx_id)
+
+
 def _between_lane(source: NodeSpec, target: NodeSpec) -> str:
     """The lane that sits BETWEEN the two endpoints (deterministic).
 
@@ -231,6 +256,29 @@ def materialize_peerings(spec: DiagramSpec) -> DiagramSpec:
     for e in fallback_edges:
         new_nodes.append(pcx_final[e.id])
 
+    # Carry each materialized peering edge's short peer-resource caption so the
+    # renderer can discover it by pcx node id (G38, FEAT-003). The pcx node has
+    # NodeSpec no label field — its caption comes from the role — so the name a
+    # build script must draw ('Atlas peering', etc.) travels on the spec as a
+    # {pcx_id: peering_label} mapping, stamped below onto the returned spec and
+    # read via ``peering_label_for``. An edge WITHOUT a peering_label contributes
+    # no entry (the renderer falls back to its generic caption), so an unlabelled
+    # peering stays backward-compatible. Ordering follows the materialized-edge
+    # order, so the mapping is a pure function of the spec.
+    peering_labels: List[Tuple[str, str]] = [
+        (f"{e.id}-pcx", e.peering_label)
+        for e in to_materialize
+        if e.peering_label
+    ]
+    # E-PCX: the raw pcx-id for each materialized peering that carried one,
+    # parallel to peering_labels. An edge WITHOUT a peering_id contributes no
+    # entry (single-line fallback), so an id-less peering stays byte-identical.
+    peering_ids: List[Tuple[str, str]] = [
+        (f"{e.id}-pcx", e.peering_id)
+        for e in to_materialize
+        if e.peering_id
+    ]
+
     # Build the replacement edge list in the ORIGINAL edge order: a materialized
     # peering edge is replaced in place by its two legs; every other edge is kept
     # verbatim, so determinism and ordering are preserved.
@@ -258,4 +306,10 @@ def materialize_peerings(spec: DiagramSpec) -> DiagramSpec:
             marker="",
         ))
 
-    return replace(spec, nodes=tuple(new_nodes), edges=tuple(new_edges))
+    return replace(
+        spec,
+        nodes=tuple(new_nodes),
+        edges=tuple(new_edges),
+        peering_labels=tuple(peering_labels),
+        peering_ids=tuple(peering_ids),
+    )

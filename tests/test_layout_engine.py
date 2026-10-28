@@ -912,13 +912,14 @@ def test_select_contacts_right_centre_for_adjacent_same_row_target():
     assert entry_pt == (0.0, 0.5)     # left-centre
 
 
-def test_select_contacts_right_centre_for_target_directly_below():
-    # Rule A: a target directly below is reached by exiting the RIGHT face (never
-    # the bottom — a bottom stub crosses the node's own caption) and descending
-    # via a side corridor into the target's TOP.
+def test_select_contacts_bottom_centre_for_target_directly_below():
+    # SYS-A (1.11.0, G37): a target directly below in a clear column is now left
+    # on the BOTTOM face — the straight/downward drop the owner asks for (R3),
+    # legible because ENG-R2 masks the source's own caption. The pre-1.11.0 Rule A
+    # exited right to spare the caption; that constraint is lifted.
     placed = _two_node_placed((100, 100), (100, 100 + le.ROW_STEP))
     exit_pt, entry_pt = select_contacts(_edge(), placed)
-    assert exit_pt == (1.0, 0.5)      # right-centre (Rule A: never bottom)
+    assert exit_pt == (0.5, 1.0)      # bottom-centre (SYS-A: downward when below)
     assert entry_pt == (0.5, 0.0)     # top-centre (descends into the target)
 
 
@@ -940,12 +941,14 @@ def test_select_contacts_single_exit_is_right_CENTRE_regardless_of_target_dir():
 
 
 def test_select_contacts_never_exits_bottom_even_when_obstructed():
-    # Rule A holds regardless of obstacles: the exit is always the right face,
-    # never a bottom stub. A single edge keeps the right CENTRE.
+    # SYS-A GUARD 1: a below target whose drop column holds another icon keeps the
+    # RIGHT exit (a straight drop through a foreign icon is an edge-routing ERROR
+    # the caption mask cannot fix). So with an obstacle in the column the exit is
+    # the right face, never a bottom stub. A single edge keeps the right CENTRE.
     placed = _two_node_placed((100, 100), (100, 100 + 2 * le.ROW_STEP))
     placed["obs"] = Box("obs", 100, 100 + le.ROW_STEP, le.ICON_SIZE, le.ICON_SIZE)
     exit_pt, _ = select_contacts(_edge(), placed)
-    assert exit_pt[0] == 1.0                    # right face, never bottom
+    assert exit_pt[0] == 1.0                    # right face (GUARD 1: column blocked)
     assert exit_pt == (1.0, 0.5)                # single edge → centre
 
 

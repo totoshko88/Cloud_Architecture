@@ -102,6 +102,35 @@ class NodeSpec:
     #: coordinate. ``None`` (default) → the diagram's primary provider, so every
     #: existing spec is byte-identical.
     provider: Optional[str] = None
+    #: 1.11.0 ITEM B (SEP audit E-02/E-03, correction R2-2): an explicit
+    #: **external** flag. When ``True`` the node is forced OUTSIDE every cloud
+    #: boundary — parented to the root layer / a disjoint external sibling
+    #: boundary, never the account / region / VPC — **regardless of any declared
+    #: ``container``** (a cloud container on an ``external=True`` node is IGNORED
+    #: for placement; see :func:`rule_engine.layout.base._assign_nodes_to_leaves`).
+    #: It also emits an ``external=1`` style token (via
+    #: ``diagram_layout.overlay_suffix``) that the ``scope-placement`` lint reads
+    #: for its external-in-account case (FEAT-001). Coordinate-free: it names a
+    #: placement class, never geometry. ``False`` (default) is byte-identical to
+    #: every pre-ITEM-B spec.
+    external: bool = False
+    #: 1.13.0 (regional-band): opt-in HORIZONTAL band placement for a
+    #: region-direct node. When set to ``"south"`` the node is laid out in a
+    #: horizontal row BELOW the VPC's bottom edge and inside the Region box
+    #: (ordered left→right by :attr:`band_row` then ``slot``, wrapping to a new
+    #: row when the band is wider than the Region), instead of being routed
+    #: through the vertical ``_REGIONAL_COLS`` column logic. ``"account-south"``
+    #: places the band BELOW the Region inside the Account (used for a CI/CD
+    #: strip). ``None`` (default) keeps the pre-1.13.0 columnar placement, so
+    #: every shipped golden is byte-identical. Only meaningful on a region-direct
+    #: node of a North–South diagram; ignored otherwise. Coordinate-free: it
+    #: names a placement class, never geometry.
+    band: Optional[str] = None
+    #: 1.13.0 (regional-band): the 0-indexed band ROW a ``band``-placed node
+    #: sits on before wrapping (its ``slot`` orders it left→right within the
+    #: row). ``0`` (default) ⇒ the first band row. Coordinate-free: it names a
+    #: row index within the band, never geometry.
+    band_row: int = 0
 
 
 @dataclass(frozen=True)
@@ -129,6 +158,29 @@ class EdgeSpec:
     #: each node-to-node peering into a ``vpc_peering`` resource node instead
     #: (:func:`rule_engine.layout.peering.materialize_peerings`).
     peering: bool = False
+    #: 1.11.0 G38 (FEAT-003): the short PEER-RESOURCE name a materialized
+    #: ``vpc_peering`` resource node carries as its caption when
+    #: :attr:`DiagramSpec.peering_as_node` turns this ``peering=True`` edge into a
+    #: node (:func:`rule_engine.layout.peering.materialize_peerings`). It MUST be
+    #: the peer resource's short name (e.g. ``"Atlas peering"`` /
+    #: ``"CMTR-SRE peering"``), NOT the raw ``pcx-…`` id — a pcx-id is too long
+    #: and would trip ``node-label-length``; the pcx-id + CIDR stay in the Flow
+    #: legend. ``None`` (default) ⇒ the renderer falls back to the generic
+    #: caption, so every existing spec is byte-identical. Presentation only: it
+    #: names a caption, never a coordinate; ignored entirely when
+    #: ``peering_as_node`` is off (the edge is drawn as a bare peering line).
+    peering_label: Optional[str] = None
+    #: 1.13.0 E-PCX: the raw ``pcx-…`` connection id surfaced on a SECOND
+    #: caption line of the materialized ``vpc_peering`` resource node (line 1
+    #: is :attr:`peering_label`, e.g. ``"Atlas peering"``; line 2 is this
+    #: id, e.g. ``"pcx-0e257b23d337fda0b"``). The two short lines keep the
+    #: node under ``node-label-length`` where a single line carrying the
+    #: ~21-char pcx-id would trip it. ``None`` (default) ⇒ no second line, so
+    #: a peering with no id stays single-line and byte-identical. Ignored when
+    #: ``peering_as_node`` is off (the edge is a bare peering line). Surfaced
+    #: on the placed spec via :attr:`DiagramSpec.peering_ids` /
+    #: :func:`rule_engine.layout.peering.peering_id_for`.
+    peering_id: Optional[str] = None
     #: Engine-derived (never authored): ``True`` when both endpoints belong to
     #: the same non-empty region, ``False`` for two different regions, ``None``
     #: when unknown. Set by ``layout()`` from the node declarations so the
@@ -285,6 +337,44 @@ class DiagramSpec:
     #: and never materializes a node. Coordinate-free: it names a presentation
     #: choice, never an ``x``/``y``.
     peering_as_node: bool = False
+    #: 1.11.0 G38 (FEAT-003): engine-derived (never authored) ``(pcx_node_id,
+    #: peering_label)`` pairs, stamped by
+    #: :func:`rule_engine.layout.peering.materialize_peerings` so a renderer can
+    #: discover the short peer-resource caption for each materialized
+    #: ``vpc_peering`` node. The key is the pcx node id (``"<edge-id>-pcx"``) and
+    #: the value is the originating :attr:`EdgeSpec.peering_label`; an edge that
+    #: carried no ``peering_label`` contributes no pair. A build script reads this
+    #: from the placed spec (``placed.spec.peering_labels``, or the accessor
+    #: :func:`rule_engine.layout.peering.peering_label_for`) to caption each pcx
+    #: node. ``()`` (default) on an un-materialized spec, so every existing spec
+    #: is byte-identical. Presentation only — never a coordinate.
+    peering_labels: Tuple[Tuple[str, str], ...] = ()
+    #: 1.13.0 E-PCX: engine-derived (never authored) ``(pcx_node_id,
+    #: peering_id)`` pairs, stamped by
+    #: :func:`rule_engine.layout.peering.materialize_peerings` parallel to
+    #: :attr:`peering_labels`, so a renderer can put the raw ``pcx-…`` id on a
+    #: second caption line. The key is the pcx node id (``"<edge-id>-pcx"``);
+    #: an edge that carried no :attr:`EdgeSpec.peering_id` contributes no pair
+    #: (single-line fallback). Read via
+    #: :func:`rule_engine.layout.peering.peering_id_for`. ``()`` (default) on
+    #: an un-materialized spec, so every existing spec is byte-identical.
+    peering_ids: Tuple[Tuple[str, str], ...] = ()
+    #: 1.13.0 (regional-band): optional CAPTIONED GROUP CONTAINERS for the
+    #: horizontal regional band — a tuple of ``(caption, (member_node_id, ...))``
+    #: pairs. Each draws one boundary box enclosing its named band members, sized
+    #: to the member bounding box PLUS room for the full caption (never
+    #: truncated), using the caller-supplied style. Unlike :attr:`flow_groups`
+    #: (a decorative box behind columnar nodes whose caption truncates to the
+    #: member bbox width), a band group reserves horizontal room for its whole
+    #: caption, because a south band lays its members out in a wide row. Never
+    #: inferred: a group exists only when a spec declares it. ``()`` (default) ⇒
+    #: no band-group boxes, byte-identical to 1.12.0. Presentation only — the
+    #: engine reads no coordinate from it. The ``(group_id, caption)`` and
+    #: ``(group_id, style)`` presentation pairs are carried in
+    #: :attr:`band_group_captions` / :attr:`band_group_styles`.
+    band_groups: Tuple[Tuple[str, Tuple[str, ...]], ...] = ()
+    band_group_captions: Tuple[Tuple[str, str], ...] = ()
+    band_group_styles: Tuple[Tuple[str, str], ...] = ()
 
 
 # ---------------------------------------------------------------------------

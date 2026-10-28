@@ -100,6 +100,19 @@ MIN_FONT_SIZE = 12
 #: builder draws edges at this width; the ``arrow-style`` lint rule flags thinner.
 EDGE_STROKE_WIDTH = 1.5
 
+#: G33 (1.11.0, FEAT-002): dense-landscape finishing gate for ``build_diagram``.
+#: At or above this many service nodes, the greedy Variant A finishing
+#: (caption-safe + crossing-repair + collinear re-route) is SKIPPED and the
+#: crossing-minimised ``layout()`` geometry is kept as-is. It mirrors
+#: ``ordering.FINISH_NODE_BUDGET`` (the same value and rationale: only a dense
+#: landscape reaches it, so every flow golden is well under it and byte-
+#: identical). On a dense cross-band landscape the unbounded finishing pass both
+#: overran the 300s build guard (260s on 09-crosscloud) and NET-WORSENED the
+#: geometry (crossings ~9 -> 19, SEP account grown into the external sibling
+#: bands), so keeping the authoritative scored placement is both faster and
+#: better. An explicit ``caption_plan`` is never gated.
+_FINISH_NODE_GATE = 20
+
 #: Standard node label style suffix (label sits directly under the icon). The
 #: label font is held at ``MIN_FONT_SIZE`` so node captions clear the 12px floor.
 #: Every service/resource node caption renders on an opaque white background so
@@ -206,6 +219,24 @@ class Node:
     #: Caption background colour; set by ``build_diagram`` only for a node whose
     #: caption an edge painted beneath it crosses (see ``_edge_slots``).
     label_bg: Optional[str] = None
+    #: Optional **effective-scope override** (1.11.0 ITEM A). When a node carries
+    #: an explicit ``NodeSpec.scope`` (a VPC-attached ``serverless_fn``, a
+    #: ``scope=regional`` WAF-on-ALB — Theme 14), it is emitted as a
+    #: ``scope=<network|regional|global>`` style token so the ``scope-placement``
+    #: lint reads the node's effective scope straight from the parsed model
+    #: (round-tripping ``effective_scope``'s override). ``None`` emits NOTHING, so
+    #: a node with no override carries no token and the lint falls back to the
+    #: node's role → ``ROLE_SCOPE`` — which keeps every pre-ITEM-A golden
+    #: byte-identical.
+    scope: Optional[str] = None
+    #: 1.11.0 ITEM B (SEP audit E-02/E-03, correction R2-2). ``True`` when the
+    #: source ``NodeSpec.external`` is set. Emitted as an ``external=1`` style
+    #: token (see :func:`overlay_suffix`) so the ``scope-placement`` lint
+    #: (FEAT-001) can read, straight from the parsed model, that the node is an
+    #: external one placed outside the cloud boundaries — its external-in-account
+    #: case exempts an ``external=1`` node that sits OUTSIDE the account. ``False``
+    #: emits NOTHING, so a pre-ITEM-B golden carries no token.
+    external: bool = False
 
 
 # Visual encoding of an overlay marker. diagram-standards → *Icon Fidelity*
@@ -260,6 +291,18 @@ def overlay_suffix(node: "Node") -> str:
         # it crosses: the caption is painted on the local background so the line
         # passes BEHIND the text instead of striking it through.
         out += f";labelBackgroundColor={node.label_bg}"
+    if node.scope:
+        # 1.11.0 ITEM A: round-trip an explicit effective-scope override so the
+        # ``scope-placement`` lint reads it from the parsed model. Emitted ONLY
+        # when set (a per-node override); an unset scope emits nothing, so a
+        # pre-ITEM-A golden carries no token (the lint falls back to role scope).
+        out += f";scope={node.scope}"
+    if node.external:
+        # 1.11.0 ITEM B: round-trip the external placement class so the
+        # ``scope-placement`` lint (FEAT-001) reads ``external=1`` from the
+        # parsed model. Emitted ONLY when set; an unset external emits nothing,
+        # so a pre-ITEM-B golden carries no token.
+        out += ";external=1"
     return out
 
 
@@ -1026,6 +1069,60 @@ def flow_group_cells(
     return "".join(out)
 
 
+#: 1.13.0 (regional-band): caption band height for a band group box. A band
+#: group is a horizontal row, so it reserves a taller caption strip than the
+#: decorative flow group and is sized to show the FULL caption (never
+#: truncated) — the member bbox or the caption text width, whichever is wider.
+_BAND_GROUP_PAD = 20
+_BAND_GROUP_CAPTION = 28
+
+
+def band_group_cells(
+    groups: Sequence[Tuple[str, Sequence[str]]],
+    nodes: Sequence[Node],
+    styles: Optional[dict] = None,
+) -> str:
+    """Emit one captioned boundary box per band group (1.13.0, regional-band).
+
+    Sized to enclose its named member nodes' footprints PLUS enough width to
+    show the full caption (never truncated) — unlike :func:`flow_group_cells`,
+    whose box is the member bbox and whose multi-word caption truncates on a
+    narrow run. ``styles`` maps ``group_id`` → draw.io style (from
+    ``DiagramSpec.band_group_styles``); a group with no style falls back to the
+    generic flow-group style. Members not present are skipped; a group with no
+    present member draws nothing. Pure presentation — no node is moved. Returns
+    '' when ``groups`` is empty (byte-inert)."""
+    if not groups:
+        return ""
+    from rule_engine.geometry import caption_band, _CAPTION_TEXT_CHAR_W
+    pos = {n.id: n for n in nodes}
+    styles = styles or {}
+    out: List[str] = []
+    for gi, (label, members) in enumerate(groups):
+        boxes = [pos[m] for m in members if m in pos]
+        if not boxes:
+            continue
+        x0 = min(n.x for n in boxes) - _BAND_GROUP_PAD
+        y0 = min(n.y for n in boxes) - _BAND_GROUP_PAD - _BAND_GROUP_CAPTION
+        x1 = max(n.x + ICON_SIZE for n in boxes) + _BAND_GROUP_PAD
+        y1 = max(n.y + ICON_SIZE + caption_band(n.label) for n in boxes) + _BAND_GROUP_PAD
+        # Never truncate the caption: widen the box to the right so the full
+        # caption text fits within it (the band group's whole purpose over a
+        # decorative flow group).
+        caption_w = len(label) * _CAPTION_TEXT_CHAR_W + 2 * _BAND_GROUP_PAD
+        if caption_w > (x1 - x0):
+            x1 = x0 + caption_w
+        style = styles.get(f"bandgroup-{gi}") or styles.get(label) or _FLOW_GROUP_STYLE
+        out.append(
+            f'        <mxCell id="bandgroup-{gi}" value="{_xml_escape(label)}" '
+            f'style="{style}" vertex="1" parent="1">\n'
+            f'          <mxGeometry x="{int(x0)}" y="{int(y0)}" '
+            f'width="{int(x1 - x0)}" height="{int(y1 - y0)}" as="geometry" />\n'
+            "        </mxCell>\n"
+        )
+    return "".join(out)
+
+
 def _orthogonalised(
     edges: Sequence[Edge], nodes: Sequence[Node]
 ) -> List[Edge]:
@@ -1390,6 +1487,8 @@ def build_diagram(
     flow_groups: Sequence[Tuple[str, Sequence[str]]] = (),
     flow_steps: str = "box",
     flow_columns: int | None = None,
+    band_groups: Sequence[Tuple[str, Sequence[str]]] = (),
+    band_group_styles: Optional[dict] = None,
 ) -> str:
     """Assemble a full ``.drawio`` document from the standard building blocks.
 
@@ -1449,10 +1548,40 @@ def build_diagram(
         flow_groups=flow_groups,
         flow_steps=flow_steps,
         flow_columns=flow_columns,
+        band_groups=band_groups,
+        band_group_styles=band_group_styles,
     )
     routed = _orthogonalised(edges, nodes)
     text = _assemble_document(routed=routed, **kwargs)
-    if caption_safe:
+    # G33 (1.11.0, FEAT-002): dense-landscape finishing gate. The Variant A
+    # finishing (`_plan_from_text` = caption-safe + crossing-repair + collinear)
+    # is a greedy, whole-diagram re-route planned on the ASSEMBLED document. On a
+    # SMALL flow diagram it cheaply removes the last own-caption strike or
+    # crossing and never worsens the picture — that is the case it was built for.
+    # On a DENSE landscape with many long cross-band edges converging on a shared
+    # external datastore (09-crosscloud: Lambda AND the EC2 Syndicate Server both
+    # reaching the MongoDB Atlas band, plus the sandbox-control fan-out) it does
+    # the opposite: measured on 09 it ran 260s (over the 300s build guard) AND it
+    # NET-WORSENED the geometry — the layout() output crosses ~9 pairs, but the
+    # finishing plan's container growth + re-routes pushed it to 19 crossings and
+    # grew the SEP account box into the external sibling bands (container-overlap,
+    # an ERROR on a landscape). The scored solver in `layout()` already
+    # crossing-minimises the placement for such a diagram (it is the authoritative
+    # geometry), so for a dense diagram the right move is to KEEP it rather than
+    # let an unbounded greedy finishing pass worsen it. This mirrors the existing
+    # `ordering.FINISH_NODE_BUDGET` gate, which already skips the per-candidate
+    # finishing MEASUREMENT in the auto-order loop at the same size — here we skip
+    # the APPLY in the standalone build_diagram path too. Scoped to >= the node
+    # budget (only a dense landscape reaches it): every shipped flow golden is far
+    # under it, so their output is byte-identical. A residual own-caption strike
+    # on the dense landscape degrades to a WARNING (edge-crosses-own-label), which
+    # a landscape already tolerates, in exchange for a clean crossing/overlap
+    # result that publishes and a build that stays under the guard.
+    # An explicitly-supplied caption_plan is always honoured (the caller chose
+    # it deliberately); the gate applies only to the AUTO-planned path, where the
+    # cost and the net-worsening both live.
+    _gated = caption_plan is None and len(nodes) >= _FINISH_NODE_GATE
+    if caption_safe and not _gated:
         plan = caption_plan if caption_plan is not None else _plan_from_text(text)
         safe = _apply_plan(plan, routed, boundaries, legend_x)
         if safe is not None:
@@ -1700,6 +1829,8 @@ def _assemble_document(
     flow_groups: Sequence[Tuple[str, Sequence[str]]] = (),
     flow_steps: str = "box",
     flow_columns: int | None = None,
+    band_groups: Sequence[Tuple[str, Sequence[str]]] = (),
+    band_group_styles: Optional[dict] = None,
 ) -> str:
     """Emit the ``.drawio`` document for already-routed edges (no hygiene)."""
     parts: List[str] = []
@@ -1727,6 +1858,13 @@ def _assemble_document(
     # No-op (byte-inert) when there are no flow groups.
     if flow_groups:
         parts.append(flow_group_cells(flow_groups, nodes))
+        parts.append("\n")
+    # 1.13.0 (regional-band): captioned band-group boxes. Emitted at the BACK
+    # (with the decorative flow groups) so every member node and edge paints
+    # OVER the box; unlike a flow group it is sized to show its FULL caption.
+    # No-op (byte-inert) when there are no band groups.
+    if band_groups:
+        parts.append(band_group_cells(band_groups, nodes, band_group_styles))
         parts.append("\n")
     # Edges beneath vertices (1.10.12 WS2): each edge is emitted either on the
     # root layer BEFORE every boundary (slot -1) or as the FIRST child of the

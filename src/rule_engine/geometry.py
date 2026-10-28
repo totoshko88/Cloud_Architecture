@@ -39,7 +39,7 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 # Container / text classification and the root-layer id are shared with
 # cli._parse_drawio via rule_engine.constants so the C4 boundary-detection rule
@@ -64,7 +64,7 @@ GRID = 10
 # each child's footprint by this on all four sides to compute the container's
 # minimum legitimate area demand. ``diagram_layout`` imports ``geometry`` only
 # lazily (inside functions), so this top-level import is cycle-safe.
-from rule_engine.diagram_layout import CONTAINER_PAD, STAIR_STEP
+from rule_engine.diagram_layout import COL_STEP, CONTAINER_PAD, STAIR_STEP
 
 # The label band drawn *below* a node's icon (``verticalLabelPosition=bottom``).
 # A node's on-canvas footprint is not just its 78x78 icon box — the service name
@@ -208,6 +208,13 @@ class DiagramGeometry:
     #: this to tell a member from an interloper — a flat node drawn inside a
     #: boundary it is not parented to.
     node_parent_ids: Dict[str, str] = field(default_factory=dict)
+    #: Node id -> its raw draw.io ``style`` string (1.11.0 ITEM A). Lets the
+    #: ``scope-placement`` rule read the ``scope=<network|regional|global>`` and
+    #: ``external=1`` style tokens the shared builder emits, and recover a node's
+    #: role from its ``image=``/``resIcon=`` icon reference — all from the parsed
+    #: model, with no :class:`NodeSpec` in hand. Empty for a programmatic
+    #: geometry, in which case a scope token / icon ref simply resolves to None.
+    node_styles: Dict[str, str] = field(default_factory=dict)
     #: The model grid step this geometry was built with (``page.grid_size`` in
     #: ``build_geometry``, else the module :data:`GRID` default). Carried so the
     #: grid-alignment check judges node origins against the *page's* declared
@@ -256,10 +263,11 @@ def build_geometry(page: Page) -> DiagramGeometry:
         if not cell.vertex or cid in boundary_ids:
             continue
         g = cell.geom
-        if (cid or "").startswith("flowgroup-"):
-            # A 1.11.0 WS2 flow-group box (``flow_group_cells``) is a purely
-            # DECORATIVE grey context box drawn BEHIND its member nodes with no
-            # node shift. It is neither a node (it must not be counted by
+        if (cid or "").startswith(("flowgroup-", "bandgroup-")):
+            # A 1.11.0 WS2 flow-group box (``flow_group_cells``) or a 1.13.0
+            # band-group box (``band_group_cells``) is a purely DECORATIVE
+            # context box drawn BEHIND its member nodes with no node shift. It is
+            # neither a node (it must not be counted by
             # node-count, nor read as pierced by its members' own edges ->
             # ``straight-through``/``knee-through`` ERRORs) nor a Boundary
             # container (its members are parented to the root layer, not to it,
@@ -287,6 +295,7 @@ def build_geometry(page: Page) -> DiagramGeometry:
         geo.nodes[cid] = Box(cid, ax, ay, float(g.w), float(g.h))
         geo.node_labels[cid] = cell.label or ""
         geo.node_parent_ids[cid] = cell.parent
+        geo.node_styles[cid] = cell.style or ""
         overlay = cell.style_map.get("overlay")
         if overlay:
             geo.overlay_nodes[cid] = overlay
@@ -2715,6 +2724,277 @@ def check_container_style(
     return out
 
 
+# --------------------------------------------------------------------------- #
+# scope-placement (1.11.0 ITEM A)
+#
+# The engine already validates a node's DECLARED container against its role scope
+# (``layout()`` raises a ``SpecError`` when a regional/global node declares a
+# network-boundary container). That catches the declared-container case. It does
+# NOT catch a node that ends up GEOMETRICALLY inside the wrong boundary via
+# layout / column packing with no (or a different) declared container — the exact
+# gap the owner named (an AWS WAF wrongly inside a region; an external actor
+# drawn inside the account). ``check_scope_placement`` closes it as a geometry
+# lint, modelled on ``check_geometric_containment`` (Theme 27): it judges a
+# node's geometric containment against its EFFECTIVE role scope, independent of
+# the declared container. Lint-only (NOT part of ``rule_violations`` / the solver
+# oracle).
+# --------------------------------------------------------------------------- #
+
+#: Scope CATEGORY of each declared container kind. A boundary's category is what
+#: scope-placement reasons about: ``account`` (the account/subscription/project/
+#: tenancy box), ``region`` (an OCI/AWS region or zone level that is NOT a
+#: network), or ``network`` (a VPC/VNet/VCN and its nested subnet / security-group
+#: / namespace / availability-domain leaves — a service inside one sits in the
+#: network). A kind not listed has no scope category (it never narrows a node's
+#: scope).
+_CONTAINER_SCOPE_CATEGORY: Dict[str, str] = {
+    "boundary": "account",
+    "region": "region",
+    "network_boundary": "network",
+    "subnet": "network",
+    "public_subnet": "network",
+    "security_group": "network",
+    "namespace": "network",
+    "availability_domain": "network",
+    "fault_domain": "network",
+    # ``on_premises`` is an external datacentre boundary, not a cloud scope tier;
+    # it has no scope category (a node inside it is not judged for cloud scope).
+}
+
+
+def _container_scope_category(kinds: Set[str]) -> Optional[str]:
+    """Return the single scope category a container's matched ``kinds`` resolve to.
+
+    The style-signature classifier (:func:`classify_container_kinds`) is the only
+    container-kind source (R2-med-2: there is NO ``container_kinds`` map). On the
+    plain-rectangle providers (azure / gcp / kubernetes / generic) the
+    ``boundary`` / ``region`` / ``network_boundary`` / ``security_group`` kinds
+    share ONE dashed-rectangle signature, so a drawn box matches several kinds at
+    once. When those kinds span more than one scope **category** (account vs
+    region vs network) the box is genuinely AMBIGUOUS — style alone cannot say
+    which tier it is — so it resolves to ``None`` and scope-placement does NOT
+    judge nodes against it (never invent a scope). Only an UNAMBIGUOUS box (every
+    matched kind in one category, e.g. an AWS ``grIcon`` group or an OCI box with
+    a distinct signature) drives a finding."""
+    cats = {
+        _CONTAINER_SCOPE_CATEGORY[k]
+        for k in kinds
+        if k in _CONTAINER_SCOPE_CATEGORY
+    }
+    return next(iter(cats)) if len(cats) == 1 else None
+
+
+def classify_container_kinds(
+    style: str,
+    providers: Sequence[str],
+    mappings: Mapping[str, Mapping[str, Any]],
+) -> Set[str]:
+    """Return the declared container KIND name(s) a drawn container style matches.
+
+    The same style-signature recognition :func:`check_container_style` uses
+    (R2-med-2 — NOT a ``container_kinds`` map, which does not exist): a style
+    carrying ``grIcon=`` is matched against every ``aws`` container kind naming
+    the same ``grIcon`` (narrowed by equal ``fillColor`` when several share one);
+    any other style is matched by its shape signature (equal ``shape`` / ``image``
+    / ``rounded`` / ``dashed`` / ``fillColor`` / ``dashPattern`` / ``strokeWidth``
+    / ``align`` / ``verticalAlign``) against every declared kind of ``providers``.
+
+    ``mappings`` is ``{provider: <containers table>}``. An ``overlay=`` cell is an
+    overlay marker, not a Boundary, and yields the empty set. A style matching no
+    declared kind yields the empty set (unrecognised → its nodes are not judged),
+    which is what keeps the rule default-inert on a bespoke box. Pure."""
+    drawn = _style_tokens(style)
+    if "overlay" in drawn:
+        return set()
+    gr = drawn.get("grIcon")
+    kinds: Set[str] = set()
+    for provider in providers:
+        for kind, entry in (mappings.get(provider) or {}).items():
+            decl = entry.get("style") if isinstance(entry, Mapping) else None
+            if not isinstance(decl, str) or not decl:
+                continue
+            tokens = _style_tokens(decl)
+            if gr is not None:
+                if tokens.get("grIcon") != gr:
+                    continue
+                dfill = _norm_token(drawn.get("fillColor"))
+                # When several AWS group kinds share one grIcon (the private /
+                # public subnet groups), narrow by fillColor; if the drawn fill
+                # matches none, keep the grIcon match (do not drop the kind).
+                tfill = _norm_token(tokens.get("fillColor"))
+                if tfill is not None and dfill is not None and tfill != dfill:
+                    continue
+                kinds.add(kind)
+            else:
+                if "grIcon" in tokens:
+                    continue
+                if all(
+                    _norm_token(tokens.get(t)) == _norm_token(drawn.get(t))
+                    for t in _CONTAINER_SIGNATURE_TOKENS
+                ):
+                    kinds.add(kind)
+    return kinds
+
+
+def check_scope_placement(
+    geo: DiagramGeometry,
+    scope_of: "Callable[[str], Optional[str]]",
+    is_external: "Callable[[str], bool]",
+    providers: Sequence[str],
+    mappings: Mapping[str, Mapping[str, Any]],
+    scope_is_explicit: "Optional[Callable[[str], bool]]" = None,
+    is_vpc_edge: "Optional[Callable[[str], bool]]" = None,
+) -> List[Tuple[str, str]]:
+    """Return ``(node_id, reason)`` for a node drawn geometrically inside a
+    boundary STRICTER than its effective role scope allows (1.11.0 ITEM A).
+
+    ``scope_of(node_id)`` returns ``network`` / ``regional`` / ``global`` for a
+    node (its ``scope=`` override else its role→``ROLE_SCOPE``), or ``None`` when
+    the scope is not resolvable — an unresolvable-scope node is **not judged**,
+    so the rule never invents a scope (the default-inert contract). ``is_external``
+    returns True when the node carries ``external=1``. ``providers`` / ``mappings``
+    are the same inputs :func:`check_container_style` takes, used here to classify
+    each containing boundary's kind via :func:`classify_container_kinds`.
+
+    The four cases (design §2.2):
+
+    * ``global-in-region:<node>`` — effective ``global`` node inside a
+      region/vpc/az/subnet boundary (a global/edge service must sit at the edge);
+    * ``regional-in-vpc:<node>`` — effective ``regional`` node inside a
+      vpc/az/subnet (network) boundary (a regional service stays outside the VPC);
+    * ``vpc-scoped-outside-vpc:<node>`` — effective ``network`` node inside NO
+      network boundary (a VPC-scoped service must be inside the VPC);
+    * ``external-in-account:<node>`` — an ``external`` node inside the account
+      boundary (an external actor/system belongs OUTSIDE every cloud boundary;
+      an external node OUTSIDE the account raises nothing — R2-2).
+    * ``edge-service-in-subnet:<node>`` — a VPC-edge device (IGW / NAT / VPN /
+      Transit gateway / egress-only IGW; ``is_vpc_edge(node)`` True) drawn
+      geometrically INSIDE a PRIVATE ``subnet`` container (E-EDGE, 1.13.0). A
+      VPC-edge device attaches to the VPC and routes across its boundary, so it
+      belongs at the VPC level, outside every PRIVATE subnet; sitting in the
+      VPC/network boundary but NOT in a private subnet is clean. A ``public_subnet``
+      is an ALLOWED home: a NAT gateway (and any VPC-edge device) inside a public
+      subnet is the canonical AWS pattern, so the rule is suppressed when the
+      device sits inside a ``public_subnet`` box (owner decision, 1.13.0).
+      ``is_vpc_edge`` is ``None`` (default) => no node is ever an edge device =>
+      this case never fires (the existing four callers are byte-inert).
+
+    **Precision over noise (the owner's rule, round 3).** The rule becomes an
+    ERROR on a network diagram, so a false ERROR is worse than a missed one. The
+    provider-INDEPENDENT violations are driven by the role→scope fallback
+    reliably — ``global-in-region`` (an edge role is global on every provider)
+    and ``external-in-account``. The provider-DEPENDENT cases ``regional-in-vpc``
+    and ``vpc-scoped-outside-vpc`` fire **only from an explicit ``scope=``
+    override** (``scope_is_explicit(node)`` True), because ``base.ROLE_SCOPE`` is
+    provider-agnostic and cannot know that Azure SQL is regional (unlike AWS RDS)
+    or that an EFS correctly sits in the regional column outside the VPC — judging
+    those from the role fallback flags correct goldens. ``scope_is_explicit`` is
+    ``None`` → every scope is treated as role-derived (so the two provider-
+    dependent cases never fire — the safe default for a caller that does not
+    distinguish the source).
+
+    A container whose style matches no declared ``containers.*.style`` is
+    unrecognised and never classified, so a node inside only such boxes is not
+    judged. The WAF nuance lives entirely in ``scope_of`` + ``scope_is_explicit``:
+    a default WAF resolves ``global`` from its role (case 1 inside a region, which
+    fires); a ``scope=regional`` WAF resolves ``regional`` from its explicit token
+    (case 2 fires only if drawn inside the VPC, fine in the region).
+    Pure; lint-only (not in :func:`rule_violations`)."""
+    if scope_is_explicit is None:
+        scope_is_explicit = lambda _nid: False  # noqa: E731
+    if is_vpc_edge is None:
+        is_vpc_edge = lambda _nid: False  # noqa: E731
+
+    def _inside(box: Box, c: Box) -> bool:
+        return c.x <= box.x and box.x + box.w <= c.right and \
+            c.y <= box.y and box.y + box.h <= c.bottom
+
+    # Classify every container once (by id) into a single, UNAMBIGUOUS scope
+    # category; an ambiguous box (plain-rectangle region/vpc/account sharing one
+    # signature) resolves to None and never narrows a node's scope.
+    category_of: Dict[str, Optional[str]] = {}
+    kinds_of: Dict[str, Set[str]] = {}
+    for cid, style in geo.container_styles.items():
+        kinds = classify_container_kinds(style, providers, mappings)
+        kinds_of[cid] = kinds
+        category_of[cid] = _container_scope_category(kinds)
+    # Does the diagram draw ANY unambiguous network boundary at all? Case 3
+    # (``vpc-scoped-outside-vpc``) only fires when a network boundary exists for
+    # the node to be *outside of*: a VPC-less summary that draws only region
+    # boxes is a deliberate simplification, not a misplacement.
+    has_network_boundary = any(c == "network" for c in category_of.values())
+
+    out: List[Tuple[str, str]] = []
+    for nid, box in sorted(geo.nodes.items()):
+        external = bool(is_external(nid))
+        scope = scope_of(nid)
+        if scope is None and not external:
+            # Neither a resolvable scope nor an external marker -> not judged.
+            continue
+
+        categories: Set[str] = set()
+        in_private_subnet = False
+        in_public_subnet = False
+        for cid, c in geo.containers.items():
+            if cid in geo.nodes:  # a container is never a node, but be safe
+                continue
+            if not _inside(box, c):
+                continue
+            cat = category_of.get(cid)
+            if cat is not None:
+                categories.add(cat)
+            # E-EDGE: a VPC-edge device belongs at the VPC edge, outside every
+            # PRIVATE subnet; but a NAT gateway (and any VPC-edge device) sitting
+            # inside a PUBLIC subnet is the canonical AWS pattern (a NAT needs a
+            # public-subnet route to the IGW), so a ``public_subnet`` is an
+            # allowed home. The rule therefore fires only for a private
+            # ``subnet`` and is suppressed when the device is drawn inside a
+            # ``public_subnet`` box (owner decision, 1.13.0).
+            kinds = kinds_of.get(cid, set())
+            if "public_subnet" in kinds:
+                in_public_subnet = True
+            elif "subnet" in kinds:
+                in_private_subnet = True
+        if is_vpc_edge(nid) and in_private_subnet and not in_public_subnet:
+            out.append((nid, f"edge-service-in-subnet:{nid}"))
+
+        if external:
+            # Case 4: external node inside the account boundary. An external node
+            # OUTSIDE the account (the sanctioned placement) raises nothing.
+            if "account" in categories:
+                out.append((nid, f"external-in-account:{nid}"))
+            # An external node is not additionally judged for role scope.
+            continue
+
+        if scope == "global":
+            # Provider-INDEPENDENT (an edge role is global on every provider):
+            # driven by the role fallback too. A global/edge service must sit at
+            # the edge (above the account), so being inside a region OR a network
+            # boundary is a finding.
+            if categories & {"region", "network"}:
+                out.append((nid, f"global-in-region:{nid}"))
+        elif scope == "regional":
+            # Provider-DEPENDENT: fire ONLY from an explicit scope= override.
+            # ROLE_SCOPE cannot know Azure SQL is regional (unlike AWS RDS), so a
+            # role-derived "regional" must not flag a correct golden.
+            if scope_is_explicit(nid) and "network" in categories:
+                out.append((nid, f"regional-in-vpc:{nid}"))
+        elif scope == "network":
+            # Provider-DEPENDENT: fire ONLY from an explicit scope= override.
+            # An EFS correctly sits in the regional column outside the VPC, so a
+            # role-derived "network" must not flag it. When explicit, fire only
+            # when a network boundary exists (else a VPC-less summary is a
+            # simplification) and this node is in none.
+            if (
+                scope_is_explicit(nid)
+                and has_network_boundary
+                and "network" not in categories
+            ):
+                out.append((nid, f"vpc-scoped-outside-vpc:{nid}"))
+
+    return out
+
+
 def _container_nesting(geo: DiagramGeometry) -> Tuple[bool, bool]:
     """Return ``(has_outer, has_inner)`` for the drawn Boundary containers.
 
@@ -3520,6 +3800,21 @@ MARKER_NUDGE_STEP = 0.2
 #: minimum offset diagram-standards already mandates for parallel corridors.
 PARALLEL_TRUNK_OFFSET = GRID
 
+#: Routed-polyline length (px) above which an unpinned flow-marker is anchored
+#: NEAR ITS SOURCE instead of at the geometric midpoint (ITEM C, audit E-08).
+#: A long edge's midpoint can land far from both endpoints — in dead space, on a
+#: container border, or on an unrelated caption — so a long run reads more
+#: clearly with its step number close to where the flow leaves. 2.5 x
+#: :data:`COL_STEP` is the same long-run threshold the detour / tier-skip rules
+#: use; a short edge keeps the midpoint, so no short-edge golden shifts.
+LONG_EDGE_MARKER_LEN = 2.5 * COL_STEP
+
+#: The arc-length offset (px) from the source at which a long unpinned marker is
+#: anchored: ~1.2 columns down the run, capped at half the route so the marker
+#: never passes the midpoint (which would defeat the "near the source" intent on
+#: a route only a little over the long threshold). Deterministic and pure.
+LONG_EDGE_MARKER_OFFSET = 1.2 * COL_STEP
+
 #: Detour coefficient: an edge whose routed (Manhattan) length exceeds the
 #: straight Manhattan distance between its contacts by more than this factor is
 #: a "detour hook" — it loops out and back instead of going where it is going
@@ -3545,10 +3840,20 @@ def marker_anchor(poly: Sequence[Point], label_pos: Optional[float]) -> Optional
     """Return the on-canvas point where an edge label renders.
 
     draw.io places an edge label at a signed arc-length fraction ``label_pos`` of
-    the full polyline: ``0`` (or ``None``) is the geometric midpoint, ``-1`` the
-    source end, ``+1`` the target end. This walks the polyline to the point at
-    normalized arc-length ``t = (label_pos + 1) / 2`` — the same point the reader
-    sees the number at. Returns ``None`` for a degenerate (zero-length) route.
+    the full polyline: ``0`` the geometric midpoint, ``-1`` the source end, ``+1``
+    the target end. This walks the polyline to the point at normalized arc-length
+    ``t = (label_pos + 1) / 2`` — the same point the reader sees the number at.
+    Returns ``None`` for a degenerate (zero-length) route.
+
+    ITEM C (audit E-08): an **unpinned** marker (``label_pos is None``) on a
+    **long** route (total length above :data:`LONG_EDGE_MARKER_LEN`) is anchored
+    NEAR ITS SOURCE — a fixed arc-length offset of
+    ``min(0.5 * total, LONG_EDGE_MARKER_OFFSET)`` from the exit — rather than at
+    the midpoint, which on a long run can land in dead space, on a container
+    border, or on an unrelated caption. A short route, or any route whose
+    ``label_pos`` is explicitly pinned (including ``0.0``), keeps the exact
+    midpoint / pinned point behaviour, so no short-edge or pinned-marker golden
+    shifts.
     """
     pts = [tuple(p) for p in poly]
     if len(pts) < 2:
@@ -3559,9 +3864,13 @@ def marker_anchor(poly: Sequence[Point], label_pos: Optional[float]) -> Optional
     total = sum(seg_len)
     if total <= 0:
         return pts[0]
-    t = ((label_pos if label_pos is not None else 0.0) + 1.0) / 2.0
-    t = min(1.0, max(0.0, t))
-    target = t * total
+    if label_pos is None and total > LONG_EDGE_MARKER_LEN:
+        # Unpinned long edge: anchor near the source, capped at the midpoint.
+        target = min(0.5 * total, LONG_EDGE_MARKER_OFFSET)
+    else:
+        t = ((label_pos if label_pos is not None else 0.0) + 1.0) / 2.0
+        t = min(1.0, max(0.0, t))
+        target = t * total
     run = 0.0
     for (a, b), ln in zip(zip(pts, pts[1:]), seg_len):
         if run + ln >= target or ln == 0:
@@ -3768,6 +4077,30 @@ def check_marker_on_edge(
 _MARKER_SLIDE_LIMIT = 0.8
 
 
+def _default_label_pos(poly: Sequence[Point], label_pos: Optional[float]) -> float:
+    """Return the effective signed ``label_pos`` an unpinned marker renders at.
+
+    Mirrors :func:`marker_anchor`'s ITEM C near-source rule in the ``label_pos``
+    domain: an explicitly pinned marker keeps its value; an unpinned marker on a
+    long route (> :data:`LONG_EDGE_MARKER_LEN`) resolves to the signed fraction
+    whose arc-length is the near-source offset (so the de-collision passes start
+    from the SAME near-source anchor the renderer draws); an unpinned marker on a
+    short route resolves to ``0.0`` (the midpoint). Used to seed and to diff
+    :func:`resolve_marker_collisions` so a long unpinned edge is not spuriously
+    reported as "moved" when it only sits at its own near-source default."""
+    if label_pos is not None:
+        return float(label_pos)
+    pts = [tuple(p) for p in poly]
+    if len(pts) < 2:
+        return 0.0
+    total = sum(abs(b[0] - a[0]) + abs(b[1] - a[1]) for a, b in zip(pts, pts[1:]))
+    if total <= 0 or total <= LONG_EDGE_MARKER_LEN:
+        return 0.0
+    target = min(0.5 * total, LONG_EDGE_MARKER_OFFSET)
+    # signed position: t in [0,1] along the route maps to label_pos = 2*t - 1
+    return round(2.0 * (target / total) - 1.0, 6)
+
+
 def resolve_marker_collisions(
     geo: DiagramGeometry,
     min_sep: float = MARKER_MIN_SEP,
@@ -3797,11 +4130,26 @@ def resolve_marker_collisions(
     markers = _marker_edges(geo)
     if not markers:
         return {}
-    pos: Dict[str, float] = {
-        e.id: (e.label_pos if e.label_pos is not None else 0.0) for e in markers
-    }
     by_id = {e.id: e for e in markers}
     contacts = {e.id: _edge_contacts(geo, e) for e in markers}
+
+    def _poly_of(e: EdgeGeom) -> Optional[List[Point]]:
+        c = contacts[e.id]
+        if c is None:
+            return None
+        return [c[0]] + [tuple(p) for p in e.points] + [c[1]]
+
+    # ITEM C: an unpinned LONG edge seeds from its near-source default anchor, so
+    # the de-collision passes (2 and 3) start from the SAME point the renderer
+    # draws, not the midpoint. A pinned or short edge seeds from its own value.
+    def _seed(e: EdgeGeom) -> float:
+        poly = _poly_of(e)
+        if poly is None:
+            return e.label_pos if e.label_pos is not None else 0.0
+        return _default_label_pos(poly, e.label_pos)
+
+    pos: Dict[str, float] = {e.id: _seed(e) for e in markers}
+    base: Dict[str, float] = dict(pos)
 
     def anchor_of(eid: str) -> Optional[Point]:
         c = contacts[eid]
@@ -3948,8 +4296,8 @@ def resolve_marker_collisions(
 
     return {
         eid: round(pos[eid], 4)
-        for eid, e in by_id.items()
-        if abs(pos[eid] - (e.label_pos if e.label_pos is not None else 0.0)) > 1e-9
+        for eid in by_id
+        if abs(pos[eid] - base[eid]) > 1e-9
     }
 
 
@@ -4214,6 +4562,153 @@ def edge_crossing_stats(
     n_edges = sum(1 for e in geo.edges if len(edge_polyline(geo, e)) >= 2)
     pairs = [tuple(sorted(pair)) for pair in cost.crossing_pairs]
     return cost.crossings, n_edges, pairs  # type: ignore[return-value]
+
+
+def cross_band_edge_ids(geo: DiagramGeometry) -> frozenset:
+    """The ids of edges that span two DISJOINT top-level container clusters
+    (G34, 1.11.0). See :func:`cross_band_edge_count` for the full rationale; this
+    returns the id SET so a caller can tell which crossing pairs involve a
+    cross-band leg."""
+    conts = geo.containers
+    if not conts:
+        return frozenset()
+
+    def _inside(a: Box, b: Box) -> bool:
+        return (b.x <= a.x and a.x + a.w <= b.x + b.w
+                and b.y <= a.y and a.y + a.h <= b.y + b.h)
+
+    top_ids = []
+    for cid, c in conts.items():
+        enclosed = any(
+            oid != cid and _inside(c, o) and (o.w * o.h) > (c.w * c.h)
+            for oid, o in conts.items()
+        )
+        if not enclosed:
+            top_ids.append(cid)
+
+    def _cluster(node_id: str) -> Optional[str]:
+        # The top-level container (smallest by area, when nested boxes overlap)
+        # whose box contains the node centre, or None when the node is in no
+        # top-level container (a bare external actor). A bare node is NOT a
+        # band, so it never makes an edge "cross-band" — the relief is for edges
+        # that span two distinct CONTAINER bands, not every edge to a loose
+        # external icon.
+        box = geo.nodes.get(node_id)
+        if box is None:
+            return None
+        cx, cy = box.x + box.w / 2.0, box.y + box.h / 2.0
+        best = None
+        best_area = None
+        for cid in top_ids:
+            c = conts[cid]
+            if c.x <= cx <= c.x + c.w and c.y <= cy <= c.y + c.h:
+                area = c.w * c.h
+                if best_area is None or area < best_area:
+                    best, best_area = cid, area
+        return best
+
+    # At least TWO distinct top-level container bands must exist for an edge to
+    # be cross-band; a diagram with a single account box (the collapsed-routing
+    # quick landscape: one boundary, every other node a bare actor) has no
+    # second band, so every edge is intra-cluster and the count is 0 — the hard
+    # cap bites unchanged on a genuinely collapsed diagram.
+    if len(top_ids) < 2:
+        return frozenset()
+
+    out = set()
+    for e in geo.edges:
+        if len(edge_polyline(geo, e)) < 2:
+            continue
+        cs, ct = _cluster(e.source), _cluster(e.target)
+        # Cross-band ONLY when BOTH endpoints sit in a (different) top-level
+        # container band. An endpoint in no container (a loose external actor)
+        # never qualifies.
+        if cs is not None and ct is not None and cs != ct:
+            out.add(e.id)
+    return frozenset(out)
+
+
+def cross_band_crossing_count(geo: DiagramGeometry) -> int:
+    """Count crossing PAIRS in which at least one edge is cross-band (G34).
+
+    These are the crossings the dense-external as-built unavoidably incurs when
+    the account reaches several disjoint external sibling bands: a cross-band leg
+    traversing the gap to a band crosses both other cross-band legs AND the
+    internal account edges it passes. Excusing exactly these pairs (and no
+    internal-only pair) gives the landscape hard cap headroom that scales with a
+    diagram's genuine external-integration complexity, while an
+    internally-collapsed routing — whose crossings are internal-only — still
+    trips the cap. Zero for any diagram without external sibling bands (no
+    cross-band edge exists), so goldens and HA landscapes are unaffected."""
+    cb = cross_band_edge_ids(geo)
+    if not cb:
+        return 0
+    _, _, pairs = edge_crossing_stats(geo)
+    return sum(1 for a, b in pairs if a in cb or b in cb)
+
+
+def cross_band_edge_count(geo: DiagramGeometry) -> int:
+    """Count edges that span between two DISJOINT top-level container clusters
+    (G34, 1.11.0, FEAT-002).
+
+    This is the structural signature of a **cross-band / external-integration**
+    edge: one endpoint lives in the main nested account cluster and the other in
+    a disjoint external sibling band (``peer_account`` / ``external_cloud`` box
+    drawn beside the account), so the edge MUST traverse the gap between them.
+    Such edges unavoidably cross one another on a dense as-built with many
+    external integrations — that crossing field is not a "collapsed routing", it
+    is the honest cost of showing every integration on one wall. It is used only
+    to grant the landscape hard-cap (``edge-crossing-excess``) extra headroom
+    proportional to a diagram's genuine external-integration count; it never
+    affects a diagram with no external sibling bands (every endpoint then shares
+    the one account cluster, so the count is 0 and the cap is unchanged).
+
+    A node's *cluster* is the TOP-LEVEL container (one nested in no other
+    container) whose box geometrically contains it; a node in no top-level
+    container is its own singleton cluster (keyed by its id). An edge is
+    cross-band when its two endpoints resolve to different clusters. Deterministic
+    and purely geometric, so the linter and any caller agree by construction.
+    """
+    conts = geo.containers
+    if not conts:
+        return 0
+    # Top-level containers: those not strictly inside another container.
+    def _inside(a: Box, b: Box) -> bool:
+        return (b.x <= a.x and a.x + a.w <= b.x + b.w
+                and b.y <= a.y and a.y + a.h <= b.y + b.h)
+
+    top_ids = []
+    for cid, c in conts.items():
+        enclosed = any(
+            oid != cid and _inside(c, o) and (o.w * o.h) > (c.w * c.h)
+            for oid, o in conts.items()
+        )
+        if not enclosed:
+            top_ids.append(cid)
+
+    def _cluster(node_id: str) -> str:
+        box = geo.nodes.get(node_id)
+        if box is None:
+            return f"__node__{node_id}"
+        cx, cy = box.x + box.w / 2.0, box.y + box.h / 2.0
+        # Smallest top-level container whose box contains the node centre.
+        best = None
+        best_area = None
+        for cid in top_ids:
+            c = conts[cid]
+            if c.x <= cx <= c.x + c.w and c.y <= cy <= c.y + c.h:
+                area = c.w * c.h
+                if best_area is None or area < best_area:
+                    best, best_area = cid, area
+        return best if best is not None else f"__node__{node_id}"
+
+    n = 0
+    for e in geo.edges:
+        if len(edge_polyline(geo, e)) < 2:
+            continue
+        if _cluster(e.source) != _cluster(e.target):
+            n += 1
+    return n
 
 
 def check_detour_hook(

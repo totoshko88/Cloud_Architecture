@@ -211,7 +211,7 @@ def _skin_renderers(primary: str, nodes, style: str = "icon") -> Dict[str, Any]:
 
 
 def _container_style(kind: str, provider: str) -> str:
-    """Resolve the draw.io style for a container ``kind`` (account/vpc/az).
+    """Resolve the draw.io style for a container ``kind`` (account/vpc/az/subnet).
 
     The structural kinds map onto the profile's container conventions:
     an ``account`` boundary is the profile's ``boundary`` container style; a
@@ -233,6 +233,12 @@ def _container_style(kind: str, provider: str) -> str:
         preferred = ("availability_domain", "network_boundary")
     elif kind == "region":
         preferred = ("region", "network_boundary")
+    elif kind in ("subnet", "public_subnet"):
+        # G40 (1.12.0): the AWS subnet-tier leaf kind. A profile that declares a
+        # ``subnet`` / ``public_subnet`` container style (aws does) uses it; any
+        # other profile falls back to the generic network boundary, so the kind
+        # is default-inert for providers that do not model subnets.
+        preferred = (kind, "network_boundary")
     elif kind in ("peer_account", "external_cloud"):
         # Theme 20: a disjoint sibling peer boundary reads like an account-level
         # boundary (not a VPC). Prefer a profile-declared peer style if present,
@@ -271,6 +277,14 @@ def _nodes_from(placed: PlacedDiagram, renderers: Dict[str, Any]) -> List[Node]:
     role_of = {n.id: n.role for n in placed.spec.nodes}
     provider_of = {n.id: getattr(n, "provider", None) for n in placed.spec.nodes}
     overlay_of = {n.id: getattr(n, "overlay", None) for n in placed.spec.nodes}
+    # 1.11.0 ITEM A: carry an explicit per-node scope override (NodeSpec.scope)
+    # onto the render Node so it is emitted as a ``scope=`` token the
+    # ``scope-placement`` lint reads. Unset -> None -> no token (byte-inert).
+    scope_of = {n.id: getattr(n, "scope", None) for n in placed.spec.nodes}
+    # 1.11.0 ITEM B: carry the external placement flag (NodeSpec.external) onto
+    # the render Node so it is emitted as an ``external=1`` token the
+    # ``scope-placement`` lint reads. Unset -> False -> no token (byte-inert).
+    external_of = {n.id: bool(getattr(n, "external", False)) for n in placed.spec.nodes}
     label_of = {n.id: _label_of(n) for n in placed.spec.nodes}
     return [
         Node(
@@ -280,6 +294,8 @@ def _nodes_from(placed: PlacedDiagram, renderers: Dict[str, Any]) -> List[Node]:
             y=int(placed.nodes[n.id].y),
             render=renderers[_renderer_key(role_of[n.id], provider_of[n.id])],
             overlay=overlay_of[n.id],
+            scope=scope_of[n.id],
+            external=external_of[n.id],
         )
         for n in placed.spec.nodes
         if n.id in placed.nodes

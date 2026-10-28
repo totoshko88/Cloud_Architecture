@@ -119,6 +119,10 @@ ROLE_SCOPE: Dict[str, str] = {
     "transit_gateway": "network", "vpn_gateway": "network",
     "direct_connect": "network", "route_table": "network",
     "network_firewall": "network",
+    # 1.11.0 ITEM B (F7): egress-only IGW sits at the VPC edge. New, unused
+    # this wave (the AZ/subnet CORE is deferred, REVIEW.md G40) — added for
+    # completeness and default-inertness.
+    "egress_only_igw": "network",
     # 1.11.0 WS7 access diagram type — identity/IAM is account-wide, not pinned
     # to a region or network, so principal/policy/resource are global-scoped.
     # Extended roles only (constants.RESOURCE_TYPES stays the 16-value core).
@@ -137,6 +141,30 @@ ROLE_SCOPE: Dict[str, str] = {
 def role_scope(role: str) -> Optional[str]:
     """Return ``network`` / ``regional`` / ``global`` for ``role`` (else None)."""
     return ROLE_SCOPE.get(role)
+#: 1.13.0 E-EDGE (VPC-edge service scope). The VPC-edge devices — internet,
+#: NAT, VPN and transit gateways and the egress-only IGW — attach to the VPC and
+#: route traffic across its boundary, so they belong at the VPC level, OUTSIDE
+#: any subnet. They stay ``"network"`` scoped in :data:`ROLE_SCOPE` (so they are
+#: NOT flagged for sitting outside a subnet, which would be wrong); this set and
+#: the :func:`is_vpc_edge` predicate add the finer *placement* constraint "a
+#: VPC-edge device must not be drawn inside a subnet" without introducing a new
+#: scope tier. Additive and default-inert: nothing reads the predicate unless a
+#: caller opts in (the ``scope-placement`` lint passes it explicitly).
+VPC_EDGE_ROLES: frozenset = frozenset({
+    "internet_gateway",
+    "nat_gateway",
+    "vpn_gateway",
+    "transit_gateway",
+    "egress_only_igw",
+})
+def is_vpc_edge(role: str) -> bool:
+    """Return True when ``role`` is a VPC-edge device (see :data:`VPC_EDGE_ROLES`).
+
+    A VPC-edge device (IGW / NAT / VPN / Transit gateway / egress-only IGW)
+    attaches to the VPC and sits at its edge, outside every subnet. The scope
+    (``"network"``) is unchanged — this predicate only identifies the subset that
+    the ``edge-service-in-subnet`` placement rule guards (E-EDGE)."""
+    return role in VPC_EDGE_ROLES
 
 
 def effective_scope(node) -> Optional[str]:
@@ -259,12 +287,27 @@ def _validate_spec(spec: DiagramSpec) -> None:
                 )
             # Scope is enforced once the spec models the region level: only then
             # does a regional service have a legal home (the region container,
-            # outside the network). A spec without region containers (every
-            # synthetic layout spec) keeps its pre-1.10.3 behaviour.
+            # outside the network). Two models express that region level:
+            #   * the classic region-kind container (a regional node then belongs
+            #     in the region container, outside the VPC); and
+            #   * the G40 locked AZ/subnet model, which has NO region-kind
+            #     container but nests account ⊃ vpc ⊃ az ⊃ subnet — there a
+            #     regional/global node declared directly in a ``subnet`` /
+            #     ``public_subnet`` tier is the violation (G40 step 4).
+            # A spec that models neither (only vpc/az, no region-kind container
+            # and no subnet membership — every pre-G40 synthetic layout spec)
+            # keeps its pre-1.10.3 behaviour and is NOT flagged here; the
+            # geometry ``scope-placement`` lint rule still judges it post-layout.
             if (
-                target.kind in ("vpc", "az")
+                target.kind in ("vpc", "az", "subnet", "public_subnet")
                 and effective_scope(node) in ("regional", "global")
-                and any(c.kind == "region" and c.region == node.region for c in spec.containers)
+                and (
+                    target.kind in ("subnet", "public_subnet")
+                    or any(
+                        c.kind == "region" and c.region == node.region
+                        for c in spec.containers
+                    )
+                )
             ):
                 raise SpecError(
                     f"node {node.id!r} (role {node.role!r}, scope "
@@ -541,6 +584,17 @@ def _secondary_axis(axis: str) -> str:
     )
 
 
+#: The container kinds whose member nodes are placed by the **band** machinery
+#: (``_node_az_band`` / ``_band_within`` / ``_band_packing``) rather than the
+#: absolute lane grid. ``az`` and ``vpc`` are the pre-G40 members; ``subnet`` /
+#: ``public_subnet`` (G40, 1.12.0) are the new banded leaf kind — the four AWS
+#: subnet tiers inside one AZ stack North-South by the same band mechanism.
+#: Additive and default-inert: no shipped spec declares a ``subnet`` /
+#: ``public_subnet`` container, so the two new members never change the band
+#: grouping of any golden (the ``{"az","vpc"}`` membership is preserved exactly).
+BANDED_KINDS: frozenset = frozenset({"az", "vpc", "subnet", "public_subnet"})
+
+
 def _az_ordinals(spec: DiagramSpec) -> Dict[str, int]:
     """Map each ``az`` container id → its 0-indexed ordinal within its parent VPC.
 
@@ -554,6 +608,27 @@ def _az_ordinals(spec: DiagramSpec) -> Dict[str, int]:
     seen: Dict[Optional[str], int] = {}
     for c in spec.containers:
         if c.kind != "az":
+            continue
+        ordinal[c.id] = seen.get(c.parent, 0)
+        seen[c.parent] = ordinal[c.id] + 1
+    return ordinal
+
+
+def _subnet_ordinals(spec: DiagramSpec) -> Dict[str, int]:
+    """Map each ``subnet`` / ``public_subnet`` container id → its 0-indexed
+    ordinal within its parent AZ (G40, 1.12.0).
+
+    The mirror of :func:`_az_ordinals`, keyed on the subnet-within-az ``parent``:
+    the subnets of one AZ are ordered by their **declaration order**, which gives
+    the North-South tier band (the AWS-reference order public→0, private-app→1,
+    private-batch→2, isolated-db→3). A build script MUST therefore declare the
+    four subnets per AZ in that canonical order so the tier bands read top→bottom
+    correctly; declaring them in another order silently re-orders the bands. Pure
+    and deterministic (Req 11.1)."""
+    ordinal: Dict[str, int] = {}
+    seen: Dict[Optional[str], int] = {}
+    for c in spec.containers:
+        if c.kind not in ("subnet", "public_subnet"):
             continue
         ordinal[c.id] = seen.get(c.parent, 0)
         seen[c.parent] = ordinal[c.id] + 1
@@ -584,6 +659,11 @@ def _node_az_band(spec: DiagramSpec) -> Dict[str, int]:
     Bands stack a region's content down the primary axis (North–South: top→bottom)
     so distinct tiers never intermix on the same rows:
 
+    * A **subnet-member node** (declared ``container`` is a ``subnet`` /
+      ``public_subnet`` box, G40) takes that subnet's 0-indexed tier ordinal
+      within its AZ (:func:`_subnet_ordinals`): public→0, private-app→1,
+      private-batch→2, isolated-db→3, so the four tiers stack North-South. One AZ
+      per region means the AZ band itself is 0, so the subnet ordinal IS the band.
     * A **VPC-direct service-row node** (declared ``container`` is the region VPC)
       takes band ``0`` — the top region tier, between the VPC border and the AZs
       (Req 12.3).
@@ -598,13 +678,24 @@ def _node_az_band(spec: DiagramSpec) -> Dict[str, int]:
       band 0 and gets no primary-axis offset, so its placement is unchanged.
     """
     az_ord = _az_ordinals(spec)
+    sub_ord = _subnet_ordinals(spec)                    # G40, 1.12.0
     kind_of = {c.id: c.kind for c in spec.containers}
     parent_of = {c.id: c.parent for c in spec.containers}
     svc_vpcs = _vpcs_with_service_row(spec)
     band: Dict[str, int] = {}
     for node in spec.nodes:
         cid = node.container
-        if cid is not None and kind_of.get(cid) == "az":
+        k = kind_of.get(cid)
+        if k in ("subnet", "public_subnet"):
+            # G40: a subnet-member node takes its subnet's tier ordinal as its
+            # band (one az per region → the az band collapses to 0, so the
+            # subnet ordinal IS the North-South tier band 0..3). Gated on a kind
+            # no shipped spec declares, so the HA goldens never enter this branch.
+            band[node.id] = sub_ord.get(cid, 0)
+        elif k == "az":
+            # The HIGH R2-1 service-row offset: when the VPC carries a direct
+            # service row, the AZ bands descend below it (band 0 reserved). Kept
+            # so a VPC-edge band does not collide with public_subnet at band 0.
             offset = 1 if parent_of.get(cid) in svc_vpcs else 0
             band[node.id] = az_ord.get(cid, 0) + offset
         else:
@@ -631,7 +722,7 @@ def _band_within(spec: DiagramSpec) -> Dict[str, Tuple[int, int]]:
     """
     band_of = _node_az_band(spec)
     kind_of = {c.id: c.kind for c in spec.containers}
-    banded_kinds = {"az", "vpc"}
+    banded_kinds = BANDED_KINDS
     # Group banded nodes by (band, region, sub); within each group, rank by
     # (lane, slot) to assign the column. Region is part of the key so A and B
     # rank independently (identical structure → identical ranks → symmetric).
@@ -801,10 +892,11 @@ def _band_packing(spec: DiagramSpec) -> Tuple[Dict[int, int], Dict[int, int]]:
     and the zero start adds no offset)."""
     band_of = _node_az_band(spec)
     kind_of = {c.id: c.kind for c in spec.containers}
-    banded_kinds = {"az", "vpc"}
+    banded_kinds = BANDED_KINDS
     lanes_by_band: Dict[int, list] = {}
     # Whether a band's content is wrapped by its own container box. AZ nodes sit
-    # inside an ``az`` box (top+bottom padding of their own); a VPC-direct
+    # inside an ``az`` box, and (G40) subnet-member nodes inside a ``subnet`` /
+    # ``public_subnet`` box (top+bottom padding of their own); a VPC-direct
     # service-row band has NO box of its own (it lives loose in the VPC above the
     # AZ boxes), so it contributes no box padding to an inter-band gap.
     band_has_box: Dict[int, bool] = {}
@@ -817,7 +909,12 @@ def _band_packing(spec: DiagramSpec) -> Tuple[Dict[int, int], Dict[int, int]]:
         if n.container is not None and kind_of.get(n.container) in banded_kinds:
             b = band_of[n.id]
             lanes_by_band.setdefault(b, []).append(LANE_INDEX[n.lane])
-            band_has_box[b] = band_has_box.get(b, False) or kind_of.get(n.container) == "az"
+            # G40: a subnet / public_subnet band is boxed too (its own leaf
+            # container), so four stacked subnet bands sit 3*CONTAINER_PAD apart
+            # — identical inter-box geometry to the two stacked az bands.
+            band_has_box[b] = band_has_box.get(b, False) or kind_of.get(n.container) in (
+                "az", "subnet", "public_subnet"
+            )
             sub_rows_by_band[b] = max(sub_rows_by_band.get(b, 0), n.sub)
 
     band_min_lane: Dict[int, int] = {}
@@ -1129,7 +1226,7 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
     band_start, _band_min_lane = _band_packing(spec)
     band_within = _band_within(spec)
     kind_of = {c.id: c.kind for c in spec.containers}
-    banded_kinds = {"az", "vpc"}
+    banded_kinds = BANDED_KINDS
     # The primary axis (the one lanes/tiers step along) is y (ROW_STEP) for a
     # North–South diagram and x (COL_STEP) for a left→right diagram.
     primary_step = row_step() if spec.axis == "north-south" else col_step()
@@ -1196,9 +1293,22 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
     #     placed neighbour at all (an isolated queue → worker → secrets chain)
     #     still stacks below everything, one ROW_STEP apart, as straight drops.
     # When one of the two columns is empty the other takes the inner position.
+    #
+    # 1.13.0 (regional-band): a region-direct node carrying ``band="south"`` /
+    # ``band="account-south"`` opts OUT of the columnar ``_REGIONAL_COLS`` logic
+    # — it is laid out as a horizontal row below the VPC (south) or below the
+    # Region inside the Account (account-south) by ``_place_south_band`` below.
+    # Excluding it here keeps the default columnar placement byte-identical for
+    # every spec that sets no ``band``.
+    _band_nodes = {
+        n.id: n.band for n in spec.nodes
+        if getattr(n, "band", None) in ("south", "account-south", "north")
+        and n.container is not None and kind_of.get(n.container) == "region"
+    }
     region_direct = {
         n.id for n in spec.nodes
         if n.container is not None and kind_of.get(n.container) == "region"
+        and n.id not in _band_nodes
     }
     regional_col_x: Dict[str, int] = {}
     regional_y: Dict[str, int] = {}
@@ -1416,6 +1526,102 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
                         else:
                             regional_abs_x[m.id] = abs_x
 
+    # 1.13.0 (regional-band): lay the opt-in south band(s) as HORIZONTAL rows.
+    # ``band="south"`` nodes sit below the VPC's banded content and inside the
+    # Region; ``band="account-south"`` nodes sit one row further down, below the
+    # whole Region block (used for a CI/CD strip inside the Account). Members are
+    # ordered left→right by (band_row, slot, id) and wrap to a new row when the
+    # running width would exceed the band width budget; a declared band group
+    # (``spec.band_groups``) keeps its members CONTIGUOUS (laid out as a block,
+    # never split across the wrap). Pure, deterministic function of the spec.
+    band_xy: Dict[str, Tuple[int, int]] = {}
+    if _band_nodes and spec.axis == "north-south":
+        # The banded (VPC/AZ/subnet) content top and bottom, and the
+        # regional-column content bottom, in model coordinates relative to
+        # base_y.
+        banded_bottom = base_y
+        banded_top = None
+        for n in spec.nodes:
+            if n.id in band_within and n.container is not None and n.id not in _band_nodes:
+                yb = base_y + band_start[az_band[n.id]] + band_within[n.id][1] * row_step()
+                banded_bottom = max(banded_bottom, yb + ICON_SIZE + LABEL_BAND)
+                banded_top = yb if banded_top is None else min(banded_top, yb)
+        if banded_top is None:
+            banded_top = base_y
+        region_bottom = banded_bottom
+        for nid, yv in regional_y.items():
+            region_bottom = max(region_bottom, yv + ICON_SIZE + LABEL_BAND)
+        # The widest banded column drives the band's left→right width budget so
+        # the band wraps at roughly the VPC width (it never runs narrower than a
+        # four-column row, so a short CI/CD strip stays on one row).
+        max_band_col = max(
+            (band_within[n.id][0] for n in spec.nodes
+             if n.id in band_within and n.id not in _band_nodes),
+            default=3,
+        )
+        # Width budget = VPC banded columns wide, at least 4 columns, so a band
+        # of up to that many icons fits one row.
+        width_cols = max(max_band_col + 1, 4)
+        # Group membership: a node in a declared band_group is laid as a
+        # contiguous block, ordered by the group's declaration index.
+        group_of: Dict[str, int] = {}
+        for gi, (_cap, members_ids) in enumerate(getattr(spec, "band_groups", ()) or ()):
+            for mid in members_ids:
+                group_of[mid] = gi
+        south_ids = [n.id for n in spec.nodes if _band_nodes.get(n.id) == "south"]
+        acct_ids = [n.id for n in spec.nodes if _band_nodes.get(n.id) == "account-south"]
+        north_ids = [n.id for n in spec.nodes if _band_nodes.get(n.id) == "north"]
+        slot_of = {n.id: (n.band_row, n.slot, n.id) for n in spec.nodes}
+
+        def _lay_band(ids: List[str], y0: int) -> int:
+            """Lay ``ids`` left→right from ``y0``, wrapping at ``width_cols``;
+            grouped members stay contiguous (sorted by group index). Returns the
+            bottom y used."""
+            def _order_key(nid: str):
+                # Grouped nodes sort ahead by group index; ungrouped follow by
+                # their own (band_row, slot, id). Within either, slot order wins.
+                gi = group_of.get(nid, 10_000 + slot_of[nid][1])
+                return (gi, slot_of[nid])
+            ordered = sorted(ids, key=_order_key)
+            col = 0
+            row = 0
+            bottom = y0
+            for nid in ordered:
+                if col >= width_cols:
+                    row += 1
+                    col = 0
+                x = base_x + col * col_step()
+                y = y0 + row * (row_step() + LABEL_BAND)
+                band_xy[nid] = (x, y)
+                bottom = max(bottom, y + ICON_SIZE + LABEL_BAND)
+                col += 1
+            return bottom
+
+        def _lay_band_up(ids: List[str], y_bottom: int) -> None:
+            """Lay ``ids`` as horizontal rows ABOVE ``y_bottom`` (band_row 0 just
+            above it, higher band_row further up), left→right by slot within each
+            declared band_row. Rows are the author's ``band_row`` groups so a
+            two-tier entry (edge above entry) reads top→down."""
+            rows = sorted({slot_of[n][0] for n in ids})
+            # band_row -> screen row from the bottom up: the smallest band_row
+            # sits just above y_bottom; larger band_row rises further.
+            step = row_step() + LABEL_BAND
+            for ri, br in enumerate(rows):
+                row_ids = sorted((n for n in ids if slot_of[n][0] == br),
+                                 key=lambda nid: slot_of[nid][1])
+                y = y_bottom - (ri + 1) * step
+                for col, nid in enumerate(row_ids):
+                    band_xy[nid] = (base_x + col * col_step(), y)
+
+        south_bottom = region_bottom
+        if north_ids:
+            _lay_band_up(north_ids, banded_top - row_step())
+        if south_ids:
+            south_bottom = _lay_band(south_ids, banded_bottom + row_step())
+        if acct_ids:
+            start = max(south_bottom, region_bottom) + row_step()
+            _lay_band(acct_ids, start)
+
     # 1.10.6: a region of container-free nodes whose box reserves a caption lane
     # (``_top_lane_containers``) starts its rows one lane lower, so the box's top
     # border stays put and the lane opens inside it.
@@ -1451,7 +1657,10 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
     for node in spec.nodes:
         lane_i = LANE_INDEX[node.lane]
         banded = node.container is not None and kind_of.get(node.container) in banded_kinds
-        if node.id in regional_y:
+        if node.id in band_xy:
+            # 1.13.0 (regional-band): opt-in horizontal south band.
+            x, y = band_xy[node.id]
+        elif node.id in regional_y:
             col = regional_col_x.get(node.region, 0) + regional_col[node.id]
             x = regional_abs_x.get(node.id, base_x + col * col_step() + 2 * CONTAINER_PAD)
             y = regional_y[node.id]
@@ -1628,9 +1837,11 @@ def _leaf_region_containers(spec: DiagramSpec) -> Dict[str, list]:
     """Return, per region, the ordered list of its **deepest** containers.
 
     A node of region *r* is wrapped by the deepest container of region *r*. When
-    a region has ``az`` containers, those are the leaves (nodes partition across
-    them by tier band); otherwise the region's ``vpc`` is the leaf. Declaration
-    order is preserved so az bands map deterministically to tier bands.
+    a region has ``subnet`` / ``public_subnet`` containers (G40), those are the
+    leaves; else when it has ``az`` containers, those are the leaves (nodes
+    partition across them by tier band); otherwise the region's ``vpc`` is the
+    leaf. Declaration order is preserved so az/subnet bands map deterministically
+    to tier bands.
     """
     by_region_kind: Dict[Tuple[str, str], list] = {}
     for c in spec.containers:
@@ -1639,8 +1850,19 @@ def _leaf_region_containers(spec: DiagramSpec) -> Dict[str, list]:
     for c in spec.containers:
         if c.kind == "account":
             continue
+        # G40: the deepest level wins. When a region has subnet containers, those
+        # are its leaves (so _assign_nodes_to_leaves populates leaf_nodes[subnet]
+        # and size_containers wraps each subnet around its own member nodes);
+        # otherwise the az boxes; otherwise the vpc. The subnet branch only fires
+        # when a region declares subnet containers, which no shipped spec does, so
+        # az / vpc leaves stay byte-identical.
+        subs = (by_region_kind.get((c.region, "subnet")) or []) + (
+            by_region_kind.get((c.region, "public_subnet")) or []
+        )
         azs = by_region_kind.get((c.region, "az"))
-        if azs is not None:
+        if subs:
+            leaves[c.region] = list(subs)
+        elif azs is not None:
             leaves[c.region] = list(azs)
         elif c.kind == "vpc":
             leaves[c.region] = [c]
@@ -1687,9 +1909,22 @@ def _assign_nodes_to_leaves(
     assignment: Dict[str, list] = {c.id: [] for c in spec.containers}
 
     # 1. Declared membership is authoritative — assign those nodes directly.
+    #    EXCEPT an ``external=True`` node (1.11.0 ITEM B, correction R2-2): it is
+    #    forced OUTSIDE every cloud boundary, so any declared cloud ``container``
+    #    is IGNORED for placement and the node is wrapped by no container (it is
+    #    parented to the root layer, exactly like an actors / on-premises node).
+    #    1.13.0 (regional-band): a ``band="account-south"`` node declares the
+    #    region as its logical container but is laid out BELOW the Region box, so
+    #    for SIZING it is wrapped by the Account (not the Region) — otherwise the
+    #    Region box would grow down to enclose the CI/CD strip. ``band="south"``
+    #    stays inside its declared Region (wrapped by it, as declared).
     for n in spec.nodes:
-        if n.container is not None:
-            assignment[n.container].append(n.id)
+        if n.container is not None and not getattr(n, "external", False):
+            if (getattr(n, "band", None) == "account-south"
+                    and account_id is not None):
+                assignment[account_id].append(n.id)
+            else:
+                assignment[n.container].append(n.id)
 
     # 1b. Account-level (region "") cloud services are wrapped by the account
     #     envelope so it contains its own top edge row — except (i) the genuinely
@@ -1708,6 +1943,7 @@ def _assign_nodes_to_leaves(
                 n.region == ""
                 and n.container is None
                 and n.lane not in external_lanes
+                and not getattr(n, "external", False)
                 and role_of[n.id] != "vpc_peering"
             ):
                 assignment[account_id].append(n.id)
@@ -1717,7 +1953,9 @@ def _assign_nodes_to_leaves(
         members = [
             n.id
             for n in spec.nodes
-            if region_of[n.id] == region and declared_of[n.id] is None
+            if region_of[n.id] == region
+            and declared_of[n.id] is None
+            and not getattr(n, "external", False)
         ]
         if not members:
             continue
@@ -1774,8 +2012,15 @@ def _stack_peer_azs_in_vpc(boxes: Dict[str, Box], spec: DiagramSpec, axis: str) 
     its AZ children's secondary extents, so ``az-a1`` and ``az-a2`` end up with
     identical secondary low/size (and likewise ``az-b1`` / ``az-b2``). The
     subsequent :func:`_equalize_peer_widths` then reconciles region A vs region B
-    so all four AZ boxes share one width."""
+    so all four AZ boxes share one width.
+
+    **G40 ([r3-nit5]):** the shared range is taken per **region group** — a VPC's
+    az children are partitioned by ``region`` and only a same-region group of
+    ≥ 2 shares an x-range. The SEP model (one az per region) yields two groups of
+    one, both skipped, so the two AZs keep their East-West region spread; the HA
+    model (two az of one region) keeps its N-S stack."""
     kind_of = {c.id: c.kind for c in spec.containers}
+    region_of = {c.id: c.region for c in spec.containers}
     child_containers = _children_of(spec)
     for c in spec.containers:
         if c.kind != "vpc":
@@ -1784,13 +2029,22 @@ def _stack_peer_azs_in_vpc(boxes: Dict[str, Box], spec: DiagramSpec, axis: str) 
             ch.id for ch in child_containers.get(c.id, [])
             if kind_of.get(ch.id) == "az" and ch.id in boxes
         ]
-        if len(az_ids) < 2:
-            continue
-        lo = min(_extent(boxes[a], axis)[0] for a in az_ids)
-        hi = max(_extent(boxes[a], axis)[0] + _extent(boxes[a], axis)[1] for a in az_ids)
-        low, size = _snap(lo), _snap(hi - lo)
+        # G40 ([r3-nit5]): PARTITION a VPC's az children BY REGION and share a
+        # secondary range only within a same-region group of >= 2. SEP (one az
+        # per region) → two groups of 1 → both skipped → the East-West region
+        # spread is preserved. HA (two az of one region) → each region-group of 2
+        # still shares its x-range → the N-S stack is preserved byte-identically.
+        by_region: Dict[Optional[str], list] = {}
         for a in az_ids:
-            boxes[a] = _with_extent(boxes[a], axis, low, size)
+            by_region.setdefault(region_of.get(a), []).append(a)
+        for group in by_region.values():
+            if len(group) < 2:
+                continue
+            lo = min(_extent(boxes[a], axis)[0] for a in group)
+            hi = max(_extent(boxes[a], axis)[0] + _extent(boxes[a], axis)[1] for a in group)
+            low, size = _snap(lo), _snap(hi - lo)
+            for a in group:
+                boxes[a] = _with_extent(boxes[a], axis, low, size)
 
 
 def _equalize_peer_widths(boxes: Dict[str, Box], spec: DiagramSpec, axis: str) -> None:

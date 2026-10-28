@@ -374,13 +374,19 @@ def _drawio_with_vertex(width: float, x: float = 0.0) -> str:
 
 
 def test_compute_scale_never_below_one_for_small_canvas(tmp_path: Path) -> None:
-    """A canvas well inside the flow budget exports at the 1.5 cap (decision 1),
-    never below 1 and never inflated toward the budget."""
+    """A very small flow canvas (W <= FLOW_SMALL_WIDTH) exports at the raised
+    2.5 cap (1.11.0 E-04), never below 1 and never inflated toward the budget.
+
+    Before E-04 this width used the default 1.5 cap; the small-flow cap lifts a
+    tiny single-path diagram off a postage stamp while the budget fit term
+    (fit = (1600-16)/200 ~= 7.9 >> 2.5) still binds."""
     src = tmp_path / "01.drawio"
     _write(src, _drawio_with_vertex(width=200))
     scale, width = er.compute_scale(src, "flow")
     assert width == 200
-    assert scale == er.MAX_EXPORT_SCALE == 1.5
+    assert scale == er.FLOW_SMALL_MAX_SCALE == 2.5
+    # Still within the 1600px flow budget even at 2.5.
+    assert width * scale + 2 * int(er.EXPORT_BORDER) <= er.FLOW_MAX_WIDTH
 
 
 def test_compute_scale_stays_at_or_above_one_near_budget(tmp_path: Path) -> None:
@@ -582,14 +588,22 @@ def test_compute_scale_partitions_scale_up_and_split_signal(
         with pytest.raises(er.CanvasTooWideError):
             er.compute_scale(src, diagram_class)
         return
+    # 1.11.0 E-04: a very small FLOW canvas (W <= FLOW_SMALL_WIDTH) may upscale
+    # up to FLOW_SMALL_MAX_SCALE (2.5); a landscape or a wider flow keeps 1.5.
+    cap = (
+        er.FLOW_SMALL_MAX_SCALE
+        if (diagram_class != "landscape" and width <= er.FLOW_SMALL_WIDTH)
+        else er.MAX_EXPORT_SCALE
+    )
     scale, measured = er.compute_scale(src, diagram_class)
     assert measured == float(width)
-    assert scale == pytest.approx(min(er.MAX_EXPORT_SCALE, fit))
-    assert scale <= er.MAX_EXPORT_SCALE
+    assert scale == pytest.approx(min(cap, fit))
+    assert scale <= cap
     # Never downscales a canvas that fits its budget.
     if width + border <= max_width:
         assert scale >= 1.0
-    # The scaled canvas plus both borders always fits the class budget.
+    # The scaled canvas plus both borders always fits the class budget (the E-04
+    # cap never busts the budget — the fit term still binds).
     assert measured * scale + border <= max_width + 0.5
 
 

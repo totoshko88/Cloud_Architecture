@@ -195,6 +195,16 @@ RULE_EDGE_CROSSES_CONTAINER = "edge-crosses-container"
 RULE_EDGE_CROSSES_TITLE = "edge-crosses-title"
 RULE_EDGE_ON_CONTAINER_BORDER = "edge-on-container-border"
 RULE_GEOMETRIC_CONTAINMENT = "geometric-containment"
+# 1.11.0 ITEM A. The geometry companion to the layout() SpecError:
+#   scope-placement — a node drawn geometrically inside a boundary STRICTER than
+#                     its EFFECTIVE role scope allows, independent of the
+#                     declared container (a global/edge service inside a
+#                     region/VPC, a regional service inside a VPC, a VPC-scoped
+#                     service outside every VPC, or an external actor/system
+#                     inside the account). ERROR on a network diagram, WARNING
+#                     otherwise. Lint-only (NOT in rule_violations / the solver
+#                     oracle).
+RULE_SCOPE_PLACEMENT = "scope-placement"
 RULE_LEGEND_PLACEMENT = "legend-placement"
 RULE_FLOW_LEGEND = "flow-legend"
 RULE_NODE_CONNECTIVITY = "node-connectivity"
@@ -1545,6 +1555,42 @@ def _is_network_diagram(a: Artifact) -> bool:
     return dtype in _NETWORK_DIAGRAM_TYPES
 
 
+def _is_network_component_or_flow(a: Artifact) -> bool:
+    """True when ``a`` is a network, component, OR flow diagram (ITEM C,
+    audit E-08).
+
+    The class predicate the marker-overprint rules escalate on: a marker smeared
+    across an account / VPC frame or over a service name is a *correctness*
+    failure on the diagram kinds a reviewer reads a numbered flow off — a network
+    as-built, a C4 component view, or a flow — so ``marker-on-container-border``
+    and ``marker-label-collision`` are ERROR there and WARNING on a landscape
+    inventory / other classes.
+
+    ``component`` is deliberately NOT in :data:`_C4_DIAGRAM_TYPES` (those are the
+    neutral-box context/container views) nor in ``_is_network_diagram`` (R2
+    Finding 7), so it is recognised here by its own ``diagram_type`` token. A
+    ``flow`` is the default diagram class, so this reads the class directly.
+
+    A ``landscape`` inventory view is explicitly the WARNING side even though
+    ``_is_network_diagram`` counts a landscape as a network diagram (for the
+    ``ip-range`` scope): ITEM C wants a numbered-flow overprint to BLOCK only on
+    the diagrams a reviewer reads an ordered flow off — the ``flow`` class, a
+    ``component`` view, or a ``diagram_type``-declared network view — not on a
+    dense as-built where markers are optional. So the landscape class short-
+    circuits to False before the network test.
+
+    Attribute reads are defensive (``getattr``) so a minimal programmatic
+    diagram stand-in — which may carry only ``kind`` / ``geometry`` — still
+    resolves to the ``flow`` default rather than raising."""
+    dtype = (getattr(a, "diagram_type", None) or "").strip().lower()
+    dclass = (getattr(a, "diagram_class", None) or DIAGRAM_CLASS_FLOW).strip().lower()
+    if dclass == DIAGRAM_CLASS_LANDSCAPE:
+        return False
+    if dtype == "component" or dclass == DIAGRAM_CLASS_FLOW:
+        return True
+    return _is_network_diagram(a)
+
+
 def _network_lint_profile(a: Artifact) -> bool:
     """True when ``a``'s ``diagram_type`` resolves to a profile scoped on the
     ``network`` lint profile (1.11.0 WS6, Requirement 6 AC1).
@@ -1899,6 +1945,144 @@ def _check_geometric_containment(a: Artifact):
         return RuleHit(offenders=offenders, reason="node-inside-nonmember-boundary",
                        severity=Severity.ERROR)
     return RuleHit(offenders=offenders, reason="node-inside-nonmember-boundary")
+
+
+def _node_roles_by_icon(a: Artifact, providers: Sequence[str]) -> Dict[str, "frozenset[str]"]:
+    """Map each service vertex's cell id to the set of diagram roles its icon can
+    stand for, reverse-mapped through the committed ``icon-index.json`` (1.11.0
+    ITEM A).
+
+    Reuses the exact reverse-map ``reconcile.drawn_roles`` uses — an icon can be
+    shared by several roles (a GCP CDN and load-balancer both use the Networking
+    category icon), so a node contributes the *set* of roles its icon can stand
+    for. The icon references are the ones the CLI already extracted onto the
+    Artifact (``a.icon_refs``), keyed by ``IconRef.cell_id``; providers are the
+    diagram's title provider(s). Pure and offline (no page re-parse)."""
+    from rule_engine import reconcile
+
+    refs_by_cell: Dict[str, List[Any]] = {}
+    for ref in getattr(a, "icon_refs", None) or []:
+        refs_by_cell.setdefault(getattr(ref, "cell_id", ""), []).append(ref)
+
+    reverse_by_provider = {}
+    for provider in providers:
+        try:
+            reverse_by_provider[provider] = reconcile._reverse_role_index(provider)
+        except Exception:
+            continue
+
+    out: Dict[str, "frozenset[str]"] = {}
+    for cid, refs in refs_by_cell.items():
+        roles: set = set()
+        for ref in refs:
+            signature = reconcile._drawn_signature(ref)
+            if signature is None:
+                continue
+            for reverse in reverse_by_provider.values():
+                roles |= reverse.get(signature, frozenset())
+        if roles:
+            out[cid] = frozenset(roles)
+    return out
+
+
+def _check_scope_placement(a: Artifact):
+    """scope-placement: a node drawn geometrically inside a boundary STRICTER
+    than its EFFECTIVE role scope allows, independent of the declared container
+    (1.11.0 ITEM A).
+
+    The geometry companion to the ``layout()`` ``SpecError`` (which catches only
+    the DECLARED-container case): a global/edge service inside a region/VPC
+    (``global-in-region``), a regional service inside a VPC/network boundary
+    (``regional-in-vpc``), a VPC-scoped service outside every VPC
+    (``vpc-scoped-outside-vpc``), or an external actor/system inside the account
+    (``external-in-account``). A node's effective scope is its ``scope=`` style
+    token (``effective_scope``'s override, round-tripped by the builder) else its
+    role → ``ROLE_SCOPE`` (role recovered from the node's icon reference via the
+    committed ``icon-index.json`` reverse map); an unresolvable scope is NOT
+    judged, so the rule never invents a scope and is default-inert on the clean
+    corpus. ERROR on a network diagram; WARNING otherwise. Lint-only (NOT in the
+    solver oracle)."""
+    # A C4 container is a neutral box, not a provider boundary — there is no
+    # declared container style to classify, so there is nothing to judge.
+    if _is_c4_diagram(a):
+        return False
+    geo = _geometry_of(a)
+    if geo is None or not getattr(geo, "nodes", None):
+        return False
+    from rule_engine import geometry as _geo
+    from rule_engine import icon_resolver
+    from rule_engine.layout.base import is_vpc_edge as _is_vpc_edge_role, role_scope
+
+    providers = _container_style_providers(a)
+    mappings: Dict[str, Mapping[str, Any]] = {}
+    for provider in providers:
+        try:
+            mappings[provider] = icon_resolver.load_mapping(provider).get("containers") or {}
+        except icon_resolver.IconResolverError:
+            continue
+
+    node_styles = getattr(geo, "node_styles", {}) or {}
+    roles_by_cell = _node_roles_by_icon(a, providers)
+
+    def _style_token(nid: str, name: str) -> Optional[str]:
+        return _geo._style_token(node_styles.get(nid, ""), name)
+
+    def _explicit_scope(nid: str) -> Optional[str]:
+        tok = _style_token(nid, "scope")
+        return tok if tok in ("network", "regional", "global") else None
+
+    def scope_of(nid: str) -> Optional[str]:
+        # 1. explicit scope= override, faithfully round-tripped from NodeSpec.scope.
+        tok = _explicit_scope(nid)
+        if tok is not None:
+            return tok
+        # 2. role -> ROLE_SCOPE. The role is recovered from the icon reference;
+        #    an icon shared by roles that DISAGREE on scope (including a role with
+        #    no ROLE_SCOPE entry, e.g. the Azure Application Gateway icon that
+        #    reverse-maps to both app_gateway and waf) is ambiguous -> NOT judged,
+        #    so the rule never invents a scope.
+        roles = roles_by_cell.get(nid)
+        if roles:
+            scopes = {role_scope(r) for r in roles}
+            if len(scopes) == 1:
+                only = next(iter(scopes))
+                if only is not None:
+                    return only
+        # 3. unclassified -> not judged.
+        return None
+
+    def scope_is_explicit(nid: str) -> bool:
+        # The provider-DEPENDENT cases (regional-in-vpc, vpc-scoped-outside-vpc)
+        # fire ONLY when the node carries an explicit scope= override, because
+        # the provider-agnostic ROLE_SCOPE fallback cannot express per-provider
+        # nuance (Azure SQL regional; EFS correctly outside the VPC). The
+        # provider-INDEPENDENT cases (global-in-region, external-in-account) fire
+        # from the role fallback too — the owner's precision-over-noise rule.
+        return _explicit_scope(nid) is not None
+
+    def is_external(nid: str) -> bool:
+        return _style_token(nid, "external") == "1"
+
+    def is_vpc_edge(nid: str) -> bool:
+        # E-EDGE: a node is a VPC-edge device when ANY role its icon
+        # reverse-maps to is one (IGW / NAT / VPN / Transit gw / egress-only
+        # IGW). A cell with no resolvable role is not an edge device (not
+        # judged), so the new ``edge-service-in-subnet`` case is default-inert.
+        roles = roles_by_cell.get(nid) or set()
+        return any(_is_vpc_edge_role(r) for r in roles)
+
+    findings = _geo.check_scope_placement(
+        geo, scope_of, is_external, providers, mappings,
+        scope_is_explicit=scope_is_explicit,
+        is_vpc_edge=is_vpc_edge,
+    )
+    if not findings:
+        return False
+    offenders = _offender_ids(findings)
+    reason = "; ".join(r for _nid, r in findings)
+    if _is_network_diagram(a):
+        return RuleHit(offenders=offenders, reason=reason, severity=Severity.ERROR)
+    return RuleHit(offenders=offenders, reason=reason)
 
 
 def _check_edge_crosses_title(a: Artifact):
@@ -2387,9 +2571,29 @@ def _check_edge_crossing_excess(a: Artifact):
     # 1.10.7 hard cap: a LANDSCAPE whose crossings exceed half its routable
     # edges is an ERROR (``geometry.HARD_CROSSING_RATIO``) — its routing has
     # collapsed (the quick landscape: 28 crossings on 28 edges).
+    #
+    # G34 (1.11.0, FEAT-002): converging-external-datastore / dense-external
+    # headroom. A dense as-built that draws many genuine cross-band edges — the
+    # account reaching several disjoint external sibling bands, e.g. the SEP
+    # cross-cloud landscape where BOTH the Lambda app and the EC2 Syndicate
+    # Server reach the MongoDB Atlas band and the account fans out to DIAL /
+    # License / sandbox-org bands — unavoidably crosses those cross-band legs in
+    # the gap between the account and the bands, and crosses the internal edges
+    # each cross-band leg passes on its way out. That is the honest cost of
+    # showing every integration on one wall, NOT a collapsed routing, so the hard
+    # cap is given extra headroom equal to the number of crossing PAIRS that
+    # involve a cross-band edge (``geometry.cross_band_crossing_count``). The
+    # relief is CLASS-SCOPED by construction: a diagram with no external sibling
+    # bands has no cross-band edge, so the count is 0 and its cap is exactly
+    # ``0.5 * E`` as before — every shipped golden and HA landscape is
+    # unaffected. An internally-collapsed landscape, whose crossings are
+    # internal-only, gets no headroom and still trips the cap.
+    hard_cap = _geo.HARD_CROSSING_RATIO * n_edges
+    if (a.diagram_class or DIAGRAM_CLASS_FLOW).lower() == DIAGRAM_CLASS_LANDSCAPE:
+        hard_cap += _geo.cross_band_crossing_count(geo)
     if (
         (a.diagram_class or DIAGRAM_CLASS_FLOW).lower() == DIAGRAM_CLASS_LANDSCAPE
-        and crossings > _geo.HARD_CROSSING_RATIO * n_edges
+        and crossings > hard_cap
     ):
         return RuleHit(
             offenders=_offender_ids(pairs),
@@ -2453,13 +2657,18 @@ def _check_marker_label_collision(a: Artifact):
     if geo is None:
         return False
     from rule_engine import geometry as _geo
+    # ITEM C: ERROR on a network / component / flow diagram (where a numbered
+    # flow is read), WARNING on a landscape inventory / other classes.
+    sev = Severity.ERROR if _is_network_component_or_flow(a) else None
     hits: List[RuleHit] = []
     on_caption = _geo.check_marker_label_collision(geo)
     if on_caption:
-        hits.append(RuleHit(offenders=_offender_ids(on_caption), reason="marker-on-caption"))
+        hits.append(RuleHit(offenders=_offender_ids(on_caption), reason="marker-on-caption",
+                            severity=sev))
     on_icon = _geo.check_marker_icon_collision(geo)
     if on_icon:
-        hits.append(RuleHit(offenders=_offender_ids(on_icon), reason="marker-on-icon"))
+        hits.append(RuleHit(offenders=_offender_ids(on_icon), reason="marker-on-icon",
+                            severity=sev))
     if not hits:
         return False
     return hits[0] if len(hits) == 1 else hits
@@ -2479,7 +2688,10 @@ def _check_marker_on_container_border(a: Artifact):
     findings = _geo.check_marker_on_container_border(geo)
     if not findings:
         return False
-    return RuleHit(offenders=_offender_ids(findings), reason="marker-on-border")
+    # ITEM C: ERROR on a network / component / flow diagram, WARNING otherwise.
+    sev = Severity.ERROR if _is_network_component_or_flow(a) else None
+    return RuleHit(offenders=_offender_ids(findings), reason="marker-on-border",
+                   severity=sev)
 
 
 def _check_detour_hook(a: Artifact):
@@ -2660,6 +2872,15 @@ RULES: Tuple[Tuple[RuleSpec, Callable[[Artifact], _PredicateResult]], ...] = (
     (
         RuleSpec(RULE_GEOMETRIC_CONTAINMENT, Severity.WARNING, landscape=Severity.ERROR),
         _check_geometric_containment,
+    ),
+    # scope-placement (1.11.0 ITEM A): a node geometrically inside a boundary
+    # stricter than its effective role scope allows. WARNING by default; ERROR
+    # on landscape (via RuleSpec) and on a network diagram (escalated in the
+    # predicate, which also covers landscape). The geometry companion to the
+    # layout() SpecError. Lint-only (NOT in rule_violations / the solver oracle).
+    (
+        RuleSpec(RULE_SCOPE_PLACEMENT, Severity.WARNING, landscape=Severity.ERROR),
+        _check_scope_placement,
     ),
     # deterministic-engine 1.10.6: three advisory routing rules (both classes).
     (
@@ -3006,6 +3227,7 @@ __all__ = [
     "RULE_EDGE_CROSSES_CONTAINER",
     "RULE_EDGE_ON_CONTAINER_BORDER",
     "RULE_GEOMETRIC_CONTAINMENT",
+    "RULE_SCOPE_PLACEMENT",
     "RULE_EDGE_ESCAPES_CONTAINER",
     "RULE_EDGE_CROSSES_LEGEND",
     "RULE_EDGE_CROSSES_TITLE",

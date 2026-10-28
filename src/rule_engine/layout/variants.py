@@ -63,6 +63,7 @@ try:  # package-relative import when used as ``rule_engine.layout.variants``
     from .contacts import (
         select_contacts,
         _box_directly_below,
+        _box_mostly_below,
         _UPPER_QUARTER,
         _LOWER_QUARTER,
     )
@@ -72,6 +73,7 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
     from layout.contacts import (  # type: ignore[no-redef]
         select_contacts,
         _box_directly_below,
+        _box_mostly_below,
         _UPPER_QUARTER,
         _LOWER_QUARTER,
     )
@@ -420,8 +422,15 @@ def _spine_variants(edge: "EdgeSpec", placed: Dict[str, "Box"],
     variants: List[RouteVariant] = []
     rank = start_rank
 
-    directly_below = _box_directly_below(src, tgt, others)
-    if directly_below:
+    # SYS-A (1.11.0, G37): emit the straight-drop variant not only for a strictly
+    # directly-below target but also for a MOSTLY-below target with a clear
+    # column (:func:`_box_mostly_below`: below, within half a column step, no
+    # intervening icon — GUARD 1). The scored solver then weighs the shorter
+    # straight drop against the right-gap stair on crossings/turns/ink and keeps
+    # the drop when it reads cleaner (owner comments 03, 08a, 10, 09-12/16).
+    # ``_box_mostly_below`` subsumes ``_box_directly_below`` (same-column is
+    # within the band and clear), so one predicate gates the variant.
+    if _box_mostly_below(src, tgt, others):
         # The straight drop is a genuine sanctioned alternative only when the
         # column is clear; emit it as its own variant.
         variants.append(

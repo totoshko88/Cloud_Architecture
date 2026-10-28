@@ -7,7 +7,10 @@ crossed another. Four lint-only changes close those gaps:
 
 * ``container-dead-space`` judges an OUTER Boundary at 2.5 (inner stays 5.0);
 * ``edge-crosses-label`` sizes each unrelated caption from its text width;
-* ``marker-label-collision`` (new, WARNING) flags a marker on a caption;
+* ``marker-label-collision`` (new in 1.10.7, WARNING) flags a marker on a
+  caption — escalated to ERROR on a network / component / flow diagram by G43
+  (1.11.0/1.12.0 ITEM C), which is why ``test_summary_marker_on_caption``
+  asserts ERROR on the quick summary (a flow);
 * ``edge-crossing-excess`` is an ERROR on a landscape above 0.5 x E crossings.
 
 None of them changes :func:`geometry.rule_violations` (the layout engine's
@@ -90,7 +93,10 @@ def test_summary_wide_caption_crossings(summary):
 
 def test_summary_marker_on_caption(summary):
     f = _one(summary, "marker-label-collision")
-    assert f["severity"] == "WARNING"
+    # G43 (1.11.0/1.12.0, ITEM C): marker-label-collision is ERROR on a
+    # network / component / flow diagram (the quick summary is a flow); it stays
+    # WARNING only on a landscape inventory. See diagram-lint.md.
+    assert f["severity"] == "ERROR"
     assert f["reason"] == "marker-on-caption"
     assert f["offenders"] == ["e4", "alerts"]
 

@@ -535,3 +535,42 @@ roles:
   education:
     asset: "assets/vendor/education/mortarboard.svg"
     display_name: "Education (mortarboard)"
+
+  # --- External role classes (1.11.0 ITEM B, SEP audit E-02 / E-03 / F7) -----
+  # Neutral EXTERNAL node classes. These are drawn OUTSIDE every cloud boundary
+  # (a NodeSpec may also set external=True to force that regardless of a declared
+  # container). They resolve to AWS *General* resource glyphs — never a service
+  # icon, and specifically never the IAM Role shield (the E-02 defect).
+  #
+  # Only an aws: query is declared: these are AWS General-icon glyphs. On the
+  # other providers the role is unresolved in the committed icon-index (there is
+  # no neutral vendor equivalent), which is harmless — resolution of a drawn node
+  # reads <provider>-icons.yaml, and the SEP corpus is AWS. Icon Fidelity forbids
+  # substituting a look-alike where the real asset is absent.
+
+  # actor — an external HUMAN actor (General User glyph). Alias of the bundled
+  # `user` role; added so the common spec word `actor` resolves to a user glyph
+  # rather than falling back to the IAM Role shield (E-02).
+  actor:
+    aws: "User"
+  # users — a GROUP of external users (General Users glyph, plural).
+  users:
+    aws: "Users"
+  # saas — a third-party / SaaS system with NO curated brand mark (R2-3). A
+  # NEUTRAL General Client glyph: GitLab / Jenkins / Jira / Confluence / Slack
+  # and any other non-curated SaaS use THIS, never a claimed brand mark and
+  # never a random AWS service icon. Brand marks exist ONLY for the curated
+  # mongodb / redis / postgresql / keycloak roles.
+  saas:
+    aws: "Client"
+  # on_prem_app — a traditional on-premises application/server with no brand
+  # mark (R2-3). A NEUTRAL General Server glyph.
+  on_prem_app:
+    aws: "Server"
+  # egress_only_igw — IPv6 outbound-only VPC edge (F7). AWS ships NO dedicated
+  # egress-only IGW icon, so this resolves to the IGW-family glyph (closest
+  # official); the egress-only identity is carried in the node caption, never a
+  # look-alike of a different service. Unused this wave (the AZ/subnet CORE is
+  # deferred, REVIEW.md G40); added for completeness and default-inertness.
+  egress_only_igw:
+    aws: "VPC Internet Gateway"

@@ -160,6 +160,25 @@ base64 in a **temporary copy** before export, keeping the source lint-clean and
 the raster within the class-aware D7 budget enforced by `rule-engine-check-rasters`
 (`flow` ≤ 1600px wide / < 500KB, `landscape` ≤ 3600px / < 2MB; white background).
 
+Since **1.13.0** the default export is **height-aware**: it fits the canvas to
+`min(width_budget/W, height_budget/H)`, so a tall-but-narrow landscape auto-fits
+the height budget without a manual `--max-width` (which stays an explicit
+width-only override). The height term only ever reduces the scale and only when
+the canvas would otherwise overshoot its height budget, so a raster already
+within budget is byte-identical.
+
+### Regional band placement (1.13.0, opt-in)
+
+A region-direct managed service can opt out of the vertical right-hand
+regional column and instead be laid out as a **horizontal band**: set
+`NodeSpec.band="south"` to place it in one or more rows directly below the VPC
+and inside the Region (ordered left→right by `band_row` then `slot`, wrapping at
+the Region width), or `band="account-south"` to place a band (e.g. a CI/CD
+strip) below the Region inside the Account. `DiagramSpec.band_groups` draws a
+captioned boundary box around a band group, sized to show its full caption.
+Both are additive and default-inert: a spec that sets no `band` lays out exactly
+as before.
+
 ---
 
 ## 6. Algorithm: the inventory pipeline

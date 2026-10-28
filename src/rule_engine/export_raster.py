@@ -40,12 +40,16 @@ Export scale (1.10.12 decision 1)
 ---------------------------------
 The exporter parses the page, measures the natural canvas width ``W`` (the
 rendered extent of every vertex, captions included) and exports at
-``--scale = min(1.5, (max_width - 2*border) / W)`` with ``max_width`` the class
-budget (1600 flow / 3600 landscape). A canvas that fits its budget is never
-downscaled (the fit term is ≥ 1) and is upscaled by at most 1.5; a canvas over
-its budget is fitted down automatically, flow and landscape alike. Only when
-even the 0.5 legibility floor cannot fit (``fit < MIN_EXPORT_SCALE``) does the
-export **fail** with a "split the diagram" error and write no PNG.
+``--scale = min(cap, (max_width - 2*border) / W)`` with ``max_width`` the class
+budget (1600 flow / 3600 landscape) and ``cap`` the upscale ceiling — ``1.5`` by
+default, raised to ``2.5`` for a very small flow canvas (``W <=`` 1000px, 1.11.0
+E-04) so a tiny single-path diagram is not left a postage stamp. A canvas that
+fits its budget is never downscaled (the fit term is ≥ 1); a canvas over its
+budget is fitted down automatically, flow and landscape alike. The budget fit
+term always binds, so even at the raised cap a small flow stays within the
+1600px/500KB flow budget. Only when even the 0.5 legibility floor cannot fit
+(``fit < MIN_EXPORT_SCALE``) does the export **fail** with a "split the diagram"
+error and write no PNG.
 
 Hygiene (R8.5)
 --------------
@@ -93,12 +97,36 @@ _ASSET_IMAGE_RE = re.compile(r"image=(assets/vendor/[^;\"]+)")
 FLOW_MAX_WIDTH = 1600
 LANDSCAPE_MAX_WIDTH = 3600
 
+#: 1.13.0 (regional-band): class-aware HEIGHT budgets, mirroring the raster
+#: gate's height budget (``raster_gate.MAX_HEIGHT_PX`` /
+#: ``LANDSCAPE_MAX_HEIGHT_PX``). The default export now fits the canvas to the
+#: SMALLER of the width and height budget scales, so a tall-but-narrow landscape
+#: auto-fits the height budget without a manual ``--max-width`` (engine feedback
+#: IHTC revision d, item 3). ``--max-width`` remains an explicit override that
+#: only constrains the width.
+FLOW_MAX_HEIGHT = 1600
+LANDSCAPE_MAX_HEIGHT = 3600
+
 #: Upper export scale (1.10.12 decision 1). Before 1.10.12 every raster was
 #: upscaled toward a class TARGET width (1600 flow / 3400 landscape), so a
 #: 1360px landscape exported at ~2.5x and the PNG said nothing about how the
 #: canvas was used (defect C11). The scale is now ``min(1.5, fit)``: crisp on a
 #: HiDPI screen, never inflated to fill the budget.
 MAX_EXPORT_SCALE = 1.5
+
+#: 1.11.0 ITEM D (E-04): a VERY SMALL flow canvas gets a higher upscale cap so a
+#: tiny single-path diagram (a two/three-node context view) is not left a
+#: postage stamp. A flow whose natural width ``W`` is at or below
+#: :data:`FLOW_SMALL_WIDTH` may upscale up to :data:`FLOW_SMALL_MAX_SCALE`
+#: instead of the default :data:`MAX_EXPORT_SCALE`. This touches ONLY the scale
+#: ceiling in :func:`compute_scale`; the ``_canvas_width`` width model and the
+#: G35 ``_WRAPPED_TEXT_RENDER_OVERSHOOT`` correction are untouched, and the
+#: budget fit term ``(budget - 2*border) / W`` still binds, so a small flow
+#: never exceeds the 1600px / 500KB flow budget. Landscapes and any flow wider
+#: than :data:`FLOW_SMALL_WIDTH` keep the 1.5 cap, so every shipped golden whose
+#: canvas is wider than 1000px is byte-identical.
+FLOW_SMALL_WIDTH = 1000
+FLOW_SMALL_MAX_SCALE = 2.5
 
 EXPORT_BORDER = "8"
 EXPORT_THEME = "light"
@@ -325,6 +353,48 @@ def _canvas_width(source: Path) -> float:
     return max_right - min(0.0, min_left)
 
 
+def _canvas_height(source: Path) -> float:
+    """Return the natural canvas height ``H`` of ``source``: the bottommost
+    rendered extent minus the topmost (1.13.0, regional-band).
+
+    draw.io crops the export to the bounding box of everything it draws. Each
+    vertex contributes ``y .. y + h``; a bottom-positioned caption adds one
+    ``LABEL_BAND`` below the icon (the ``verticalLabelPosition=bottom`` case),
+    matching :func:`_canvas_width`'s caption-aware horizontal estimate. The
+    height fit in :func:`compute_scale` uses this so a tall-but-narrow landscape
+    is fitted DOWN to the height budget automatically, without a manual
+    ``--max-width``. A page with no vertices yields 0.0.
+    """
+    from rule_engine.drawio_model import DrawioParseError, absolute_origin, parse_drawio
+    from rule_engine.geometry import caption_lines, LABEL_BAND
+
+    try:
+        pages = parse_drawio(source.read_bytes(), path=str(source))
+    except DrawioParseError:
+        return 0.0
+    max_bottom = 0.0
+    min_top = 0.0
+    seen = False
+    for page in pages:
+        for cell in page.cells.values():
+            if not cell.vertex or cell.geom is None:
+                continue
+            _x, y = absolute_origin(page, cell.id)
+            h = cell.geom.h or 0.0
+            top, bottom = y, y + h
+            style = cell.style_map
+            longest = max((len(ln) for ln in caption_lines(cell.label)), default=0)
+            if longest and style.get("verticalLabelPosition") == "bottom":
+                # A bottom caption renders one label band below the icon box.
+                bottom = y + h + LABEL_BAND
+            if not seen:
+                min_top = top
+                seen = True
+            max_bottom = max(max_bottom, bottom)
+            min_top = min(min_top, top)
+    return max_bottom - min_top
+
+
 def compute_scale(
     source: Path,
     diagram_class: Optional[str] = None,
@@ -372,7 +442,36 @@ def compute_scale(
         # Even at the legibility floor it will not fit: refuse rather than export
         # an illegible postage stamp (split or page the diagram instead).
         raise CanvasTooWideError(source, width, dclass, max_width)
-    scale = min(MAX_EXPORT_SCALE, fit)
+    # 1.11.0 ITEM D (E-04): a very small flow canvas may upscale past the default
+    # 1.5 cap (up to FLOW_SMALL_MAX_SCALE) so a tiny single-path diagram is not a
+    # postage stamp. Scoped to a non-landscape canvas at or under
+    # FLOW_SMALL_WIDTH; landscapes and wider flows keep the 1.5 cap, so every
+    # golden wider than 1000px is byte-identical. The budget fit term still binds
+    # below, so even at 2.5 a small flow cannot exceed the 1600px/500KB budget.
+    cap = (
+        FLOW_SMALL_MAX_SCALE
+        if (not is_landscape and width <= FLOW_SMALL_WIDTH)
+        else MAX_EXPORT_SCALE
+    )
+    scale = min(cap, fit)
+
+    # 1.13.0 (regional-band): HEIGHT-aware fit. A tall-but-narrow canvas can fit
+    # the width budget yet overshoot the class HEIGHT budget (the IHTC landscape
+    # with its supporting column), which ``rule-engine-check-rasters`` then
+    # blocks — previously only a manual ``--max-width`` fixed it. Fit the scale
+    # down to the height budget too: ``scale = min(scale, (max_height - border)
+    # / H)``. This ONLY ever REDUCES the scale, and only when the canvas would
+    # otherwise exceed the height budget at the width-chosen scale, so every
+    # golden that already fits its height budget is byte-identical. The floor
+    # still applies (a canvas that cannot fit even at the floor is a split
+    # signal). ``--max-width`` stays an explicit width-only override (above).
+    max_height = LANDSCAPE_MAX_HEIGHT if is_landscape else FLOW_MAX_HEIGHT
+    height = _canvas_height(source)
+    if height > 0 and height * scale > (max_height - border):
+        height_fit = (max_height - border) / height
+        if height_fit < MIN_EXPORT_SCALE:
+            raise CanvasTooWideError(source, width, dclass, max_width)
+        scale = min(scale, height_fit)
 
     # 1.11.0 WS2: A4 soft target. When the caller opts in with ``--paper a4``,
     # pull a canvas that would otherwise upscale past an A4-printable width DOWN
@@ -442,31 +541,56 @@ def export_one(
     # a dark/light-safe raster (alpha channel, no forced white); "white"/absent
     # keeps the existing opaque-white export unchanged (AC 4.3, 4.4).
     background = _diagram_background_of(source)
-    cmd = [
-        drawio, "--export", "--format", "png",
-        "--scale", _format_scale(scale),
-        "--border", EXPORT_BORDER,
-        "--theme", EXPORT_THEME,
-    ]
-    # Opt-in Electron sandbox bypass for a confined dev host. Some sandboxed
-    # environments (a hardened macOS seatbelt, a container without the setuid
-    # chrome-sandbox) make the draw.io CLI fail at startup with "Failed to
-    # initialize sandbox". Setting RULE_ENGINE_DRAWIO_NO_SANDBOX=1 passes
-    # --no-sandbox so a raster can still be exported locally. It is OFF by
-    # default, so CI and a normal desktop export are byte-for-byte unchanged;
-    # the flag only affects Electron startup, never the rendered pixels.
-    if os.environ.get("RULE_ENGINE_DRAWIO_NO_SANDBOX") == "1":
-        cmd.append("--no-sandbox")
-    if background == "transparent":
-        cmd.append("--transparent")
-    cmd += ["--output", str(out_png), export_input]
+
+    def _run_export(at_scale: float) -> None:
+        cmd = [
+            drawio, "--export", "--format", "png",
+            "--scale", _format_scale(at_scale),
+            "--border", EXPORT_BORDER,
+            "--theme", EXPORT_THEME,
+        ]
+        # Opt-in Electron sandbox bypass for a confined dev host. Some sandboxed
+        # environments (a hardened macOS seatbelt, a container without the setuid
+        # chrome-sandbox) make the draw.io CLI fail at startup with "Failed to
+        # initialize sandbox". Setting RULE_ENGINE_DRAWIO_NO_SANDBOX=1 passes
+        # --no-sandbox so a raster can still be exported locally. It is OFF by
+        # default, so CI and a normal desktop export are byte-for-byte unchanged;
+        # the flag only affects Electron startup, never the rendered pixels.
+        if os.environ.get("RULE_ENGINE_DRAWIO_NO_SANDBOX") == "1":
+            cmd.append("--no-sandbox")
+        if background == "transparent":
+            cmd.append("--transparent")
+        cmd += ["--output", str(out_png), export_input]
+        subprocess.run(cmd, check=True, timeout=EXPORT_TIMEOUT)
 
     try:
-        subprocess.run(
-            cmd,
-            check=True,
-            timeout=EXPORT_TIMEOUT,
-        )
+        _run_export(scale)
+        # G35 (1.11.0, FEAT-001): export-overshoot correction. The width model
+        # in ``_canvas_width`` estimates a wrapped Flow/Legend box's render with
+        # a fixed model-space allowance (``_WRAPPED_TEXT_RENDER_OVERSHOOT``), but
+        # the draw.io CLI's real wrap render of some boxes runs a few px PAST that
+        # estimate; multiplied by the mandatory upscale, that can push a flow
+        # raster a handful of px over its budget (01-sep-context rendered 1608px
+        # vs the 1600px flow budget — the estimate said 1600). Rather than inflate
+        # the global allowance (which would re-scale and re-render every within-
+        # budget golden — forbidden), measure the ACTUAL exported PNG width and,
+        # when it exceeds the class budget, re-export ONCE at a scale corrected by
+        # the real overshoot: ``scale * budget_px / actual_px`` (a hair tighter via
+        # the 1px floor so rounding never lands back on the budget). This is
+        # self-correcting from the real render and fires ONLY for a raster that
+        # actually overshoots, so every within-budget golden exports exactly once
+        # at the unchanged scale and stays byte-identical. The downscale correction
+        # never trips the legibility floor in practice (it is a sub-1% nudge), and
+        # an ``--max-width`` override opts out (the caller set the width
+        # explicitly).
+        if max_width_override is None:
+            dclass_w = _diagram_class_of(source)
+            budget_px = LANDSCAPE_MAX_WIDTH if dclass_w == "landscape" else FLOW_MAX_WIDTH
+            actual_px = _png_width(out_png)
+            if actual_px > budget_px:
+                corrected = scale * (budget_px - 1) / actual_px
+                if corrected >= MIN_EXPORT_SCALE and corrected < scale:
+                    _run_export(corrected)
     finally:
         if tmp_dir is not None:
             shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -485,6 +609,22 @@ def _format_scale(scale: float) -> str:
     if math.isclose(scale, round(scale)):
         return str(int(round(scale)))
     return f"{scale:.3f}"
+
+
+def _png_width(png: Path) -> int:
+    """The pixel width of a PNG from its IHDR chunk (0 when unreadable).
+
+    Used by the G35 export-overshoot correction to read the ACTUAL rendered
+    width (a 24-byte header read, no image library), so a raster that overran its
+    budget by a few px of wrapped-text render overshoot is re-exported at a
+    corrected scale."""
+    try:
+        head = png.read_bytes()[:24]
+    except OSError:
+        return 0
+    if len(head) < 24 or head[:8] != b"\x89PNG\r\n\x1a\n":
+        return 0
+    return int.from_bytes(head[16:20], "big")
 
 
 def _stamp_provenance(png: Path, source: Path) -> None:
