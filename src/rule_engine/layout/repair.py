@@ -252,9 +252,17 @@ def _serialize_candidate(cand: "PlacedDiagram", labels: Optional[Dict[str, str]]
         if (box := cand.containers.get(c.id)) is not None
     ]
     stub = _dl.builtin_icon(_STUB_ICON_STYLE)
+    # 1.13.0 (L2): carry each node's ``external`` flag into the oracle stub so
+    # ``build_diagram``/``overlay_suffix`` emits the ``external=1`` style token.
+    # The re-parsed geometry's ``node_styles`` then carries it, which is what
+    # ``check_edge_direction``'s external-fan exit exception reads — without it
+    # a forced top/left exit to an external target would be flagged in the
+    # oracle even though it is contract-legal. A non-external node emits nothing
+    # (byte-inert).
+    _external_of = {n.id: getattr(n, "external", False) for n in cand.spec.nodes}
     nodes = [
         _dl.Node(id=nid, label=(labels or {}).get(nid, nid), x=int(box.x), y=int(box.y),
-                 render=stub)
+                 render=stub, external=_external_of.get(nid, False))
         for nid, box in sorted(cand.nodes.items())
     ]
     edges = [

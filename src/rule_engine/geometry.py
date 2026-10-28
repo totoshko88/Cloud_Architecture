@@ -661,21 +661,44 @@ def check_edge_direction(geo: DiagramGeometry) -> List[Tuple[str, str]]:
     that floats its connection is left to draw.io's perimeter router and not
     judged here (``edge-float`` owns that). The reason names the offending face,
     e.g. ``exit-top-not-right-or-bottom``.
+
+    **External-fan exit exception (1.13.0, L2).** A node at a container's edge
+    may carry an explicit exit-face hint (``NodeSpec.exit_face``) so its edges to
+    an **external** sibling band/node exit toward those bands (``up`` / ``left``)
+    instead of the contract-default right/bottom — the long-haul exception the
+    standard already names for a back-edge to an external actor on the left.
+    Here a top/left exit is EXEMPT only when the edge's target carries the
+    ``external=1`` style token; a top/left exit to an in-cloud target is still a
+    defect. Byte-identical to pre-1.13.0 for every edge whose target is not
+    external.
     """
     out: List[Tuple[str, str]] = []
     for e in geo.edges:
         ex, ey = e.exit
         nx, ny = e.entry
+        # 1.13.0 (L2): a node at a container's edge may be given an explicit
+        # external-fan exit-face hint (NodeSpec.exit_face) so its edges to an
+        # EXTERNAL sibling band/node exit toward those bands (up / left) instead
+        # of the contract-default right/bottom, which would rake the fan back
+        # across the account. That forced exit is contract-LEGAL precisely
+        # because the target is external: the long-haul exception the standard
+        # already names for a back-edge to an external actor on the left. We
+        # recognise it here from the target's ``external=1`` style token, so a
+        # top/left exit is exempt ONLY when the target is external; a top/left
+        # exit to an IN-CLOUD target is still a defect.
+        target_is_external = (
+            _style_token(geo.node_styles.get(e.target, ""), "external") == "1"
+        )
         # An edge is judged only if it pins at least one contact axis; a fully
         # floating edge is left to the perimeter router.
         if ex is not None or ey is not None:
             faces = contact_faces(ex, ey)
             if faces:
-                if not (faces & _LEGAL_EXIT_FACES):
+                if not (faces & _LEGAL_EXIT_FACES) and not target_is_external:
                     offending = "-".join(sorted(faces))
                     out.append((e.id, f"exit-{offending}-not-right-or-bottom"))
                     continue
-            elif ex is not None and ex < 0.5:
+            elif ex is not None and ex < 0.5 and not target_is_external:
                 # Band pin on no face: keep the pre-1.6.0 lean test.
                 out.append((e.id, "exit-not-right-or-bottom"))
                 continue

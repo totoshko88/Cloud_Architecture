@@ -272,6 +272,16 @@ def _validate_spec(spec: DiagramSpec) -> None:
                 "scope override must be one of 'network', 'regional', 'global'"
             )
 
+        # 1.13.0 (L2): external-fan exit-face hint must be a recognized face.
+        if getattr(node, "exit_face", None) is not None and node.exit_face not in (
+            "right", "up", "left",
+        ):
+            raise SpecError(
+                f"node {node.id!r} declares unknown exit_face "
+                f"{node.exit_face!r}; exit_face must be one of "
+                "'right', 'up', 'left'"
+            )
+
         # Declared container membership must name a real, leaf, region-matching
         # container (fail-honest — coordinate-free membership, Req 1.3).
         if node.container is not None:

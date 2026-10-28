@@ -131,6 +131,19 @@ class NodeSpec:
     #: row). ``0`` (default) ⇒ the first band row. Coordinate-free: it names a
     #: row index within the band, never geometry.
     band_row: int = 0
+    #: 1.13.0 (L2): optional **external-fan exit-face hint** for a node sitting
+    #: at a container's edge (a Syndicate Server at the VPC top-right, a Lambda
+    #: whose reply crosses to a bottom-left external store). The directional
+    #: contract exits every edge from the source's RIGHT (or bottom, for a
+    #: mostly-below target), which rakes a boundary-corner node's external fan
+    #: back ACROSS the account to reach bands drawn at the top / left of the
+    #: canvas (``knee-through`` / ``edge-crossing-excess`` → BLOCKED). This hint
+    #: forces the exit face for the node's edges WHOSE TARGET IS EXTERNAL (outside
+    #: every cloud boundary): ``"up"`` → top-centre, ``"left"`` → left-centre,
+    #: ``"right"`` → right-centre (the contract default, a no-op). An edge to an
+    #: in-cloud target is UNAFFECTED, and ``None`` (default) is byte-identical to
+    #: every pre-1.13.0 spec. Coordinate-free: it names a face, never geometry.
+    exit_face: Optional[str] = None
 
 
 @dataclass(frozen=True)

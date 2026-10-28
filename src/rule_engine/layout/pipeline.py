@@ -195,8 +195,21 @@ def _global_contacts(
 
     exits: Dict[str, Contact] = {}
     entries: Dict[str, Contact] = {}
+    # 1.13.0 (L2): thread each source node's external-fan exit-face hint
+    # (NodeSpec.exit_face) and whether the edge's target is external
+    # (NodeSpec.external, double-encoded as the external=1 style token the
+    # directional-contract lint reads). The override in select_contacts fires
+    # only when BOTH are set, so an exit_face-free spec is byte-identical.
+    _exit_face_of: Dict[str, Optional[str]] = {
+        n.id: getattr(n, "exit_face", None) for n in spec.nodes
+    }
+    _external_ids = {n.id for n in spec.nodes if getattr(n, "external", False)}
     for edge in spec.edges:
-        ex, en = select_contacts(edge, placed, allow_downward)
+        ex, en = select_contacts(
+            edge, placed, allow_downward,
+            exit_face=_exit_face_of.get(edge.source),
+            target_external=edge.target in _external_ids,
+        )
         exits[edge.id] = ex
         entries[edge.id] = en
 

@@ -222,11 +222,19 @@ def _rule_based_contacts(
 # ---------------------------------------------------------------------------
 
 def _variant(edge_id: str, family: str, exit_pt: Contact, entry_pt: Contact,
-             plan: RoutePlan, rank: int, face_swap: bool = False) -> RouteVariant:
+             plan: RoutePlan, rank: int, face_swap: bool = False,
+             allow_external_exit: bool = False) -> RouteVariant:
     """Build one :class:`RouteVariant`, asserting contract-legality by
     construction (a family that ever emits an illegal face is a coding bug, not
-    an input condition)."""
-    assert _exit_is_contract_legal(exit_pt), (
+    an input condition).
+
+    ``allow_external_exit`` (1.13.0, L2) exempts the rule-based seed of an
+    external-fan edge whose source forced a top/left exit (``NodeSpec.exit_face``
+    toward an EXTERNAL target). That exit is contract-legal precisely because the
+    target is external — the long-haul exception ``check_edge_direction`` already
+    honours — so the by-construction right/bottom assertion is relaxed only for
+    that seed. The entry stays a normal left/top face, so its assertion holds."""
+    assert allow_external_exit or _exit_is_contract_legal(exit_pt), (
         f"variant {edge_id}/{family}: exit {exit_pt} is not on the right/bottom face"
     )
     assert _entry_is_contract_legal(entry_pt), (
@@ -606,6 +614,20 @@ def generate(
         rule_exit, rule_entry = global_contacts[edge.id]
     else:
         rule_exit, rule_entry = _rule_based_contacts(edge, placed, containers, kind)
+
+    # 1.13.0 (L2): an external-fan forced exit. When the source node forced a
+    # top/left exit toward an EXTERNAL target (NodeSpec.exit_face), the seed
+    # exit is non-canonical (not right/bottom) — a face the normal pipeline
+    # never produces. Emit ONLY the rule-based seed for it: every alternative
+    # family (spine / lane-side / back-edge) rebuilds a right/bottom exit, and
+    # offering one would let the solver's argmin pick it and silently undo the
+    # forced face. The seed carries ``allow_external_exit`` so the by-
+    # construction right/bottom assertion is relaxed for this one legal case.
+    if not _exit_is_contract_legal(rule_exit):
+        return [
+            _variant(edge.id, "rule-based", rule_exit, rule_entry,
+                     RoutePlan.RULE_BASED, 0, allow_external_exit=True)
+        ]
 
     # The rule-based variant is ALWAYS present and preferred (rank 0), so the
     # solver's argmin can never do worse than today (R3.3, Property 4).

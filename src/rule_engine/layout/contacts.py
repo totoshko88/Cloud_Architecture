@@ -155,6 +155,8 @@ def select_contacts(
     edge: EdgeSpec,
     placed: Dict[str, Box],
     allow_downward: Optional[Set[str]] = None,
+    exit_face: Optional[str] = None,
+    target_external: bool = False,
 ) -> Tuple[Contact, Contact]:
     """Return ``(exit, entry)`` contact points for ``edge`` via the ladder (Req 5).
 
@@ -215,6 +217,30 @@ def select_contacts(
     src = placed[edge.source]
     tgt = placed[edge.target]
     others = [b for nid, b in placed.items() if nid not in (edge.source, edge.target)]
+
+    # 1.13.0 (L2): external-fan exit-face override. When the source node carries
+    # an ``exit_face`` hint AND this edge's target is EXTERNAL (outside every
+    # cloud boundary), force the exit toward the external bands instead of the
+    # contract-default right/bottom, which would rake the fan back across the
+    # account. The entry is chosen contract-legally from the target's position
+    # (left/top faces). Applied ONLY for an external target, so an in-cloud edge
+    # from the same source keeps the normal ladder; ``exit_face=None`` is inert.
+    if exit_face is not None and target_external:
+        if exit_face == "up":
+            # Exit the top toward a band above/right; enter its LEFT face (the
+            # run rises then arrives horizontally into the band's left) — a
+            # contract-legal entry. A bottom-centre entry (arriving from below a
+            # band that sits above) is geometrically natural but forbidden by the
+            # directional contract, so the left face is used instead.
+            return (0.5, 0.0), (0.0, 0.5)
+        if exit_face == "left":
+            # Exit the left toward a band on the left; enter the band's TOP
+            # (a down-left run descends into it) — a contract-legal entry face,
+            # so no entry-side exception is needed. A right-face entry would be
+            # geometrically required to reach the left of a band sitting left of
+            # the source, which the directional contract forbids.
+            return (0.0, 0.5), (0.5, 0.0)
+        # exit_face == "right": the contract default; fall through to the ladder.
 
     directly_below = _box_directly_below(src, tgt, others)
     # A target in the SAME COLUMN and lower — even when an intermediate node
