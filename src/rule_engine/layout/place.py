@@ -688,6 +688,31 @@ def size_containers(
     # in-VPC AZ stacking so cross-region AZ peers (az-a* / az-b*) also match.
     _equalize_peer_widths(boxes, spec, secondary)
 
+    # E-VPCFIT (1.13.0): _equalize_peer_widths can widen a peer AZ box AFTER
+    # the vpc band was sized, so the vpc no longer wraps its widened az child
+    # (the SEP multi-node service row: region a widens, az-a grows, equalize
+    # widens az-b outward, and az-b's right edge ends up a few px past the vpc
+    # that was sized to the pre-equalization narrower az-b -> container-
+    # overlap). Re-wrap every non-account, non-az band around its (now
+    # equalized) children before the account is sized. Byte-inert where
+    # az-a == az-b already (every shipped HA golden), because equalize is then
+    # a no-op and the recompute reproduces the same box.
+    for c in spec.containers:
+        if c.kind in ("account", "az"):
+            continue
+        children = [boxes[ch.id] for ch in child_containers.get(c.id, [])
+                    if ch.id in boxes]
+        children.extend(placed[nid] for nid in leaf_nodes.get(c.id, []))
+        if not children:
+            continue
+        cur = boxes[c.id]
+        _x0, _y0, x1, y1 = _bbox(children)
+        right = max(cur.x + cur.w, x1 + pad)
+        bottom = max(cur.y + cur.h, y1 + pad)
+        new_w = max(right - cur.x, min_w.get(c.id, 0))
+        if new_w != cur.w or (bottom - cur.y) != cur.h:
+            boxes[c.id] = Box(c.id, cur.x, cur.y, new_w, bottom - cur.y)
+
     # Account envelope wraps every already-sized child band + pad, snug.
     for c in spec.containers:
         if c.kind == "account":
