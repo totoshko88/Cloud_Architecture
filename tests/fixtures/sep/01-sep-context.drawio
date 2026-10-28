@@ -46,7 +46,7 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="e6" value="6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0;exitY=0.2564102564102564;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="sep" target="atlas">
-          <mxGeometry relative="1" as="geometry">
+          <mxGeometry x="-0.3511" relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="700.00" y="440.00" />
               <mxPoint x="700.00" y="160.00" />
