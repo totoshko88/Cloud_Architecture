@@ -202,6 +202,70 @@ def test_vpc_side_auto_is_chosen_by_edge_direction():
     assert any(s.vpc_side == "right" for s, _k in ranked[1:])
 
 
+# --------------------------------------------------------------------------- #
+# vpc_side="right-keep-regional-left" (L1, 1.13.0)
+# --------------------------------------------------------------------------- #
+
+def _two_col_region_spec(vpc_side: str) -> DiagramSpec:
+    """A region whose regional services span TWO columns: a feeder (``api``,
+    which edges into the VPC band) plus an OUTER regional node (``batch``) that
+    does NOT feed the VPC. Under classic ``"right"`` the outer column jumps
+    right of the VPC box (the spine splits); under
+    ``"right-keep-regional-left"`` both regional columns stay left of it."""
+    containers = (
+        ContainerSpec(id="account", kind="account", region="", parent=None, label_key="account"),
+        ContainerSpec(id="region-a", kind="region", region="a", parent="account", label_key="region"),
+        ContainerSpec(id="vpc-a", kind="vpc", region="a", parent="region-a", label_key="vpc"),
+    )
+    nodes = (
+        NodeSpec(id="users", role="client", lane="actors", region="", slot=0),
+        NodeSpec(id="api", role="api_gateway", lane="router", region="a", slot=0, container="region-a"),
+        NodeSpec(id="batch", role="ecr", lane="workers", region="a", slot=1, container="region-a"),
+        NodeSpec(id="ecr", role="object_store", lane="workers", region="a", slot=2, container="region-a"),
+        NodeSpec(id="db", role="managed_sql", lane="data", region="a", slot=0, container="vpc-a"),
+    )
+    edges = (
+        EdgeSpec(id="e0", source="users", target="api", marker="1"),
+        EdgeSpec(id="e1", source="api", target="db", marker="2"),
+        EdgeSpec(id="e2", source="batch", target="ecr", marker="3"),
+    )
+    return DiagramSpec(
+        diagram_id="l1-vpc", diagram_name="l1-vpc", axis="north-south",
+        nodes=nodes, edges=edges, containers=containers,
+        flow_lines=("Flow", "1. call", "2. persist", "3. pull"),
+        title="aws l1 — 000000000000 / eu-central-1 | 2026-10-28 | v1",
+        vpc_side=vpc_side, order="manual",
+    )
+
+
+def test_right_keep_regional_left_does_not_split_the_spine():
+    classic = place_nodes(_two_col_region_spec("right"))
+    kept = place_nodes(_two_col_region_spec("right-keep-regional-left"))
+    # Both modes put the VPC band node (db) to the right of the feeder (api).
+    assert classic["db"].x > classic["api"].x
+    assert kept["db"].x > kept["api"].x
+    # The OUTER regional columns (batch/ecr, beyond the feeder) feed no VPC
+    # node. Classic "right" pushes them PAST the VPC box (spine split); the
+    # keep-left mode leaves every regional node LEFT of the VPC box.
+    assert classic["ecr"].x > classic["db"].x          # classic: spine splits
+    assert kept["ecr"].x < kept["db"].x                # kept: no split
+    assert kept["batch"].x < kept["db"].x
+    # keep-left never moves a regional column from its default x.
+    left = place_nodes(_two_col_region_spec("left"))
+    assert kept["api"].x == left["api"].x
+    assert kept["batch"].x == left["batch"].x
+    assert kept["ecr"].x == left["ecr"].x
+
+
+def test_right_keep_regional_left_single_column_matches_right():
+    # A single-column region (the original ws4 shape) has no outer column to
+    # split, so both right modes agree.
+    classic = place_nodes(_region_spec("right"))
+    kept = place_nodes(_region_spec("right-keep-regional-left"))
+    assert kept["db"].x == classic["db"].x
+    assert kept["api"].x == classic["api"].x
+
+
 @pytest.mark.parametrize("field,value", [("order", "sideways"), ("vpc_side", "up")])
 def test_invalid_switch_values_raise(field, value):
     with pytest.raises(SpecError):

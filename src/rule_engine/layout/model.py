@@ -301,7 +301,18 @@ class DiagramSpec:
     #: column right); ``"right"`` puts the regional column first, so a flow that
     #: runs from regional services into the VPC (API Gateway → RDS) reads left to
     #: right. ``"auto"`` (default) means ``"left"`` unless the automatic ordering
-    #: finds that ``"right"`` removes back-edges. Not a coordinate.
+    #: finds that ``"right"`` removes back-edges.
+    #:
+    #: 1.13.0 (L1): ``"right-keep-regional-left"`` is ``"right"`` for a region
+    #: whose regional services span MORE than one column. Plain ``"right"``
+    #: inserts the VPC block right after the feeder column and pushes every
+    #: regional column beyond the feeder past the block, splitting a multi-column
+    #: compute spine around the VPC box (an ``edge-routing`` /
+    #: ``container-padding`` / ``edge-crossing-excess`` ERROR on a dense SEP
+    #: account). This value anchors the VPC block to the right of the region's
+    #: RIGHTMOST column instead, so the inner AND outer regional columns stay
+    #: together left of the VPC block and the spine is not split. Not a
+    #: coordinate.
     vpc_side: str = "auto"
     #: 1.11.0 WS2: optional **logical groups** for a flow diagram — a tuple of
     #: ``(label, (member_node_id, ...))`` pairs. Each draws one light-grey box

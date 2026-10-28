@@ -237,10 +237,13 @@ def _validate_spec(spec: DiagramSpec) -> None:
             f"diagram {spec.diagram_id!r} declares unknown order "
             f"{spec.order!r}; order must be 'auto' or 'manual'"
         )
-    if getattr(spec, "vpc_side", "auto") not in ("auto", "left", "right"):
+    if getattr(spec, "vpc_side", "auto") not in (
+        "auto", "left", "right", "right-keep-regional-left"
+    ):
         raise SpecError(
             f"diagram {spec.diagram_id!r} declares unknown vpc_side "
-            f"{spec.vpc_side!r}; vpc_side must be 'auto', 'left' or 'right'"
+            f"{spec.vpc_side!r}; vpc_side must be 'auto', 'left', 'right' "
+            f"or 'right-keep-regional-left'"
         )
 
     node_ids = set()
@@ -1702,8 +1705,23 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
     # (one column step + two pads).
     # A pure per-region translation, so rows, sub-rows and the peer-region
     # mirror are unchanged. ``"left"`` / ``"auto"`` keep the default placement.
-    if (getattr(spec, "vpc_side", "auto") == "right" and spec.axis == "north-south"
+    #
+    # 1.13.0 (L1): ``vpc_side="right-keep-regional-left"`` — the same right-hand
+    # VPC column, but the WHOLE regional block (inner AND outer columns) stays
+    # together LEFT of the VPC block. Classic ``"right"`` inserts the network
+    # block right after the feeder column ``k`` and pushes every regional column
+    # with ``col > k`` rightward PAST the block, so a two-column region splits
+    # around the VPC box (regional nodes beyond the feeder jump right of it) →
+    # ``edge-routing`` / ``container-padding`` / ``edge-crossing-excess`` on a
+    # dense SEP account. Keeping the regional columns on one side anchors the
+    # band block to the right of the region's RIGHTMOST column instead of its
+    # feeder, and never shifts a regional column, so the compute spine is not
+    # split.
+    _right_modes = ("right", "right-keep-regional-left")
+    _vpc_side = getattr(spec, "vpc_side", "auto")
+    if (_vpc_side in _right_modes and spec.axis == "north-south"
             and regional_col):
+        _keep_regional_left = _vpc_side == "right-keep-regional-left"
         for region in sorted({n.region for n in spec.nodes if n.id in regional_col}):
             reg_ids = [n.id for n in spec.nodes
                        if n.region == region and n.id in regional_col
@@ -1719,15 +1737,23 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
             # forward hop); regional columns beyond that column move right by
             # the network block's width. Columns up to it keep their x, so the
             # block stays under the account-level row that feeds it.
+            #
+            # In ``right-keep-regional-left`` the block is instead inserted
+            # right of the region's RIGHTMOST column, so no regional column is
+            # moved and the spine is not split.
             band_set = set(band_ids)
             feeders = [regional_col[e.source] for e in spec.edges
                        if e.source in reg_ids and e.target in band_set]
-            k = max(feeders) if feeders else max(regional_col[i] for i in reg_ids)
+            if _keep_regional_left:
+                k = max(regional_col[i] for i in reg_ids)
+            else:
+                k = max(feeders) if feeders else max(regional_col[i] for i in reg_ids)
             rcx = regional_col_x.get(region, 0)
             band_shift = (rcx + k + 1) * col_step() + 4 * CONTAINER_PAD
             tail_shift = (rcx + 1) * col_step() + 4 * CONTAINER_PAD
             moved = [(i, band_shift) for i in band_ids]
-            moved += [(i, tail_shift) for i in reg_ids if regional_col[i] > k]
+            if not _keep_regional_left:
+                moved += [(i, tail_shift) for i in reg_ids if regional_col[i] > k]
             moved += [(i, band_shift) for i in regional_abs_x
                       if any(n.id == i and n.region == region for n in spec.nodes)]
             for nid, dx in moved:
