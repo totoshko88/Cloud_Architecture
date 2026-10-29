@@ -839,7 +839,8 @@ def _set_style_token(style: str, key: str, value: str) -> str:
 
 
 def _clear_container_captions(
-    boundaries: Sequence[Boundary], nodes: Sequence[Node], edges: Sequence[Edge]
+    boundaries: Sequence[Boundary], nodes: Sequence[Node], edges: Sequence[Edge],
+    max_wrap: int = 0,
 ) -> List[Boundary]:
     """Move a container caption off any vertical edge leg that would cut it.
 
@@ -851,8 +852,18 @@ def _clear_container_captions(
     CAPTION moves instead: to the nearest grid slot no leg passes through,
     expressed as ``align=left;spacingLeft=N``. A caption that is already clear
     is left byte-identical. ``edge-crosses-container-label`` is the check.
+
+    ``max_wrap`` (1.13.0 L5, default 0 = off) enables an N-line **wrap** fallback
+    for the dense case a single-line shift cannot solve: cutting legs bracket the
+    text so no slide of the full line clears them (SEP 08 ``peer-ext``). When a
+    shift fails, the caption is wrapped onto the smallest ``N`` in ``2..max_wrap``
+    whose LONGEST line can be placed clear (at its left anchor or a shift), and
+    that wrapped label + anchor is emitted. 0 leaves every caption byte-identical.
     """
-    from rule_engine.geometry import Box, free_caption_x0, vertical_caption_cuts
+    from rule_engine.geometry import (
+        Box, free_caption_x0, vertical_caption_cuts, caption_text_extent,
+        _CAPTION_CLEARANCE,
+    )
 
     boxes = {n.id: Box(n.id, n.x, n.y, ICON_SIZE, ICON_SIZE) for n in nodes}
     polylines = []
@@ -868,15 +879,64 @@ def _clear_container_captions(
     for b in boundaries:
         style = _boundary_style(b)
         box = Box(b.id, b.x, b.y, b.w, b.h)
-        x0 = free_caption_x0(b.label, style, box, vertical_caption_cuts(polylines, box))
-        if x0 is None:
-            out.append(b)
+        cuts = vertical_caption_cuts(polylines, box)
+        x0 = free_caption_x0(b.label, style, box, cuts)
+        if x0 is not None:
+            spacing = 2  # draw.io default label spacing, added to spacingLeft
+            new = _set_style_token(style, "align", "left")
+            new = _set_style_token(new, "spacingLeft", str(int(round(x0 - b.x - spacing))))
+            out.append(Boundary(b.id, b.label, b.x, b.y, b.w, b.h,
+                                b.stroke, b.parent, new, b.kind))
             continue
-        spacing = 2  # draw.io default label spacing, added to spacingLeft
-        new = _set_style_token(style, "align", "left")
-        new = _set_style_token(new, "spacingLeft", str(int(round(x0 - b.x - spacing))))
-        out.append(Boundary(b.id, b.label, b.x, b.y, b.w, b.h, b.stroke, b.parent, new, b.kind))
+        # A single-line shift could not clear the legs. Try an N-line wrap
+        # (1.13.0 L5) when enabled and the caption is actually cut.
+        if max_wrap >= 2 and cuts and _single_line_cut(b.label, style, box, cuts):
+            wrapped_b = _wrap_caption_clear(b, style, box, cuts, max_wrap)
+            if wrapped_b is not None:
+                out.append(wrapped_b)
+                continue
+        out.append(b)
     return out
+
+
+def _single_line_cut(label: str, style: str, box, cuts) -> bool:
+    """Whether the one-line caption text extent is cut by any leg in ``cuts``."""
+    from rule_engine.geometry import caption_text_extent, _CAPTION_CLEARANCE
+
+    tx0, tx1 = caption_text_extent(label, style, box)
+    return any(tx0 - _CAPTION_CLEARANCE < cx < tx1 + _CAPTION_CLEARANCE for cx in cuts)
+
+
+def _wrap_caption_clear(b: Boundary, style: str, box, cuts, max_wrap: int):
+    """Return a ``Boundary`` whose caption is wrapped onto the smallest ``N`` in
+    ``2..max_wrap`` that clears every ``cuts`` leg, or ``None`` if none does."""
+    from rule_engine.geometry import (
+        caption_text_extent, free_caption_x0, _CAPTION_CLEARANCE,
+    )
+
+    def clears(x0: float, text_w: float) -> bool:
+        x1 = x0 + text_w
+        return all(
+            not (x0 - _CAPTION_CLEARANCE < cx < x1 + _CAPTION_CLEARANCE) for cx in cuts
+        )
+
+    for n in range(2, max_wrap + 1):
+        wrapped = _wrap_caption_n_lines(b.label, n)
+        if wrapped is None:
+            continue
+        # The longest line decides clearance; its extent is what the crossing
+        # check now measures (geometry.caption_text_extent -> longest <br> line).
+        lx0, lx1 = caption_text_extent(wrapped, style, box)
+        text_w = lx1 - lx0
+        place = lx0 if clears(lx0, text_w) else free_caption_x0(wrapped, style, box, cuts)
+        if place is None or not clears(place, text_w):
+            continue
+        spacing = 2
+        new = _set_style_token(style, "align", "left")
+        new = _set_style_token(new, "spacingLeft", str(int(round(place - b.x - spacing))))
+        return Boundary(b.id, wrapped, b.x, b.y, b.w, b.h,
+                        b.stroke, b.parent, new, b.kind)
+    return None
 
 
 def _wrap_caption_two_lines(label: str) -> Optional[str]:
@@ -891,6 +951,35 @@ def _wrap_caption_two_lines(label: str) -> Optional[str]:
         if best is None or cost < best[0]:
             best = (cost, f"{a}<br>{b}")
     return best[1] if best else None
+
+
+def _wrap_caption_n_lines(label: str, n: int) -> Optional[str]:
+    """Balance a one-line caption onto exactly ``n`` lines (``<br>`` joined).
+
+    Greedy fill against an even per-line character budget, minimising the
+    longest line — the metric that decides whether a wrapped caption's text
+    clears a cutting leg (1.13.0 L5). ``None`` when the label cannot be split
+    (already multi-line, no spaces, or fewer words than lines)."""
+    import math
+
+    if n < 2 or "<br" in label or " " not in label.strip():
+        return None
+    words = label.split(" ")
+    if len(words) < n:
+        return None
+    budget = math.ceil(len(label) / n)
+    lines: List[str] = []
+    cur = ""
+    for w in words:
+        if cur and len(cur) + 1 + len(w) > budget and len(lines) < n - 1:
+            lines.append(cur)
+            cur = w
+        else:
+            cur = f"{cur} {w}".strip()
+    lines.append(cur)
+    if len(lines) < 2:
+        return None
+    return "<br>".join(lines)
 
 
 def fit_boundary_captions(
@@ -1489,6 +1578,7 @@ def build_diagram(
     flow_columns: int | None = None,
     band_groups: Sequence[Tuple[str, Sequence[str]]] = (),
     band_group_styles: Optional[dict] = None,
+    container_caption_wrap: int = 0,
 ) -> str:
     """Assemble a full ``.drawio`` document from the standard building blocks.
 
@@ -1550,6 +1640,7 @@ def build_diagram(
         flow_columns=flow_columns,
         band_groups=band_groups,
         band_group_styles=band_group_styles,
+        container_caption_wrap=container_caption_wrap,
     )
     routed = _orthogonalised(edges, nodes)
     text = _assemble_document(routed=routed, **kwargs)
@@ -1831,6 +1922,7 @@ def _assemble_document(
     flow_columns: int | None = None,
     band_groups: Sequence[Tuple[str, Sequence[str]]] = (),
     band_group_styles: Optional[dict] = None,
+    container_caption_wrap: int = 0,
 ) -> str:
     """Emit the ``.drawio`` document for already-routed edges (no hygiene)."""
     parts: List[str] = []
@@ -1882,7 +1974,7 @@ def _assemble_document(
         if slots.get(e.id, -1) < 0:
             parts.append(edge_cell(e, skin=skin))
     parts.append("\n")
-    for b in _clear_container_captions(boundaries, nodes, routed):
+    for b in _clear_container_captions(boundaries, nodes, routed, container_caption_wrap):
         parts.append(boundary_cell(b))
     parts.append("\n")
     for e in routed:

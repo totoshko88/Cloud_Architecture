@@ -1401,8 +1401,11 @@ def _container_caption_width(label: str, box_w: float) -> float:
     """Estimate the caption's horizontal extent, capped at the box width.
 
     A short caption ("az-a1") stays a narrow left strip; a long one
-    ("vpc-passive us-west-2") reaches further right. Never exceeds ``box_w``."""
-    est = _CONTAINER_LABEL_INSET + len(label) * _CONTAINER_LABEL_CHAR_W
+    ("vpc-passive us-west-2") reaches further right. Never exceeds ``box_w``.
+    A multi-line caption (``<br>``, 1.13.0 L5) is sized from its LONGEST line."""
+    lines = caption_lines(label) or [""]
+    longest = max(len(ln) for ln in lines)
+    est = _CONTAINER_LABEL_INSET + longest * _CONTAINER_LABEL_CHAR_W
     return min(box_w, est)
 
 
@@ -1427,8 +1430,15 @@ def caption_text_extent(label: str, style: str, box: "Box") -> Tuple[float, floa
     ``spacingLeft`` / ``spacingRight`` and ``spacing`` from its style, so a
     left-aligned OCI/AWS caption and a centred Azure/GCP caption are both located
     where draw.io actually draws them. Capped to the container's own width.
+
+    A multi-line caption (``<br>`` splits, 1.13.0 L5) is as wide as its LONGEST
+    rendered line, so a wrapped caption reports its true shorter horizontal
+    extent — which is exactly what lets a vertical leg that cut the one-line
+    text clear the wrapped one.
     """
-    text_w = min(box.w, len(label or "") * _CAPTION_TEXT_CHAR_W)
+    lines = caption_lines(label) or [""]
+    longest = max(len(ln) for ln in lines)
+    text_w = min(box.w, longest * _CAPTION_TEXT_CHAR_W)
     spacing = float(_style_value(style, "spacing") or _DRAWIO_LABEL_SPACING)
     sl = float(_style_value(style, "spacingLeft") or 0.0) + spacing
     sr = float(_style_value(style, "spacingRight") or 0.0) + spacing
@@ -1506,7 +1516,11 @@ def container_caption_geom(
     # so a corridor RIGHT of the (short) text does not false-flag, while a run
     # slicing a LONG caption still trips.
     label_w = _container_caption_width(label, c.w)
-    box = Box(c.id, c.x, c.y, label_w, band)  # top-left .. +one line
+    # A wrapped caption (``<br>``, 1.13.0 L5) occupies one further line-height
+    # per extra line, so a horizontal run along line 2 is still judged.
+    n_lines = max(1, len(caption_lines(label)))
+    band_h = band + CAPTION_LINE_H * (n_lines - 1)
+    box = Box(c.id, c.x, c.y, label_w, band_h)  # top-left .. +N lines
     extent = caption_text_extent(label, style, c) if style is not None else None
     return box, extent
 
