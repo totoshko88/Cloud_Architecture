@@ -241,3 +241,63 @@ def test_compute_scale_within_height_budget_is_unchanged(tmp_path):
 
     # Width fit (3584/2000 ≈ 1.79) is capped at 1.5; height never binds.
     assert scale == pytest.approx(er.MAX_EXPORT_SCALE, rel=1e-6)
+
+
+# --------------------------------------------------------------------------- #
+# 8. Feedback D (rev-i / rev-k): a south band honours ``band_row`` as a HARD
+#    row break, so a small group gets its own row without filling width_cols.
+# --------------------------------------------------------------------------- #
+def test_south_band_row_forces_a_new_row():
+    # Two band_row=0 members + two band_row=1 members on a wide (4-col) VPC:
+    # without the band_row break all four would share row 0 (col < width_cols);
+    # with it, the band_row=1 pair drops to its own row.
+    containers = (
+        ContainerSpec(id="acct", kind="account", region="", parent=None,
+                      label_key="account"),
+        ContainerSpec(id="region", kind="region", region="a", parent="acct",
+                      label_key="region"),
+        ContainerSpec(id="vpc", kind="vpc", region="a", parent="region",
+                      label_key="vpc"),
+        ContainerSpec(id="sub", kind="subnet", region="a", parent="vpc",
+                      label_key="sub"),
+    )
+    nodes = [
+        NodeSpec(id="compute", role="compute_instance", lane="workers",
+                 region="a", slot=0, container="sub", scope="network"),
+        # Regional group (band_row 0). Slots are globally unique within the
+        # (lane, region) — _validate_spec rejects a duplicate (lane, region,
+        # slot) — so the band_row (not the slot) is what drives the row break.
+        NodeSpec(id="reg0", role="object_store", lane="data", region="a", slot=0,
+                 container="region", scope="regional", band="south", band_row=0),
+        NodeSpec(id="reg1", role="dynamodb", lane="data", region="a", slot=1,
+                 container="region", scope="regional", band="south", band_row=0),
+        # Security group (band_row 1) — must land on its OWN row
+        NodeSpec(id="sec0", role="kms", lane="data", region="a", slot=2,
+                 container="region", scope="regional", band="south", band_row=1),
+        NodeSpec(id="sec1", role="iam", lane="data", region="a", slot=3,
+                 container="region", scope="regional", band="south", band_row=1),
+    ]
+    spec = DiagramSpec(
+        diagram_id="brow", diagram_name="brow", axis="north-south",
+        nodes=tuple(nodes),
+        edges=(EdgeSpec(id="e1", source="compute", target="reg0", marker="1"),),
+        containers=containers, flow_lines=("Flow",), title="band-row test",
+    )
+    placed = layout(spec, strict=False)
+    row0_y = placed.nodes["reg0"].y
+    row1_y = placed.nodes["sec0"].y
+    # band_row 0 pair share one y; band_row 1 pair share a LOWER (greater) y.
+    assert placed.nodes["reg1"].y == row0_y, "band_row 0 pair not on one row"
+    assert placed.nodes["sec1"].y == row1_y, "band_row 1 pair not on one row"
+    assert row1_y > row0_y, (
+        f"band_row 1 did not start a new row below band_row 0 "
+        f"(row0={row0_y}, row1={row1_y})")
+
+
+def test_south_band_single_band_row_is_unchanged():
+    # All members band_row=0 (the pre-feedback default) → still ONE row, so the
+    # new hard-break logic is a no-op for every existing consumer.
+    spec = _band_spec(["b0", "b1", "b2"], band_row=0)
+    placed = _placed(spec)
+    ys = {placed.nodes[m].y for m in ("b0", "b1", "b2")}
+    assert len(ys) == 1, "a single-band_row south band must stay on one row"

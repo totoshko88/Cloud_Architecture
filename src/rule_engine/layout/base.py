@@ -1605,10 +1605,26 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
             col = 0
             row = 0
             bottom = y0
+            prev_band_row: Optional[int] = None
             for nid in ordered:
-                if col >= width_cols:
+                # 1.13.0 (feedback D, rev-i/rev-k): honour an explicit
+                # ``band_row`` change as a HARD row break — a node whose
+                # ``band_row`` differs from the previous one starts a fresh
+                # screen row even when the current row has not filled to
+                # ``width_cols``. This lets a small south group (e.g. a 2-member
+                # "Security & observability") get its OWN row instead of sharing
+                # row 0 with a wide regional group and wrapping awkwardly (the
+                # rev-k collision). Byte-inert for the pre-1.13.0 / default case:
+                # every existing south-band consumer leaves ``band_row=0`` on all
+                # members, so the band_row never changes and only the width-cols
+                # wrap fires, exactly as before. The width-cols wrap still applies
+                # WITHIN a band_row, so a row wider than the budget wraps too.
+                this_band_row = slot_of[nid][0]
+                if (prev_band_row is not None and this_band_row != prev_band_row) \
+                        or col >= width_cols:
                     row += 1
                     col = 0
+                prev_band_row = this_band_row
                 x = base_x + col * col_step()
                 y = y0 + row * (row_step() + LABEL_BAND)
                 band_xy[nid] = (x, y)
