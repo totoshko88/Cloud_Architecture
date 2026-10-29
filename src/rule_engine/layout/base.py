@@ -1321,7 +1321,7 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
     # every spec that sets no ``band``.
     _band_nodes = {
         n.id: n.band for n in spec.nodes
-        if getattr(n, "band", None) in ("south", "account-south", "north")
+        if getattr(n, "band", None) in ("south", "account-south", "north", "account-north")
         and n.container is not None and kind_of.get(n.container) == "region"
     }
     region_direct = {
@@ -1590,6 +1590,7 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
         south_ids = [n.id for n in spec.nodes if _band_nodes.get(n.id) == "south"]
         acct_ids = [n.id for n in spec.nodes if _band_nodes.get(n.id) == "account-south"]
         north_ids = [n.id for n in spec.nodes if _band_nodes.get(n.id) == "north"]
+        acct_north_ids = [n.id for n in spec.nodes if _band_nodes.get(n.id) == "account-north"]
         slot_of = {n.id: (n.band_row, n.slot, n.id) for n in spec.nodes}
 
         def _lay_band(ids: List[str], y0: int) -> int:
@@ -1656,6 +1657,26 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
         if acct_ids:
             start = max(south_bottom, region_bottom) + row_step()
             _lay_band(acct_ids, start)
+        if acct_north_ids:
+            # 1.13.0 (feedback F): a ``band="account-north"`` node is a TRUE
+            # account-level global EDGE band (CloudFront / WAF / Route 53) drawn
+            # as a horizontal row ABOVE the Region box and INSIDE the Account —
+            # the "cloud edge" tier that sits outside the Region boundary. Unlike
+            # ``band="north"`` (which rises above the VPC but stays INSIDE the
+            # Region), this clears the Region's own top chrome (its caption band +
+            # padding) so the row lands above the Region box top, and the Account
+            # is grown up to enclose it (sizing wraps it in the Account, like
+            # ``account-south`` below). This is the fix for the Philips/IHTC
+            # ``global-in-region`` case: an occupied external actor / on-premises
+            # lane could push the account-level edge ROW geometrically into the
+            # Region; a dedicated account-north band reserves the row above the
+            # Region regardless of which external lanes are occupied, because its
+            # y is anchored to the Region's own top (``banded_top`` minus the
+            # Region caption chrome), not to a lane index the external rows share.
+            region_top = banded_top
+            if any(c.kind == "region" for c in spec.containers):
+                region_top -= (CONTAINER_LABEL_BAND + CONTAINER_PAD)
+            _lay_band_up(acct_north_ids, region_top - row_step())
 
     # 1.10.6: a region of container-free nodes whose box reserves a caption lane
     # (``_top_lane_containers``) starts its rows one lane lower, so the box's top
@@ -2048,7 +2069,7 @@ def _assign_nodes_to_leaves(
     #    stays inside its declared Region (wrapped by it, as declared).
     for n in spec.nodes:
         if n.container is not None and not getattr(n, "external", False):
-            if (getattr(n, "band", None) == "account-south"
+            if (getattr(n, "band", None) in ("account-south", "account-north")
                     and account_id is not None):
                 assignment[account_id].append(n.id)
             else:

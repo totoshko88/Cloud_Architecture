@@ -301,3 +301,78 @@ def test_south_band_single_band_row_is_unchanged():
     placed = _placed(spec)
     ys = {placed.nodes[m].y for m in ("b0", "b1", "b2")}
     assert len(ys) == 1, "a single-band_row south band must stay on one row"
+
+
+# --------------------------------------------------------------------------- #
+# 9. Feedback F: band="account-north" places a TRUE account-level global edge
+#    band ABOVE the Region box (inside the Account), reserved there regardless
+#    of whether an external actor / on-premises lane is occupied — the fix for
+#    the Philips/IHTC global-in-region case.
+# --------------------------------------------------------------------------- #
+def _edge_spec(*, account_north, with_external):
+    containers = (
+        ContainerSpec(id="acct", kind="account", region="", parent=None,
+                      label_key="account"),
+        ContainerSpec(id="region", kind="region", region="a", parent="acct",
+                      label_key="region"),
+        ContainerSpec(id="vpc", kind="vpc", region="a", parent="region",
+                      label_key="vpc"),
+    )
+    band = "account-north" if account_north else None
+    nodes = [
+        NodeSpec(id="dns", role="dns", lane="edge", region="a", slot=0,
+                 container="region", scope="global", band=band),
+        NodeSpec(id="waf", role="waf", lane="edge", region="a", slot=1,
+                 container="region", scope="global", band=band),
+        NodeSpec(id="app", role="compute_instance", lane="workers", region="a",
+                 slot=0, container="vpc", scope="network"),
+    ]
+    edges = [EdgeSpec(id="e1", source="dns", target="app", marker="1")]
+    if with_external:
+        nodes.append(NodeSpec(id="user", role="client", lane="actors",
+                              region="", slot=0))
+        edges.append(EdgeSpec(id="e0", source="user", target="dns", marker="0"))
+    return DiagramSpec(
+        diagram_id="edge", diagram_name="edge", axis="north-south",
+        nodes=tuple(nodes), edges=tuple(edges), containers=containers,
+        flow_lines=("Flow",), title="edge band test",
+    )
+
+
+def test_account_north_edge_band_sits_above_the_region():
+    placed = layout(_edge_spec(account_north=True, with_external=False),
+                    strict=False)
+    region = placed.containers["region"]
+    assert placed.nodes["dns"].y < region.y, (
+        "account-north edge band must sit above the Region box top")
+    assert placed.nodes["waf"].y == placed.nodes["dns"].y, "edge row not level"
+
+
+def test_account_north_stays_above_region_with_external_lane_occupied():
+    # The core feedback-F guarantee: an occupied external actor lane must NOT
+    # push the account-level edge row into the Region (the global-in-region
+    # defect). With account-north the edge row stays above the Region box.
+    placed = layout(_edge_spec(account_north=True, with_external=True),
+                    strict=False)
+    region = placed.containers["region"]
+    acct = placed.containers["acct"]
+    assert placed.nodes["dns"].y < region.y, (
+        "account-north edge band dropped into the Region when an external "
+        "actor lane was occupied (the global-in-region defect it fixes)")
+    # And the Account grew up to enclose the edge band.
+    assert acct.y <= placed.nodes["dns"].y <= acct.bottom, (
+        "account-north edge band must stay inside the Account box")
+
+
+def test_without_account_north_edge_row_is_not_lifted_above_region():
+    # Default (no band): the edge row is NOT lifted above the Region — proving
+    # the lift is the account-north opt-in, not ambient behaviour (and that the
+    # default path is unchanged / byte-inert).
+    placed = layout(_edge_spec(account_north=False, with_external=True),
+                    strict=False)
+    region = placed.containers["region"]
+    # The loose account-level edge nodes land at/below the Region top (the
+    # pre-feedback behaviour the workaround had to model around).
+    assert placed.nodes["dns"].y >= region.y, (
+        "without account-north the edge row should not be lifted above the "
+        "Region (the opt-in is what lifts it)")

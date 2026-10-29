@@ -121,10 +121,16 @@ class NodeSpec:
     #: row when the band is wider than the Region), instead of being routed
     #: through the vertical ``_REGIONAL_COLS`` column logic. ``"account-south"``
     #: places the band BELOW the Region inside the Account (used for a CI/CD
-    #: strip). ``None`` (default) keeps the pre-1.13.0 columnar placement, so
-    #: every shipped golden is byte-identical. Only meaningful on a region-direct
-    #: node of a North–South diagram; ignored otherwise. Coordinate-free: it
-    #: names a placement class, never geometry.
+    #: strip). ``"north"`` places the band ABOVE the VPC but still INSIDE the
+    #: Region (the edge / entry tiers). ``"account-north"`` (1.13.0, feedback F)
+    #: places the band ABOVE the Region box and inside the Account — a TRUE
+    #: account-level global EDGE band (CloudFront / WAF / Route 53 at the cloud
+    #: edge, outside the Region), reserved above the Region regardless of which
+    #: external actor / on-premises lanes are occupied (the fix for the
+    #: ``global-in-region`` case). ``None`` (default) keeps the pre-1.13.0
+    #: columnar placement, so every shipped golden is byte-identical. Only
+    #: meaningful on a region-direct node of a North–South diagram; ignored
+    #: otherwise. Coordinate-free: it names a placement class, never geometry.
     band: Optional[str] = None
     #: 1.13.0 (regional-band): the 0-indexed band ROW a ``band``-placed node
     #: sits on before wrapping (its ``slot`` orders it left→right within the
