@@ -192,6 +192,19 @@ class DiagramGeometry:
     text_boxes: Dict[str, Box] = field(default_factory=dict)
     #: Text-cell id -> its first line (the box heading, e.g. ``Flow``/``Legend``).
     text_headings: Dict[str, str] = field(default_factory=dict)
+    #: Annotation-block id -> its box (1.13.0, feedback G). An annotation block is
+    #: a ``text;``-styled labelled rectangle carrying the ``kiroAnnotation=1``
+    #: style token — a NON-service labelled block (e.g. "Bedrock Guardrails",
+    #: "MCP Connect Service") that has no official glyph and so is drawn as a
+    #: titled box, NOT a service node. Because it is a text cell it is already
+    #: skipped by ``node-count`` and ``verify-icon --strict`` (both key off
+    #: :func:`is_text_cell_style`); the marker additionally records its box here
+    #: so it is a PLACEABLE edge endpoint (``check_structural_integrity`` treats
+    #: it as placeable), letting an edge legally terminate on it. Kept OUT of
+    #: ``nodes`` so routing-pierce / geometric-containment / node-connectivity
+    #: never treat it as a service node. Plain Flow/Legend furniture (no marker)
+    #: stays in ``text_boxes`` only and remains an illegal endpoint.
+    annotations: Dict[str, Box] = field(default_factory=dict)
     #: Node id -> the overlay marker term it carries (``overlay=<term>`` in the
     #: cell, the vocabulary convention the CLI already reads). An overlay-marked
     #: node is exempt from ``node-connectivity``: a passive/standby peer may be
@@ -286,6 +299,13 @@ def build_geometry(page: Page) -> DiagramGeometry:
                 ax, ay = absolute_origin(page, cid)
                 geo.text_boxes[cid] = Box(cid, ax, ay, float(g.w), float(g.h))
                 geo.text_headings[cid] = cell.lines[0] if cell.lines else ""
+                # 1.13.0 (feedback G): a text cell carrying the annotation marker
+                # is a labelled NON-service block that may terminate an edge. It
+                # stays a text cell (so node-count / verify-icon skip it) but is
+                # ALSO recorded as a placeable endpoint so an edge to it does not
+                # trip structural-integrity ``edge-unresolved``.
+                if cell.style_map.get("kiroAnnotation") == "1":
+                    geo.annotations[cid] = Box(cid, ax, ay, float(g.w), float(g.h))
             continue
         if cell.parent not in node_parents:
             continue
@@ -4808,7 +4828,7 @@ def check_structural_integrity(geo: DiagramGeometry) -> List[Tuple[str, str]]:
     Both limitations are recorded in ``diagram-lint.md`` (``structural-integrity``).
     """
     out: List[Tuple[str, str]] = []
-    placeable = set(geo.nodes) | set(geo.containers)
+    placeable = set(geo.nodes) | set(geo.containers) | set(geo.annotations)
     for e in geo.edges:
         if e.source and e.source not in placeable:
             out.append((e.id, f"edge-unresolved-source:{e.source}"))

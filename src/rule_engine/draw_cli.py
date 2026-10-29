@@ -156,6 +156,42 @@ def _c4_box_renderer(tech: str):
     return render
 
 
+#: Annotation block style (1.13.0, feedback G) — a labelled NON-service box for
+#: an element that has no official provider glyph (e.g. "Bedrock Guardrails",
+#: "MCP Connect Service"). It is a ``text;`` cell so ``node-count`` and
+#: ``verify-icon --strict`` both skip it (they key off ``is_text_cell_style``),
+#: and it carries ``kiroAnnotation=1`` so ``build_geometry`` records it as a
+#: placeable edge endpoint (``check_structural_integrity`` treats it as placeable
+#: — an edge may legally terminate on it). The visual is the sanctioned neutral
+#: labelled-rectangle look (dashed white box, grey stroke), distinct from a C4
+#: box only by the ``text;`` prefix + marker.
+_ANNOTATION_BOX_STYLE = (
+    "text;kiroAnnotation=1;html=1;whiteSpace=wrap;rounded=1;"
+    "fillColor=#FFFFFF;strokeColor=#333333;fontColor=#333333;fontSize=12;"
+    "verticalAlign=middle;align=center;dashed=1;dashPattern=4 4"
+)
+
+
+def _annotation_renderer():
+    """Return a renderer for an annotation / non-service labelled block: a
+    dashed titled box with no provider icon, emitted as a ``text;`` cell marked
+    ``kiroAnnotation=1`` so it is skipped by node-count / verify-icon yet is a
+    legal edge endpoint. Use for an element the inventory names but that has no
+    official glyph (per the Icon Fidelity rule — never a look-alike icon)."""
+
+    def render(node: Node, parent_id: str) -> str:
+        return (
+            f'        <mxCell id="{node.id}" value="{node.label}" '
+            f'style="{_ANNOTATION_BOX_STYLE}" '
+            f'vertex="1" parent="{parent_id}">\n'
+            f'          <mxGeometry x="{node.x}" y="{node.y}" '
+            f'width="{ICON_SIZE}" height="{ICON_SIZE}" as="geometry" />\n'
+            f"        </mxCell>\n"
+        )
+
+    return render
+
+
 def _label_of(node_spec) -> str:
     """A short, quote-free display label for a node (its slugged node id).
 
@@ -199,6 +235,14 @@ def _skin_renderers(primary: str, nodes, style: str = "icon") -> Dict[str, Any]:
             continue
         if style == "c4":
             renderers[key] = _c4_box_renderer(role)
+            continue
+        # 1.13.0 (feedback G): an ``annotation`` role is a NON-service labelled
+        # block with no official glyph (Icon Fidelity: never a look-alike icon).
+        # It renders as a dashed titled box marked ``kiroAnnotation=1`` — skipped
+        # by node-count / verify-icon yet a legal edge endpoint. No icon is
+        # resolved for it.
+        if role == "annotation":
+            renderers[key] = _annotation_renderer()
             continue
         try:
             resolved = resolve_icon(role, eff_provider)
