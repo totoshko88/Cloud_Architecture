@@ -1,7 +1,7 @@
 {
  "library": "mxgraph.*",
  "source": "draw.io app.asar",
- "count": 5188,
+ "count": 5187,
  "ids": [
   "mxgraph.android.action_bar",
   "mxgraph.android.action_bar_landscape",
@@ -51,7 +51,6 @@
   "mxgraph.archimate.motiv",
   "mxgraph.archimate.product",
   "mxgraph.archimate.representation",
-  "mxgraph.archimate.rounded",
   "mxgraph.archimate.tech",
   "mxgraph.archimate3.actor",
   "mxgraph.archimate3.application",

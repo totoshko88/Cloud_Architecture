@@ -133,6 +133,12 @@ ROLE_SCOPE: Dict[str, str] = {
     "serverless_fn": "regional", "fn": "regional",
     "secrets_store": "regional", "sec": "regional",
     "llm_platform": "regional", "ecr": "regional",
+    # 1.13.0 feedback (A): three mapping-coverage roles. Neptune is a graph DB
+    # inside the network boundary; OpenSearch and ACM are regional managed
+    # services. Aliases carry the same scope.
+    "neptune": "network",
+    "opensearch": "regional", "elasticsearch_service": "regional",
+    "acm": "regional", "certificate_manager": "regional",
     # global / edge
     "cdn": "global", "dns": "global", "waf": "global",
 }
