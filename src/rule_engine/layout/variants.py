@@ -104,6 +104,9 @@ class RoutePlan(str, Enum):
     TURN_NEAR_TARGET = "turn-near-target"  # long haul: run horizontal first,
     #                                        put the long vertical at the TARGET's
     #                                        approach column (Theme 38b)
+    LIFT_OVER = "lift-over"         # 1.13.0 L3: up-climb fan-out branch rises in
+    #                                the pre-fan gap column and runs across a lane
+    #                                ABOVE the whole fan into the target
     RETURN_BUS_ABOVE = "return-bus-above"  # 1.10.12 WS5: leftward / response
     RETURN_BUS_BELOW = "return-bus-below"  # edge on a lane outside every content
     #                                        row it spans (the return bus)
@@ -301,6 +304,44 @@ def _turn_near_target_variant(edge: "EdgeSpec", rule_exit: Contact,
     return [
         _variant(edge.id, "turn-near-target", rule_exit, rule_entry,
                  RoutePlan.TURN_NEAR_TARGET, start_rank),
+    ]
+
+
+def _is_up_climb(edge: "EdgeSpec", placed: Dict[str, "Box"]) -> bool:
+    """True when ``edge``'s target sits a row or more ABOVE the source and to
+    its right — the up-climbing branch of a single-hub fan-out (1.13.0 L3).
+
+    The hub fans out to targets stacked in a column to its right; most descend
+    (same row or below), but one climbs. Gated on a genuine climb (target top at
+    least two rows above the source top) so an ordinary same-row / descending
+    fan-out, where the lane-side family already routes cleanly, is never offered
+    the lift-over shape and the scored search keeps its current geometry."""
+    src = placed.get(edge.source)
+    tgt = placed.get(edge.target)
+    if src is None or tgt is None:
+        return False
+    return (tgt.x + tgt.w / 2.0 > src.x + src.w / 2.0
+            and tgt.y <= src.y - 2 * ROW_STEP)
+
+
+def _lift_over_variant(edge: "EdgeSpec", rule_exit: Contact,
+                       rule_entry: Contact, start_rank: int) -> List[RouteVariant]:
+    """lift-over family (1.13.0 L3): the up-climbing branch of a single-hub
+    fan-out rises in the pre-fan gap column (left of every descending sibling's
+    turn column) and runs across a lane ABOVE the whole fan into the target,
+    instead of climbing amongst the siblings' corridors where it cuts their
+    left-approach legs (:func:`rule_engine.layout.routers.route_fan_out_row`'s
+    ``lift_over`` shape).
+
+    Same contract-legal contacts as the rule-based route — a right exit and a
+    left/top entry — so no ``edge-direction`` finding regardless of selection;
+    only the route PLAN differs. The solver scores this shape against the
+    default with the whole-diagram ``route_cost`` and keeps it only when it
+    scores strictly fewer crossings (rule-based stays rank 0), so every shipped
+    golden with no up-climbing fan-out branch is byte-identical."""
+    return [
+        _variant(edge.id, "lift-over", rule_exit, rule_entry,
+                 RoutePlan.LIFT_OVER, start_rank),
     ]
 
 
@@ -645,6 +686,10 @@ def generate(
         lane = _lane_side_variants(edge, rule_exit, rule_entry, rank)
         variants.extend(lane)
         rank += len(lane)
+        if kind == "fan-out-row" and _is_up_climb(edge, placed):
+            lift = _lift_over_variant(edge, rule_exit, rule_entry, rank)
+            variants.extend(lift)
+            rank += len(lift)
         if kind == "cross-region" and _vertical_haul_dominates(edge, placed):
             tnt = _turn_near_target_variant(edge, rule_exit, rule_entry, rank)
             variants.extend(tnt)

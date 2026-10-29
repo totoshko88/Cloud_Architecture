@@ -676,6 +676,7 @@ def route_fan_out_row(
     obstacles: List[Box],
     containers: Optional[Dict[str, Box]] = None,
     lane_above: Optional[bool] = None,
+    lift_over: bool = False,
 ) -> List[Point]:
     """Route a ``fan-out-row`` edge in its own off-row lane (Req 7.4).
 
@@ -705,13 +706,55 @@ def route_fan_out_row(
     the normal fan-out — across below the row, up into the target's left face.
     The drawn polyline therefore starts by going *down* from the pinned bottom
     contact, so the stored ``exit`` matches where the polyline actually begins
-    (no exit/route mismatch)."""
+    (no exit/route mismatch).
+
+    Shape (LIFT-OVER — the up-climb branch, 1.13.0 L3): ``lift_over`` routes the
+    one branch of a single-hub fan-out whose target sits a row or more ABOVE the
+    source. Its rise, laid amongst the descending siblings' nested turn columns,
+    otherwise cuts their left-approach legs — the single-hub N-way fan-out
+    crossing the finishing crossing-repair pass cannot clear (ENGINE-TODO L3).
+    The lift-over exits right, steps into the gap column right of the source (the
+    same ``step_x`` gap every fan-out step-out shares, which sits LEFT of every
+    sibling's turn column), climbs that column to a lane ABOVE every node in the
+    run's x-span, runs across that clear lane, and drops into the target's left
+    face at its approach column. Rise left of the fan, cross above it: the climb
+    never meets a descending sibling's corridor. Offered only as a scored
+    :data:`~rule_engine.layout.variants.RoutePlan.LIFT_OVER` variant, so the
+    solver commits it only when ``route_cost`` scores strictly fewer crossings
+    (rule-based stays rank 0), keeping every shipped golden byte-identical."""
     src = obstacle_box(edge.source, obstacles)
     tgt = obstacle_box(edge.target, obstacles)
     others = _relevant_obstacles(edge, obstacles)
 
     entry = _contact_point(tgt, entry_pt)
     exit_abs = _contact_point(src, exit_pt)
+
+    if lift_over:
+        # The clear lane sits above every node whose x-span overlaps the run —
+        # the whole fan, not just the climb target.
+        x_lo = min(src.x, tgt.x)
+        x_hi = max(src.right, tgt.right)
+        top = min(src.y, tgt.y)
+        for b in obstacles:
+            if b.right < x_lo or b.x > x_hi:
+                continue
+            top = min(top, b.y)
+        lane_y = _snap(top - 2 * GRID)
+        # Step into the shared gap column right of the source (left of every
+        # sibling turn column), climb to the clear lane, run across, and drop
+        # into the target's left face at its approach column.
+        step_x = _gap_column_x(allocator, src, edge.id)
+        turn_x = _snap(tgt.x - (col_step() - ICON_SIZE) // 2)
+        waypoints = [
+            (step_x, _snap(exit_abs[1])),   # step out to the gap column
+            (step_x, lane_y),               # climb to the clear lane
+            (turn_x, lane_y),               # run across above the whole fan
+            (turn_x, _snap(entry[1])),      # drop into the target's left face
+        ]
+        waypoints = _dedupe_axis_collapse(waypoints, waypoints[0])
+        route = [exit_abs] + waypoints + [entry]
+        route = _detour_clockwise_if_blocked(route, others)
+        return _interior_waypoints(route)
 
     # Level-run shortcut (wave-4 ITEM 4b): a fan-out-row edge whose right-face
     # exit and left-face entry already resolve to the SAME absolute y, and whose
@@ -2218,6 +2261,7 @@ def route_edge(
     corridor_y: Optional[float] = None,
     turn_near_target: bool = False,
     bus: Optional[str] = None,
+    lift_over: bool = False,
 ) -> List[Point]:
     """Classify ``edge`` and dispatch to the matching ``route_<kind>`` router.
 
@@ -2254,7 +2298,8 @@ def route_edge(
         )
     if kind == "fan-out-row":
         return ROUTERS[kind](
-            edge, exit_pt, entry_pt, allocator, obstacles, containers, lane_above
+            edge, exit_pt, entry_pt, allocator, obstacles, containers, lane_above,
+            lift_over,
         )
     if kind == "spine":
         return ROUTERS[kind](edge, exit_pt, entry_pt, allocator, obstacles, containers)
