@@ -221,6 +221,18 @@ class ContainerSpec:
     #: VPC. Coordinate-free. ``None`` (default) → the diagram's primary provider,
     #: so every existing spec is byte-identical.
     provider: Optional[str] = None
+    #: Opt this peer container into **till-content** sizing (1.13.0 L6). By
+    #: default a peer container (an AZ or VPC with a region-sibling of the same
+    #: kind) is widened by ``_equalize_peer_widths`` to the WIDER peer's size so
+    #: the pair reads as one mirror-symmetric stack. When its content is far
+    #: narrower than its sibling's (an asymmetric SEP account: one AZ holds a
+    #: wide service row, the other a single node) that widening leaves hundreds
+    #: of px of dead-space (``container-dead-space``). ``fit_content=True`` keeps
+    #: this box sized to its OWN content + padding instead, and excludes it from
+    #: setting the pair target — so the sibling is not dragged wider either.
+    #: ``False`` (default) keeps the equalized, mirror-symmetric behaviour, so
+    #: every existing spec is byte-identical.
+    fit_content: bool = False
 
 
 @dataclass(frozen=True)

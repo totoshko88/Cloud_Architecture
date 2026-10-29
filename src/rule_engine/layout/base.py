@@ -2096,6 +2096,9 @@ def _equalize_peer_widths(boxes: Dict[str, Box], spec: DiagramSpec, axis: str) -
     kind_of = {c.id: c.kind for c in spec.containers}
     region_of = {c.id: c.region for c in spec.containers}
     parent_of = {c.id: c.parent for c in spec.containers}
+    #: L6 (1.13.0): peers opted into till-content sizing — excluded from both
+    #: the pair target and the widen step, so each keeps its own content width.
+    fit_content = {c.id for c in spec.containers if getattr(c, "fit_content", False)}
 
     # Group peers: same kind, and the same "role" within the region so az bands
     # pair by tier ordinal. Use (kind, ordinal-within-region-kind).
@@ -2115,7 +2118,14 @@ def _equalize_peer_widths(boxes: Dict[str, Box], spec: DiagramSpec, axis: str) -
     for peers in groups.values():
         if len(peers) < 2:
             continue
-        target = max(_extent(boxes[cid], axis)[1] for cid in peers)
+        # L6: the pair target is the widest peer that has NOT opted into
+        # till-content sizing, so a fit_content peer never drags its sibling
+        # wider. With every peer opted out there is no target — leave them all
+        # at their own content width.
+        eligible = [cid for cid in peers if cid not in fit_content]
+        if not eligible:
+            continue
+        target = max(_extent(boxes[cid], axis)[1] for cid in eligible)
         # Overall pair centre along the axis (mean of member centres).
         centres = [
             _extent(boxes[cid], axis)[0] + _extent(boxes[cid], axis)[1] / 2.0
@@ -2123,6 +2133,8 @@ def _equalize_peer_widths(boxes: Dict[str, Box], spec: DiagramSpec, axis: str) -
         ]
         pair_centre = (min(centres) + max(centres)) / 2.0
         for cid in peers:
+            if cid in fit_content:
+                continue  # L6: keep this box at its own content width
             low, size = _extent(boxes[cid], axis)
             if size == target:
                 continue
