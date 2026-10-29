@@ -1,31 +1,43 @@
 #!/usr/bin/env python3
-"""Generate the **kubernetes** golden pair (summary + landscape) — 1.10.11.
+"""Generate the **kubernetes** golden pair (summary + landscape) — 1.13.0 (v2).
 
 The ``kubernetes`` Provider Profile (1.10.11) is an orchestrator-platform
 profile, not a cloud account. This golden is the canonical demonstration of its
-structural model:
+structural model, re-baselined ``v1 -> v2`` in 1.13.0 into a richer, realistic
+multi-namespace cluster that still keeps the geometry the engine's (coordinate-
+free specs only):
 
     Cluster  (boundary envelope, k8s-blue #326CE5)
-      ├ Namespace: app   (leaf boundary)  ⊃ ingress-svc / deployment / pods
-      └ Namespace: data  (leaf boundary)  ⊃ service / statefulset / pvc
+      ├ Namespace: kube-system (control plane) ⊃ api / etcd / scheduler / cm
+      ├ Namespace: ingress     ⊃ ingress Service / ingress controller
+      ├ Namespace: app         ⊃ Service / Deployment / ReplicaSet / 2 Pods
+      │                           + HPA / ConfigMap / ServiceAccount (supporting)
+      └ Namespace: data        ⊃ Service / StatefulSet / PVC / Secret (supporting)
 
-An external **Ingress** actor sits in the ``actors`` lane ABOVE the cluster
-(the k8s profile draws cluster-edge ingress as an external actor, cleared from
-the cluster top by the Theme 18 external-row fix added in 1.10.11 — NOT in the
+An external **client** (Ingress glyph) sits in the ``actors`` lane ABOVE the
+cluster (the k8s profile draws cluster-edge ingress as an external actor,
+cleared from the cluster top by the Theme 18 external-row fix — NOT in the
 ``edge`` lane, which is an in-boundary lane).
+
+Control-plane objects and the per-namespace config/scaling/identity/secret
+objects are marked ``overlay="supporting"`` — a dotted outline, documented in
+the Legend, EXEMPT from ``node-connectivity`` and ``graph-islands`` — so they
+need not sit on the numbered data-flow spine. The numbered spine traces the
+request end-to-end: client -> ingress Service -> ingress controller -> app
+Service -> Deployment -> ReplicaSet -> Pod -> data Service -> StatefulSet -> PVC.
 
 Two artifacts, cross-linked (the sanctioned summary+landscape pair):
 
 - ``01-kubernetes-architecture-summary.drawio`` — a ``flow`` summary (<= 12
-  nodes): the shape of the system (ingress -> service -> deployment -> data).
+  nodes): the shape of the system plus a supporting api-server node.
 - ``01-kubernetes-architecture-landscape.drawio`` — a ``landscape`` as-built:
-  both namespaces with their full workload/config/storage objects.
+  four namespace bands with their full workload/config/storage objects.
 
 Both are coordinate-free: the specs below declare only ``(role, lane, region,
-slot, container)`` and ``layout()`` computes all geometry — so the geometry is
-the engine's, not hand-placed (the 02-09 corpus convention). Icons resolve
-through ``mappings/kubernetes-icons.yaml`` (official Kubernetes Icons Set, file
-paths), container styles through its ``containers`` block.
+slot, container, overlay)`` and ``layout()`` computes all geometry — so the
+geometry is the engine's, not hand-placed (the 02-09 corpus convention). Icons
+resolve through ``mappings/kubernetes-icons.yaml`` (official Kubernetes Icons
+Set, file paths), container styles through its ``containers`` block.
 
 Usage::
 
@@ -44,7 +56,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from rule_engine import draw_cli as dc  # noqa: E402
-from rule_engine.diagram_layout import build_diagram  # noqa: E402
+from rule_engine.diagram_layout import (  # noqa: E402
+    build_diagram,
+    legend_lines_for,
+    OVERLAY_LEGEND_LINES,
+)
 from rule_engine.icon_resolver import resolve_container  # noqa: E402
 from rule_engine.layout_engine import layout  # noqa: E402
 from rule_engine.layout.model import (  # noqa: E402
@@ -61,25 +77,12 @@ LANDSCAPE_OUT = OUT_DIR / "01-kubernetes-architecture-landscape.drawio"
 
 PROVIDER = "kubernetes"
 
-# --------------------------------------------------------------------------- #
-# Icon + container-style resolution (via mappings/kubernetes-icons.yaml), reusing
-# the shared draw_cli helpers so the k8s golden follows the exact placed→
-# build_diagram path every snapshot-driven diagram uses.
-# --------------------------------------------------------------------------- #
-
-
-def _container_styles():
-    return {
-        "boundary": resolve_container("boundary", PROVIDER)["style_string"],
-        "namespace": resolve_container("namespace", PROVIDER)["style_string"],
-    }
-
 
 # --------------------------------------------------------------------------- #
-# Summary spec (flow, <= 12 nodes) — the shape.
+# Summary spec (flow, <= 12 nodes) — the shape plus a supporting api-server.
 # --------------------------------------------------------------------------- #
 
-SUMMARY_TITLE = "kubernetes architecture — cluster-prod / default | 2026-10-14 | v1"
+SUMMARY_TITLE = "kubernetes architecture — cluster-prod / default | 2026-10-29 | v2"
 
 
 def summary_spec() -> DS:
@@ -88,38 +91,51 @@ def summary_spec() -> DS:
         diagram_name="kubernetes-architecture-summary",
         axis="north-south",
         nodes=(
-            NS(id="ingress", role="k8s_ingress", lane="actors", region="", slot=0),
-            NS(id="svc", role="k8s_service", lane="router", region="a", slot=0, container="ns-app"),
+            NS(id="client", role="k8s_ingress", lane="actors", region="", slot=0),
+            # Namespace: app (region a) — the request path's compute tier.
+            NS(id="ing", role="k8s_service", lane="router", region="a", slot=0, container="ns-app"),
+            NS(id="app-svc", role="k8s_service", lane="router", region="a", slot=1, container="ns-app"),
             NS(id="deploy", role="k8s_deployment", lane="workers", region="a", slot=0, container="ns-app"),
-            # ns-data as a disjoint peer band (region "b") beside ns-app — the
-            # owner-chosen side-by-side shape. The Theme 45 primary-axis rebase
-            # (place_nodes) lifts region b so ns-data's top tier sits level with
-            # ns-app's, so the two namespace boxes share a top edge instead of
-            # landing diagonally — which keeps the Cluster envelope tight
-            # (dead-space well under OUTER_DEAD_SPACE_RATIO 2.5) AND keeps the
-            # summary wide-and-short so its flow raster stays within budget. The
-            # earlier stacked (both region "a") layout was tall-and-narrow and
-            # overflowed the flow raster height after width-upscale.
+            # Namespace: data (region b) — a disjoint peer band beside app.
+            NS(id="data-svc", role="k8s_service", lane="router", region="b", slot=0, container="ns-data"),
             NS(id="sts", role="k8s_statefulset", lane="data", region="b", slot=0, container="ns-data"),
             NS(id="pvc", role="k8s_pvc", lane="data", region="b", slot=1, container="ns-data"),
+            # Namespace: kube-system (region c) — one visible control-plane node,
+            # supporting (dotted outline, off the numbered spine).
+            NS(id="api", role="k8s_api", lane="platform", region="c", slot=0,
+               container="ns-system", overlay="supporting"),
         ),
         edges=(
-            ES(id="e1", source="ingress", target="svc", marker="1"),
-            ES(id="e2", source="svc", target="deploy", marker="2"),
-            ES(id="e3", source="deploy", target="sts", marker="3"),
-            ES(id="e4", source="sts", target="pvc", marker="4"),
+            ES(id="e1", source="client", target="ing", marker="1"),
+            ES(id="e2", source="ing", target="app-svc", marker="2"),
+            ES(id="e3", source="app-svc", target="deploy", marker="3"),
+            ES(id="e4", source="deploy", target="data-svc", marker="4", kind_hint="cross-region"),
+            ES(id="e5", source="data-svc", target="sts", marker="5"),
+            ES(id="e6", source="sts", target="pvc", marker="6"),
+            # The supporting api-server admits the Deployment (light edge; the
+            # overlay already exempts it from connectivity, but an edge reads
+            # better and keeps the control plane related to the workload).
+            ES(id="e7", source="api", target="deploy", marker="7"),
         ),
         containers=(
             CS(id="cluster", kind="account", region="", parent=None, label_key="cluster"),
-            CS(id="ns-app", kind="namespace", region="a", parent="cluster", label_key="ns-app"),
-            CS(id="ns-data", kind="namespace", region="b", parent="cluster", label_key="ns-data"),
+            # Namespaces are NOT mirror peers (unlike an HA active/passive pair),
+            # so each sizes to its own content (fit_content) rather than being
+            # equalized to a common width — which keeps three/four disjoint bands
+            # snug and non-overlapping.
+            CS(id="ns-app", kind="namespace", region="a", parent="cluster", label_key="ns-app", fit_content=True),
+            CS(id="ns-data", kind="namespace", region="b", parent="cluster", label_key="ns-data", fit_content=True),
+            CS(id="ns-system", kind="namespace", region="c", parent="cluster", label_key="ns-system", fit_content=True),
         ),
         flow_lines=(
             "Flow",
-            "1. External traffic enters via the Ingress",
-            "2. Service routes to the app Deployment",
-            "3. App reads/writes the data StatefulSet",
-            "4. StatefulSet persists to its PersistentVolumeClaim",
+            "1. External client enters via the ingress Service",
+            "2. Ingress Service routes to the app Service",
+            "3. App Service to the Deployment",
+            "4. App Deployment calls the data Service",
+            "5. Data Service to the StatefulSet",
+            "6. StatefulSet persists to its PersistentVolumeClaim",
+            "7. API server admits the Deployment",
         ),
         title=SUMMARY_TITLE,
     )
@@ -129,7 +145,7 @@ def summary_spec() -> DS:
 # Landscape spec (landscape, full as-built).
 # --------------------------------------------------------------------------- #
 
-LANDSCAPE_TITLE = "kubernetes architecture — cluster-prod / default | 2026-10-14 | v1"
+LANDSCAPE_TITLE = "kubernetes architecture — cluster-prod / default | 2026-10-29 | v2"
 
 
 def landscape_spec() -> DS:
@@ -138,59 +154,120 @@ def landscape_spec() -> DS:
         diagram_name="kubernetes-architecture-landscape",
         axis="north-south",
         nodes=(
-            NS(id="ingress", role="k8s_ingress", lane="actors", region="", slot=0),
-            # Namespace: app
-            NS(id="svc-app", role="k8s_service", lane="router", region="a", slot=0, container="ns-app"),
-            NS(id="deploy", role="k8s_deployment", lane="workers", region="a", slot=0, container="ns-app"),
-            NS(id="pod1", role="k8s_pod", lane="workers", region="a", slot=1, container="ns-app"),
-            NS(id="hpa", role="k8s_hpa", lane="platform", region="a", slot=0, container="ns-app"),
-            NS(id="cm", role="k8s_configmap", lane="platform", region="a", slot=1, container="ns-app"),
-            # Namespace: data (region b → disjoint peer band beside app)
-            NS(id="svc-data", role="k8s_service", lane="router", region="b", slot=0, container="ns-data"),
-            NS(id="sts", role="k8s_statefulset", lane="data", region="b", slot=0, container="ns-data"),
-            NS(id="pvc", role="k8s_pvc", lane="data", region="b", slot=1, container="ns-data"),
-            # secret at platform slot 1 (not 0): directly above sts it made e9
-            # (secret->sts) and e5 (svc-data->sts) merge on sts's top face
-            # (entry-thirds top-entries-merge ERROR); slot 1 offsets it so the
-            # two edges enter sts on separate faces.
-            NS(id="secret", role="k8s_secret", lane="platform", region="b", slot=1, container="ns-data"),
+            NS(id="client", role="k8s_ingress", lane="actors", region="", slot=0),
+            # Bands read left -> right along the request flow: ingress (a) -> app
+            # (b) -> data (c); the kube-system control plane (d) is a side
+            # subsystem drawn rightmost. The client enters the LEFTMOST band, so
+            # its drop into the ingress Service is a short, near-vertical run.
+            # Namespace: ingress (region a)
+            NS(id="ing-svc", role="k8s_service", lane="router", region="a", slot=0,
+               container="ns-ingress"),
+            NS(id="ing-ctrl", role="k8s_deployment", lane="workers", region="a", slot=0,
+               container="ns-ingress"),
+            # Namespace: app (region b)
+            NS(id="app-svc", role="k8s_service", lane="router", region="b", slot=0,
+               container="ns-app"),
+            NS(id="app-deploy", role="k8s_deployment", lane="workers", region="b", slot=0,
+               container="ns-app"),
+            NS(id="app-rs", role="k8s_replicaset", lane="workers", region="b", slot=1,
+               container="ns-app"),
+            NS(id="pod1", role="k8s_pod", lane="workers", region="b", slot=2,
+               container="ns-app"),
+            NS(id="pod2", role="k8s_pod", lane="workers", region="b", slot=3,
+               container="ns-app"),
+            NS(id="app-hpa", role="k8s_hpa", lane="platform", region="b", slot=0,
+               container="ns-app", overlay="supporting"),
+            NS(id="app-cm", role="k8s_configmap", lane="platform", region="b", slot=1,
+               container="ns-app", overlay="supporting"),
+            NS(id="app-sa", role="k8s_sa", lane="platform", region="b", slot=2,
+               container="ns-app", overlay="supporting"),
+            # Namespace: data (region c)
+            NS(id="data-svc", role="k8s_service", lane="router", region="c", slot=0,
+               container="ns-data"),
+            NS(id="data-sts", role="k8s_statefulset", lane="data", region="c", slot=0,
+               container="ns-data"),
+            NS(id="data-pvc", role="k8s_pvc", lane="data", region="c", slot=1,
+               container="ns-data"),
+            # secret at platform slot 0; its edge enters data-sts on a distinct
+            # face from the spine edge (data-svc -> data-sts), avoiding an
+            # entry-thirds merge on the StatefulSet top face.
+            NS(id="data-secret", role="k8s_secret", lane="platform", region="c", slot=0,
+               container="ns-data", overlay="supporting"),
+            # Namespace: kube-system (region d) — the control plane, rightmost.
+            # Every node is supporting (dotted outline), off the numbered spine;
+            # only api<->etcd carries a light edge.
+            NS(id="api", role="k8s_api", lane="platform", region="d", slot=0,
+               container="ns-system", overlay="supporting"),
+            NS(id="etcd", role="k8s_etcd", lane="data", region="d", slot=0,
+               container="ns-system", overlay="supporting"),
+            NS(id="sched", role="k8s_scheduler", lane="platform", region="d", slot=1,
+               container="ns-system", overlay="supporting"),
+            NS(id="cm-ctrl", role="k8s_controller_manager", lane="platform", region="d", slot=2,
+               container="ns-system", overlay="supporting"),
         ),
         edges=(
-            # Primary spine (linear): ingress -> service -> deployment -> pod,
-            # then cross-namespace to the data service -> statefulset -> pvc.
-            ES(id="e1", source="ingress", target="svc-app", marker="1"),
-            ES(id="e2", source="svc-app", target="deploy", marker="2"),
-            ES(id="e3", source="deploy", target="pod1", marker="3"),
-            # Cross-namespace handoff app -> data. Marked cross-region so the
-            # router allocates it its OWN corridor instead of dropping the drop-
-            # lane onto ns-data's left border (the border-riding `e4 ns-data.left`
-            # defect): a namespace boundary is a region boundary here, so this is
-            # the honest hint, the same pattern the cross-region flow edges use.
-            ES(id="e4", source="deploy", target="svc-data", marker="4", kind_hint="cross-region"),
-            ES(id="e5", source="svc-data", target="sts", marker="5"),
-            ES(id="e6", source="sts", target="pvc", marker="6"),
-            # Supporting config/scaling/secret — each attaches to ONE node and
-            # enters on a distinct face, so no face carries >2 merged entries.
-            ES(id="e7", source="cm", target="deploy", marker="7"),
-            ES(id="e8", source="hpa", target="pod1", marker="8"),
-            ES(id="e9", source="secret", target="sts", marker="9"),
+            # Primary numbered spine 1-9: client enters the ingress namespace,
+            # the ingress controller hands off to the app namespace, the app
+            # Deployment runs its ReplicaSet/Pod, the app Pod calls the data
+            # namespace Service, which backs the StatefulSet + PVC.
+            ES(id="e1", source="client", target="ing-svc", marker="1"),
+            ES(id="e2", source="ing-svc", target="ing-ctrl", marker="2"),
+            # Cross-namespace handoffs carry kind_hint="cross-region" so the
+            # router allocates each its OWN corridor instead of riding a
+            # namespace border (a namespace is a region boundary here).
+            ES(id="e3", source="ing-ctrl", target="app-svc", marker="3", kind_hint="cross-region"),
+            ES(id="e4", source="app-svc", target="app-deploy", marker="4"),
+            ES(id="e5", source="app-deploy", target="app-rs", marker="5"),
+            ES(id="e6", source="app-rs", target="pod1", marker="6"),
+            # The ReplicaSet runs BOTH pods — pod2 is on the spine too, so it is
+            # not an island (app-sa is supporting and excluded from the island
+            # calculation, so a supporting attachment alone would leave pod2
+            # orphaned).
+            ES(id="e7", source="app-rs", target="pod2", marker="7"),
+            ES(id="e8", source="pod1", target="data-svc", marker="8", kind_hint="cross-region"),
+            ES(id="e9", source="data-svc", target="data-sts", marker="9"),
+            ES(id="e10", source="data-sts", target="data-pvc", marker="10"),
+            # Supporting edges 11-14: each attaches ONE supporting node to one
+            # spine node on a distinct target face, so no face carries merged
+            # entries. The nodes are overlay=supporting, so they are exempt from
+            # node-connectivity / graph-islands regardless of these edges.
+            ES(id="e11", source="app-cm", target="app-deploy", marker="11"),
+            ES(id="e12", source="app-hpa", target="app-rs", marker="12"),
+            ES(id="e13", source="app-sa", target="pod2", marker="13"),
+            ES(id="e14", source="data-secret", target="data-sts", marker="14"),
+            # The only control-plane edge: the API server stores state in etcd.
+            # scheduler + controller-manager stay edge-less (supporting exempts
+            # them); the control plane is a legitimately separate component.
+            ES(id="e15", source="api", target="etcd", marker="15"),
         ),
         containers=(
             CS(id="cluster", kind="account", region="", parent=None, label_key="cluster"),
-            CS(id="ns-app", kind="namespace", region="a", parent="cluster", label_key="ns-app"),
-            CS(id="ns-data", kind="namespace", region="b", parent="cluster", label_key="ns-data"),
+            # Namespaces size to their own content (fit_content) — they are not
+            # mirror peers, so four disjoint bands of different widths stay snug
+            # and non-overlapping instead of being equalized to a common width.
+            # Band order a..d reads ingress -> app -> data -> kube-system.
+            CS(id="ns-ingress", kind="namespace", region="a", parent="cluster", label_key="ns-ingress", fit_content=True),
+            CS(id="ns-app", kind="namespace", region="b", parent="cluster", label_key="ns-app", fit_content=True),
+            CS(id="ns-data", kind="namespace", region="c", parent="cluster", label_key="ns-data", fit_content=True),
+            CS(id="ns-system", kind="namespace", region="d", parent="cluster", label_key="ns-system", fit_content=True),
         ),
         flow_lines=(
             "Flow",
-            "1. Ingress -> app Service",
-            "2. Service -> Deployment",
-            "3. Deployment manages its Pod",
-            "4. App -> data Service",
-            "5. Service -> StatefulSet",
-            "6. StatefulSet -> PersistentVolumeClaim",
-            "7. ConfigMap configures the Deployment",
-            "8. HPA scales the Pod",
-            "9. Secret mounted by the StatefulSet",
+            "1. External client enters via the ingress Service",
+            "2. Ingress Service routes to the ingress controller",
+            "3. Ingress controller to the app Service",
+            "4. App Service to the app Deployment",
+            "5. Deployment manages its ReplicaSet",
+            "6. ReplicaSet runs the first Pod",
+            "7. ReplicaSet runs the second Pod",
+            "8. App Pod calls the data Service",
+            "9. Data Service to the StatefulSet",
+            "10. StatefulSet persists to its PersistentVolumeClaim",
+            "11. ConfigMap configures the Deployment",
+            "12. HPA scales the ReplicaSet",
+            "13. ServiceAccount identity for the second Pod",
+            "14. Secret mounted by the StatefulSet",
+            "15. API server stores state in etcd",
         ),
         title=LANDSCAPE_TITLE,
     )
@@ -200,15 +277,17 @@ def landscape_spec() -> DS:
 # Build via the shared placed → build_diagram path (draw_cli helpers).
 # --------------------------------------------------------------------------- #
 
-# Container labels keyed by container id (the k8s cluster + its two namespaces).
+# Container labels keyed by container id (the k8s cluster + its namespaces).
 _CONTAINER_LABELS = {
     "cluster": "Cluster: prod",
+    "ns-system": "Namespace: kube-system",
+    "ns-ingress": "Namespace: ingress",
     "ns-app": "Namespace: app",
     "ns-data": "Namespace: data",
 }
 
 
-def _build(spec: DS) -> str:
+def _build(spec: DS, *, extra_legend=()) -> str:
     placed = layout(spec)
     for warning in placed.layout_warnings:
         print(f"build_kubernetes_example: layout WARNING: {warning}", file=sys.stderr)
@@ -219,6 +298,12 @@ def _build(spec: DS) -> str:
     boundaries = dc._boundaries_from(placed, PROVIDER, _CONTAINER_LABELS)
     page_w, page_h = dc._page_size(placed)
 
+    # Preserve the auto-derived Legend (keeps the Outer-boundary line for the
+    # cluster kind="account", drops the Inner-boundary line since namespaces are
+    # kind="namespace", not "vpc") and append the supporting overlay line so
+    # overlay-legend-coverage is satisfied.
+    legend = legend_lines_for(boundaries) + tuple(extra_legend)
+
     return build_diagram(
         diagram_id=spec.diagram_id,
         diagram_name=spec.diagram_name,
@@ -227,6 +312,7 @@ def _build(spec: DS) -> str:
         nodes=nodes,
         edges=edges,
         flow_lines=spec.flow_lines,
+        legend_lines=legend,
         legend_x=placed.legend_x,
         legend_w=placed.legend_w,
         page_w=page_w,
@@ -241,8 +327,9 @@ def main(argv=None) -> int:
     ap.add_argument("--check", action="store_true")
     args = ap.parse_args(argv)
 
-    summary_xml = _build(summary_spec())
-    landscape_xml = _build(landscape_spec())
+    supporting = (OVERLAY_LEGEND_LINES["supporting"],)
+    summary_xml = _build(summary_spec(), extra_legend=supporting)
+    landscape_xml = _build(landscape_spec(), extra_legend=supporting)
 
     if args.stdout_summary:
         sys.stdout.write(summary_xml)

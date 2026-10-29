@@ -1841,6 +1841,76 @@ def _region_primary_rebase(spec: DiagramSpec, base: Dict[str, Box]) -> int:
     return _snap(top_a - top_b)
 
 
+def _region_band_offsets(
+    spec: DiagramSpec, base: Dict[str, Box]
+) -> Dict[str, Tuple[int, int]]:
+    """Return ``region token -> (secondary_offset, primary_lift)`` for N peer bands.
+
+    The generalisation (1.13.0) of the two-region placement
+    (:func:`_region_secondary_offset` + :func:`_region_primary_rebase`) to **any
+    number** of peer region bands (``a``, ``b``, ``c``, ``d``, …). Each non-empty
+    region token (account-level ``""`` nodes are not a band) is laid out as a
+    disjoint band beside the previous one, in sorted token order:
+
+    * **secondary_offset** — the running left edge of all preceding bands. Band 0
+      (``a``) is at ``0``; each later band starts one :data:`REGION_GAP` past the
+      secondary-axis footprint extent (icon + label band, so labels clear too) of
+      every band before it. This is the cumulative form of
+      :func:`_region_secondary_offset`, which computes exactly region ``a``'s
+      extent + gap — i.e. band ``b``'s offset for the N=2 case.
+    * **primary_lift** — ``top(region a) - top(this region)`` of the pre-offset
+      primary-axis extents, so a band whose lanes start lower than ``a`` is lifted
+      up to share ``a``'s top edge (Theme 45). Non-positive (a peer only lifts up,
+      never pushes down), and ``0`` whenever the band already shares ``a``'s top.
+      Identical to :func:`_region_primary_rebase` for each band.
+
+    **Golden safety (N=2 reduction).** For exactly two regions ``a``/``b`` this
+    yields ``{"a": (0, 0), "b": (_region_secondary_offset(spec, base),
+    _region_primary_rebase(spec, base))}`` by construction — region ``a``'s
+    extent+gap and ``top(a)-top(b)`` — so :func:`place_nodes` places a two-region
+    spec byte-for-byte as before and every shipped a/b golden is unchanged.
+
+    A pure function of the spec + base placement (determinism, Req 11.1); every
+    offset/lift is grid-snapped so ``check_grid_alignment`` stays clean.
+    """
+    secondary = _secondary_axis(spec.axis)
+    primary = "y" if spec.axis == "north-south" else "x"
+    regions = sorted({n.region for n in spec.nodes if n.region})
+    if not regions:
+        return {}
+
+    def _foot_extent(token: str) -> Tuple[float, float]:
+        boxes = [
+            base[n.id].footprint(LABEL_BAND)
+            for n in spec.nodes
+            if n.region == token
+        ]
+        lo = min(_extent(b, secondary)[0] for b in boxes)
+        hi = max(_extent(b, secondary)[0] + _extent(b, secondary)[1] for b in boxes)
+        return lo, hi
+
+    def _primary_top(token: str) -> float:
+        boxes = [base[n.id] for n in spec.nodes if n.region == token]
+        return min(_extent(b, primary)[0] for b in boxes)
+
+    top_first = _primary_top(regions[0])
+    gap = region_gap()
+    out: Dict[str, Tuple[int, int]] = {}
+    # ``secondary_offset`` is a DELTA added to each band node's own secondary low
+    # (place_nodes applies ``low + offset``), exactly as the two-region path did.
+    # Band k's delta is the cumulative ``sum(extent(j) + gap for j < k)`` of every
+    # band before it, so band k clears all its predecessors. Band 0 is 0; band 1
+    # is ``extent(a) + gap`` — byte-identical to ``_region_secondary_offset``.
+    cumulative: float = 0.0
+    for i, token in enumerate(regions):
+        lo, hi = _foot_extent(token)
+        sec = 0 if i == 0 else _snap(cumulative)
+        cumulative += (hi - lo) + gap
+        lift = _snap(top_first - _primary_top(token))
+        out[token] = (int(sec), int(lift))
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Container sizing, equal-width bands, and block centring (Req 3.4, Req 4)
 # ---------------------------------------------------------------------------
@@ -2138,6 +2208,13 @@ def _equalize_peer_widths(boxes: Dict[str, Box], spec: DiagramSpec, axis: str) -
             for cid in peers
         ]
         pair_centre = (min(centres) + max(centres)) / 2.0
+        # 1.13.0 (N-region): with THREE OR MORE peer bands, widening every band
+        # "outward from one shared centre" would push an inner band's low edge
+        # left into its left neighbour (the overlap the two-band mirror cannot
+        # produce). Instead widen each band symmetrically around ITS OWN centre,
+        # so it stays over its own content and the bands stay disjoint. For
+        # exactly two peers the branch below is unchanged (byte-identical mirror).
+        many = len([cid for cid in peers if cid not in fit_content]) > 2
         for cid in peers:
             if cid in fit_content:
                 continue  # L6: keep this box at its own content width
@@ -2146,9 +2223,10 @@ def _equalize_peer_widths(boxes: Dict[str, Box], spec: DiagramSpec, axis: str) -
                 continue
             centre = low + size / 2.0
             grow = target - size
-            # Grow outward from the pair centre: a band left of centre keeps its
-            # right edge (moves its low edge out); right of centre keeps its low.
-            if centre <= pair_centre:
+            if many:
+                # Centre the widened box on its own content centre.
+                new_low = centre - target / 2.0
+            elif centre <= pair_centre:
                 new_low = low - grow  # keep right edge (low + size) fixed
             else:
                 new_low = low         # keep low edge fixed, extend outward
