@@ -251,6 +251,11 @@ _OVERLAY_SHAPE = {
     # a config store) that supports the workload but is not a step of its
     # data flow. A dotted outline, distinct from the dashed ``standby`` ring.
     "supporting": "dashed=1;dashPattern=1 3",
+    # 1.13.0 (feedback): an UNCONFIRMED / tentative inventory item (the
+    # standards' ``[?]`` convention) — rendered dashed with a long-gap pattern
+    # distinct from standby/supporting. First-class so ``overlay-legend-coverage``
+    # is satisfied by the standard Legend line below instead of a WARNING.
+    "unconfirmed": "dashed=1;dashPattern=8 8",
 }
 
 #: The standard Legend line for each overlay term a builder can emit
@@ -259,6 +264,7 @@ _OVERLAY_SHAPE = {
 OVERLAY_LEGEND_LINES = {
     "standby": "standby = passive peer (dashed outline); edges mirror the active side",
     "supporting": "supporting = ops / observability service (dotted outline); not a data-flow step",
+    "unconfirmed": "unconfirmed = tentative / not yet confirmed (dashed outline, [?]); verify before relying on it",
 }
 
 
