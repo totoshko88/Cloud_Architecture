@@ -104,7 +104,7 @@
         <mxCell id="app_a" value="app-primary" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/compute/Kubernetes_Services.svg" vertex="1" parent="boundary-region-a">
           <mxGeometry x="30" y="240" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="db_a" value="db-primary" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/databases/SQL_Database.svg" vertex="1" parent="boundary-region-a">
+        <mxCell id="db_a" value="db-primary" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/databases/SQL_Managed_Instance.svg" vertex="1" parent="boundary-region-a">
           <mxGeometry x="30" y="400" width="78" height="78" as="geometry" />
         </mxCell>
         <mxCell id="obj_a" value="objstore-primary" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/storage/Storage_Accounts.svg" vertex="1" parent="boundary-region-a">
@@ -116,7 +116,7 @@
         <mxCell id="app_b" value="app-passive" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/compute/Kubernetes_Services.svg" vertex="1" parent="boundary-region-b">
           <mxGeometry x="30" y="240" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="db_b" value="db-passive" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/databases/SQL_Database.svg" vertex="1" parent="boundary-region-b">
+        <mxCell id="db_b" value="db-passive" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/databases/SQL_Managed_Instance.svg" vertex="1" parent="boundary-region-b">
           <mxGeometry x="30" y="400" width="78" height="78" as="geometry" />
         </mxCell>
         <mxCell id="obj_b" value="objstore-passive" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/storage/Storage_Accounts.svg" vertex="1" parent="boundary-region-b">

@@ -242,6 +242,14 @@ Rows whose `resource_type` is `—` (EventBridge, Glue, CloudWatch, IAM, …) ar
 
 ### Service Scope by Provider
 
+The unambiguous rows of these tables are machine-readable in
+`profiles/service-scope.yaml` (1.13.0): per provider, the roles that must sit
+inside a drawn Network Boundary (`network`) and the roles that must never be drawn
+inside one (`outside_vpc`). The `scope-placement` lint rule judges a node's role
+against it when the diagram title names exactly one provider. VPC-attachable
+serverless functions (AWS / Azure / OCI), file systems and managed Kubernetes
+clusters are deliberately not listed; edit the YAML together with these tables.
+
 #### AWS Service Scope
 
 | Service | `resource_type` | Scope | Notes |

@@ -216,6 +216,21 @@ def _resolve_terminology_path() -> Path:
 TERMINOLOGY_PATH: Path = _resolve_terminology_path()
 
 
+def resolve_profile_file(name: str) -> Path:
+    """Locate ``profiles/<name>`` with :func:`_resolve_terminology_path`'s order
+    (repo root, bundled payload, CWD); falls back to the repo-root path."""
+    here = Path(__file__).resolve()
+    repo_root = here.parents[2] / "profiles" / name
+    for candidate in (
+        repo_root,
+        here.parent / "_bootstrap" / "profiles" / name,
+        Path.cwd() / "profiles" / name,
+    ):
+        if candidate.is_file():
+            return candidate
+    return repo_root
+
+
 def resolve_bundled_dir(name: str) -> Path:
     """Locate a bundled data directory (``mappings`` / ``schemas``) in any install.
 

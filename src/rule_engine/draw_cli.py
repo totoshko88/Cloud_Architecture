@@ -42,6 +42,7 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional, Sequence
@@ -54,6 +55,7 @@ from rule_engine.diagram_layout import (
     Node,
     CONTAINER_PAD,
     _LABEL_STYLE,
+    _xml_escape,
     build_diagram,
     overlay_suffix,
 )
@@ -119,7 +121,7 @@ def _node_renderer(style_string: str):
     def render(node: Node, parent_id: str) -> str:
         style = f"{style_string}{overlay_suffix(node)}"
         return (
-            f'        <mxCell id="{node.id}" value="{node.label}" style="{style}" '
+            f'        <mxCell id="{node.id}" value="{_xml_escape(node.label)}" style="{style}" '
             f'vertex="1" parent="{parent_id}">\n'
             f'          <mxGeometry x="{node.x}" y="{node.y}" '
             f'width="{ICON_SIZE}" height="{ICON_SIZE}" as="geometry" />\n'
@@ -144,7 +146,8 @@ def _c4_box_renderer(tech: str):
     style, so the diagram reads as C4 boxes, not cloud glyphs."""
 
     def render(node: Node, parent_id: str) -> str:
-        label = f"{node.label}&#10;[Container: {tech}]" if tech else node.label
+        label = (f"{_xml_escape(node.label)}&#10;[Container: {tech}]" if tech
+                 else _xml_escape(node.label))
         return (
             f'        <mxCell id="{node.id}" value="{label}" style="{_C4_BOX_STYLE}" '
             f'vertex="1" parent="{parent_id}">\n'
@@ -181,7 +184,7 @@ def _annotation_renderer():
 
     def render(node: Node, parent_id: str) -> str:
         return (
-            f'        <mxCell id="{node.id}" value="{node.label}" '
+            f'        <mxCell id="{node.id}" value="{_xml_escape(node.label)}" '
             f'style="{_ANNOTATION_BOX_STYLE}" '
             f'vertex="1" parent="{parent_id}">\n'
             f'          <mxGeometry x="{node.x}" y="{node.y}" '
@@ -203,7 +206,42 @@ def _label_of(node_spec) -> str:
     label = node_spec.id
     if len(label) > 40:
         label = label[:40].rstrip("-")
-    return label
+    return _wrap_slug(label)
+
+
+#: Longest caption line (chars) of a drawn slug label (1.13.0). 18 x 7.0px =
+#: 126px, so the caption overhangs its 78px icon by 24px a side — inside the one
+#: CONTAINER_PAD (30) every container keeps, never across the border
+#: (``container-padding`` ``caption-outside-container``, an ERROR on a landscape).
+#: At most two lines: the second line (+16px) still fits the caption band plus
+#: the bottom pad the layout reserves below a row.
+_SLUG_LINE_CHARS = 18
+
+
+def _wrap_slug(label: str, width: int = _SLUG_LINE_CHARS, cap: int = 40) -> str:
+    """Wrap a long slug onto two ``<br>``-joined lines of at most ``width``
+    chars, breaking after the hyphen nearest the middle that keeps both lines
+    within ``width`` (else hard at ``width``), so its caption stays inside the
+    container that holds the icon. The text is cut to ``2 x width`` chars first,
+    so the joined value (``<br>`` included) stays within the
+    ``node-label-length`` ``cap``. A slug no longer than ``width`` is kept."""
+    if len(label) <= width:
+        return label
+    text = label[: min(2 * width, cap - len("<br>"))].rstrip("-")
+    best = None
+    for i, ch in enumerate(text):
+        if ch != "-":
+            continue
+        a, b = text[: i + 1], text[i + 1:]
+        if a and b and len(a) <= width and len(b) <= width:
+            key = (abs(len(a) - len(b)), i)
+            if best is None or key < best[0]:
+                best = (key, a, b)
+    if best is None:
+        a, b = text[:width], text[width:]
+    else:
+        _key, a, b = best
+    return f"{a}<br>{b}" if b else a
 
 
 def _renderer_key(role: str, node_provider: Optional[str]) -> str:

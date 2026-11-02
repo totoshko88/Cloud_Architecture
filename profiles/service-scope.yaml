@@ -1,0 +1,37 @@
+# Provider-aware service scope (1.13.0) — machine-readable form of the
+# "Service Scope by Provider" tables in .kiro/steering/provider-profiles.md
+# (AWS / Azure / GCP / OCI Service Scope).
+#
+# Read by rule_engine.layout.base.provider_role_scope and the `scope-placement`
+# lint rule. For a diagram whose title names exactly ONE provider, a node whose
+# icon resolves to a role listed here is judged from its ROLE even without an
+# explicit `scope=` style token:
+#
+#   network      -> must sit inside a Network Boundary (VPC / VNet / VCN) when the
+#                   diagram draws one (`vpc-scoped-outside-vpc`);
+#   outside_vpc  -> a regional / global managed service that must NOT be drawn
+#                   inside a Network Boundary (`regional-in-vpc`).
+#
+# Precision first: a role is listed only where the provider tables are
+# unambiguous. Deliberately omitted:
+#   * serverless_fn on aws / azure / oci — VPC attachment is optional, so a
+#     function drawn inside the VPC may be correct;
+#   * file_system — EFS / Azure Files sit correctly in the regional column;
+#   * managed_k8s — a cluster node stands for a REGIONAL control plane AND
+#     VPC-scoped worker nodes (the tables say "EKS (workers)"); a cluster drawn
+#     in the regional column (rule-engine-draw's default) is not wrong;
+#   * every other role (cdn / dns / waf are judged by the provider-independent
+#     `global-in-region` case already).
+# `generic` and `kubernetes` have no rows: their nodes are never judged by role.
+aws:
+  network: [compute_instance, managed_sql, cache, lb]
+  outside_vpc: [object_store, message_queue, secrets_store, llm_platform]
+azure:
+  network: [compute_instance, lb]
+  outside_vpc: [managed_sql, object_store, message_queue, secrets_store, llm_platform]
+gcp:
+  network: [compute_instance, managed_sql]
+  outside_vpc: [serverless_fn, object_store, message_queue, secrets_store, llm_platform]
+oci:
+  network: [compute_instance, managed_sql, lb]
+  outside_vpc: [object_store, message_queue, secrets_store, llm_platform]

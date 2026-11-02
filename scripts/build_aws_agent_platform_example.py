@@ -54,7 +54,7 @@ _ICONS = {
     "s3": f"{_RES}/Res_Storage/Res_Amazon-Simple-Storage-Service_Bucket_48.svg",
 }
 LABELS = {
-    "eks": "agent-eks-cluster", "alb": "agent-alb", "rds": "agent-conversation-db",
+    "eks": "agent-eks-cluster", "alb": "agent-alb", "rds": "agent-history-db",  # 1.13.0: "agent-conversation-db" ran 5px past the VPC border
     "lambda": "agent-tool-invoker", "sqs": "agent-task-queue",
     "bedrock": "agent-bedrock-llm", "secrets": "agent-api-secrets",
     "s3": "agent-artifact-store",

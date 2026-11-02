@@ -31,9 +31,11 @@ from dataclasses import replace
 try:  # package-relative import when used as ``rule_engine.layout.place``
     from ..diagram_layout import CONTAINER_PAD, GRID, ICON_SIZE, COL_STEP, ROW_STEP
     from ..geometry import (
-        Box, LABEL_BAND, CONTAINER_LABEL_BAND, _CAPTION_TEXT_CHAR_W, _CONTAINER_LABEL_INSET, caption_lines,
+        Box, LABEL_BAND, CONTAINER_LABEL_BAND, caption_lines,
         container_caption_need,
     )
+    from ..text_metrics import CAPTION_CHAR_W as _CAPTION_TEXT_CHAR_W
+    from ..text_metrics import UNKNOWN_STYLE_CAPTION_INSET as _CONTAINER_LABEL_INSET
     from .model import DiagramSpec
     from .base import (
         SpecError,
@@ -62,9 +64,11 @@ try:  # package-relative import when used as ``rule_engine.layout.place``
 except ImportError:  # pragma: no cover - fallback for flat-module execution
     from diagram_layout import CONTAINER_PAD, GRID, ICON_SIZE, COL_STEP, ROW_STEP  # type: ignore[no-redef]
     from geometry import (  # type: ignore[no-redef]
-        Box, LABEL_BAND, CONTAINER_LABEL_BAND, _CAPTION_TEXT_CHAR_W, _CONTAINER_LABEL_INSET, caption_lines,
+        Box, LABEL_BAND, CONTAINER_LABEL_BAND, caption_lines,
         container_caption_need,
     )
+    from text_metrics import CAPTION_CHAR_W as _CAPTION_TEXT_CHAR_W  # type: ignore[no-redef]
+    from text_metrics import UNKNOWN_STYLE_CAPTION_INSET as _CONTAINER_LABEL_INSET  # type: ignore[no-redef]
     from layout.model import DiagramSpec  # type: ignore[no-redef]
     from layout.base import (  # type: ignore[no-redef]
         SpecError,

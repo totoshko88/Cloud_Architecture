@@ -163,6 +163,43 @@ VPC_EDGE_ROLES: frozenset = frozenset({
     "transit_gateway",
     "egress_only_igw",
 })
+_PROVIDER_SCOPE_CACHE: Optional[Dict[str, Dict[str, str]]] = None
+
+
+def _provider_scope_table() -> Dict[str, Dict[str, str]]:
+    """``{provider: {role: 'network' | 'outside_vpc'}}`` from
+    ``profiles/service-scope.yaml`` (1.13.0), loaded once. A missing file yields
+    an empty table (no node is judged by role)."""
+    global _PROVIDER_SCOPE_CACHE
+    if _PROVIDER_SCOPE_CACHE is None:
+        import yaml
+        from rule_engine.constants import resolve_profile_file
+
+        table: Dict[str, Dict[str, str]] = {}
+        path = resolve_profile_file("service-scope.yaml")
+        if path.is_file():
+            raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            for provider in sorted(raw):
+                rows = raw[provider] or {}
+                per: Dict[str, str] = {}
+                for scope in ("network", "outside_vpc"):
+                    for role in rows.get(scope) or ():
+                        per[str(role)] = scope
+                table[str(provider)] = per
+        _PROVIDER_SCOPE_CACHE = table
+    return _PROVIDER_SCOPE_CACHE
+
+
+def provider_role_scope(role: str, provider: str) -> Optional[str]:
+    """``'network'`` / ``'outside_vpc'`` for ``role`` on ``provider`` (1.13.0).
+
+    The provider-aware scope of ``profiles/service-scope.yaml`` (the
+    machine-readable Service Scope tables of provider-profiles.md). ``None`` when
+    the provider has no row (``generic`` / ``kubernetes``) or the role is not
+    listed — precision first: an unlisted role is never judged by role."""
+    return _provider_scope_table().get(provider, {}).get(role)
+
+
 def is_vpc_edge(role: str) -> bool:
     """Return True when ``role`` is a VPC-edge device (see :data:`VPC_EDGE_ROLES`).
 

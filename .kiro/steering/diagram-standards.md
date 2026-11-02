@@ -1045,6 +1045,13 @@ chars_per_line = (width - 20) / 5.6   # ~5.6px per 12px glyph
 # width = max_line_chars * 5.6 + 20, rounded up to grid (10)
 ```
 
+`5.6` is `text_metrics.FURNITURE_CHAR_W` (1.13.0): it sizes the Flow / Legend
+boxes for appearance, tight to their content. It is deliberately NOT the obstacle
+estimate: every lint and routing check that asks "does a line or a box hit this
+text?" uses `text_metrics.CAPTION_CHAR_W` = `7.0`px/char, a conservative ceiling
+that over-estimates so a line never strikes text the estimator thought was
+shorter. Changing the furniture value would resize every golden legend.
+
 **Height calculation** (wrap-aware):
 ```
 visual_lines = sum(ceil(len(line) / chars_per_line) for line in lines)

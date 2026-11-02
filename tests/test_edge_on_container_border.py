@@ -17,6 +17,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from rule_engine.geometry import (
+    SOLVER_BORDER_RIDE_TOL,
     Box,
     DiagramGeometry,
     EdgeGeom,
@@ -115,7 +116,29 @@ def test_every_shipped_diagram_has_no_border_riding_leg():
     for drawio in sorted(root.rglob("*.drawio")):
         geo = build_geometry(parse_drawio(drawio.read_text(encoding="utf-8"),
                                           path=str(drawio))[0])
-        hits = check_edge_on_container_border(geo)
+        # 1.13.0: the engine's contract is the solver reach (4px, the scored
+        # objective); lint now also warns on a leg strictly closer than one
+        # grid step, which the corpus carries on two legs (pinned below).
+        hits = check_edge_on_container_border(geo, tol=SOLVER_BORDER_RIDE_TOL)
         if hits:
             offenders[str(drawio.relative_to(root))] = hits
     assert offenders == {}, f"border-riding legs remain: {offenders}"
+
+
+def test_lint_reach_warnings_on_the_corpus_are_pinned():
+    """The tighter 1.13.0 lint reach (< one grid step) reports exactly these
+    legs on the shipped corpus — advisory WARNINGs the solver does not score
+    (scoring them traded two rides for a crossing). A new one is a regression."""
+    root = Path(__file__).resolve().parents[1] / "examples"
+    found = {}
+    for drawio in sorted(root.rglob("*.drawio")):
+        geo = build_geometry(parse_drawio(drawio.read_text(encoding="utf-8"),
+                                          path=str(drawio))[0])
+        hits = check_edge_on_container_border(geo)
+        if hits:
+            found[str(drawio.relative_to(root))] = hits
+    assert found == {
+        "kubernetes/01-kubernetes-architecture-summary.drawio":
+            [("e7", "ns-data.bottom"), ("e7", "ns-system.right")],
+        "oci/01-oci-genai-stack.drawio": [("e6", "boundary-vpc-a.right")],
+    }

@@ -35,7 +35,12 @@ RENDERERS = {
     "dns": image_icon("img/lib/azure2/networking/Traffic_Manager_Profiles.svg"),
     "lb": image_icon("img/lib/azure2/networking/Load_Balancers.svg"),
     "k8s": image_icon("img/lib/azure2/compute/Kubernetes_Services.svg"),
-    "sql": image_icon("img/lib/azure2/databases/SQL_Database.svg"),
+    # 1.13.0: the HA workload draws one database per availability zone INSIDE
+    # the VNet, so the Azure offering is SQL Managed Instance (VNet-injected,
+    # zone-redundant, auto-failover groups). Azure SQL Database is a regional
+    # service outside the VNet (provider-profiles Azure Service Scope), which
+    # the provider-aware scope-placement rule flags inside a VNet zone.
+    "sql": image_icon("img/lib/azure2/databases/SQL_Managed_Instance.svg"),
     "obj": image_icon("img/lib/azure2/storage/Storage_Accounts.svg"),
     "fn": image_icon("img/lib/azure2/compute/Function_Apps.svg"),
     "queue": image_icon("img/lib/azure2/general/Service_Bus.svg"),

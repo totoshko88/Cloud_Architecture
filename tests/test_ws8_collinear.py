@@ -157,7 +157,10 @@ def test_lint_reports_the_collinear_pair(tmp_path):
                       if f["rule"] == "collinear-edges"]
     raw, fixed = hits["01-raw"], hits["02-fixed"]
     assert len(raw) == 1 and raw[0]["severity"] == "WARNING"
-    assert raw[0]["reason"] == "collinear:1"
+    # 1.13.0 collinear kinds: besides the side-by-side corridor runs, the two
+    # edges' vertical legs at x=260 sit end-to-end on one line 10px apart, so
+    # the pair's (most severe) kind is ``end-to-end-merge`` (WARNING on flow).
+    assert raw[0]["reason"] == "end-to-end-merge:1"
     assert set(raw[0]["offenders"]) == {"e1", "e2"}
     assert fixed == []
 

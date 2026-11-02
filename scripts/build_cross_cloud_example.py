@@ -126,7 +126,7 @@ NODE_SPECS = [
     ("auth-lambda", "auth-lambda", "resolved", _AWS_LAMBDA, X_AWS, ROW_BOT),
     ("openai-service", "openai-service", "image", _AZ_OPENAI, X_AZ, ROW_TOP),
     ("service-bus", "service-bus", "image", _AZ_SERVICEBUS, X_AZ, ROW_BOT),
-    ("vertex-ai", "gemini-agent-platform", "image", _GCP_VERTEX, X_GCP, ROW_TOP),
+    ("vertex-ai", "gemini-agent-<br>platform", "image", _GCP_VERTEX, X_GCP, ROW_TOP),
     ("cloud-storage", "cloud-storage", "image", _GCP_STORAGE, X_GCP, ROW_BOT),
 ]
 

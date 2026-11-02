@@ -54,6 +54,7 @@ from rule_engine.constants import is_text_cell_style as _is_text_style
 # :func:`~rule_engine.drawio_model.absolute_origin` — which raises
 # ``DrawioParseError`` on a parent cycle instead of silently returning ``(0, 0)``.
 from rule_engine.drawio_model import Page, absolute_origin
+from rule_engine import text_metrics as _tm
 
 # The model grid step (draw.io ``gridSize`` default). Spacings and node origins
 # are expected to be whole multiples of it (diagram-standards Layout Geometry).
@@ -205,6 +206,17 @@ class DiagramGeometry:
     #: never treat it as a service node. Plain Flow/Legend furniture (no marker)
     #: stays in ``text_boxes`` only and remains an illegal endpoint.
     annotations: Dict[str, Box] = field(default_factory=dict)
+    #: Decorative group-box id (``flowgroup-*`` / ``bandgroup-*``) -> its box,
+    #: caption and style (1.13.0). A group is NOT a node and NOT a Boundary
+    #: container (it never counts toward node-count, geometric-containment or
+    #: container-padding), but its caption strip and frame are obstacles: an edge
+    #: running along the caption (``edge-crosses-container-label`` reason
+    #: ``group:<id>``) or a marker on the frame (``marker-on-group-border``) is
+    #: reported, and the finishing passes that reject a move adding a finding
+    #: therefore keep routes off group captions.
+    group_boxes: Dict[str, Box] = field(default_factory=dict)
+    group_labels: Dict[str, str] = field(default_factory=dict)
+    group_styles: Dict[str, str] = field(default_factory=dict)
     #: Node id -> the overlay marker term it carries (``overlay=<term>`` in the
     #: cell, the vocabulary convention the CLI already reads). An overlay-marked
     #: node is exempt from ``node-connectivity``: a passive/standby peer may be
@@ -289,7 +301,13 @@ def build_geometry(page: Page) -> DiagramGeometry:
             # ``fillColor=none`` and carries a non-Flow/Legend caption, so it is
             # not Flow/Legend furniture either. Skip it from every geometry set.
             # Mirrors the CLI-side skip in ``cli._parse_drawio_page`` so the two
-            # parsers cannot drift.
+            # parsers cannot drift. 1.13.0: its box, caption and style are kept
+            # in ``group_*`` so its caption strip and frame act as obstacles.
+            if g and g.w:
+                ax, ay = absolute_origin(page, cid)
+                geo.group_boxes[cid] = Box(cid, ax, ay, float(g.w), float(g.h))
+                geo.group_labels[cid] = cell.label or ""
+                geo.group_styles[cid] = cell.style or ""
             continue
         if _is_text_style(cell.style.lower()):
             # A text cell is NOT a node (it must never be counted by node-count),
@@ -417,8 +435,65 @@ def check_node_overlap(
     return sorted(set(out))
 
 
+def check_caption_overlap(geo: DiagramGeometry) -> List[Tuple[str, str]]:
+    """Return id pairs whose REAL footprints overlap only through a caption (1.13.0).
+
+    A node's real footprint is its icon box united with its caption at the real
+    text width (:func:`node_caption_box`, 7.0px/char). Two nodes 100px apart with
+    25-char captions (SEP 10 IGW / NAT) clear each other's icon-width footprint
+    (:func:`check_node_overlap`) while their names print over each other. A pair
+    is reported when one node's caption intersects the other's caption or icon
+    and the pair is not already an icon-footprint overlap. Nodes without a label
+    have no caption. Sorted."""
+    ids = sorted(geo.nodes)
+    caps = {nid: node_caption_box(geo.nodes[nid], geo.node_labels.get(nid, ""))
+            for nid in ids if caption_lines(geo.node_labels.get(nid, ""))}
+    already = set(check_node_overlap(geo))
+    out: List[Tuple[str, str]] = []
+    for i, a in enumerate(ids):
+        for b in ids[i + 1:]:
+            pair = (a, b)
+            if pair in already:
+                continue
+            ca, cb = caps.get(a), caps.get(b)
+            hit = False
+            if ca is not None and (_boxes_intersect(ca, geo.nodes[b])
+                                   or (cb is not None and _boxes_intersect(ca, cb))):
+                hit = True
+            if cb is not None and _boxes_intersect(cb, geo.nodes[a]):
+                hit = True
+            if hit:
+                out.append(pair)
+    return out
+
+
+def check_caption_outside_container(geo: DiagramGeometry) -> List[Tuple[str, str, float]]:
+    """Return ``(node_id, container_id, overhang_px)`` for a node whose caption
+    (real text width, :func:`node_caption_box`) runs past the LEFT or RIGHT border
+    of the tightest container holding its icon (1.13.0, ``container-padding``
+    reason ``caption-outside-container``). The icon is a member of the box but
+    its name prints across the frame. Sorted by node id."""
+    out: List[Tuple[str, str, float]] = []
+    boxes = list(geo.containers.values())
+    for nid in sorted(geo.nodes):
+        label = geo.node_labels.get(nid, "")
+        if not caption_lines(label):
+            continue
+        icon = geo.nodes[nid]
+        holders = [c for c in boxes if _box_inside(icon, c)]
+        if not holders:
+            continue
+        c = min(holders, key=lambda b: (b.w * b.h, b.id))
+        cap = node_caption_box(icon, label)
+        over = max(c.x - cap.x, cap.right - c.right)
+        if over > 0.5:
+            out.append((nid, c.id, float(math.ceil(over))))
+    return out
+
+
 def check_container_padding(
-    geo: DiagramGeometry, pad: int = GRID, label_band: float = LABEL_BAND
+    geo: DiagramGeometry, pad: int = GRID, label_band: float = LABEL_BAND,
+    spill_exempt: Optional[Callable[[str], bool]] = None,
 ) -> List[Tuple[str, str, float]]:
     """Return ``(inner_id, container_id, min_pad)`` where a node **or a nested
     container** inside a container leaves less than ``pad`` on some side (or
@@ -441,8 +516,18 @@ def check_container_padding(
 
     In both cases the ``inside`` predicate uses ``<`` on the far edges so that a
     child sharing an edge *exactly* with its parent (``right == right``) is still
-    treated as inside-with-zero-padding (a finding), not as "not inside"."""
+    treated as inside-with-zero-padding (a finding), not as "not inside".
+
+    ``spill_exempt(node_id)`` (1.13.0, review E5) exempts a node from the
+    vertical-spill test: a global/edge service or an ``external=1`` node sits
+    above or below the account by design. Default: a node whose style carries
+    ``external=1`` or ``scope=global``."""
     out: List[Tuple[str, str, float]] = []
+    if spill_exempt is None:
+        def spill_exempt(nid: str) -> bool:
+            st = geo.node_styles.get(nid, "")
+            return (_style_token(st, "external") == "1"
+                    or _style_token(st, "scope") == "global")
 
     # A node fully contained by SOME container is on its home turf; the spill
     # check below must not fire on it just because it also shares a band with a
@@ -497,7 +582,7 @@ def check_container_padding(
                 overlaps_y = n.y < c.bottom and c.y < n.bottom
                 if overlaps_x and overlaps_y:
                     out.append((ncid, ccid, 0.0))  # straddle
-                elif ncid not in housed:
+                elif ncid not in housed and not spill_exempt(ncid):
                     contained_x = c.x <= n.x and n.right <= c.right
                     # Only VERTICAL spill is flagged (a node in the container's
                     # x-band that slid past its top/bottom border). Horizontal
@@ -755,6 +840,7 @@ def check_exit_thirds(geo: DiagramGeometry, min_sep: float = 0.2) -> List[Tuple[
     owns. Edges that float their exit (no explicit point) are ignored."""
     # Group each declared exit by (source, side); record the band coordinate.
     sides: Dict[Tuple[str, str], List[float]] = {}
+    raw: Dict[Tuple[str, str], List[Tuple[Optional[float], Optional[float]]]] = {}
     for e in geo.edges:
         ex, ey = e.exit
         if ex is None and ey is None:
@@ -772,11 +858,24 @@ def check_exit_thirds(geo: DiagramGeometry, min_sep: float = 0.2) -> List[Tuple[
             # sanctioned right/bottom/top faces, so it is not re-flagged here.
             continue
         sides.setdefault((e.source, side), []).append(coord)
+        raw.setdefault((e.source, side), []).append(
+            (round(ex, 3) if ex is not None else None, round(ey, 3) if ey is not None else None))
 
     out: List[Tuple[str, str]] = []
+    identical: List[Tuple[str, str]] = []
     for (node, side), coords in sorted(sides.items()):
         if len(coords) <= 1:
             continue  # a single exit is always fine wherever it sits
+        pts = raw[(node, side)]
+        dup = sorted({p for p in pts if pts.count(p) > 1}, key=repr)
+        if dup:
+            # 1.13.0: two exits pinned to the SAME contact point always render
+            # as one doubled line (an ERROR, reported first).
+            txt = ",".join(f"({p[0]},{p[1]})" for p in dup)
+            identical.append((node, f"{side}-exits-identical({txt})"))
+            if len(coords) > 3:
+                out.append((node, f"{side}-over-connected-{len(coords)}-exits"))
+            continue
         if len(coords) > 3:
             out.append((node, f"{side}-over-connected-{len(coords)}-exits"))
             continue
@@ -784,7 +883,7 @@ def check_exit_thirds(geo: DiagramGeometry, min_sep: float = 0.2) -> List[Tuple[
         if any(b - a < min_sep for a, b in zip(got, got[1:])):
             pts = ",".join(f"{g:.2f}" for g in got)
             out.append((node, f"{side}-exits-merge(<{min_sep}: {pts})"))
-    return out
+    return identical + out
 
 
 def check_entry_thirds(geo: DiagramGeometry, min_sep: float = 0.2) -> List[Tuple[str, str]]:
@@ -810,6 +909,7 @@ def check_entry_thirds(geo: DiagramGeometry, min_sep: float = 0.2) -> List[Tuple
     contract, which :func:`check_edge_direction` owns, so it is not judged here.
     Edges that float their entry (no explicit point) are ignored."""
     faces: Dict[Tuple[str, str], List[float]] = {}
+    raw: Dict[Tuple[str, str], List[Tuple[Optional[float], Optional[float]]]] = {}
     for e in geo.edges:
         nx, ny = e.entry
         if nx is None and ny is None:
@@ -824,10 +924,21 @@ def check_entry_thirds(geo: DiagramGeometry, min_sep: float = 0.2) -> List[Tuple
             # judges the sanctioned left/top faces.
             continue
         faces.setdefault((e.target, face), []).append(coord)
+        raw.setdefault((e.target, face), []).append(
+            (round(nx, 3) if nx is not None else None, round(ny, 3) if ny is not None else None))
 
     out: List[Tuple[str, str]] = []
+    identical: List[Tuple[str, str]] = []
     for (node, face), coords in sorted(faces.items()):
         if len(coords) <= 1:
+            continue
+        pts = raw[(node, face)]
+        dup = sorted({p for p in pts if pts.count(p) > 1}, key=repr)
+        if dup:
+            txt = ",".join(f"({p[0]},{p[1]})" for p in dup)
+            identical.append((node, f"{face}-entries-identical({txt})"))
+            if len(coords) > 3:
+                out.append((node, f"{face}-over-connected-{len(coords)}-entries"))
             continue
         if len(coords) > 3:
             out.append((node, f"{face}-over-connected-{len(coords)}-entries"))
@@ -836,7 +947,7 @@ def check_entry_thirds(geo: DiagramGeometry, min_sep: float = 0.2) -> List[Tuple
         if any(b - a < min_sep for a, b in zip(got, got[1:])):
             pts = ",".join(f"{g:.2f}" for g in got)
             out.append((node, f"{face}-entries-merge(<{min_sep}: {pts})"))
-    return out
+    return identical + out
 
 
 #: The step, in model units, between successive samples along a segment. Chosen
@@ -1142,21 +1253,13 @@ def _approach_pierces_target(
     return False
 
 
-_HTML_BR_RE = re.compile(r"<br\s*/?>", re.I)
-_HTML_TAG_RE = re.compile(r"<[^>]+>")
-
-
 def caption_lines(label: str) -> List[str]:
     """Return the non-empty rendered lines of a node caption.
 
     ``<br>`` / ``<br/>`` become line breaks, every other tag is removed and HTML
     entities are unescaped, so a raw ``value`` and the parser's decoded label
-    yield the same lines."""
-    import html as _html
-
-    text = _HTML_BR_RE.sub("\n", label or "")
-    text = _html.unescape(_HTML_TAG_RE.sub("", text))
-    return [ln.strip() for ln in text.split("\n") if ln.strip()]
+    yield the same lines (:func:`rule_engine.text_metrics.text_lines`)."""
+    return _tm.text_lines(label)
 
 
 def node_caption_box(box: Box, label: str, label_band: float = LABEL_BAND) -> Box:
@@ -1323,17 +1426,33 @@ COLLINEAR_MIN_LEN = 2 * GRID
 COLLINEAR_GAP = 120.0
 
 
-def collinear_edge_pairs(
+#: Reason priority when one pair of edges shows several collinear kinds.
+_COLLINEAR_KIND_RANK = {"end-to-end-merge": 0, "pass-through-illusion": 1, "collinear": 2}
+
+
+def collinear_edge_findings(
     geo: DiagramGeometry, polys: Optional[Dict[str, List[Point]]] = None,
-) -> Set[Tuple[str, str]]:
-    """Return the ``(edge_a, edge_b)`` pairs (ids sorted) whose parallel legs (each at
-    least ``COLLINEAR_MIN_LEN``) are under ``COLLINEAR_OFFSET`` apart with
-    overlapping extents or a gap of at most ``COLLINEAR_GAP`` along the line, so
-    the two edges read as one (``scripts/canvas_metrics.py`` ``col``). Two legs
-    meeting at a shared point of edges sharing an endpoint (a trunk junction)
-    are exempt, and so is a gap a node icon visibly terminates."""
+) -> List[Tuple[str, str, str]]:
+    """Return ``(edge_a, edge_b, kind)`` (ids sorted) for edges whose parallel
+    legs (each at least ``COLLINEAR_MIN_LEN``) are under ``COLLINEAR_OFFSET``
+    apart with overlapping extents or a gap of at most ``COLLINEAR_GAP`` along
+    the line, so the two edges read as one (1.13.0 kinds):
+
+    * ``end-to-end-merge`` — two edges sharing NO endpoint whose legs do not
+      overlap but whose facing ends sit within ``COLLINEAR_GAP``: the two lines
+      read as ONE continuous edge between unrelated nodes;
+    * ``pass-through-illusion`` — an edge INTO a node and an edge OUT of it
+      meeting at a shared point on one line, so the flow reads as passing
+      straight through (pre-1.13.0 this was exempt as a "trunk junction");
+    * ``collinear`` — any other pair (parallel legs side by side).
+
+    The trunk-junction exemption now applies only when both edges LEAVE the
+    shared node or both ENTER it (a fan-out / fan-in trunk). A gap a node icon
+    visibly terminates stays exempt. One kind per pair (the most severe, in
+    :data:`_COLLINEAR_KIND_RANK` order). Sorted."""
     if polys is None:
         polys = {e.id: p for e in geo.edges if len(p := edge_polyline(geo, e)) >= 2}
+    by_id = {e.id: e for e in geo.edges}
     ends = {e.id: {e.source, e.target} for e in geo.edges}
     legs: List[Tuple[str, str, float, float, float, Point, Point]] = []
     for eid, poly in polys.items():
@@ -1345,7 +1464,7 @@ def collinear_edge_pairs(
             elif ax == "V" and abs(q[1] - p[1]) >= COLLINEAR_MIN_LEN:
                 lo, hi = sorted((p[1], q[1]))
                 legs.append((eid, "V", p[0], lo, hi, p, q))
-    found: Set[Tuple[str, str]] = set()
+    found: Dict[Tuple[str, str], str] = {}
     for i, a in enumerate(legs):
         for b in legs[i + 1:]:
             if a[0] == b[0] or a[1] != b[1]:
@@ -1355,11 +1474,21 @@ def collinear_edge_pairs(
             gap = max(a[3], b[3]) - min(a[4], b[4])  # > 0 gap, <= 0 overlap
             if gap > COLLINEAR_GAP:
                 continue
-            if ends[a[0]] & ends[b[0]]:
+            kind = "collinear"
+            shared = ends[a[0]] & ends[b[0]]
+            if shared:
                 pts_a, pts_b = {a[5], a[6]}, {b[5], b[6]}
                 if any(abs(pa[0] - pb[0]) < AXIS_EPS and abs(pa[1] - pb[1]) < AXIS_EPS
                        for pa in pts_a for pb in pts_b):
-                    continue  # trunk junction of two branches of one node
+                    ea, eb = by_id.get(a[0]), by_id.get(b[0])
+                    trunk = ea is not None and eb is not None and any(
+                        (ea.source == n and eb.source == n)
+                        or (ea.target == n and eb.target == n)
+                        for n in sorted(shared)
+                    )
+                    if trunk:
+                        continue  # fan-out / fan-in trunk junction of one node
+                    kind = "pass-through-illusion"
             if gap > 0:
                 # A node icon in the gap terminates both lines visibly (a chain
                 # running straight through a node), so they do not read as one.
@@ -1368,8 +1497,22 @@ def collinear_edge_pairs(
                 g0, g1 = ((lo, mid), (hi, mid)) if a[1] == "H" else ((mid, lo), (mid, hi))
                 if any(segment_crosses_box(g0, g1, nb, inset=0.0) for nb in geo.nodes.values()):
                     continue
-            found.add(tuple(sorted((a[0], b[0]))))
-    return found
+                if not shared:
+                    kind = "end-to-end-merge"
+            key = tuple(sorted((a[0], b[0])))
+            prev = found.get(key)  # type: ignore[arg-type]
+            if prev is None or _COLLINEAR_KIND_RANK[kind] < _COLLINEAR_KIND_RANK[prev]:
+                found[key] = kind  # type: ignore[index]
+    return [(k[0], k[1], v) for k, v in sorted(found.items())]
+
+
+def collinear_edge_pairs(
+    geo: DiagramGeometry, polys: Optional[Dict[str, List[Point]]] = None,
+) -> Set[Tuple[str, str]]:
+    """Return the ``(edge_a, edge_b)`` pairs (ids sorted) that read as one line
+    (``scripts/canvas_metrics.py`` ``col``) — the set view of
+    :func:`collinear_edge_findings`, whatever the kind."""
+    return {(a, b) for a, b, _kind in collinear_edge_findings(geo, polys)}
 
 
 def check_edge_crosses_own_label(geo: DiagramGeometry) -> List[Tuple[str, str]]:
@@ -1407,33 +1550,28 @@ def check_edge_crosses_own_label(geo: DiagramGeometry) -> List[Tuple[str, str]]:
 #: (~30px = the same one-line floor as ``LABEL_BAND``).
 CONTAINER_LABEL_BAND = 30
 
-#: Per-character advance and left inset used to estimate a container caption's
-#: horizontal extent from its text. The caption is LEFT-aligned inside the group
-#: box (a group badge + ``spacingLeft`` inset, then ~12px text), so a corridor to
-#: the RIGHT of the caption text does not cross it even on a very wide box. The
-#: estimate is a conservative floor (round up), mirroring how ``LABEL_BAND`` is a
-#: one-line floor rather than a per-string measurement.
-_CONTAINER_LABEL_CHAR_W = 7.5   # ~advance per char at the 12px caption font
-_CONTAINER_LABEL_INSET = 40.0   # group badge + spacingLeft before the text
+#: Left inset assumed for a container caption whose style is unknown (kept as a
+#: name for ``layout.place``; the value lives in :mod:`rule_engine.text_metrics`).
+_CONTAINER_LABEL_INSET = _tm.UNKNOWN_STYLE_CAPTION_INSET
 
 
-def _container_caption_width(label: str, box_w: float) -> float:
-    """Estimate the caption's horizontal extent, capped at the box width.
+def _container_caption_width(label: str, style: Optional[str]) -> float:
+    """The caption's horizontal extent from the box's left edge, NOT capped.
 
-    A short caption ("az-a1") stays a narrow left strip; a long one
-    ("vpc-passive us-west-2") reaches further right. Never exceeds ``box_w``.
-    A multi-line caption (``<br>``, 1.13.0 L5) is sized from its LONGEST line."""
-    lines = caption_lines(label) or [""]
-    longest = max(len(ln) for ln in lines)
-    est = _CONTAINER_LABEL_INSET + longest * _CONTAINER_LABEL_CHAR_W
-    return min(box_w, est)
+    1.13.0 (review §2.2): one estimator for every container-caption check
+    (:func:`rule_engine.text_metrics.container_caption_extent` — the style's
+    ``spacingLeft`` + ``2 x spacing`` + longest line x 7.0px). Before 1.13.0 this
+    used its own 7.5px/char and a fixed 40px inset and was capped at the box
+    width, so a caption running past its border (SEP 01, ``spacingLeft=110``,
+    +115px) was invisible to ``edge-crosses-container-label``. A multi-line
+    caption (``<br>``, 1.13.0 L5) is sized from its LONGEST line."""
+    return _tm.container_caption_extent(label, style)
 
 
-#: Per-character advance used when the caption's real style is known. 12px
-#: Helvetica averages ~6.3px; 7.0 is a conservative ceiling (bold ~6.9).
-_CAPTION_TEXT_CHAR_W = 7.0
-#: draw.io's default ``spacing`` around a label (added to ``spacingLeft``).
-_DRAWIO_LABEL_SPACING = 2.0
+#: Deprecated alias of :data:`rule_engine.text_metrics.CAPTION_CHAR_W` (1.13.0).
+_CAPTION_TEXT_CHAR_W = _tm.CAPTION_CHAR_W
+#: Deprecated alias of :data:`rule_engine.text_metrics.DRAWIO_LABEL_SPACING`.
+_DRAWIO_LABEL_SPACING = _tm.DRAWIO_LABEL_SPACING
 #: Clearance an edge keeps from either end of the caption text.
 _CAPTION_CLEARANCE = 4.0
 
@@ -1527,7 +1665,8 @@ def free_caption_x0(
 
 
 def container_caption_geom(
-    label: str, style: Optional[str], c: Box, band: float = CONTAINER_LABEL_BAND
+    label: str, style: Optional[str], c: Box, band: float = CONTAINER_LABEL_BAND,
+    solver: bool = False,
 ) -> Tuple[Box, Optional[Tuple[float, float]]]:
     """The caption geometry :func:`check_edge_crosses_container_label` judges:
     the caption band box (left-aligned, as wide as the caption text) and, when
@@ -1535,7 +1674,11 @@ def container_caption_geom(
     # The caption is left-aligned: size its width from the real caption text
     # so a corridor RIGHT of the (short) text does not false-flag, while a run
     # slicing a LONG caption still trips.
-    label_w = _container_caption_width(label, c.w)
+    # 1.13.0: ``solver=True`` (the scored objective, :func:`rule_violations`)
+    # keeps the frozen pre-1.13.0 band model; lint and the finishing passes use
+    # the unified, uncapped :func:`_container_caption_width`.
+    label_w = (_tm.solver_container_caption_extent(label, c.w) if solver
+               else _container_caption_width(label, style))
     # A wrapped caption (``<br>``, 1.13.0 L5) occupies one further line-height
     # per extra line, so a horizontal run along line 2 is still judged.
     n_lines = max(1, len(caption_lines(label)))
@@ -1590,7 +1733,7 @@ def polyline_cuts_container_caption(
 
 
 def check_edge_crosses_container_label(
-    geo: DiagramGeometry, band: float = CONTAINER_LABEL_BAND
+    geo: DiagramGeometry, band: float = CONTAINER_LABEL_BAND, solver: bool = False,
 ) -> List[Tuple[str, str]]:
     """Return ``(edge_id, container_id)`` for edges whose polyline cuts a
     **container's top label band** — the caption strip a Boundary / Network
@@ -1622,12 +1765,41 @@ def check_edge_crosses_container_label(
         polyline += [(t.x + nx * t.w, t.y + ny * t.h)]
         for cid, c in geo.containers.items():
             caption = container_caption_geom(
-                geo.container_labels.get(cid, ""), geo.container_styles.get(cid), c, band
+                geo.container_labels.get(cid, ""), geo.container_styles.get(cid), c, band,
+                solver=solver,
             )
             crossed = polyline_cuts_container_caption(polyline, c, caption, band)
             if crossed:
                 out.append((e.id, cid))
+        # 1.13.0: a decorative group's caption strip is an obstacle too. An edge
+        # with an endpoint inside the group (a member's own edge entering or
+        # leaving it) is exempt; the reason names the group as ``group:<id>``.
+        for gid, gb in geo.group_boxes.items():
+            if _box_inside(s, gb) or _box_inside(t, gb):
+                continue
+            gband = group_caption_band(gid)
+            caption = container_caption_geom(
+                geo.group_labels.get(gid, ""), geo.group_styles.get(gid), gb, gband
+            )
+            if polyline_cuts_container_caption(polyline, gb, caption, gband):
+                out.append((e.id, f"group:{gid}"))
     return sorted(set(out))
+
+
+#: Caption strip a decorative group box reserves inside its top edge (1.13.0):
+#: ``diagram_layout._FLOW_GROUP_CAPTION`` (22) / ``_BAND_GROUP_CAPTION`` (28).
+FLOW_GROUP_CAPTION_BAND = 22.0
+BAND_GROUP_CAPTION_BAND = 28.0
+
+
+def group_caption_band(group_id: str) -> float:
+    """The caption-strip height of a ``flowgroup-*`` / ``bandgroup-*`` box."""
+    return BAND_GROUP_CAPTION_BAND if group_id.startswith("bandgroup-") else FLOW_GROUP_CAPTION_BAND
+
+
+def _box_inside(inner: Box, outer: Box) -> bool:
+    return (outer.x <= inner.x and inner.right <= outer.right
+            and outer.y <= inner.y and inner.bottom <= outer.bottom)
 
 
 _TEXT_CELL_RE = re.compile(r'<mxCell\b[^>]*\bstyle="([^"]*text;[^"]*)"[^>]*>', re.I)
@@ -2054,11 +2226,12 @@ def check_edge_crosses_container(geo: DiagramGeometry) -> List[Tuple[str, str]]:
 
 
 #: How close (model units) a long edge leg may sit to a container border before
-#: it reads as riding ON that border. The corpus defect sat 2px off a
-#: non-grid-aligned border (a grid-aligned corridor at 730 beside a region right
-#: edge at 728); 4px catches that with headroom without flagging a leg a clean
-#: grid step (10px) away in the gap beside the box.
-_BORDER_RIDE_TOL = 4.0
+#: it reads as riding ON that border. 1.13.0: strictly closer than one grid
+#: step (``GRID - 0.5``). The pre-1.13.0 4px caught the 2px corpus defect (a
+#: grid-aligned corridor at 730 beside a region right edge at 728) but passed a
+#: leg 6-8px off a border, which still reads as a second rail along it. Exactly
+#: one grid step away is the sanctioned lane and is not flagged.
+_BORDER_RIDE_TOL = GRID - 0.5
 
 #: A leg shorter than this is a stub, not a "long run" that reads as a rail
 #: alongside a border. Matches the STAIR_STEP the routers use (three grid steps).
@@ -2103,7 +2276,15 @@ def check_geometric_containment(geo: DiagramGeometry) -> List[Tuple[str, str]]:
     return out
 
 
-def check_edge_on_container_border(geo: DiagramGeometry) -> List[Tuple[str, str]]:
+#: The pre-1.13.0 border-ride reach, frozen for the solver's scored objective
+#: (:func:`rule_violations`). Scoring the tighter lint reach made the solver
+#: trade two border-ride warnings for a crossing on a shipped golden.
+SOLVER_BORDER_RIDE_TOL = 4.0
+
+
+def check_edge_on_container_border(
+    geo: DiagramGeometry, tol: Optional[float] = None,
+) -> List[Tuple[str, str]]:
     """Return ``(edge_id, "<container>.<side>")`` for edges with a **long,
     axis-aligned leg that coincides with a container border** it does not belong
     to.
@@ -2131,7 +2312,10 @@ def check_edge_on_container_border(geo: DiagramGeometry) -> List[Tuple[str, str]
     *parallel* to and coincident with a border reads as part of that border even
     when one endpoint sits inside the box (the ``hub → obj`` fan-out whose drop
     lane hugged the region's right edge while ``hub`` sat inside the region).
-    Advisory (WARNING)."""
+    Advisory (WARNING). ``tol`` defaults to :data:`_BORDER_RIDE_TOL` (lint);
+    :func:`rule_violations` passes :data:`SOLVER_BORDER_RIDE_TOL`."""
+    if tol is None:
+        tol = _BORDER_RIDE_TOL
     nodes = geo.nodes
     out: List[Tuple[str, str]] = []
 
@@ -2156,17 +2340,17 @@ def check_edge_on_container_border(geo: DiagramGeometry) -> List[Tuple[str, str]
                     lo, hi = sorted((y0, y1))
                     if hi < c.y or lo > c.bottom:
                         continue
-                    if abs(x0 - c.x) <= _BORDER_RIDE_TOL:
+                    if abs(x0 - c.x) <= tol:
                         out.append((e.id, f"{cid}.left"))
-                    elif abs(x0 - c.right) <= _BORDER_RIDE_TOL:
+                    elif abs(x0 - c.right) <= tol:
                         out.append((e.id, f"{cid}.right"))
                 else:
                     lo, hi = sorted((x0, x1))
                     if hi < c.x or lo > c.right:
                         continue
-                    if abs(y0 - c.y) <= _BORDER_RIDE_TOL:
+                    if abs(y0 - c.y) <= tol:
                         out.append((e.id, f"{cid}.top"))
-                    elif abs(y0 - c.bottom) <= _BORDER_RIDE_TOL:
+                    elif abs(y0 - c.bottom) <= tol:
                         out.append((e.id, f"{cid}.bottom"))
     return sorted(set(out))
 
@@ -2901,9 +3085,20 @@ def check_scope_placement(
     mappings: Mapping[str, Mapping[str, Any]],
     scope_is_explicit: "Optional[Callable[[str], bool]]" = None,
     is_vpc_edge: "Optional[Callable[[str], bool]]" = None,
+    provider_scope: "Optional[Callable[[str], Optional[str]]]" = None,
 ) -> List[Tuple[str, str]]:
     """Return ``(node_id, reason)`` for a node drawn geometrically inside a
     boundary STRICTER than its effective role scope allows (1.11.0 ITEM A).
+
+    ``provider_scope(node_id)`` (1.13.0) returns ``'network'`` /
+    ``'outside_vpc'`` / ``None`` — the node's ROLE judged against the provider's
+    Service Scope table (``profiles/service-scope.yaml``). It lets the two
+    provider-dependent cases fire from the role too: ``regional-in-vpc`` when
+    the node is explicitly ``scope=regional`` OR ``provider_scope`` says
+    ``outside_vpc``; ``vpc-scoped-outside-vpc`` when it is explicitly
+    ``scope=network`` OR ``provider_scope`` says ``network`` (still only when the
+    diagram draws a network boundary). ``None`` (default) keeps the
+    explicit-token-only behaviour.
 
     ``scope_of(node_id)`` returns ``network`` / ``regional`` / ``global`` for a
     node (its ``scope=`` override else its role→``ROLE_SCOPE``), or ``None`` when
@@ -2961,6 +3156,8 @@ def check_scope_placement(
         scope_is_explicit = lambda _nid: False  # noqa: E731
     if is_vpc_edge is None:
         is_vpc_edge = lambda _nid: False  # noqa: E731
+    if provider_scope is None:
+        provider_scope = lambda _nid: None  # noqa: E731
 
     def _inside(box: Box, c: Box) -> bool:
         return c.x <= box.x and box.x + box.w <= c.right and \
@@ -2985,7 +3182,8 @@ def check_scope_placement(
     for nid, box in sorted(geo.nodes.items()):
         external = bool(is_external(nid))
         scope = scope_of(nid)
-        if scope is None and not external:
+        pscope = None if external else provider_scope(nid)
+        if scope is None and not external and pscope is None:
             # Neither a resolvable scope nor an external marker -> not judged.
             continue
 
@@ -3023,6 +3221,16 @@ def check_scope_placement(
             # An external node is not additionally judged for role scope.
             continue
 
+        if pscope is not None and not scope_is_explicit(nid):
+            # 1.13.0: the provider's Service Scope table decides a role-derived
+            # scope (an explicit scope= token still wins).
+            if pscope == "outside_vpc" and "network" in categories:
+                out.append((nid, f"regional-in-vpc:{nid}"))
+            elif (pscope == "network" and has_network_boundary
+                  and "network" not in categories):
+                out.append((nid, f"vpc-scoped-outside-vpc:{nid}"))
+            if scope != "global":
+                continue
         if scope == "global":
             # Provider-INDEPENDENT (an edge role is global on every provider):
             # driven by the role fallback too. A global/edge service must sit at
@@ -3843,6 +4051,14 @@ MARKER_MIN_SEP = 24.0
 #: strict (``d < clearance``): the sanctioned one-grid-step parallel corridor
 #: puts a neighbour's line exactly 10px from a marker, and must not be flagged.
 MARKER_EDGE_CLEARANCE = float(GRID)
+#: Radius (px) of a rendered numbered flow-marker badge: a one- or two-digit
+#: 12px label on its background (1.13.0).
+MARKER_BADGE_RADIUS = 10.0
+#: Minimum clearance (px) between a flow-marker anchor and a container / group
+#: border (1.13.0): the badge radius plus a 6px margin, so the badge does not
+#: touch the frame. One grid step (the pre-1.13.0 value) left a badge drawn
+#: over the border it was "clear" of. Strict comparison (``d < clearance``).
+MARKER_BORDER_CLEARANCE = MARKER_BADGE_RADIUS + 6.0
 
 #: The fixed step (as an along-edge fraction of the signed ``[-1, 1]`` label
 #: position) by which a colliding marker is nudged along its edge. One nudge
@@ -4021,8 +4237,41 @@ def check_marker_icon_collision(geo: DiagramGeometry) -> List[Tuple[str, str]]:
     return out
 
 
+def _markers_on_borders(
+    geo: DiagramGeometry, boxes: Mapping[str, Box], clearance: float
+) -> List[Tuple[str, str]]:
+    """``(edge_id, "<box>.<side>")`` for every marker anchor strictly closer
+    than ``clearance`` to a border of one of ``boxes`` (within its extent)."""
+    out: List[Tuple[str, str]] = []
+    tol = clearance - AXIS_EPS
+    for eid, (px, py) in sorted(marker_anchors(geo).items()):
+        for cid in sorted(boxes):
+            c = boxes[cid]
+            if c.y - clearance <= py <= c.bottom + clearance:
+                if abs(px - c.x) < tol:
+                    out.append((eid, f"{cid}.left"))
+                elif abs(px - c.right) < tol:
+                    out.append((eid, f"{cid}.right"))
+            if c.x - clearance <= px <= c.right + clearance:
+                if abs(py - c.y) < tol:
+                    out.append((eid, f"{cid}.top"))
+                elif abs(py - c.bottom) < tol:
+                    out.append((eid, f"{cid}.bottom"))
+    return sorted(set(out))
+
+
+def check_marker_on_group_border(
+    geo: DiagramGeometry, clearance: float = MARKER_BORDER_CLEARANCE
+) -> List[Tuple[str, str]]:
+    """Return ``(edge_id, "<group>.<side>")`` for flow-markers drawn on the
+    frame of a decorative ``flowgroup-*`` / ``bandgroup-*`` box (1.13.0) —
+    the group sibling of :func:`check_marker_on_container_border`, same
+    :data:`MARKER_BORDER_CLEARANCE`. Lint-only (``marker-on-group-border``)."""
+    return _markers_on_borders(geo, geo.group_boxes, clearance)
+
+
 def check_marker_on_container_border(
-    geo: DiagramGeometry, clearance: float = MARKER_EDGE_CLEARANCE
+    geo: DiagramGeometry, clearance: float = MARKER_BORDER_CLEARANCE
 ) -> List[Tuple[str, str]]:
     """Return ``(edge_id, "<container>.<side>")`` for flow-markers drawn on a
     Boundary container border.
@@ -4045,24 +4294,9 @@ def check_marker_on_container_border(
     the end of — a border is not flagged. Every container is checked; sorted and
     de-duplicated. Lint-only — **not** part of :func:`rule_violations` (the
     solver oracle)."""
-    out: List[Tuple[str, str]] = []
-    tol = clearance - AXIS_EPS
-    for eid, (px, py) in sorted(marker_anchors(geo).items()):
-        for cid in sorted(geo.containers):
-            c = geo.containers[cid]
-            # vertical borders (left / right): anchor must sit within the y-extent
-            if c.y - clearance <= py <= c.bottom + clearance:
-                if abs(px - c.x) <= tol:
-                    out.append((eid, f"{cid}.left"))
-                elif abs(px - c.right) <= tol:
-                    out.append((eid, f"{cid}.right"))
-            # horizontal borders (top / bottom): anchor must sit within the x-extent
-            if c.x - clearance <= px <= c.right + clearance:
-                if abs(py - c.y) <= tol:
-                    out.append((eid, f"{cid}.top"))
-                elif abs(py - c.bottom) <= tol:
-                    out.append((eid, f"{cid}.bottom"))
-    return sorted(set(out))
+    # A vertical border (left / right) is judged only when the anchor's y lies
+    # within its y-extent, a horizontal one only within its x-extent.
+    return _markers_on_borders(geo, geo.containers, clearance)
 
 
 def _edge_polylines(geo: DiagramGeometry) -> Dict[str, List[Point]]:
@@ -4163,6 +4397,7 @@ def resolve_marker_collisions(
     min_sep: float = MARKER_MIN_SEP,
     step: float = MARKER_NUDGE_STEP,
     clearance: float = MARKER_EDGE_CLEARANCE,
+    border_clearance: float = MARKER_BORDER_CLEARANCE,
 ) -> Dict[str, float]:
     """Return ``{edge_id: new_label_pos}`` for markers that must move to separate.
 
@@ -4266,18 +4501,20 @@ def resolve_marker_collisions(
         """True when ``p`` lies within ``clearance`` of any Boundary container
         border (the same predicate :func:`check_marker_on_container_border`
         flags). Phase 3 (FEAT-002) slides a marker off such a border."""
-        if clearance <= 0:
+        bc = border_clearance if clearance > 0 else 0.0
+        if bc <= 0:
             return False
-        tol = clearance - AXIS_EPS
+        tol = bc - AXIS_EPS
         px, py = p
-        for cid in sorted(geo.containers):
-            c = geo.containers[cid]
-            if c.y - clearance <= py <= c.bottom + clearance:
-                if abs(px - c.x) <= tol or abs(px - c.right) <= tol:
-                    return True
-            if c.x - clearance <= px <= c.right + clearance:
-                if abs(py - c.y) <= tol or abs(py - c.bottom) <= tol:
-                    return True
+        for boxes in (geo.containers, geo.group_boxes):
+            for cid in sorted(boxes):
+                c = boxes[cid]
+                if c.y - bc <= py <= c.bottom + bc:
+                    if abs(px - c.x) < tol or abs(px - c.right) < tol:
+                        return True
+                if c.x - bc <= px <= c.right + bc:
+                    if abs(py - c.y) < tol or abs(py - c.bottom) < tol:
+                        return True
         return False
 
     for eid in ids:
@@ -4328,28 +4565,39 @@ def resolve_marker_collisions(
         if here is None or not on_container_border(here):
             continue
         start = pos[eid]
-        for k in range(1, 5):
-            chosen = None
-            for sign in (-1.0, 1.0):
-                cand = round(start + sign * k * step, 6)
-                if abs(cand) > _MARKER_SLIDE_LIMIT + 1e-9:
-                    continue
-                pos[eid] = cand
-                p = anchor_of(eid)
-                pos[eid] = start
-                if p is None:
-                    continue
-                if on_container_border(p):
-                    continue
-                if _dist_to_foreign_edges(p, eid, polys)[0] < clearance - AXIS_EPS:
-                    continue
-                if not clear_of_markers(eid, p) or in_box(p):
-                    continue
-                chosen = cand
-                break
-            if chosen is not None:
-                pos[eid] = chosen
-                break
+        # 1.13.0: a marker on a leg routed exactly one grid step (the sanctioned
+        # lane) beside a border is inside MARKER_BORDER_CLEARANCE along the
+        # whole leg, so it must slide OFF the leg: search the full slide range,
+        # nearest first, with the slide limit itself as the last stop either
+        # way (the k-grid alone can step past it).
+        # The pre-1.13.0 candidates (k = 1..4, in-limit only) come first and
+        # unchanged, so a marker it placed keeps its place.
+        tried: set = set()
+        seq = [(k, s, round(start + s * k * step, 6)) for k in range(1, 5) for s in (-1.0, 1.0)]
+        seq = [(k, s, c) for k, s, c in seq if abs(c) <= _MARKER_SLIDE_LIMIT + 1e-9]
+        for k in range(1, int(2 * _MARKER_SLIDE_LIMIT / step) + 2):
+            for s in (-1.0, 1.0):
+                c = round(start + s * k * step, 6)
+                if abs(c) > _MARKER_SLIDE_LIMIT + 1e-9:
+                    c = round(s * _MARKER_SLIDE_LIMIT, 6)
+                    if (c - start) * s <= 0:
+                        continue
+                seq.append((k, s, c))
+        for _k, _s, cand in seq:
+            if cand in tried:
+                continue
+            tried.add(cand)
+            pos[eid] = cand
+            p = anchor_of(eid)
+            pos[eid] = start
+            if p is None or on_container_border(p):
+                continue
+            if _dist_to_foreign_edges(p, eid, polys)[0] < clearance - AXIS_EPS:
+                continue
+            if not clear_of_markers(eid, p) or in_box(p):
+                continue
+            pos[eid] = cand
+            break
 
     return {
         eid: round(pos[eid], 4)
@@ -5029,9 +5277,14 @@ def rule_violations(
         errors.append(("corridor-sharing", repr(finding)))
     advisory = (
         ("edge-crosses-label", check_edge_crosses_label),
-        ("edge-crosses-container-label", check_edge_crosses_container_label),
+        # 1.13.0: the solver scores the frozen pre-1.13.0 caption-band and
+        # border-ride models (text_metrics / SOLVER_BORDER_RIDE_TOL); lint
+        # reports the tighter ones, so engine output is not moved by them.
+        ("edge-crosses-container-label",
+         lambda g: check_edge_crosses_container_label(g, solver=True)),
         ("edge-crosses-container", check_edge_crosses_container),
-        ("edge-on-container-border", check_edge_on_container_border),
+        ("edge-on-container-border",
+         lambda g: check_edge_on_container_border(g, tol=SOLVER_BORDER_RIDE_TOL)),
         ("edge-escapes-container", check_edge_escapes_container),
         ("edge-crosses-legend", check_edge_crosses_legend),
         ("edge-jog", check_edge_jog),

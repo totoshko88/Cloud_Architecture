@@ -2459,10 +2459,10 @@ def _dedupe_axis_collapse(waypoints: List[Point], first: Point) -> List[Point]:
 
 #: Tolerance + minimum-run length for the border-clearance nudge. Kept in step
 #: with ``geometry._BORDER_RIDE_TOL`` / ``_BORDER_RIDE_MIN_LEN`` (the lint gate
-#: this pass keeps clean): a grid-aligned corridor landing within 4px of a
-#: non-grid-aligned border is nudged, but only when the leg is a long run
-#: (>= one STAIR_STEP), not a short entry/exit stub crossing the border.
-_BORDER_CLEAR_TOL = 4.0
+#: this pass keeps clean): a corridor landing strictly closer than one grid step
+#: to a border (1.13.0; 4px before) is nudged, but only when the leg is a long
+#: run (>= one STAIR_STEP), not a short entry/exit stub crossing the border.
+_BORDER_CLEAR_TOL = GRID - 0.5
 _BORDER_CLEAR_MIN_LEN = STAIR_STEP
 
 
@@ -2520,9 +2520,14 @@ def nudge_off_container_borders(
                         continue
                     for edge_x, inward in ((c.x, +1), (c.right, -1)):
                         if abs(x0 - edge_x) <= _BORDER_CLEAR_TOL:
-                            new_x = _snap(edge_x - inward * GRID)
+                            # 1.13.0: a leg already on the INSIDE of the
+                            # border steps further inside, so a route between
+                            # two members never leaves its box; one on or
+                            # outside the border steps out into the gap.
+                            way = inward if (x0 - edge_x) * inward > 0 else -inward
+                            new_x = _snap(edge_x + way * GRID)
                             if abs(new_x - edge_x) < GRID:
-                                new_x = _snap(edge_x - inward * 2 * GRID)
+                                new_x = _snap(edge_x + way * 2 * GRID)
                             # Move both ends of THIS vertical leg (i and its
                             # axis-sharing neighbour j) that are interior.
                             for k in (i, j):
@@ -2533,9 +2538,10 @@ def nudge_off_container_borders(
                         continue
                     for edge_y, inward in ((c.y, +1), (c.bottom, -1)):
                         if abs(y0 - edge_y) <= _BORDER_CLEAR_TOL:
-                            new_y = _snap(edge_y - inward * GRID)
+                            way = inward if (y0 - edge_y) * inward > 0 else -inward
+                            new_y = _snap(edge_y + way * GRID)
                             if abs(new_y - edge_y) < GRID:
-                                new_y = _snap(edge_y - inward * 2 * GRID)
+                                new_y = _snap(edge_y + way * 2 * GRID)
                             for k in (i, j):
                                 if _movable(k) and abs(poly[k][1] - y0) < 1:
                                     poly[k][1] = new_y

@@ -308,7 +308,8 @@ def _canvas_width(source: Path) -> float:
     linter and layout engine use. A page with no vertices yields 0.0.
     """
     from rule_engine.drawio_model import DrawioParseError, absolute_origin, parse_drawio
-    from rule_engine.geometry import _CAPTION_TEXT_CHAR_W, caption_lines
+    from rule_engine.geometry import caption_lines
+    from rule_engine.text_metrics import CAPTION_CHAR_W as _CAPTION_TEXT_CHAR_W
 
     try:
         pages = parse_drawio(source.read_bytes(), path=str(source))

@@ -101,7 +101,7 @@
         </mxCell>
 
         <mxCell id="l3" value="3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.7692307692307693;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="boundary-az-a1" source="lb_a" target="app_a1">
-          <mxGeometry relative="1" as="geometry">
+          <mxGeometry x="-0.6" relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="370.00" y="-100.00" />
               <mxPoint x="370.00" y="-10.00" />
@@ -232,7 +232,7 @@
         <mxCell id="sec_a" value="secrets-primary" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/security/Key_Vaults.svg" vertex="1" parent="boundary-region-a">
           <mxGeometry x="1030" y="800" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="db_a1" value="db-writer-az1" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/databases/SQL_Database.svg" vertex="1" parent="boundary-az-a1">
+        <mxCell id="db_a1" value="db-writer-az1" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/databases/SQL_Managed_Instance.svg" vertex="1" parent="boundary-az-a1">
           <mxGeometry x="470" y="60" width="78" height="78" as="geometry" />
         </mxCell>
         <mxCell id="obj_a" value="objstore-primary" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/storage/Storage_Accounts.svg" vertex="1" parent="boundary-region-a">
@@ -250,7 +250,7 @@
         <mxCell id="mon_a" value="observability-primary" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/compute/Function_Apps.svg" vertex="1" parent="boundary-region-a">
           <mxGeometry x="810" y="480" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="db_a2" value="db-standby-az2" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/databases/SQL_Database.svg" vertex="1" parent="boundary-az-a2">
+        <mxCell id="db_a2" value="db-standby-az2" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/databases/SQL_Managed_Instance.svg" vertex="1" parent="boundary-az-a2">
           <mxGeometry x="470" y="60" width="78" height="78" as="geometry" />
         </mxCell>
         <mxCell id="app_a2" value="app-az2" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/compute/Kubernetes_Services.svg" vertex="1" parent="boundary-az-a2">
@@ -265,16 +265,16 @@
         <mxCell id="lb_b" value="lb-passive" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/networking/Load_Balancers.svg" vertex="1" parent="boundary-vpc-b">
           <mxGeometry x="280" y="60" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="queue_b" value="queue-passive-standby" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/general/Service_Bus.svg;dashed=1;dashPattern=6 4;overlay=standby" vertex="1" parent="boundary-region-b">
+        <mxCell id="queue_b" value="queue-standby" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/general/Service_Bus.svg;dashed=1;dashPattern=6 4;overlay=standby" vertex="1" parent="boundary-region-b">
           <mxGeometry x="1030" y="480" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="fn_b" value="worker-passive-standby" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/compute/Function_Apps.svg;dashed=1;dashPattern=6 4;overlay=standby" vertex="1" parent="boundary-region-b">
+        <mxCell id="fn_b" value="worker-standby" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/compute/Function_Apps.svg;dashed=1;dashPattern=6 4;overlay=standby" vertex="1" parent="boundary-region-b">
           <mxGeometry x="1030" y="640" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="sec_b" value="secrets-passive-standby" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/security/Key_Vaults.svg;dashed=1;dashPattern=6 4;overlay=standby" vertex="1" parent="boundary-region-b">
+        <mxCell id="sec_b" value="secrets-standby" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/security/Key_Vaults.svg;dashed=1;dashPattern=6 4;overlay=standby" vertex="1" parent="boundary-region-b">
           <mxGeometry x="1030" y="800" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="db_b1" value="db-writer-az1" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/databases/SQL_Database.svg" vertex="1" parent="boundary-az-b1">
+        <mxCell id="db_b1" value="db-writer-az1" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/databases/SQL_Managed_Instance.svg" vertex="1" parent="boundary-az-b1">
           <mxGeometry x="470" y="60" width="78" height="78" as="geometry" />
         </mxCell>
         <mxCell id="obj_b" value="objstore-passive" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/storage/Storage_Accounts.svg" vertex="1" parent="boundary-region-b">
@@ -289,10 +289,10 @@
         <mxCell id="cache_b1" value="cache-az1-standby" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/databases/Cache_Redis.svg;dashed=1;dashPattern=6 4;overlay=standby" vertex="1" parent="boundary-az-b1">
           <mxGeometry x="250" y="60" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="mon_b" value="observability-passive-standby" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/compute/Function_Apps.svg;dashed=1;dashPattern=6 4;overlay=standby" vertex="1" parent="boundary-region-b">
+        <mxCell id="mon_b" value="observability-standby" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/compute/Function_Apps.svg;dashed=1;dashPattern=6 4;overlay=standby" vertex="1" parent="boundary-region-b">
           <mxGeometry x="810" y="480" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="db_b2" value="db-standby-az2-standby" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/databases/SQL_Database.svg;dashed=1;dashPattern=6 4;overlay=standby" vertex="1" parent="boundary-az-b2">
+        <mxCell id="db_b2" value="db-az2-standby" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/databases/SQL_Managed_Instance.svg;dashed=1;dashPattern=6 4;overlay=standby" vertex="1" parent="boundary-az-b2">
           <mxGeometry x="470" y="60" width="78" height="78" as="geometry" />
         </mxCell>
         <mxCell id="app_b2" value="app-az2-standby" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/compute/Kubernetes_Services.svg;dashed=1;dashPattern=6 4;overlay=standby" vertex="1" parent="boundary-az-b2">

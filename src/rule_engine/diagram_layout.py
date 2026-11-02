@@ -39,6 +39,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from rule_engine.engine_assets import locate_asset, sniff_mime
+from rule_engine.text_metrics import FURNITURE_CHAR_W
 
 # ---------------------------------------------------------------------------
 # Canonical layout geometry (AWS reference). Do not fork these per provider.
@@ -1017,12 +1018,18 @@ def fit_boundary_captions(
     )
 
     out = list(boundaries)
+    # (icon box, [icon box, caption box]) per node. A node whose icon lies
+    # INSIDE the boundary being grown is one of its own members: growing the
+    # box over the member's own caption overhang is exactly what makes room,
+    # so only NON-member nodes block the strip (1.13.0: SEP 01, +115px, whose
+    # member caption overhung the right border and blocked every growth).
     blocks = []
     for n in nodes:
         icon = Box(n.id, n.x, n.y, ICON_SIZE, ICON_SIZE)
-        blocks.append(icon)
+        boxes = [icon]
         if caption_lines(n.label):
-            blocks.append(node_caption_box(icon, n.label))
+            boxes.append(node_caption_box(icon, n.label))
+        blocks.append((icon, boxes))
     pos = {n.id: (n.x, n.y) for n in nodes}
 
     def _box(b: Boundary) -> "Box":
@@ -1045,8 +1052,11 @@ def fit_boundary_captions(
         strip = Box("s", b.x + b.w, b.y, new_right - (b.x + b.w), b.h)
         if legend_x is not None and new_right + GRID > legend_x:
             return False
-        if any(_hits(strip, o) for o in blocks):
-            return False
+        for icon, boxes in blocks:
+            member = (b.x <= icon.x and icon.right <= b.x + b.w
+                      and b.y <= icon.y and icon.bottom <= b.y + b.h)
+            if not member and any(_hits(strip, o) for o in boxes):
+                return False
         for j, o in enumerate(out):
             if j != k and not _encloses(o, b) and _hits(strip, _box(o)):
                 return False
@@ -1090,11 +1100,30 @@ def fit_boundary_captions(
                 o = out[j]
                 out[j] = replace(o, w=int(target - o.x))
             continue
-        wrapped = _wrap_caption_two_lines(b.label)
-        if (wrapped and "html=1" in _boundary_style(b)
-                and container_caption_need(wrapped, _boundary_style(b)) <= b.w):
-            out[k] = replace(b, label=wrapped)
+        # Wrap fallback: prefer the ``<provider> account / <region>`` break
+        # after the slash, then the balanced space break. The fit test is
+        # container_caption_need, which includes the style's spacingLeft.
+        style = _boundary_style(b)
+        if "html=1" not in style:
+            continue
+        for wrapped in (_wrap_caption_at_slash(b.label), _wrap_caption_two_lines(b.label)):
+            if wrapped and container_caption_need(wrapped, style) <= b.w:
+                out[k] = replace(b, label=wrapped)
+                break
     return out
+
+
+def _wrap_caption_at_slash(label: str) -> Optional[str]:
+    """Split a one-line caption after its first `` / `` (``a /<br>b``), or None.
+
+    The boundary captions read ``<provider> account / <region>``; breaking after
+    the slash keeps the account id and the region on their own lines (1.13.0)."""
+    if "<br" in label or " / " not in label:
+        return None
+    a, b = label.split(" / ", 1)
+    if not a.strip() or not b.strip():
+        return None
+    return f"{a} /<br>{b}"
 
 
 def _local_background(n: Node, boundaries: Sequence[Boundary]) -> str:
@@ -1132,6 +1161,8 @@ _FLOW_GROUP_STYLE = (
 #: padding (px) from the member bbox to the group box edge, and the caption band.
 _FLOW_GROUP_PAD = 16
 _FLOW_GROUP_CAPTION = 22
+#: ``spacingLeft`` of :data:`_FLOW_GROUP_STYLE` (the caption's left inset).
+_FLOW_GROUP_SPACING_LEFT = 6
 
 
 def flow_group_cells(
@@ -1144,6 +1175,7 @@ def flow_group_cells(
     if not groups:
         return ""
     from rule_engine.geometry import caption_band
+    from rule_engine.text_metrics import caption_text_width
     pos = {n.id: n for n in nodes}
     out: List[str] = []
     for gi, (label, members) in enumerate(groups):
@@ -1154,6 +1186,10 @@ def flow_group_cells(
         y0 = min(n.y for n in boxes) - _FLOW_GROUP_PAD - _FLOW_GROUP_CAPTION
         x1 = max(n.x + ICON_SIZE for n in boxes) + _FLOW_GROUP_PAD
         y1 = max(n.y + ICON_SIZE + caption_band(n.label) for n in boxes) + _FLOW_GROUP_PAD
+        # 1.13.0: never narrower than its caption (spacingLeft 6 + text + pads),
+        # so a one-member group does not truncate or overflow its name.
+        x1 = max(x1, x0 + caption_text_width(label) + _FLOW_GROUP_SPACING_LEFT
+                 + 2 * _FLOW_GROUP_PAD)
         out.append(
             f'        <mxCell id="flowgroup-{gi}" value="{_xml_escape(label)}" '
             f'style="{_FLOW_GROUP_STYLE}" vertex="1" parent="1">\n'
@@ -1189,7 +1225,8 @@ def band_group_cells(
     '' when ``groups`` is empty (byte-inert)."""
     if not groups:
         return ""
-    from rule_engine.geometry import caption_band, _CAPTION_TEXT_CHAR_W
+    from rule_engine.geometry import caption_band
+    from rule_engine.text_metrics import caption_text_width
     pos = {n.id: n for n in nodes}
     styles = styles or {}
     out: List[str] = []
@@ -1204,7 +1241,7 @@ def band_group_cells(
         # Never truncate the caption: widen the box to the right so the full
         # caption text fits within it (the band group's whole purpose over a
         # decorative flow group).
-        caption_w = len(label) * _CAPTION_TEXT_CHAR_W + 2 * _BAND_GROUP_PAD
+        caption_w = caption_text_width(label) + 2 * _BAND_GROUP_PAD
         if caption_w > (x1 - x0):
             x1 = x0 + caption_w
         style = styles.get(f"bandgroup-{gi}") or styles.get(label) or _FLOW_GROUP_STYLE
@@ -2014,7 +2051,7 @@ def _assemble_document(
     # 2× the grid-step inner padding, rounded up to the grid.
     #: usable characters per line at a given box width (glyph ~5.6px + padding).
     def _chars_per_line(width: int) -> int:
-        return max(1, int((width - 2 * GRID) / 5.6))
+        return max(1, int((width - 2 * GRID) / FURNITURE_CHAR_W))
 
     def _text_h(lines: Sequence[str], width: int | None = None) -> int:
         # One 12px line ~= 16px of leading, plus one grid step of padding top and
@@ -2032,7 +2069,7 @@ def _assemble_document(
         # ~5.6px per 12px glyph (measured against the reference) + one grid step
         # of inner padding each side; rounded up to the grid. Tight to content so
         # the box is only as wide as its longest line, not oversized.
-        raw = int(longest * 5.6) + 2 * GRID
+        raw = int(longest * FURNITURE_CHAR_W) + 2 * GRID
         return int(-(-raw // GRID) * GRID)  # round up to a grid multiple
 
     def _flow_split(lines: Sequence[str], n: int) -> List[List[str]]:
