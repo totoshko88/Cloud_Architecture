@@ -482,6 +482,8 @@ class Edge:
     source: str = ""
     target: str = ""
     label: Optional[str] = None
+    #: The draw.io cell id (1.13.0): the offender ``edge-label`` names.
+    id: str = ""
 
 
 @dataclass
@@ -742,15 +744,30 @@ def _check_node_count(a: Artifact):
     return Severity.ERROR if n > MAX_NODES else False
 
 
-def _check_edge_label(a: Artifact) -> bool:
-    """edge-label: a diagram edge has no non-empty label (WARNING)."""
+def _check_edge_label(a: Artifact):
+    """edge-label: a diagram edge has no non-empty label (WARNING).
+
+    1.13.0: returns a :class:`RuleHit` naming every unlabelled edge (its cell
+    id, else ``<source>-><target>``) with reason ``empty-label:<n>``, rather
+    than a bare ``True`` that told the author nothing about which edge.
+    """
     if not _is_diagram(a):
         return False
+    offenders: List[str] = []
     for edge in a.edges:
-        label = getattr(edge, "label", None) if not isinstance(edge, Mapping) else edge.get("label")
+        get = edge.get if isinstance(edge, Mapping) else (
+            lambda k, _e=edge: getattr(_e, k, None)
+        )
+        label = get("label")
         if label is None or str(label).strip() == "":
-            return True
-    return False
+            ident = str(get("id") or "")
+            if not ident:
+                ident = f"{get('source') or ''}->{get('target') or ''}"
+            offenders.append(ident)
+    if not offenders:
+        return False
+    offenders = sorted(set(offenders))
+    return RuleHit(offenders=tuple(offenders), reason=f"empty-label:{len(offenders)}")
 
 
 def _check_node_quote(a: Artifact) -> bool:
@@ -2205,7 +2222,7 @@ def _numeric_flow_markers(a: Artifact) -> List[int]:
     return sorted(set(markers))
 
 
-def _check_flow_legend(a: Artifact) -> bool:
+def _check_flow_legend(a: Artifact):
     """flow-legend: numeric edge markers without a covering ``Flow`` legend (WARNING).
 
     diagram-standards (*Numbered Flow Legend*): when a diagram labels its edges
@@ -2229,14 +2246,24 @@ def _check_flow_legend(a: Artifact) -> bool:
         return False
     lines = [str(line).strip() for line in a.flow_legend_lines]
     if not lines:
-        return True  # numeric markers used, but there is no Flow cell at all
+        # Numeric markers used, but there is no Flow cell at all (1.13.0: every
+        # marker is an offender).
+        return RuleHit(
+            offenders=tuple(f"marker-{n}" for n in markers), reason="no-flow-cell"
+        )
     # Line 1 is the heading ``Flow``; the rest must cover every marker.
     covered = set()
     for line in lines[1:]:
         m = re.match(r"^(\d+)\s*[.)]", line)
         if m:
             covered.add(int(m.group(1)))
-    return not set(markers).issubset(covered)
+    uncovered = sorted(set(markers) - covered)
+    if not uncovered:
+        return False
+    return RuleHit(
+        offenders=tuple(f"marker-{n}" for n in uncovered),
+        reason="uncovered-markers:" + ",".join(str(n) for n in uncovered),
+    )
 
 
 #: A Flow step line ``N. <text>`` / ``N) <text>``.

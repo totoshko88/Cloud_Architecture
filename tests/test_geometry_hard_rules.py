@@ -19,6 +19,8 @@ severities through the linter on a parsed golden example.
 
 from __future__ import annotations
 
+import pytest
+
 import glob
 import os
 
@@ -1000,6 +1002,7 @@ def test_all_golden_landscapes_clear_container_labels():
 # --------------------------------------------------------------------------- #
 
 
+@pytest.mark.slow
 def test_free_left_corridor_used_for_same_column_tier_skip():
     """A spine to a same-column target past an intermediate node routes down the
     LEFT gap and enters the target's LEFT face (edge 4: lb->app-az2), not a

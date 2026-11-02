@@ -578,7 +578,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     Usage::
 
-        python -m rule_engine.raster_gate [--examples DIR] [--repo-root DIR]
+        python -m rule_engine.raster_gate [--examples DIR] [--workspace-root DIR]
                                            [--allow-missing]
 
     Exit codes:
@@ -597,15 +597,29 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         prog="raster-gate",
         description="Enforce the exported .drawio.png width/size budget (D7).",
     )
-    default_root = _default_workspace_root()
-    parser.add_argument("--examples", default=str(default_root / "examples"))
-    parser.add_argument("--repo-root", default=str(default_root))
+    # 1.13.0: the root is the WORKSPACE (default: the current directory), never
+    # the package/repo checkout the engine was imported from. ``--repo-root`` is
+    # kept as a deprecated alias of ``--workspace-root``.
+    parser.add_argument(
+        "--workspace-root", "--repo-root", dest="workspace_root", default=None,
+        help="workspace root (default: the current directory); "
+             "--repo-root is a deprecated alias",
+    )
+    parser.add_argument(
+        "--examples", default=None,
+        help="tree to scan for .drawio sources (default: <root>/examples when "
+             "it exists, else <root> itself)",
+    )
     parser.add_argument(
         "--allow-missing",
         action="store_true",
         help="treat a .drawio with no exported .png as a skip, not a failure",
     )
     args = parser.parse_args(list(argv) if argv is not None else None)
+    root = Path(args.workspace_root) if args.workspace_root else Path.cwd()
+    if args.examples is None:
+        args.examples = str(root / "examples") if (root / "examples").is_dir() else str(root)
+    args.repo_root = str(root)
 
     refs = check_rasters(args.examples, args.repo_root)
     if not refs:

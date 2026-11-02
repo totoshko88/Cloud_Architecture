@@ -85,6 +85,7 @@ def _geometry_triple(text: str):
     return _node_boxes(g), _container_boxes(g), _edge_geoms(g)
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize("builder", [build_summary, build_landscape],
                          ids=["summary", "landscape"])
 def test_ha_geometry_identical_across_providers(builder):

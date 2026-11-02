@@ -348,6 +348,7 @@ def test_marker_on_own_caption_slides_clear():
 # G21 — a dense landscape takes the size-scoped fast path and returns promptly
 # --------------------------------------------------------------------------- #
 
+@pytest.mark.sep
 def test_dense_landscape_layout_returns_fast():
     """G21 timing guard: ``layout()`` on the ~27-node / ~26-edge / 8-container
     SEP 09 cross-cloud landscape must return promptly via the size-scoped

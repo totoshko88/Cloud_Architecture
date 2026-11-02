@@ -81,12 +81,15 @@ from typing import (
 from rule_engine.constants import PROVIDERS, RESOURCE_TYPES, resolve_bundled_dir, seed_icons
 from rule_engine.identity import flat
 from rule_engine.normalizer import resolve_resource_type
+from rule_engine.snapshot_gate import is_failures_file
 
 __all__ = [
     "role_of",
     "iter_domain_resources",
     "iter_snapshot_roles",
     "SnapshotReadError",
+    "NotADomainFile",
+    "is_failures_file",
     "ReconcileError",
     "ReconcileReport",
     "drawn_roles",
@@ -125,6 +128,137 @@ class SnapshotReadError(ValueError):
     is reported, never treated as "no resources"). The mapper itself
     (:func:`role_of`) never raises; only the file-reading helpers do.
     """
+
+
+class NotADomainFile(SnapshotReadError):
+    """Raised for a valid-JSON snapshot file that is not a service-domain file.
+
+    1.13.0 (G45): a hand-collected snapshot carries side files next to its
+    per-domain JSON (``identity.json`` with the caller identity, an
+    ``apigateway-stages.json`` evidence dump, …). They parse, but hold neither a
+    ``resources`` list nor a raw CLI collection the adapter knows. Such a file is
+    skipped by :func:`reconcile` and named in
+    :attr:`ReconcileReport.skipped_files`, the same lenient contract as
+    ``rule-engine-check-snapshot`` (which counts list items in every ``*.json``
+    and never rejects a file for its shape). Invalid JSON is still a
+    :class:`SnapshotReadError` (fail-closed).
+    """
+
+
+#: Raw AWS CLI collection key (flattened with :func:`flat`) -> diagram role
+#: (1.13.0, G45). A snapshot collected straight from ``aws … list*/describe*``
+#: stores each response under a collection key (``{"buckets": {"Buckets": [...]}}``)
+#: instead of the collector's ``{"resources": [...]}`` contract. The adapter in
+#: :func:`iter_domain_resources` reads such a file through this table. SNS topics
+#: and DynamoDB tables are deliberately absent: they resolve to no diagram role.
+#: A key ending in ``*`` is a prefix match (``wafv2_cloudfront``,
+#: ``wafv2_regional_euc1``, …).
+_RAW_COLLECTION_ROLES_SOURCE: Dict[str, Dict[str, str]] = {
+    "aws": {
+        "buckets": "object_store",
+        "efs": "file_system",
+        "efsfilesystems": "file_system",
+        "fsx": "file_system",
+        "fsxfilesystems": "file_system",
+        "functions": "serverless_fn",
+        "lambdafunctions": "serverless_fn",
+        "queues": "message_queue",
+        "sqsqueues": "message_queue",
+        "secretsmanager": "secrets_store",
+        "secretsmanagersecrets": "secrets_store",
+        "ekscluster": "managed_k8s",
+        "eksclusters": "managed_k8s",
+        "rdsinstances": "managed_sql",
+        "rdsclusters": "managed_sql",
+        "docdbclusters": "managed_sql",
+        "elasticache": "cache",
+        "elasticacheclusters": "cache",
+        "cloudfrontdistributions": "cdn",
+        "route53hostedzones": "dns",
+        "wafv2*": "waf",
+        "albv2": "lb",
+        "albnlb": "lb",
+        "classic": "lb",
+        "classicelb": "lb",
+        "reservations": "compute_instance",
+        "bedrockfoundationmodels": "llm_platform",
+    },
+}
+
+#: The table actually used: every role checked against :data:`_VALID_ROLES` at
+#: import, so an entry naming a non-drawable role is dropped, never yielded.
+_RAW_COLLECTION_ROLES: Dict[str, Dict[str, str]] = {
+    provider: {k: r for k, r in table.items() if r in _VALID_ROLES}
+    for provider, table in _RAW_COLLECTION_ROLES_SOURCE.items()
+}
+
+
+def _raw_role_for(provider: Optional[str], key: str) -> Optional[str]:
+    """Return the role a raw collection ``key`` maps to for ``provider``."""
+    table = _RAW_COLLECTION_ROLES.get(provider or "")
+    if not table:
+        return None
+    fk = flat(key)
+    if fk in table:
+        return table[fk]
+    for pattern in sorted(table):
+        if pattern.endswith("*") and fk.startswith(pattern[:-1]):
+            return table[pattern]
+    return None
+
+
+def _raw_item_list(value: Any, depth: int = 0) -> Optional[List[Any]]:
+    """Find the item list of one raw CLI response.
+
+    A list is the list. A mapping yields its first list-valued entry in sorted
+    key order (``Buckets``, ``FileSystems``, ``modelSummaries``, …), descending
+    one mapping level for a nested envelope such as CloudFront's
+    ``{"DistributionList": {"Items": [...]}}``.
+    """
+    if isinstance(value, list):
+        return value
+    if isinstance(value, Mapping) and depth < 2:
+        for key in sorted(k for k in value if isinstance(k, str)):
+            if isinstance(value[key], list):
+                return value[key]
+        for key in sorted(k for k in value if isinstance(k, str)):
+            if isinstance(value[key], Mapping):
+                found = _raw_item_list(value[key], depth + 1)
+                if found is not None:
+                    return found
+    return None
+
+
+def _iter_raw_resources(
+    data: Mapping[str, Any], provider: Optional[str]
+) -> Optional[List[Mapping[str, Any]]]:
+    """Adapt a raw-CLI-shaped domain file, or ``None`` when no key is known.
+
+    Each yielded resource is a copy of the native item with ``resource_type``
+    set to the table's role (the item itself is never mutated). A string item
+    (``QueueUrls``, ``clusters`` ARNs) becomes ``{"id": <string>}``. Reservations
+    are flattened to their ``Instances``.
+    """
+    matched = False
+    out: List[Mapping[str, Any]] = []
+    for key in sorted(k for k in data if isinstance(k, str)):
+        role = _raw_role_for(provider, key)
+        if role is None:
+            continue
+        matched = True
+        items = _raw_item_list(data[key]) or []
+        if flat(key) == "reservations":
+            instances: List[Any] = []
+            for res in items:
+                if isinstance(res, Mapping) and isinstance(res.get("Instances"), list):
+                    instances.extend(res["Instances"])
+            items = instances
+        for item in items:
+            if isinstance(item, Mapping):
+                out.append({**item, "resource_type": role})
+            elif isinstance(item, str) and item:
+                out.append({"id": item, "resource_type": role})
+    return out if matched else None
 
 
 def _flat_lookup(resource: Mapping[str, Any]) -> dict[str, Any]:
@@ -196,7 +330,9 @@ def role_of(resource: Any, provider: str) -> Optional[str]:
     return None
 
 
-def iter_domain_resources(domain_file: Path) -> Iterator[Mapping[str, Any]]:
+def iter_domain_resources(
+    domain_file: Path, provider: Optional[str] = None
+) -> Iterator[Mapping[str, Any]]:
     """Yield each raw resource dict from one committed per-domain JSON file.
 
     ``domain_file`` is a Snapshot ``<domain>.json`` file (``storage.json``,
@@ -205,9 +341,16 @@ def iter_domain_resources(domain_file: Path) -> Iterator[Mapping[str, Any]]:
     file order; a non-mapping entry is skipped (it can carry no type field, so it
     can resolve to no role).
 
+    1.13.0 (G45): when the file has no ``resources`` list but ``provider`` has a
+    raw-CLI table (:data:`_RAW_COLLECTION_ROLES`), a raw collection file
+    (``{"buckets": {"Buckets": [...]}, "efs": {"FileSystems": [...]}}``) is
+    adapted: each known collection key's items are yielded with
+    ``resource_type`` set to the table's role.
+
     Reads only the committed file (Decision D5). Raises :class:`SnapshotReadError`
-    when the file is absent, is not valid JSON, or does not carry a ``resources``
-    list — a Snapshot that does not parse is a gate error, not a silent empty.
+    when the file is absent or is not valid JSON — a Snapshot that does not parse
+    is a gate error, not a silent empty — and :class:`NotADomainFile` when it
+    parses but is neither shape (the caller may skip it).
     """
     try:
         text = domain_file.read_text(encoding="utf-8")
@@ -219,14 +362,19 @@ def iter_domain_resources(domain_file: Path) -> Iterator[Mapping[str, Any]]:
         raise SnapshotReadError(
             f"snapshot file {domain_file} is not valid JSON: {exc}"
         ) from exc
-    if not isinstance(data, Mapping) or not isinstance(data.get("resources"), list):
-        raise SnapshotReadError(
+    if isinstance(data, Mapping) and isinstance(data.get("resources"), list):
+        for entry in data["resources"]:
+            if isinstance(entry, Mapping):
+                yield entry
+        return
+    raw = _iter_raw_resources(data, provider) if isinstance(data, Mapping) else None
+    if raw is None:
+        raise NotADomainFile(
             f"snapshot file {domain_file} is not a domain file "
-            "(expected an object with a 'resources' list)"
+            "(expected an object with a 'resources' list or a known raw "
+            "CLI collection)"
         )
-    for entry in data["resources"]:
-        if isinstance(entry, Mapping):
-            yield entry
+    yield from raw
 
 
 def iter_snapshot_roles(
@@ -244,13 +392,18 @@ def iter_snapshot_roles(
 
     Pure and offline (Decision D5): reads only the committed ``*.json`` files.
     Propagates :class:`SnapshotReadError` from :func:`iter_domain_resources` for
-    a domain file that does not parse.
+    a domain file that does not parse; a parsable non-domain file
+    (:class:`NotADomainFile`) is skipped (1.13.0, G45).
     """
     for domain_file in sorted(snapshot_dir.glob("*.json")):
         # failures.json is a collector artefact, not a service-domain file.
-        if domain_file.name == "failures.json":
+        if is_failures_file(domain_file.name):
             continue
-        for resource in iter_domain_resources(domain_file):
+        try:
+            resources = list(iter_domain_resources(domain_file, provider))
+        except NotADomainFile:
+            continue
+        for resource in resources:
             role = role_of(resource, provider)
             if role is not None:
                 yield resource, role
@@ -528,6 +681,9 @@ class ReconcileReport:
     #: invisible to the coverage check (never an omission), so the report names
     #: them instead of passing silently; eligibility is unaffected.
     roleless: List[str] = field(default_factory=list)
+    #: Basenames of parsable snapshot ``*.json`` files that are not service-
+    #: domain files (1.13.0, G45): skipped, never an error, listed as a WARNING.
+    skipped_files: List[str] = field(default_factory=list)
 
     @property
     def eligible(self) -> bool:
@@ -548,6 +704,7 @@ class ReconcileReport:
             "enumerated_count": self.enumerated_count,
             "roleless_count": len(self.roleless),
             "roleless": list(self.roleless),
+            "skipped_files": list(self.skipped_files),
         }
 
 
@@ -560,7 +717,14 @@ def _resource_identifier(resource: Mapping[str, Any]) -> str:
     secret value — only identity/name metadata is read.
     """
     flat_map = _flat_lookup(resource)
-    for key in ("name", "id", "arn", "resourceid", "resourcename"):
+    # The first five are the pre-1.13.0 keys; the rest name raw AWS CLI items
+    # adapted by the G45 raw-snapshot adapter (1.13.0).
+    for key in (
+        "name", "id", "arn", "resourceid", "resourcename",
+        "functionname", "modelid", "dbinstanceidentifier",
+        "dbclusteridentifier", "instanceid", "filesystemid",
+        "loadbalancername", "cacheclusterid", "queueurl",
+    ):
         value = flat_map.get(key)
         if value is not None and str(value) != "":
             return str(value)
@@ -735,11 +899,19 @@ def reconcile(
     expected_by_role: Dict[str, List[str]] = {}
     enumerated = 0
     roleless: List[str] = []
+    skipped: List[str] = []
     try:
         for domain_file in sorted(snap.glob("*.json")):
-            if domain_file.name == "failures.json":
+            if is_failures_file(domain_file.name):
                 continue
-            for resource in iter_domain_resources(domain_file):
+            try:
+                resources = list(iter_domain_resources(domain_file, provider))
+            except NotADomainFile:
+                # A parsable side file (identity.json, an evidence dump): not a
+                # service domain. Skipped and reported, never fatal (G45).
+                skipped.append(domain_file.name)
+                continue
+            for resource in resources:
                 enumerated += 1
                 role = role_of(resource, provider)
                 if role is None:
@@ -801,6 +973,7 @@ def reconcile(
         omissions=omissions,
         enumerated_count=enumerated,
         roleless=roleless,
+        skipped_files=skipped,
     )
 
 
@@ -839,6 +1012,11 @@ def _print_report(report: ReconcileReport) -> None:
             f"[WARNING] {len(report.roleless)} of {report.enumerated_count} "
             "enumerated resource(s) have no role and are invisible to this check: "
             f"{shown}{more} — add a role in mappings/roles.yaml"
+        )
+    if report.skipped_files:
+        print(
+            f"[WARNING] skipped {len(report.skipped_files)} non-domain file(s): "
+            + ", ".join(report.skipped_files)
         )
 
 

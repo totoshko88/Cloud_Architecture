@@ -15,6 +15,8 @@ Pinned here on small synthetic diagrams:
 """
 from __future__ import annotations
 
+import pytest
+
 from dataclasses import replace
 
 from rule_engine import crossing_repair as cr
@@ -220,6 +222,7 @@ def _sep05_text() -> str:
     return mod._build()
 
 
+@pytest.mark.sep
 def test_sep05_replies_nest_on_the_upper_bus_with_no_crossing():
     """WS5 review F1: SEP 05 ``e3`` (Syndicate -> activation-queue) and ``e7``
     (Syndicate -> deletion-notification-queue) both ride the upper bus. ``e7``

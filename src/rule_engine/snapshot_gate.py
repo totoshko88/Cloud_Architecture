@@ -209,6 +209,18 @@ def _count_list_items(payload: object) -> int:
     return 0
 
 
+def is_failures_file(name: str | Path) -> bool:
+    """True for the collector's ``failures.json`` (not a service-domain file).
+
+    Shared with :mod:`rule_engine.reconcile` (1.13.0, G45) so both gates skip the
+    same file; case-insensitive on the basename. Note the two gates' shape
+    contracts: this gate counts list items in every other ``*.json`` and never
+    rejects a file for its shape; reconcile adapts raw-CLI-shaped domain files
+    and skips (with a WARNING) parsable files that are not service domains.
+    """
+    return os.path.basename(str(name)).lower() == "failures.json"
+
+
 def count_enumerated_resources(snapshot_dir: str | Path) -> int:
     """Return how many resources the snapshot's per-domain JSON files enumerate.
 
@@ -221,7 +233,7 @@ def count_enumerated_resources(snapshot_dir: str | Path) -> int:
     for name in sorted(os.listdir(snapshot_dir)):
         if not name.lower().endswith(".json"):
             continue
-        if name.lower() == "failures.json":
+        if is_failures_file(name):
             continue
         path = Path(snapshot_dir) / name
         if not path.is_file():
@@ -398,9 +410,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         ),
     )
     parser.add_argument(
-        "--root", default=None,
+        "--root", "--workspace-root", dest="root", default=None,
         help="directory to scan for inventory-* snapshot folders "
-             "(default: the current directory)",
+             "(default: the current directory); --workspace-root is the "
+             "name every gate accepts (1.13.0)",
     )
     parser.add_argument(
         "--snapshot", action="append", default=[],

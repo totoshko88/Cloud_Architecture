@@ -46,6 +46,7 @@ Exit codes
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import os
 import re
@@ -277,6 +278,7 @@ def _parse_drawio_page(path: str, page: Page, text: str) -> Artifact:
                 source=cell.source or "",
                 target=cell.target or "",
                 label=cell.label or None,
+                id=str(cid),
             ))
             # Record broken endpoints (R1.10): a missing source/target, or one
             # that names a cell id absent from the page.
@@ -731,6 +733,18 @@ _EXCLUDED_MD_BASENAMES = {
 }
 
 
+#: Directories whose Markdown is never a generated KB document (1.13.0): a
+#: ``scripts/README-13.md`` describes a builder, it is not a KB page.
+_NON_KB_MD_DIRS = {"scripts"}
+
+#: Basename globs (lowercased) of hand-authored working notes that are not KB
+#: documents (1.13.0): inventory delta notes and per-topic READMEs.
+_NON_KB_MD_GLOBS = ("delta-*.md", "readme-*.md")
+
+#: The workspace-root ignore file read by :func:`discover_artifacts` (1.13.0).
+LINTIGNORE_NAME = ".lintignore"
+
+
 def _is_generated_markdown(path: str) -> bool:
     """Return True when a Markdown file is an engine-generated KB document.
 
@@ -749,6 +763,16 @@ def _is_generated_markdown(path: str) -> bool:
     base = os.path.basename(path).lower()
     if base.endswith(".diagram.md"):
         return True
+    # 1.13.0: Markdown under a ``scripts`` directory, and DELTA-*/README-*
+    # working notes, are hand-authored, not generated KB documents. A note
+    # inside an ``inventory-*`` snapshot keeps the KB contract (never exempt).
+    if _in_inventory_folder(path):
+        return base not in _EXCLUDED_MD_BASENAMES
+    parents = [p.lower() for p in os.path.normpath(path).split(os.sep)[:-1]]
+    if any(p in _NON_KB_MD_DIRS for p in parents):
+        return False
+    if any(fnmatch.fnmatch(base, pat) for pat in _NON_KB_MD_GLOBS):
+        return False
     return base not in _EXCLUDED_MD_BASENAMES
 
 
@@ -898,6 +922,46 @@ def _is_reference_artifact(name: str) -> bool:
     return stem.endswith("-reference")
 
 
+def _load_lintignore(workspace_root: str) -> List[str]:
+    """Read ``<workspace_root>/.lintignore`` (1.13.0): one glob per line.
+
+    Globs are ``fnmatch`` patterns relative to the root in POSIX form; ``#``
+    starts a comment line and blank lines are ignored. A missing or unreadable
+    file yields no patterns.
+    """
+    path = os.path.join(workspace_root, LINTIGNORE_NAME)
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+    except OSError:
+        return []
+    patterns: List[str] = []
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        patterns.append(line.lstrip("/").replace("\\", "/"))
+    return patterns
+
+
+def _lintignored(rel: str, is_dir: bool, patterns: Sequence[str]) -> bool:
+    """True when the root-relative ``rel`` path matches a ``.lintignore`` glob.
+
+    A pattern with a trailing ``/`` matches a directory (and so everything
+    under it, since discovery prunes the directory); any other pattern matches
+    a file or a directory path.
+    """
+    rel = rel.replace(os.sep, "/")
+    for pat in patterns:
+        if pat.endswith("/"):
+            if is_dir and fnmatch.fnmatch(rel, pat.rstrip("/")):
+                return True
+            continue
+        if fnmatch.fnmatch(rel, pat):
+            return True
+    return False
+
+
 def discover_artifacts(workspace_root: str) -> List[str]:
     """Return the sorted list of lintable ``.drawio``/Markdown/Snapshot files.
 
@@ -910,10 +974,23 @@ def discover_artifacts(workspace_root: str) -> List[str]:
     are neither linted nor regenerated).
     """
     found: List[str] = []
+    ignore = _load_lintignore(workspace_root)
     for dirpath, dirnames, filenames in os.walk(workspace_root):
-        dirnames[:] = [d for d in dirnames if d not in _EXCLUDED_DIRS]
+        rel_dir = os.path.relpath(dirpath, workspace_root)
+        rel_dir = "" if rel_dir == "." else rel_dir
+
+        def _rel(name: str) -> str:
+            return os.path.join(rel_dir, name) if rel_dir else name
+
+        dirnames[:] = [
+            d for d in dirnames
+            if d not in _EXCLUDED_DIRS
+            and not (ignore and _lintignored(_rel(d), True, ignore))
+        ]
         for name in filenames:
             if _is_scratch_copy(name) or _is_reference_artifact(name):
+                continue
+            if ignore and _lintignored(_rel(name), False, ignore):
                 continue
             low = name.lower()
             full = os.path.join(dirpath, name)

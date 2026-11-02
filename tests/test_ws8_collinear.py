@@ -16,6 +16,8 @@ fixtures:
 """
 from __future__ import annotations
 
+import pytest
+
 import importlib.util
 from pathlib import Path
 
@@ -195,6 +197,8 @@ def _without_ws8(build):
         col.plan_collinear_shift_geo = orig
 
 
+@pytest.mark.slow
+@pytest.mark.sep
 def test_sep_03_and_08_reach_zero_collinear_pairs():
     for script in ("build_sep_account_landscape.py", "build_08_network_crossaccount.py"):
         module = _load_builder(script)

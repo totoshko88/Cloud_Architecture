@@ -87,6 +87,8 @@ When the Inventory Collector writes Snapshot content, it MUST write
   counts every enumerated list item, so a control-plane snapshot that writes
   none is rejected.
 
+**Raw-CLI domain files and side files (1.13.0).** A hand-collected snapshot often stores each provider response verbatim under a collection key (`{"buckets": {"Buckets": [...]}, "efs": {"FileSystems": [...]}}`) rather than the collector's `{"service": …, "resources": [...]}` shape, and keeps side files such as `identity.json` next to the domain files. `rule-engine-reconcile` reads both: a raw-CLI-shaped domain file goes through the reconcile adapter, which maps each known collection key to its diagram role (`reconcile._RAW_COLLECTION_ROLES`), and a parsable file that is neither shape is skipped and listed as `[WARNING] skipped N non-domain file(s): …`, never a gate error. This is the same lenient contract as `rule-engine-check-snapshot`, which counts list items in every `*.json` and does not reject a file for its shape. Invalid JSON is still a gate error in both, and `failures.json` is skipped by both. Prefer the collector's shape for new snapshots: a collection key the adapter does not know contributes no resource to the coverage check.
+
 ## 6. Service Domains to Enumerate (diagram-complete coverage)
 
 A diagram is formed for the **whole** inventory, so the collection must be broad

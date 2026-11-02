@@ -1,7 +1,9 @@
 # Thin wrappers over the release tooling. Every target runs the project venv
 # interpreter, so nothing depends on a system python having the deps.
 #
-#   make test                  full pytest suite
+#   make test                  full pytest suite (parallel, pytest-xdist)
+#   make test-fast             suite without the slow and SEP-fixture tests
+#   make test-sep              only the SEP regression-fixture tests
 #   make gates                 every CI gate except the test suite
 #   make preflight             every CI gate, then the test suite
 #   make examples              regenerate every example + re-export stale rasters
@@ -12,10 +14,16 @@
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 export PYTHONPATH := src
 
-.PHONY: test gates preflight examples examples-check bump bump-dry publish publish-dry
+.PHONY: test test-fast test-sep gates preflight examples examples-check bump bump-dry publish publish-dry
 
 test:
-	$(PYTHON) -m pytest -q
+	$(PYTHON) -m pytest -q -n auto
+
+test-fast:
+	$(PYTHON) -m pytest -q -n auto -m "not slow and not sep"
+
+test-sep:
+	$(PYTHON) -m pytest -q -n auto -m sep
 
 gates:
 	$(PYTHON) scripts/release.py preflight --fast

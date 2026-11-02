@@ -19,6 +19,8 @@ Covered here:
 """
 from __future__ import annotations
 
+import pytest
+
 import importlib.util
 from pathlib import Path
 
@@ -188,6 +190,8 @@ def _geo_of_script(name: str):
     return geo.build_geometry(parse_drawio(module.drawio, path=name + ".drawio")[0]), module
 
 
+@pytest.mark.slow
+@pytest.mark.sep
 def test_sep_01_and_04_do_not_list_an_undrawn_inner_boundary():
     for name in ("build_01_sep_context.py", "build_04_flow_lms_launch.py"):
         g, module = _geo_of_script(name)
