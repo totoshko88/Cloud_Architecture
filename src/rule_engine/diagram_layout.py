@@ -32,11 +32,12 @@ Both strategies emit a node that the Linter counts as exactly one top-level node
 from __future__ import annotations
 
 import base64
+import logging
 import math
 import re
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import AbstractSet, Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from rule_engine.engine_assets import locate_asset, sniff_mime
 from rule_engine.text_metrics import FURNITURE_CHAR_W
@@ -267,6 +268,58 @@ OVERLAY_LEGEND_LINES = {
     "supporting": "supporting = ops / observability service (dotted outline); not a data-flow step",
     "unconfirmed": "unconfirmed = tentative / not yet confirmed (dashed outline, [?]); verify before relying on it",
 }
+
+
+#: The overlay RING (1.13.0): ``dashed=1`` on an ``image;`` cell has no stroke
+#: to dash, and an aws4 ``resourceIcon``'s ``strokeColor`` is the glyph colour
+#: (recolouring forbidden), so the overlay's shape channel is a separate
+#: borderless ring cell around the icon, inflated by this many px per side.
+OVERLAY_RING_PAD = 4
+#: Neutral ring colour (#545B64, 6.9:1 on white); never a pack colour.
+OVERLAY_RING_STROKE = "#545B64"
+
+
+def overlay_ring_cell(n: "Node", parent: str = "1", origin: Tuple[float, float] = (0, 0)) -> str:
+    """The ``overlayring-<id>`` cell outlining ``n`` (``""`` when ``n`` carries
+    no overlay term with a shape, see :data:`_OVERLAY_SHAPE`). ``parent`` /
+    ``origin``: the node's own host cell and its absolute origin, so the ring
+    nests with the node. Every parser skips the cell by its id prefix
+    (``constants.OVERLAY_RING_PREFIX``); it is neither a node nor a boundary."""
+    shape = _OVERLAY_SHAPE.get(n.overlay or "")
+    if not shape:
+        return ""
+    from rule_engine.constants import OVERLAY_RING_PREFIX
+
+    pad = OVERLAY_RING_PAD
+    x, y = n.x - origin[0] - pad, n.y - origin[1] - pad
+    style = (
+        "rounded=1;arcSize=6;absoluteArcSize=1;fillColor=none;"
+        f"strokeColor={OVERLAY_RING_STROKE};strokeWidth=1.5;{shape};"
+        "pointerEvents=0;editable=0;"
+    )
+    return (
+        f'        <mxCell id="{OVERLAY_RING_PREFIX}{n.id}" value="" style="{style}" '
+        f'vertex="1" parent="{parent}">\n'
+        f'          <mxGeometry x="{x:g}" y="{y:g}" width="{ICON_SIZE + 2 * pad}" '
+        f'height="{ICON_SIZE + 2 * pad}" as="geometry" />\n'
+        "        </mxCell>\n"
+    )
+
+
+#: The label channel of the ``standby`` overlay (diagram-standards: dashed
+#: outline + ``-standby`` label suffix + Legend entry).
+_STANDBY_SUFFIX = "-standby"
+
+
+def _overlay_labelled(nodes: Sequence["Node"]) -> List["Node"]:
+    """``nodes`` with ``-standby`` appended to every ``standby`` node whose
+    label does not already end with it (1.13.0). Idempotent."""
+    out: List[Node] = []
+    for n in nodes:
+        if n.overlay == "standby" and not n.label.rstrip().endswith(_STANDBY_SUFFIX):
+            n = replace(n, label=n.label.rstrip() + _STANDBY_SUFFIX)
+        out.append(n)
+    return out
 
 
 def overlay_legend_lines(nodes: Sequence["Node"]) -> Tuple[str, ...]:
@@ -1337,6 +1390,10 @@ def _marker_value(marker: str, skin: "Skin | None") -> str:
     esc = _xml_escape(marker)
     if skin is None or skin.marker_badge in ("none", "", None):
         return esc
+    # 1.13.0: a WORD label (a materialized peering leg's ``peering``) is a
+    # plain edge label, never a numbered badge.
+    if not re.fullmatch(r"[\d\s,/&+-]+", str(marker)):
+        return esc
     radius = "50%" if skin.marker_badge == "circle" else "3px"
     # Inline-styled span: filled dark disc/box, white bold numeral. Single
     # quotes inside so the double-quoted XML attribute stays well-formed; the
@@ -1448,6 +1505,63 @@ STANDARD_LEGEND_LINES = (
     "Numbered markers (1..N) = ordered data flow steps; see Flow list",
 )
 
+#: The standard Legend marker line (box / panel modes) and its
+#: ``flow_steps='document'`` replacement, which points at the companion's
+#: ``## Flow`` section instead of an on-canvas Flow list (1.13.0).
+_BOX_MARKER_LEGEND_LINE = "Numbered markers (1..N) = ordered data flow steps; see Flow list"
+DOCUMENT_MARKER_LEGEND_LINE = (
+    "Numbered markers (1..N) = ordered data flow steps; see companion Flow section"
+)
+_FLOW_STEP_LINE_RE = re.compile(r"^\s*(\d+)\s*[.)]")
+
+
+def _flow_body(flow_lines: Sequence[str]) -> List[str]:
+    """``flow_lines`` without its leading ``Flow`` header (when present)."""
+    lines = [str(line) for line in flow_lines]
+    if lines and lines[0].strip().casefold() == "flow":
+        lines = lines[1:]
+    return lines
+
+
+def document_flow_index(flow_lines: Sequence[str], diagram_name: str) -> Tuple[str, ...]:
+    """The on-canvas Flow INDEX a ``flow_steps='document'`` diagram draws (1.13.0).
+
+    ``Flow``, then any section header lines the Flow list carries (Theme 28,
+    e.g. ``Ingest (1-4)``), then one pointer line naming the companion section
+    that holds the steps: ``Steps 1–N: see companion <name>.diagram.md → ## Flow``
+    (N = the highest step number). The linter recognises the ``see companion``
+    pointer and reads the steps from the companion."""
+    body = _flow_body(flow_lines)
+    nums = [int(m.group(1)) for line in body if (m := _FLOW_STEP_LINE_RE.match(line))]
+    headers = [line.strip() for line in body
+               if line.strip() and not _FLOW_STEP_LINE_RE.match(line)]
+    rng = f"Steps 1–{max(nums)}" if nums else "Steps"
+    return ("Flow", *headers, f"{rng}: see companion {diagram_name}.diagram.md → ## Flow")
+
+
+def flow_companion_section(flow_lines: Sequence[str]) -> str:
+    """The companion ``## Flow`` section for ``flow_lines`` (1.13.0).
+
+    A builder using ``flow_steps='document'`` writes this into its
+    ``.diagram.md``; the linter reads the numbered ``N.`` lines of that section
+    (until the next heading) as the diagram's Flow legend. Section header lines
+    (Theme 28) become bold paragraphs, so they never end the section."""
+    out: List[str] = ["## Flow", ""]
+    for line in _flow_body(flow_lines):
+        text = line.strip()
+        if not text:
+            continue
+        if _FLOW_STEP_LINE_RE.match(text):
+            out.append(text)
+        else:
+            if out[-1] != "":
+                out.append("")
+            out += [f"**{text}**", ""]
+    while out and out[-1] == "":
+        out.pop()
+    return "\n".join(out) + "\n"
+
+
 #: The Legend lines that name a boundary, and the boundary kind each requires.
 _OUTER_BOUNDARY_LINE = "Outer boundary = stack Boundary (captioned; provider style)"
 _INNER_BOUNDARY_LINE = "Inner boundary = Network Boundary (captioned; provider style)"
@@ -1475,7 +1589,8 @@ def legend_lines_for(boundaries: Sequence[Boundary]) -> Tuple[str, ...]:
 
 
 def _node_membership(
-    nodes: Sequence["Node"], boundaries: Sequence["Boundary"]
+    nodes: Sequence["Node"], boundaries: Sequence["Boundary"],
+    membership: Optional[Mapping[str, str]] = None,
 ) -> Dict[str, Tuple[str, int, int]]:
     """Map node id -> (host boundary id, host x, host y) for structural nesting.
 
@@ -1492,7 +1607,20 @@ def _node_membership(
     well-formed nested boundaries; the smallest-area winner is deterministic.
     """
     host: Dict[str, Tuple[str, int, int]] = {}
+    by_id = {b.id: b for b in boundaries}
     for n in nodes:
+        if membership is not None and n.id in membership:
+            # 1.13.0 (task item 13): the caller's spec membership is used
+            # verbatim — ``""`` is the root layer; an id names the host box.
+            # A node the mapping omits (or whose box is not drawn) falls back
+            # to geometry.
+            bid = membership[n.id]
+            if not bid:
+                continue
+            hb = by_id.get(bid)
+            if hb is not None:
+                host[n.id] = (hb.id, hb.x, hb.y)
+                continue
         best_id, best_x, best_y, best_area = None, 0, 0, None
         for b in boundaries:
             if (
@@ -1622,6 +1750,9 @@ def build_diagram(
     band_groups: Sequence[Tuple[str, Sequence[str]]] = (),
     band_group_styles: Optional[dict] = None,
     container_caption_wrap: int = 0,
+    membership: Optional[Mapping[str, str]] = None,
+    respect_pins: bool = False,
+    reroute_report: Optional[List[str]] = None,
 ) -> str:
     """Assemble a full ``.drawio`` document from the standard building blocks.
 
@@ -1654,6 +1785,17 @@ def build_diagram(
     text cell sized to its own longest line, preserving **every** marker line so
     ``flow-legend`` coverage still holds. The column block keeps the Flow+Legend
     pair sharing one aligned right-margin silhouette (or the row-below mode).
+
+    ``membership`` (1.13.0): ``{node_id: boundary_id}`` (``""`` = root layer),
+    e.g. :func:`rule_engine.layout.membership_of`. When given, a listed node is
+    parented to the box the spec puts it in, never to a box it merely
+    overlaps; ``None`` (default) keeps the geometric tightest-box rule.
+
+    ``respect_pins`` (1.13.0): an input edge with explicit ``points`` is
+    *pinned*. With ``True`` the finishing passes never move a pinned edge (it
+    stays an obstacle). With ``False`` (default) they may; every pinned edge
+    they re-route is logged as a warning on the ``rule_engine.diagram_layout``
+    logger and appended to ``reroute_report`` when a list is given.
     """
     # 1.11.0 WS2: fail-honest on an unknown flow_steps presentation mode.
     if flow_steps not in ("box", "document", "panel"):
@@ -1666,6 +1808,9 @@ def build_diagram(
         raise ValueError(
             f"flow_columns must be >= 1 (or None for a single box); got {flow_columns!r}"
         )
+    # 1.13.0: the ``standby`` label channel (``-standby`` suffix) is applied
+    # before anything measures a caption.
+    nodes = _overlay_labelled(nodes)
     # 1.10.12 WS6: a boundary narrower than its caption grows right into free
     # space or wraps the caption (a no-op on layout() output, which is fitted).
     boundaries = fit_boundary_captions(
@@ -1684,8 +1829,11 @@ def build_diagram(
         band_groups=band_groups,
         band_group_styles=band_group_styles,
         container_caption_wrap=container_caption_wrap,
+        membership=membership,
     )
     routed = _orthogonalised(edges, nodes)
+    pinned = frozenset(e.id for e in edges if e.points)
+    frozen = pinned if respect_pins else frozenset()
     text = _assemble_document(routed=routed, **kwargs)
     # G33 (1.11.0, FEAT-002): dense-landscape finishing gate. The Variant A
     # finishing (`_plan_from_text` = caption-safe + crossing-repair + collinear)
@@ -1716,7 +1864,24 @@ def build_diagram(
     # cost and the net-worsening both live.
     _gated = caption_plan is None and len(nodes) >= _FINISH_NODE_GATE
     if caption_safe and not _gated:
-        plan = caption_plan if caption_plan is not None else _plan_from_text(text)
+        if caption_plan is not None:
+            plan = caption_plan
+        else:
+            # ``frozen`` is passed only when non-empty, so the one-argument
+            # call (and any caller that replaces the planner) is unchanged.
+            plan = _plan_from_text(text, frozen) if frozen else _plan_from_text(text)
+        if plan is not None and frozen and set(plan.routes) & frozen:
+            # A precomputed plan may name a pinned edge; drop those routes.
+            plan = replace(plan, routes={k: v for k, v in plan.routes.items()
+                                         if k not in frozen})
+        if plan is not None and not respect_pins:
+            rerouted = sorted(pinned & set(plan.routes))
+            if rerouted:
+                logging.getLogger("rule_engine.diagram_layout").warning(
+                    "build_diagram rerouted hand-pinned edges: %s "
+                    "(pass respect_pins=True to keep them)", ", ".join(rerouted))
+                if reroute_report is not None:
+                    reroute_report.extend(rerouted)
         safe = _apply_plan(plan, routed, boundaries, legend_x)
         if safe is not None:
             routed, kwargs["boundaries"], kwargs["legend_x"] = safe
@@ -1727,13 +1892,18 @@ def build_diagram(
     # builder (rule-engine-draw, the HA builders, hand-written layout() +
     # build_diagram scripts) gets it. Idempotent; a no-op when nothing collides.
     # Function-local import: geometry imports this module at load time.
-    from rule_engine.orthogonalise import marker_hygiene_text
+    # 1.13.0 (lint == render): the near-source anchor of a long unpinned
+    # marker is written into the file first, so draw.io draws it where lint
+    # judges it and the de-collision pass starts from it.
+    from rule_engine.orthogonalise import marker_hygiene_text, pin_long_marker_anchors_text
 
-    return _cover_page(marker_hygiene_text(text)[0], page_w, page_h)
+    return _cover_page(
+        marker_hygiene_text(pin_long_marker_anchors_text(text))[0], page_w, page_h)
 
 
-def _plan_from_text(text: str):
+def _plan_from_text(text: str, frozen: AbstractSet[str] = frozenset()):
     """The Variant A plan for an assembled document (None when unparsable).
+    ``frozen``: edge ids no pass may move (1.13.0, ``respect_pins``).
     Function-local imports: geometry imports this module."""
     from rule_engine.caption_routing import CaptionPlan, plan_caption_safe_geo
     from rule_engine.collinear_repair import plan_collinear_shift_geo
@@ -1747,14 +1917,15 @@ def _plan_from_text(text: str):
         return None
     if not pages:
         return None
-    caption, work = plan_caption_safe_geo(build_geometry(pages[0]))
+    kw = {"frozen": frozen} if frozen else {}
+    caption, work = plan_caption_safe_geo(build_geometry(pages[0]), **kw)
     # 1.10.12 WS3: the final crossing-repair pass plans on the caption-safe
     # result, so a re-route it keeps never brings a caption strike back.
-    crossing, work = plan_crossing_repair_geo(work)
+    crossing, work = plan_crossing_repair_geo(work, **kw)
     # 1.10.12 WS8: the collinear-shift pass plans on the crossing-repaired
     # result, so separating two lines never re-introduces a crossing or a
     # caption strike an earlier pass removed.
-    collinear, _ = plan_collinear_shift_geo(work)
+    collinear, _ = plan_collinear_shift_geo(work, **kw)
     if not crossing.routes and not collinear.routes:
         return caption
     return CaptionPlan(
@@ -1880,7 +2051,8 @@ def _segment_meets_rect(p, q, x0: float, y0: float, x1: float, y1: float) -> boo
 
 
 def _edge_slots(
-    boundaries: Sequence[Boundary], nodes: Sequence[Node], edges: Sequence[Edge]
+    boundaries: Sequence[Boundary], nodes: Sequence[Node], edges: Sequence[Edge],
+    membership: Optional[Mapping[str, str]] = None,
 ) -> Tuple[Dict[str, int], set]:
     """Choose where each edge sits in draw order so it renders BENEATH vertices.
 
@@ -1907,7 +2079,7 @@ def _edge_slots(
         (i, b) for i, b in enumerate(boundaries) if _is_filled(_boundary_style(b))
     ]
     index = {b.id: i for i, b in enumerate(boundaries)}
-    host = {nid: index[h[0]] for nid, h in _node_membership(nodes, boundaries).items()}
+    host = {nid: index[h[0]] for nid, h in _node_membership(nodes, boundaries, membership).items()}
     captions = {
         n.id: node_caption_box(Box(n.id, n.x, n.y, ICON_SIZE, ICON_SIZE), n.label)
         for n in nodes if caption_lines(n.label)
@@ -1966,8 +2138,10 @@ def _assemble_document(
     band_groups: Sequence[Tuple[str, Sequence[str]]] = (),
     band_group_styles: Optional[dict] = None,
     container_caption_wrap: int = 0,
+    membership: Optional[Mapping[str, str]] = None,
 ) -> str:
     """Emit the ``.drawio`` document for already-routed edges (no hygiene)."""
+    nodes = _overlay_labelled(nodes)
     parts: List[str] = []
     parts.append(
         f'<mxfile host="app.diagrams.net" agent="rule-engine golden-example" version="24.0.0">\n'
@@ -2007,7 +2181,7 @@ def _assemble_document(
     # the node cells, with boundary-relative waypoints). A node painted after an
     # edge that crosses its caption gets the local fill as caption background,
     # so the line passes behind the service name instead of striking it.
-    slots, masked = _edge_slots(boundaries, nodes, routed)
+    slots, masked = _edge_slots(boundaries, nodes, routed, membership)
     if masked:
         nodes = [
             replace(n, label_bg=_local_background(n, boundaries)) if n.id in masked else n
@@ -2032,15 +2206,18 @@ def _assemble_document(
     # parent="1". Absolute positions are unchanged — draw.io resolves a child's
     # relative geometry back to the same pixels — so render and lint are identical
     # (proven by the Wave C spike).
-    _host = _node_membership(nodes, boundaries)
+    _host = _node_membership(nodes, boundaries, membership)
     for n in nodes:
         hb = _host.get(n.id)
         if hb is None:
             parts.append(_render_node(n, "1"))
+            parts.append(overlay_ring_cell(n))
         else:
             host_id, hx, hy = hb
             rel = replace(n, x=n.x - hx, y=n.y - hy)
             parts.append(_render_node(rel, host_id))
+            # 1.13.0: the overlay's visible shape channel (a ring cell).
+            parts.append(overlay_ring_cell(n, host_id, (hx, hy)))
     parts.append("\n")
     # Size each text box from its content plus uniform padding so no line is
     # clipped or abuts the border. Height: one 12px line ~= 16px of leading, plus
@@ -2134,13 +2311,22 @@ def _assemble_document(
     # Without an explicit list the Legend names only the boundaries drawn
     # (:func:`legend_lines_for`, 1.10.7).
     legend_body = legend_lines_for(boundaries) if legend_lines is None else tuple(legend_lines)
+    if flow_steps == "document":
+        # 1.13.0: document mode never drops the Flow silently. The Flow slot
+        # holds an index pointing at the companion ``## Flow`` section
+        # (:func:`document_flow_index`), and the Legend's marker line points
+        # there too; layout is otherwise box mode.
+        flow_lines = document_flow_index(flow_lines, diagram_name)
+        legend_body = tuple(
+            DOCUMENT_MARKER_LEGEND_LINE if line == _BOX_MARKER_LEGEND_LINE else line
+            for line in legend_body
+        )
     # A caller may pin a narrower ``legend_w`` (the Flow/Legend blocks then wrap
     # and grow taller instead of running wide into the diagram body); otherwise
     # size to the longest line with no wrap.
     box_w = legend_w if legend_w is not None else _text_w(flow_lines, legend_body)
     flow_h = _text_h(flow_lines, legend_w)
     legend_h = _text_h(legend_body, legend_w)
-    _draw_flow_box = flow_steps != "document"
     # 1.11.0 WS2 panel mode: the Flow box is drawn as a FULL-HEIGHT furniture
     # strip down the right margin (the hand-drawn "steps panel") rather than a
     # tight box. Presentation only — same right-margin x as the stacked box, so
@@ -2156,7 +2342,7 @@ def _assemble_document(
         # drives the canvas width, so a flow raster stays under its 1600px budget.
         flow_x = legend_x
         legend2_x = int(legend_x + box_w + GRID)
-        if _draw_flow_box and _multi_col:
+        if _multi_col:
             # The Flow columns run left-to-right from flow_x; the Legend follows
             # one grid step past the last column so the block stays one aligned row.
             # Equal-height row (owner finding, 1.11.0): the Flow columns and the
@@ -2170,16 +2356,12 @@ def _assemble_document(
             )
             right = _emit_flow_columns(flow_x, legend_y_flow, row_h=row_h)
             parts.append(text_cell("legend", legend_body, int(right + GRID), legend_y_flow, box_w, row_h, skin=skin))
-        elif _draw_flow_box:
+        else:
             # Equal-height row (owner finding, 1.11.0): Flow and Legend sit
             # side-by-side, so both render at the common max height.
             row_h = max(flow_h, legend_h)
             parts.append(text_cell("flow-legend", flow_lines, flow_x, legend_y_flow, box_w, row_h, skin=skin))
             parts.append(text_cell("legend", legend_body, legend2_x, legend_y_flow, box_w, row_h, skin=skin))
-        else:
-            # 1.11.0 WS2 document mode: the steps live in the companion; only the
-            # Legend stays on-canvas, taking the left (Flow) slot.
-            parts.append(text_cell("legend", legend_body, flow_x, legend_y_flow, box_w, legend_h, skin=skin))
     else:
         # Mode A (default, stack): the Legend stacks BELOW the Flow box. A caller's
         # ``legend_y_legend`` is a hint, not a guarantee: a long Flow list (or a
@@ -2187,7 +2369,7 @@ def _assemble_document(
         # two boxes would overlap — silently, because neither is a node, so no
         # geometry rule would catch it. Push the Legend down to clear the Flow box
         # by one grid step.
-        if _draw_flow_box and _multi_col:
+        if _multi_col:
             # Multi-column Flow (FEAT-001 B / G22): the columns run left-to-right
             # at legend_y_flow; the Legend stacks below the TALLEST column so it
             # never overlaps a column. box_w (the single-box width) is unused for
@@ -2197,7 +2379,7 @@ def _assemble_document(
             _emit_flow_columns(legend_x, legend_y_flow)
             legend_y = max(legend_y_legend, legend_y_flow + tallest + GRID)
             parts.append(text_cell("legend", legend_body, legend_x, legend_y, box_w, legend_h, skin=skin))
-        elif _draw_flow_box:
+        else:
             legend_y = max(legend_y_legend, legend_y_flow + flow_h + GRID)
             # Panel mode: stretch the Flow box into a full-height furniture strip
             # (top of the Flow slot down to one container-pad above the page
@@ -2209,9 +2391,6 @@ def _assemble_document(
                 legend_y = max(legend_y_legend, legend_y_flow + flow_box_h + GRID)
             parts.append(text_cell("flow-legend", flow_lines, legend_x, legend_y_flow, box_w, flow_box_h, skin=skin))
             parts.append(text_cell("legend", legend_body, legend_x, legend_y, box_w, legend_h, skin=skin))
-        else:
-            # document mode: Legend takes the Flow box's top slot.
-            parts.append(text_cell("legend", legend_body, legend_x, legend_y_flow, box_w, legend_h, skin=skin))
     parts.append(
         "      </root>\n    </mxGraphModel>\n  </diagram>\n</mxfile>\n"
     )
@@ -2267,5 +2446,6 @@ __all__ = [
     "title_cell", "boundary_cell", "edge_cell", "text_cell",
     "STANDARD_LEGEND_LINES", "legend_lines_for", "build_diagram", "caption_safe_plan",
     "fit_boundary_captions",
-    "OVERLAY_LEGEND_LINES", "overlay_legend_lines",
+    "OVERLAY_LEGEND_LINES", "overlay_legend_lines", "overlay_ring_cell",
+    "document_flow_index", "flow_companion_section", "DOCUMENT_MARKER_LEGEND_LINE",
 ]

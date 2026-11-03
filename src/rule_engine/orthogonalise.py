@@ -284,6 +284,34 @@ def edge_hygiene_text(text: str, skip_ids: "Optional[set[str]]" = None) -> tuple
     return out, sorted(changed | set(slid))
 
 
+def pin_long_marker_anchors_text(text: str) -> str:
+    """Write the near-source anchor of every long unpinned marker into the file.
+
+    1.13.0 (lint == render): draw.io draws an edge label with no
+    ``mxGeometry x`` at the route midpoint, and lint now reads it there too.
+    The ITEM C near-source position for a numeric marker on a route longer than
+    :data:`geometry.LONG_EDGE_MARKER_LEN` is therefore emitted explicitly as
+    ``x=<geometry.near_source_label_pos>``. Already-pinned markers, short
+    routes, peering legs and non-numeric labels are left untouched.
+    Deterministic and idempotent (a pinned marker is never re-pinned)."""
+    from rule_engine.geometry import pin_long_marker_label_pos
+
+    geo = build_geometry(parse_drawio(text, path="<marker-pin>.drawio")[0])
+    pins = pin_long_marker_label_pos(geo)
+    if not pins:
+        return text
+
+    def rewrite(match: re.Match) -> str:
+        head, body = match.group(1), match.group(2)
+        m = _ID_RE.search(head)
+        eid = m.group(1) if m else ""
+        if eid not in pins:
+            return match.group(0)
+        return head + _set_geom_relative_x(body, pins[eid])
+
+    return _EDGE_CELL_RE.sub(rewrite, text)
+
+
 def marker_hygiene_text(
     text: str, skip_ids: "Optional[set[str]]" = None
 ) -> tuple[str, List[str]]:

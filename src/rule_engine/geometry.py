@@ -38,7 +38,7 @@ from __future__ import annotations
 
 import math
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 # Container / text classification and the root-layer id are shared with
@@ -47,6 +47,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, 
 from rule_engine.constants import ROOT_LAYER_ID as _ROOT_LAYER_ID
 from rule_engine.constants import is_boundary_container_style as _is_boundary_style
 from rule_engine.constants import is_text_cell_style as _is_text_style
+from rule_engine.constants import OVERLAY_RING_PREFIX as _OVERLAY_RING_PREFIX
 
 # The single `.drawio` parser (honest-gates R1). ``build_geometry`` now consumes
 # a parsed :class:`~rule_engine.drawio_model.Page` rather than re-reading the XML
@@ -286,6 +287,10 @@ def build_geometry(page: Page) -> DiagramGeometry:
 
     for cid, cell in cells.items():
         if not cell.vertex or cid in boundary_ids:
+            continue
+        if (cid or "").startswith(_OVERLAY_RING_PREFIX):
+            # 1.13.0: the overlay ring drawn around a standby / supporting /
+            # unconfirmed node is that node's shape channel, not a node.
             continue
         g = cell.geom
         if (cid or "").startswith(("flowgroup-", "bandgroup-")):
@@ -4118,15 +4123,13 @@ def marker_anchor(poly: Sequence[Point], label_pos: Optional[float]) -> Optional
     ``t = (label_pos + 1) / 2`` — the same point the reader sees the number at.
     Returns ``None`` for a degenerate (zero-length) route.
 
-    ITEM C (audit E-08): an **unpinned** marker (``label_pos is None``) on a
-    **long** route (total length above :data:`LONG_EDGE_MARKER_LEN`) is anchored
-    NEAR ITS SOURCE — a fixed arc-length offset of
-    ``min(0.5 * total, LONG_EDGE_MARKER_OFFSET)`` from the exit — rather than at
-    the midpoint, which on a long run can land in dead space, on a container
-    border, or on an unrelated caption. A short route, or any route whose
-    ``label_pos`` is explicitly pinned (including ``0.0``), keeps the exact
-    midpoint / pinned point behaviour, so no short-edge or pinned-marker golden
-    shifts.
+    1.13.0 (lint == render): an **unpinned** marker (``label_pos is None``)
+    resolves to the **midpoint**, exactly where draw.io draws an edge label whose
+    ``mxGeometry`` carries no ``x``. The ITEM C near-source anchor for a long
+    route is no longer implied here: the builder writes it into the file
+    (:func:`near_source_label_pos`, applied by
+    ``orthogonalise.pin_long_marker_anchors_text``), so the position lint
+    judges is the position the file says.
     """
     pts = [tuple(p) for p in poly]
     if len(pts) < 2:
@@ -4137,13 +4140,9 @@ def marker_anchor(poly: Sequence[Point], label_pos: Optional[float]) -> Optional
     total = sum(seg_len)
     if total <= 0:
         return pts[0]
-    if label_pos is None and total > LONG_EDGE_MARKER_LEN:
-        # Unpinned long edge: anchor near the source, capped at the midpoint.
-        target = min(0.5 * total, LONG_EDGE_MARKER_OFFSET)
-    else:
-        t = ((label_pos if label_pos is not None else 0.0) + 1.0) / 2.0
-        t = min(1.0, max(0.0, t))
-        target = t * total
+    t = ((label_pos if label_pos is not None else 0.0) + 1.0) / 2.0
+    t = min(1.0, max(0.0, t))
+    target = t * total
     run = 0.0
     for (a, b), ln in zip(zip(pts, pts[1:]), seg_len):
         if run + ln >= target or ln == 0:
@@ -4368,28 +4367,68 @@ def check_marker_on_edge(
 _MARKER_SLIDE_LIMIT = 0.8
 
 
-def _default_label_pos(poly: Sequence[Point], label_pos: Optional[float]) -> float:
-    """Return the effective signed ``label_pos`` an unpinned marker renders at.
+def near_source_label_pos(poly: Sequence[Point]) -> Optional[float]:
+    """The signed ``label_pos`` that anchors a marker NEAR ITS SOURCE, or None.
 
-    Mirrors :func:`marker_anchor`'s ITEM C near-source rule in the ``label_pos``
-    domain: an explicitly pinned marker keeps its value; an unpinned marker on a
-    long route (> :data:`LONG_EDGE_MARKER_LEN`) resolves to the signed fraction
-    whose arc-length is the near-source offset (so the de-collision passes start
-    from the SAME near-source anchor the renderer draws); an unpinned marker on a
-    short route resolves to ``0.0`` (the midpoint). Used to seed and to diff
-    :func:`resolve_marker_collisions` so a long unpinned edge is not spuriously
-    reported as "moved" when it only sits at its own near-source default."""
-    if label_pos is not None:
-        return float(label_pos)
+    ITEM C (audit E-08): a long route's midpoint can land far from both
+    endpoints — in dead space, on a container border, or on an unrelated
+    caption — so a route longer than :data:`LONG_EDGE_MARKER_LEN` reads more
+    clearly with its step number ``min(0.5 * total, LONG_EDGE_MARKER_OFFSET)``
+    down the run from the exit. Returns the signed fraction (``2 t - 1``) of
+    that point, rounded to 6 decimals; ``None`` for a short or degenerate route
+    (which keeps the midpoint). 1.13.0: the builder WRITES this value into the
+    edge's ``mxGeometry x`` (``orthogonalise.pin_long_marker_anchors_text``)
+    so draw.io renders the marker where lint judges it."""
     pts = [tuple(p) for p in poly]
     if len(pts) < 2:
-        return 0.0
+        return None
     total = sum(abs(b[0] - a[0]) + abs(b[1] - a[1]) for a, b in zip(pts, pts[1:]))
     if total <= 0 or total <= LONG_EDGE_MARKER_LEN:
-        return 0.0
+        return None
     target = min(0.5 * total, LONG_EDGE_MARKER_OFFSET)
     # signed position: t in [0,1] along the route maps to label_pos = 2*t - 1
     return round(2.0 * (target / total) - 1.0, 6)
+
+
+def pin_long_marker_label_pos(geo: DiagramGeometry) -> Dict[str, float]:
+    """``{edge_id: near_source_label_pos}`` for every UNPINNED numeric marker on
+    a long route (1.13.0). The builder writes these into the file before the
+    marker de-collision pass, so the pass starts from the near-source anchor."""
+    out: Dict[str, float] = {}
+    for e in _marker_edges(geo):
+        if e.label_pos is not None:
+            continue
+        contacts = _edge_contacts(geo, e)
+        if contacts is None:
+            continue
+        pos = near_source_label_pos(
+            [contacts[0]] + [tuple(p) for p in e.points] + [contacts[1]])
+        if pos is not None:
+            out[e.id] = pos
+    return out
+
+
+def with_long_markers_pinned(geo: DiagramGeometry) -> DiagramGeometry:
+    """``geo`` with :func:`pin_long_marker_label_pos` applied — the marker
+    positions the shared builder will write (1.13.0). Finishing passes judge
+    markers on this view so they see where the number will be drawn."""
+    pins = pin_long_marker_label_pos(geo)
+    if not pins:
+        return geo
+    return replace(geo, edges=[replace(e, label_pos=pins[e.id]) if e.id in pins else e
+                               for e in geo.edges])
+
+
+def _default_label_pos(poly: Sequence[Point], label_pos: Optional[float]) -> float:
+    """Return the effective signed ``label_pos`` a marker renders at.
+
+    An explicitly pinned marker keeps its value; an unpinned marker renders at
+    the midpoint (``0.0``), which is what draw.io does with an edge label that
+    carries no ``x`` (1.13.0: lint == render). Used to seed and to diff
+    :func:`resolve_marker_collisions`."""
+    if label_pos is not None:
+        return float(label_pos)
+    return 0.0
 
 
 def resolve_marker_collisions(

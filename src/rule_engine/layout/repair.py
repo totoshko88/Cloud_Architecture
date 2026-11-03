@@ -362,6 +362,32 @@ def _run_oracle(candidate: "PlacedDiagram") -> "OracleFindings":
     return OracleFindings(blocking=blocking, fixable=fixable)
 
 
+#: Container kinds the padding repair may grow around a node the spec does
+#: not assign to them (1.13.0): the account envelope and the region.
+_AUTO_WRAP_KINDS = frozenset({"account", "region"})
+
+
+def _membership_or_none(candidate: "PlacedDiagram") -> Optional[Dict[str, str]]:
+    from .base import membership_from
+
+    try:
+        return membership_from(candidate.spec, candidate.nodes)
+    except (KeyError, ValueError):
+        return None
+
+
+def _may_wrap(candidate: "PlacedDiagram", member: Dict[str, str], nid: str, cid: str) -> bool:
+    """True when the padding repair may grow ``cid`` around node ``nid``: the
+    node is a spec member of ``cid`` (or of a box inside it), or ``cid`` is an
+    account / region (1.13.0)."""
+    from .base import container_chain
+
+    kind = next((c.kind for c in candidate.spec.containers if c.id == cid), None)
+    if kind is None or kind in _AUTO_WRAP_KINDS:
+        return True
+    return cid in container_chain(candidate.spec, member.get(nid, ""))
+
+
 def _grow_container(box: Box, step: int = GRID) -> Box:
     """Grow a container box outward by ``step`` on every side (padding repair)."""
     return Box(box.id, _snap(box.x - step), _snap(box.y - step),
@@ -464,17 +490,39 @@ def _repair(
     edges = list(candidate.edges)
     edge_by_id = {pe.spec.id: i for i, pe in enumerate(edges)}
 
+    member: Optional[Dict[str, str]] = None
+    applied = 0
+    skipped: List[object] = []
     for rule, payload in sorted(findings.fixable, key=lambda f: (f[0], repr(f[1]))):
         if rule == "container-padding":
             _node_id, ccid = payload  # type: ignore[misc]
             if ccid in containers:
+                if _node_id in candidate.nodes:
+                    if member is None:
+                        member = _membership_or_none(candidate)
+                    if member is not None and not _may_wrap(candidate, member, _node_id, ccid):
+                        # 1.13.0 (task item 13): growing a box around a node
+                        # the spec does not put in it makes the node a
+                        # geometric (and, in build_diagram, structural)
+                        # member. Only the account envelope / region may
+                        # absorb a non-member; any other box is left alone.
+                        skipped.append(payload)
+                        continue
                 containers[ccid] = _grow_container(containers[ccid])
+                applied += 1
         elif rule == "corridor-sharing":
             a, b = payload  # type: ignore[misc]
             later = max(a, b)  # deterministic: the higher edge id yields
             idx = edge_by_id.get(later)
             if idx is not None:
                 edges[idx] = _bump_edge_corridor(edges[idx])
+                applied += 1
+    if skipped and not applied:
+        raise LayoutError(
+            f"container-padding on {skipped[0]!r}: the node is not a spec member "
+            "of the container, so the repair loop will not grow the box around it "
+            "(declare its container, or re-slot it clear of the box)"
+        )
 
     return PlacedDiagram(
         spec=candidate.spec,

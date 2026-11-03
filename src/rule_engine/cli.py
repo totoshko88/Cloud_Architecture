@@ -170,6 +170,56 @@ def _companion_path(path: str) -> str:
     return os.path.splitext(path)[0] + ".diagram.md"
 
 
+#: The on-canvas pointer a ``flow_steps='document'`` Flow index carries
+#: (``diagram_layout.document_flow_index``, 1.13.0): the steps live in the
+#: companion's ``## Flow`` section.
+_FLOW_COMPANION_POINTER = "see companion"
+_MD_HEADING_RE = re.compile(r"^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$")
+_MD_FLOW_STEP_RE = re.compile(r"^\s*\d+\s*[.)]\s*\S")
+
+
+def _markdown_flow_steps(path: str, whole_file: bool = False) -> Optional[List[str]]:
+    """The numbered ``N.`` / ``N)`` lines of a Markdown file's ``## Flow``
+    section (until the next heading), or ``None`` when the file or the section
+    is absent. ``whole_file``: a sibling ``.flow.md`` with no ``Flow`` heading
+    contributes every numbered line (1.13.0)."""
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            _block, body = _kb_validator.split_frontmatter(fh.read())
+    except OSError:
+        return None
+    steps: List[str] = []
+    in_section = found = False
+    for line in body.splitlines():
+        m = _MD_HEADING_RE.match(line)
+        if m:
+            if in_section:
+                break
+            if m.group(2).strip().casefold() == _FLOW_HEADING:
+                in_section = found = True
+            continue
+        if in_section and _MD_FLOW_STEP_RE.match(line):
+            steps.append(line.strip())
+    if found:
+        return steps
+    if whole_file:
+        return [ln.strip() for ln in body.splitlines() if _MD_FLOW_STEP_RE.match(ln)] or None
+    return None
+
+
+def _flow_steps_from_companion(path: str) -> Optional[List[str]]:
+    """Flow steps for a diagram whose Flow is not on canvas (1.13.0): the
+    companion ``<base>.diagram.md`` ``## Flow`` section, else a sibling
+    ``<base>.flow.md``. ``None`` when neither carries any step."""
+    steps = _markdown_flow_steps(_companion_path(path))
+    if not steps:
+        base = path[: -len(".drawio")] if path.endswith(".drawio") else os.path.splitext(path)[0]
+        steps = _markdown_flow_steps(base + ".flow.md", whole_file=True)
+    return steps or None
+
+
 def _load_companion_frontmatter(
     companion: str,
 ) -> Tuple[Optional[Dict[str, Any]], bool]:
@@ -295,7 +345,9 @@ def _parse_drawio_page(path: str, page: Page, text: str) -> Artifact:
             continue
         if cid in boundary_ids:
             continue
-        if (cid or "").startswith(("flowgroup-", "bandgroup-")):
+        if (cid or "").startswith(("flowgroup-", "bandgroup-", "overlayring-")):
+            # 1.13.0: an ``overlayring-*`` cell is the visible outline of a
+            # standby / supporting / unconfirmed node, not a node.
             # 1.11.0 WS2 flow-group box / 1.13.0 band-group box: a decorative
             # context box behind the member nodes (``flow_group_cells`` /
             # ``band_group_cells``), not a service node. It must not
@@ -342,6 +394,20 @@ def _parse_drawio_page(path: str, page: Page, text: str) -> Artifact:
     # rather than silently defaulting to ``flow`` (design §2 / R2.5).
     companion = _companion_path(path)
     fm, companion_parse_failed = _load_companion_frontmatter(companion)
+
+    # 1.13.0: a ``flow_steps='document'`` diagram draws only an index Flow cell
+    # pointing at the companion; a diagram with no Flow cell may keep its steps
+    # there too. Read them so flow-legend / flow-step-undrawn judge the real
+    # steps, and record where they came from.
+    flow_source = "canvas"
+    _pointer = any(_FLOW_COMPANION_POINTER in ln.casefold() for ln in flow_legend_lines)
+    if not flow_legend_lines or _pointer:
+        _steps = _flow_steps_from_companion(path)
+        if _steps:
+            flow_legend_lines = ["Flow"] + _steps
+            flow_source = "companion"
+        else:
+            flow_source = "missing"
     diagram_class = "flow"
     summary_of = None
     detailed_view = None
@@ -426,6 +492,7 @@ def _parse_drawio_page(path: str, page: Page, text: str) -> Artifact:
         overlay_markers=overlay_markers,
         legend_overlay_terms=legend_overlay_terms,
         flow_legend_lines=flow_legend_lines,
+        flow_source=flow_source,
     )
 
 

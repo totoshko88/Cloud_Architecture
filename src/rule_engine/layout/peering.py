@@ -39,14 +39,19 @@ Contract:
   peerings from several VPC nodes). Without that exemption a region-less
   cloud-lane node would be wrapped by the account and the VPC box would overlap
   it — the G23 dense-case defect that tripped ``container-padding`` /
-  ``container-overlap`` on 08/10. A peering edge that touches a CONTAINER
-  endpoint is left unchanged (it is a boundary-to-boundary edge routed by the
-  WS10 container-edge path, where the two boundary faces already read as the two
-  networks). Node/edge ordering is preserved deterministically, so the transform
-  is a pure function of the spec.
-* **Idempotent.** After materialization the only remaining ``peering=True``
-  edges touch containers, so running the transform again is a no-op — no second
-  ``vpc_peering`` node is created.
+  ``container-overlap`` on 08/10. 1.13.0 (task item 8): an endpoint may also be
+  a ``vpc`` / ``peer_account`` / ``external_cloud`` CONTAINER id. The pcx then
+  joins the external band of the external endpoint (an external node, else the
+  first member of an external box), or the between-lane fallback when neither
+  side is external; the leg touching the container keeps the container id as
+  its endpoint and is routed from the container face by the WS10
+  boundary-edge path. A peering on any other container kind (account, region)
+  is left unchanged. Leg ``-a`` carries the edge's marker (else ``peering``),
+  leg ``-b`` the word ``peering``. Node/edge ordering is preserved
+  deterministically, so the transform is a pure function of the spec.
+* **Idempotent.** After materialization no ``peering=True`` edge with
+  materializable endpoints remains, so running the transform again is a
+  no-op — no second ``vpc_peering`` node is created.
 """
 
 from __future__ import annotations
@@ -66,6 +71,17 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
 #: that is a member of one of these — or that sits in an external lane — is an
 #: EXTERNAL endpoint, and the peering resource joins its band.
 _EXTERNAL_CONTAINER_KINDS = frozenset({"external_cloud", "peer_account"})
+
+#: Container kinds a peering may START or END on and still be materialized
+#: (1.13.0, task item 8): a VPC, or a peer account / external cloud box. The leg
+#: touching the container keeps the container id as its endpoint (the WS10
+#: boundary-edge path routes it from the container face).
+_PEERING_CONTAINER_KINDS = frozenset({"vpc"}) | _EXTERNAL_CONTAINER_KINDS
+
+#: The on-canvas text of a materialized peering leg that carries no step
+#: marker (1.13.0): a plain label, never a numbered badge, so ``edge-label``
+#: is satisfied and the numeric-marker passes ignore it.
+PEERING_LEG_LABEL = "peering"
 
 
 #: The presentation role the materialized node resolves to (AWS *VPC Peering
@@ -139,16 +155,61 @@ def materialize_peerings(spec: DiagramSpec) -> DiagramSpec:
             or container_kind.get(n.container or "", "") in _EXTERNAL_CONTAINER_KINDS
         )
 
-    # The peering edges we will materialize: peering=True AND both endpoints are
-    # NODES (a container endpoint stays on the WS10 boundary-edge path).
+    # The peering edges we will materialize: peering=True AND each endpoint is
+    # a NODE or (1.13.0, task item 8) a vpc / peer_account / external_cloud
+    # CONTAINER. A peering on any other container kind stays on the WS10
+    # boundary-edge path.
+    def _endpoint_ok(eid: str) -> bool:
+        return eid in node_by_id or container_kind.get(eid, "") in _PEERING_CONTAINER_KINDS
+
     to_materialize = [
         e for e in spec.edges
-        if e.peering
-        and e.source in node_by_id
-        and e.target in node_by_id
+        if e.peering and _endpoint_ok(e.source) and _endpoint_ok(e.target)
     ]
     if not to_materialize:
         return spec
+
+    def _members(cid: str) -> List[NodeSpec]:
+        """Nodes inside container ``cid`` (or a box nested in it), slot order."""
+        parent_of = {c.id: c.parent for c in spec.containers}
+
+        def inside(c: str) -> bool:
+            seen = set()
+            while c and c not in seen:
+                if c == cid:
+                    return True
+                seen.add(c)
+                c = parent_of.get(c) or ""
+            return False
+
+        return sorted((n for n in spec.nodes if n.container and inside(n.container)),
+                      key=lambda n: (LANE_INDEX[n.lane], n.slot, n.id))
+
+    def _anchor(e: EdgeSpec):
+        """The external NODE whose band takes the pcx, or None (fallback)."""
+        for nid in (e.target, e.source):
+            n = node_by_id.get(nid)
+            if n is not None and _is_external(n):
+                return n
+        for cid in (e.target, e.source):
+            if container_kind.get(cid, "") in _EXTERNAL_CONTAINER_KINDS:
+                members = _members(cid)
+                if members:
+                    return members[0]
+        return None
+
+    def _lane_of(eid: str, other: str) -> str:
+        n = node_by_id.get(eid)
+        if n is not None:
+            return n.lane
+        members = _members(eid)
+        if members:
+            return members[0].lane
+        o = node_by_id.get(other)
+        if o is not None:
+            return o.lane
+        o_members = _members(other)
+        return o_members[0].lane if o_members else LANES[len(LANES) // 2]
 
     # Split by whether the peer target is EXTERNAL. Almost every real peering is
     # {cloud VPC source → external peer}; for that case the pcx joins the peer's
@@ -156,8 +217,7 @@ def materialize_peerings(spec: DiagramSpec) -> DiagramSpec:
     # endpoint — its pcx falls back to the legacy region-less between-lane
     # placement (kept out of the account by the ``vpc_peering`` exemption in
     # ``_assign_nodes_to_leaves``).
-    ext_edges = [e for e in to_materialize if _is_external(node_by_id[e.target])
-                 or _is_external(node_by_id[e.source])]
+    ext_edges = [e for e in to_materialize if _anchor(e) is not None]
     fallback_edges = [e for e in to_materialize if e not in ext_edges]
 
     # One pcx per materializable peering, keyed by edge id, built in edge order
@@ -184,8 +244,8 @@ def materialize_peerings(spec: DiagramSpec) -> DiagramSpec:
     anchor_of: Dict[str, NodeSpec] = {}
     insert_at: Dict[Tuple[str, str, str], List[Tuple[int, str]]] = {}
     for e in ext_edges:
-        tgt = node_by_id[e.target]
-        anchor = tgt if _is_external(tgt) else node_by_id[e.source]
+        anchor = _anchor(e)
+        assert anchor is not None
         anchor_of[e.id] = anchor
         band = (anchor.container or "", anchor.lane, anchor.region)
         insert_at.setdefault(band, []).append((anchor.slot, e.id))
@@ -229,7 +289,8 @@ def materialize_peerings(spec: DiagramSpec) -> DiagramSpec:
         next_between[k] = max(next_between.get(k, -1), n.slot)
     next_between = {k: v + 1 for k, v in next_between.items()}
     for e in fallback_edges:
-        lane = _between_lane(node_by_id[e.source], node_by_id[e.target])
+        lane = LANES[(LANE_INDEX[_lane_of(e.source, e.target)]
+                      + LANE_INDEX[_lane_of(e.target, e.source)]) // 2]
         key = (lane, "")
         slot = next_between.get(key, 0)
         next_between[key] = slot + 1
@@ -292,18 +353,20 @@ def materialize_peerings(spec: DiagramSpec) -> DiagramSpec:
         # Two plain legs. The peering is now a RESOURCE (the vpc_peering icon),
         # so the legs are ordinary (non-peering) edges; they keep the edge's
         # dashed/kind_hint presentation so a network view can still draw them
-        # dashed if it declared so. They carry NO marker (empty): a peering leg
-        # is a bare line into the VPC Peering icon — the step is documented in
-        # the Flow narrative, not on the leg. An empty marker renders as NOTHING
-        # (no badge disc) via ``diagram_layout._marker_value`` (G23, the
-        # owner-flagged "empty black disc on peering legs" defect).
+        # dashed if it declared so. 1.13.0 (task item 8): every leg is
+        # LABELLED (``edge-label``): leg ``-a`` keeps the edge's step marker
+        # when it has one, else the plain word ``peering``; leg ``-b`` is
+        # ``peering``. The word renders as a plain label, never a badge disc
+        # (``diagram_layout._marker_value``), and the numeric-marker passes
+        # ignore it. A container endpoint stays the leg's endpoint.
+        marker = (e.marker or "").strip()
         new_edges.append(replace(
             e, id=f"{e.id}-a", source=e.source, target=pcx_id, peering=False,
-            marker="",
+            marker=marker or PEERING_LEG_LABEL,
         ))
         new_edges.append(replace(
             e, id=f"{e.id}-b", source=pcx_id, target=e.target, peering=False,
-            marker="",
+            marker=PEERING_LEG_LABEL,
         ))
 
     return replace(

@@ -84,7 +84,7 @@ try:  # package-relative import when used as ``rule_engine.layout.pipeline``
         route_edge,
         nudge_off_container_borders,
     )
-    from .base import TITLE_BAND, _snap, col_step, resolve_spacing, _spacing_scope
+    from .base import SpecError, TITLE_BAND, _snap, col_step, resolve_spacing, _spacing_scope
     from .repair import (
         MAX_REPAIR_ITERS,
         LayoutError,
@@ -131,7 +131,7 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
         route_edge,
         nudge_off_container_borders,
     )
-    from layout.base import TITLE_BAND, _snap, col_step, resolve_spacing, _spacing_scope  # type: ignore[no-redef]
+    from layout.base import SpecError, TITLE_BAND, _snap, col_step, resolve_spacing, _spacing_scope  # type: ignore[no-redef]
     from layout.repair import (  # type: ignore[no-redef]
         MAX_REPAIR_ITERS,
         LayoutError,
@@ -1263,8 +1263,8 @@ def layout(
                 # back-edges or crossings and no more of either
                 # (``order="manual"`` skips it).
                 from .ordering import order_and_place as _order_and_place
-                return _order_and_place(
-                    spec, lambda s: _solve_placement(s, strict=strict))
+                return _with_scope_membership(_order_and_place(
+                    spec, lambda s: _solve_placement(s, strict=strict)), strict=strict)
             # Inner scored route path (the placement loop's per-variant step, and the
             # 1.8.0 route-only path): no placement search, just place → size → centre
             # → scored solve → repair.
@@ -1274,6 +1274,57 @@ def layout(
                 f"layout({spec.diagram_id!r}) has an over-connected node — the "
                 f"diagram must be split or re-laned: {exc}"
             ) from exc
+
+
+def scope_membership_warnings(placed: "PlacedDiagram") -> Tuple[str, ...]:
+    """``scope-membership`` findings (1.13.0, task item 13): a node that
+    declares no ``container`` but whose icon box the placement drew fully
+    inside a container it is not a member of (:func:`membership_of`). The
+    builder parents nodes by spec membership, so such a node reads as inside
+    a box it does not belong to; lint (``geometric-containment``) reports it."""
+    from .base import container_chain, membership_from
+
+    member = membership_from(placed.spec, placed.nodes)
+    out: List[str] = []
+    for n in placed.spec.nodes:
+        if n.container is not None or n.id not in placed.nodes:
+            continue
+        b = placed.nodes[n.id]
+        chain = set(container_chain(placed.spec, member.get(n.id, "")))
+        for c in placed.spec.containers:
+            box = placed.containers.get(c.id)
+            if box is None or c.id in chain:
+                continue
+            if (box.x <= b.x and box.y <= b.y
+                    and b.x + b.w <= box.x + box.w and b.y + b.h <= box.y + box.h):
+                out.append(f"scope-membership: {n.id} inside {c.id} but not declared a member")
+    return tuple(out)
+
+
+def _with_scope_membership(placed: "PlacedDiagram", *, strict: bool = False) -> "PlacedDiagram":
+    """``placed`` with :func:`scope_membership_warnings` appended to its
+    ``layout_warnings`` (a no-op, same object, when there are none). Under
+    ``strict=True`` a finding is a :class:`SpecError` (no shipped golden
+    trips it)."""
+    extra = scope_membership_warnings(placed)
+    if not extra:
+        return placed
+    if strict:
+        raise SpecError(
+            f"layout({placed.spec.diagram_id!r}): " + "; ".join(extra)
+            + " — declare the node's container, or slot it clear of the box"
+        )
+    return replace(placed, layout_warnings=tuple(placed.layout_warnings) + extra)
+
+
+def membership_of(placed: "PlacedDiagram") -> Dict[str, str]:
+    """``{node_id: container_id}`` (``""`` for the root layer) from the spec:
+    each node's declared container, else the container placement sized it into
+    (1.13.0). Pass it to ``build_diagram(membership=...)`` so a node is parented
+    to the box the spec puts it in, never to a box it merely overlaps."""
+    from .base import membership_from
+
+    return membership_from(placed.spec, placed.nodes)
 
 
 def _annotate_edge_regions(spec: DiagramSpec) -> DiagramSpec:

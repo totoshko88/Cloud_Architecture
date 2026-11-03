@@ -618,6 +618,11 @@ class Artifact:
     # means "not parsed" (e.g. a programmatic artifact) and the rule is skipped;
     # an empty list means the diagram has no Flow cell at all.
     flow_legend_lines: Optional[Sequence[str]] = None
+    # Where ``flow_legend_lines`` came from (1.13.0): ``"canvas"`` (an on-canvas
+    # Flow cell), ``"companion"`` (the companion ``## Flow`` section or a
+    # sibling ``.flow.md``, read for ``flow_steps='document'``) or ``"missing"``
+    # (no Flow cell and no companion steps). ``None``: not parsed.
+    flow_source: Optional[str] = None
 
     # Document
     frontmatter: Optional[Mapping[str, Any]] = None
@@ -2326,6 +2331,12 @@ def _check_flow_legend(a: Artifact):
     markers = _numeric_flow_markers(a)
     if not markers:
         return False
+    if a.flow_source == "missing":
+        # 1.13.0: the steps are written nowhere — no on-canvas Flow cell and no
+        # companion ``## Flow`` section. ERROR (reason_escalations).
+        return RuleHit(
+            offenders=tuple(f"marker-{n}" for n in markers), reason="flow-steps-missing"
+        )
     if a.flow_legend_lines is None:
         # Not parsed (programmatic artifact): skip rather than assume a failure.
         return False
@@ -3075,7 +3086,13 @@ RULES: Tuple[Tuple[RuleSpec, Callable[[Artifact], _PredicateResult]], ...] = (
     (RuleSpec(RULE_EDGE_CROSSES_TITLE, Severity.WARNING), _check_edge_crosses_title),
     (RuleSpec(RULE_EDGE_JOG, Severity.WARNING), _check_edge_jog),
     (RuleSpec(RULE_LEGEND_PLACEMENT, Severity.WARNING), _check_legend_placement),
-    (RuleSpec(RULE_FLOW_LEGEND, Severity.WARNING), _check_flow_legend),
+    # flow-legend: WARNING; numbered markers whose steps are written NOWHERE
+    # (no Flow cell, no companion ``## Flow`` section, 1.13.0) are an ERROR.
+    (
+        RuleSpec(RULE_FLOW_LEGEND, Severity.WARNING,
+                 reason_escalations={"flow-steps-missing": Severity.ERROR}),
+        _check_flow_legend,
+    ),
     (RuleSpec(RULE_NODE_CONNECTIVITY, Severity.WARNING), _check_node_connectivity),
     # supporting-data-edges (1.13.0): a supporting node on a numbered flow edge.
     (RuleSpec(RULE_SUPPORTING_DATA_EDGES, Severity.WARNING), _check_supporting_data_edges),

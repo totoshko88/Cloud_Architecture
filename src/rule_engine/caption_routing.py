@@ -56,7 +56,7 @@ on that order, and nothing depends on dict iteration of unordered sets.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import AbstractSet, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from rule_engine.diagram_layout import CONTAINER_PAD
 from rule_engine.geometry import (
@@ -90,6 +90,7 @@ from rule_engine.geometry import (
     check_marker_icon_collision,
     check_marker_label_collision,
     resolve_marker_collisions,
+    with_long_markers_pinned,
     contact_faces,
     edge_polyline,
     grid_resolve_contact,
@@ -179,6 +180,10 @@ _MOVE_EVAL_BUDGET = 20000
 #: Remaining move-search budget for the current ``_plan_once`` run (reset at the
 #: start of each run). A list so the counter is mutable across helper calls.
 _MOVE_EVAL_LEFT = [_MOVE_EVAL_BUDGET]
+#: Edges the current plan must never move (1.13.0, ``build_diagram(
+#: respect_pins=True)``): hand-pinned routes stay as given, but remain
+#: obstacles. Set by :func:`plan_caption_safe_geo`; empty by default.
+_FROZEN: List[frozenset] = [frozenset()]
 
 
 
@@ -269,11 +274,14 @@ def _pair_crossings(a: Sequence[Point], b: Sequence[Point]) -> int:
 
 def _violations(geo: DiagramGeometry) -> Tuple[Tuple, Tuple]:
     errors, warnings = rule_violations(geo)
+    # 1.13.0: markers are judged where the builder will write them (long
+    # unpinned markers pinned near their source).
+    pinned = with_long_markers_pinned(geo)
     extra = tuple(sorted(
         [("edge-crosses-label", repr(f)) for f in check_edge_crosses_label(geo, caption_width=True)]
         + [("detour-hook", repr(f)) for f in check_detour_hook(geo)]
-        + [("marker-label-collision", repr(f)) for f in check_marker_label_collision(geo)]
-        + [("marker-icon-collision", repr(f)) for f in check_marker_icon_collision(geo)]
+        + [("marker-label-collision", repr(f)) for f in check_marker_label_collision(pinned)]
+        + [("marker-icon-collision", repr(f)) for f in check_marker_icon_collision(pinned)]
     ))
     return errors, tuple(warnings) + extra
 
@@ -308,6 +316,9 @@ def _markers_slid(geo: DiagramGeometry) -> DiagramGeometry:
     (:func:`geometry.resolve_marker_collisions`), so a marker that only
     collides at its default anchor is not a finding of the route (1.10.12
     WS4: the 08 Lambda drop under its wrapped caption)."""
+    # 1.13.0: the builder first pins every long unpinned marker near its
+    # source (orthogonalise.pin_long_marker_anchors_text), then slides it.
+    geo = with_long_markers_pinned(geo)
     moved = resolve_marker_collisions(geo)
     if not moved:
         return geo
@@ -1313,15 +1324,26 @@ def _find_move(work: DiagramGeometry, e: EdgeGeom, base: _Score) -> Optional[Mov
     per-plan work budget is exhausted the search stops and returns None, so the
     edge keeps its current route and the greedy plan degrades gracefully rather
     than running unbounded."""
+    frozen = _FROZEN[0]
+    if e.id in frozen:
+        return None
     if _MOVE_EVAL_LEFT[0] <= 0:
         return None
     _MOVE_EVAL_LEFT[0] -= 1
+
+    def ok(m: Optional[Move]) -> Optional[Move]:
+        # 1.13.0: a joint move that would re-route a frozen (hand-pinned)
+        # edge is not acceptable.
+        if m is None or not frozen or not (set(m[0]) & frozen):
+            return m
+        return None
+
     found = None
     for start in (2 * GRID, GRID):
         _CORRIDOR_START[0] = start
-        found = (_best_single(work, e, base, False)
-                 or _best_joint(work, e, base, False, 2)
-                 or _best_joint(work, e, base, False, 3))
+        found = (ok(_best_single(work, e, base, False))
+                 or ok(_best_joint(work, e, base, False, 2))
+                 or ok(_best_joint(work, e, base, False, 3)))
         if found is not None:
             break
     _CORRIDOR_START[0] = 2 * GRID
@@ -1331,8 +1353,8 @@ def _find_move(work: DiagramGeometry, e: EdgeGeom, base: _Score) -> Optional[Mov
         and _overloaded(work, e)
         and e.id in {x for x, _ in check_edge_strikes_own_text(work)}
     ):
-        found = (_best_single(work, e, base, True)
-                 or _best_joint(work, e, base, True, 2))
+        found = (ok(_best_single(work, e, base, True))
+                 or ok(_best_joint(work, e, base, True, 2)))
     return found
 
 
@@ -1416,6 +1438,8 @@ def _plan_once(geo: DiagramGeometry, reverse: bool) -> Tuple[CaptionPlan, Diagra
             break
         progressed = False
         for eid in cut:
+            if eid in _FROZEN[0]:
+                continue  # 1.13.0: a hand-pinned route is kept as given
             e = next(o for o in work.edges if o.id == eid)
             if e.source not in work.nodes or e.target not in work.nodes:
                 continue
@@ -1474,10 +1498,22 @@ def plan_caption_safe(geo: DiagramGeometry) -> CaptionPlan:
     return plan_caption_safe_geo(geo)[0]
 
 
-def plan_caption_safe_geo(geo: DiagramGeometry) -> Tuple[CaptionPlan, DiagramGeometry]:
+def plan_caption_safe_geo(
+    geo: DiagramGeometry, frozen: AbstractSet[str] = frozenset(),
+) -> Tuple[CaptionPlan, DiagramGeometry]:
     """:func:`plan_caption_safe` plus the geometry the plan produces (``geo``
     itself when the plan is empty), so a later finishing pass (the WS3
-    crossing repair, :mod:`rule_engine.crossing_repair`) plans on the result."""
+    crossing repair, :mod:`rule_engine.crossing_repair`) plans on the result.
+
+    ``frozen`` (1.13.0): edge ids the plan never moves (they stay obstacles)."""
+    _FROZEN[0] = frozenset(frozen)
+    try:
+        return _plan_caption_safe_geo(geo)
+    finally:
+        _FROZEN[0] = frozenset()
+
+
+def _plan_caption_safe_geo(geo: DiagramGeometry) -> Tuple[CaptionPlan, DiagramGeometry]:
     _COLLINEAR_CAP[0] = len(collinear_edge_pairs(geo))
     if not check_edge_crosses_own_label(geo):
         return CaptionPlan({}, {}, 0.0), geo

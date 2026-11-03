@@ -57,11 +57,15 @@ def _mini_diagram(flow_steps):
     )
 
 
-def test_flow_steps_box_has_flow_cell_document_omits_it():
+def test_flow_steps_box_has_flow_cell_document_draws_an_index():
     box = _mini_diagram("box")
     doc = _mini_diagram("document")
     assert 'id="flow-legend"' in box
-    assert 'id="flow-legend"' not in doc
+    # 1.13.0: document mode draws an index pointing at the companion, never
+    # silently drops the Flow.
+    assert 'id="flow-legend"' in doc
+    assert "see companion d.diagram.md" in doc
+    assert "1. a to b" not in doc
     # the Legend stays on-canvas in both
     assert 'id="legend"' in box and 'id="legend"' in doc
 
@@ -124,7 +128,9 @@ def test_box_and_document_are_byte_identical_regardless_of_panel_code():
     assert 'id="flow-legend"' in box
     assert box == _assemble("box")
     doc = _assemble("document")
-    assert 'id="flow-legend"' not in doc  # Legend takes the top slot
+    # 1.13.0: document mode draws a Flow INDEX pointing at the companion.
+    assert 'id="flow-legend"' in doc and "see companion d.diagram.md" in doc
+    assert doc == _assemble("document")
 
 
 def test_panel_stretches_the_flow_box_to_full_height():

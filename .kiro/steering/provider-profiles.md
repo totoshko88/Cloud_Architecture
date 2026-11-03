@@ -155,7 +155,15 @@ The styles follow each vendor's own published diagrams (`docs/REVIEW.md` D18):
 AWS container styles are copied from draw.io's own *AWS / Groups* palette:
 Account `group_account` `#CD2264`, private subnet / public subnet
 `group_security_group` on `#E6F6F7` / `#F2F6E8` (kinds `subnet` / `public_subnet`),
-on-premises `group_corporate_data_center` (kind `on_premises`). Azure network boxes
+on-premises `group_corporate_data_center` (kind `on_premises`). A peer AWS account
+drawn as a disjoint sibling outside the primary account (kind `peer_account`, 1.13.0)
+is the same `group_account` group in neutral grey (`strokeColor=#7D8998`,
+`fontColor=#545B64`), so it never reads as the primary account; a peer cloud /
+external system (kind `external_cloud`) is a dashed neutral rectangle
+(`dashed=1;dashPattern=8 4`, `#7D8998` / `#545B64`), since AWS ships no group for it.
+`container-style` matches a `group_account` box against both `boundary` and
+`peer_account`, so the grey peer passes and a Squid Ink `#232F3E` account still
+fails. Azure network boxes
 carry their corner icon via `shape=label;image=img/lib/azure2/networking/…;imageAlign=left;imageVerticalAlign=top`
 (VNet: Virtual Networks, `subnet`: Subnet). No builder hardcodes a container style.
 Captions must meet 4.5:1 on white. Where a brand stroke colour is lighter than

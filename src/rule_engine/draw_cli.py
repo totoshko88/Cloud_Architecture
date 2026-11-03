@@ -69,9 +69,9 @@ from rule_engine.icon_resolver import (
 )
 
 try:  # package-relative when used as ``rule_engine.layout``
-    from rule_engine.layout import PlacedDiagram, layout
+    from rule_engine.layout import PlacedDiagram, layout, membership_of
 except ImportError:  # pragma: no cover - flat-module fallback
-    from layout import PlacedDiagram, layout  # type: ignore[no-redef]
+    from layout import PlacedDiagram, layout, membership_of  # type: ignore[no-redef]
 
 
 __all__ = ["main", "generate"]
@@ -530,6 +530,9 @@ def build_drawio(
         # carries no inner-boundary line.
         page_w=page_w,
         page_h=page_h,
+        # 1.13.0 (task item 13): parent each node to the box the SPEC puts it
+        # in, never to one it merely overlaps.
+        membership=membership_of(placed),
     )
 
 

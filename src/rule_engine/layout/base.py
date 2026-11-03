@@ -2159,6 +2159,43 @@ def _assign_nodes_to_leaves(
     return assignment
 
 
+def membership_from(spec: DiagramSpec, nodes: Dict[str, Box]) -> Dict[str, str]:
+    """``{node_id: container_id}`` for every placed node — ``""`` for a node no
+    container owns (1.13.0, task item 13).
+
+    Membership is the SPEC's, never the geometry's: the container each node was
+    sized into by :func:`_assign_nodes_to_leaves` (its declared ``container``,
+    else the leaf / account fallback). A node no container owns (an actor, an
+    ``external`` node, a materialized peering) maps to ``""`` even when the
+    placement happens to draw it inside a box."""
+    present = tuple(n for n in spec.nodes if n.id in nodes)
+    sub = spec if len(present) == len(spec.nodes) else _replace_nodes(spec, present)
+    assignment = _assign_nodes_to_leaves(sub, nodes)
+    out: Dict[str, str] = {n.id: "" for n in present}
+    for c in spec.containers:
+        for nid in assignment.get(c.id, ()):
+            if nid in out and not out[nid]:
+                out[nid] = c.id
+    return out
+
+
+def _replace_nodes(spec: DiagramSpec, nodes: tuple) -> DiagramSpec:
+    from dataclasses import replace as _dc_replace
+
+    return _dc_replace(spec, nodes=nodes)
+
+
+def container_chain(spec: DiagramSpec, cid: str) -> Tuple[str, ...]:
+    """``cid`` and every ancestor container (declared ``parent`` links)."""
+    parent_of = {c.id: c.parent for c in spec.containers}
+    out: List[str] = []
+    cur: Optional[str] = cid or None
+    while cur and cur not in out:
+        out.append(cur)
+        cur = parent_of.get(cur)
+    return tuple(out)
+
+
 def _bbox(boxes: list) -> Tuple[float, float, float, float]:
     """Return ``(x, y, right, bottom)`` bounding box of node **footprints**
     (icon + LABEL_BAND), matching the label-aware geometry validators."""

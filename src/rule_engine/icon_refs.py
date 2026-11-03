@@ -64,6 +64,7 @@ from rule_engine.azure2_shapes import (
 )
 from rule_engine.constants import (
     is_boundary_container_style as _is_boundary_style,
+    is_overlay_ring as _is_overlay_ring,
     is_text_cell_style as _is_text_style,
     resolve_bundled_dir,
 )
@@ -327,6 +328,9 @@ def _is_service_vertex(cell: Cell, vertex_ids: FrozenSet[str],
     not itself a boundary container.
     """
     if not cell.vertex:
+        return False
+    if _is_overlay_ring(cell.id):
+        # 1.13.0: the overlay ring around a node carries no icon.
         return False
     if _is_boundary_style(cell.id, cell.style):
         return False

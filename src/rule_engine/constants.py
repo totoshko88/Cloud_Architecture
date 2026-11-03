@@ -296,6 +296,18 @@ BRAND_HEX: Dict[str, str] = {
 ROOT_LAYER_ID = "1"
 
 
+#: Id prefix of the overlay RING cell ``diagram_layout`` draws around a node
+#: carrying an overlay term (``standby`` / ``supporting`` / ``unconfirmed``,
+#: 1.13.0). The ring is the overlay's visible shape channel — never a node, a
+#: Boundary container or a service vertex — so every parser skips it by id.
+OVERLAY_RING_PREFIX = "overlayring-"
+
+
+def is_overlay_ring(cell_id: str) -> bool:
+    """True for an overlay ring cell (:data:`OVERLAY_RING_PREFIX`)."""
+    return (cell_id or "").startswith(OVERLAY_RING_PREFIX)
+
+
 def is_boundary_container_style(cell_id: str, style: str) -> bool:
     """Return True when a vertex is a Boundary / Network-Boundary container.
 
@@ -325,6 +337,10 @@ def is_boundary_container_style(cell_id: str, style: str) -> bool:
     A group cell is therefore a boundary only when it names a ``group_`` /
     ``grIcon=`` container icon.
     """
+    if is_overlay_ring(cell_id):
+        # 1.13.0: an overlay ring is a dashed borderless rectangle by design,
+        # but it outlines a node; it is never a Boundary.
+        return False
     low = (style or "").lower()
     is_group = "group" in low or "container=1" in low
     is_dashed = "dashed=1" in low and "fillcolor=none" in low

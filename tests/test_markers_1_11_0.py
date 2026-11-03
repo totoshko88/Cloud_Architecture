@@ -2,17 +2,17 @@
 
 Three pieces of behaviour are pinned:
 
-1. **Near-source long-edge default anchor** — :func:`geometry.marker_anchor`
-   anchors an UNPINNED marker on a LONG route near its source (a fixed
-   arc-length offset, :data:`geometry.LONG_EDGE_MARKER_OFFSET`) instead of at
-   the geometric midpoint, which on a long run can land in dead space / on a
-   border / on a caption. A SHORT route, or a route whose ``label_pos`` is
-   explicitly pinned (including ``0.0``), keeps the exact midpoint behaviour, so
-   no short-edge / pinned golden shifts.
+1. **Near-source long-edge anchor** — :func:`geometry.near_source_label_pos`
+   gives the signed position a fixed arc-length offset
+   (:data:`geometry.LONG_EDGE_MARKER_OFFSET`) from the source of a LONG route.
+   1.13.0 (lint == render): :func:`geometry.marker_anchor` resolves an UNPINNED
+   marker to the midpoint (draw.io's own rule), and the builder WRITES the
+   near-source position into the file instead (see
+   ``tests/test_marker_anchor_render_1_13_0_fix.py``).
 
 2. **Extended de-collision (phases 2–3, NOT a new phase 4)** —
-   :func:`geometry.resolve_marker_collisions` now seeds from the near-source
-   anchor and its existing phases 2 (off node icon / caption / foreign edge) and
+   :func:`geometry.resolve_marker_collisions` seeds from the (pinned)
+   near-source anchor and its existing phases 2 (off node icon / caption / foreign edge) and
    3 (off container border) pull an overlapping badge into open space.
 
 3. **Blocking severity** — ``marker-on-container-border`` and
@@ -31,6 +31,7 @@ from rule_engine.geometry import (
     LONG_EDGE_MARKER_OFFSET,
     check_marker_on_container_border,
     marker_anchor,
+    near_source_label_pos,
     marker_anchors,
     resolve_marker_collisions,
 )
@@ -50,14 +51,15 @@ from rule_engine.linter import (
 
 def test_long_unpinned_marker_anchors_near_source():
     """A straight horizontal run from x=100 to x=900 (length 800 > the long
-    threshold) anchors its unpinned marker at the near-source offset, not the
-    x=500 midpoint."""
+    threshold): the near-source position lands at the near-source offset, not
+    the x=500 midpoint; unpinned, the marker renders at the midpoint (1.13.0)."""
     poly = [(100.0, 400.0), (900.0, 400.0)]
     assert 800.0 > LONG_EDGE_MARKER_LEN
-    anchor = marker_anchor(poly, None)
+    assert marker_anchor(poly, None) == (500.0, 400.0)
+    anchor = marker_anchor(poly, near_source_label_pos(poly))
     assert anchor is not None
     # near-source: x = 100 + LONG_EDGE_MARKER_OFFSET, well short of the midpoint.
-    assert anchor[0] == 100.0 + LONG_EDGE_MARKER_OFFSET
+    assert abs(anchor[0] - (100.0 + LONG_EDGE_MARKER_OFFSET)) < 1e-3
     assert anchor[0] < 500.0  # not the midpoint
 
 
@@ -66,6 +68,7 @@ def test_short_unpinned_marker_keeps_the_midpoint():
     poly = [(100.0, 400.0), (300.0, 400.0)]  # length 200, short
     assert 200.0 <= LONG_EDGE_MARKER_LEN
     assert marker_anchor(poly, None) == (200.0, 400.0)  # midpoint, as before
+    assert near_source_label_pos(poly) is None
 
 
 def test_pinned_long_marker_is_unchanged():
@@ -83,14 +86,14 @@ def test_near_source_cap_does_not_pass_the_midpoint():
     # length = LONG_EDGE_MARKER_LEN + 20, so 0.5*len < LONG_EDGE_MARKER_OFFSET.
     length = LONG_EDGE_MARKER_LEN + 20.0
     poly = [(0.0, 0.0), (length, 0.0)]
-    anchor = marker_anchor(poly, None)
+    anchor = marker_anchor(poly, near_source_label_pos(poly))
     assert anchor is not None
-    assert anchor[0] == min(0.5 * length, LONG_EDGE_MARKER_OFFSET)
+    assert abs(anchor[0] - min(0.5 * length, LONG_EDGE_MARKER_OFFSET)) < 1e-3
     assert anchor[0] <= 0.5 * length  # never past the midpoint
 
 
 # --------------------------------------------------------------------------- #
-# 2. Extended de-collision (phases 2–3) seeds from the near-source anchor
+# 2. Extended de-collision (phases 2–3) seeds from the pinned near-source anchor
 # --------------------------------------------------------------------------- #
 
 
@@ -100,10 +103,12 @@ def _long_edge_marker_on_border() -> DiagramGeometry:
 
     Source ``a`` right face at x=478; target ``b`` left face far to the right so
     the run is long. The near-source anchor sits at x = 478 + OFFSET; place the
-    container's right edge there so the marker rides it."""
+    container's right edge there so the marker rides it. The label is pinned
+    there, as the builder writes it (1.13.0)."""
     src_right = 478.0
     anchor_x = src_right + LONG_EDGE_MARKER_OFFSET
     tgt_left = src_right + 3.0 * LONG_EDGE_MARKER_OFFSET  # ensures a long run
+    pos = near_source_label_pos([(src_right, 400.0), (tgt_left, 400.0)])
     return DiagramGeometry(
         nodes={
             "a": Box("a", 400, 361, 78, 78),
@@ -114,13 +119,14 @@ def _long_edge_marker_on_border() -> DiagramGeometry:
         },
         edges=[
             EdgeGeom(id="e", source="a", target="b", orthogonal=True,
-                     exit=(1.0, 0.5), entry=(0.0, 0.5), points=[], label="9"),
+                     exit=(1.0, 0.5), entry=(0.0, 0.5), points=[], label="9",
+                     label_pos=pos),
         ],
     )
 
 
 def test_near_source_seed_lands_on_the_border_before_decollision():
-    """Sanity: with no de-collision the unpinned marker's rendered anchor rides
+    """Sanity: with no de-collision the pinned marker's rendered anchor rides
     the container border (the defect the extended pass must clear)."""
     geo = _long_edge_marker_on_border()
     assert check_marker_on_container_border(geo) == [("e", "boundary-account.right")]
@@ -139,9 +145,10 @@ def test_marker_decollision_moves_colliding_badge():
 
 
 def test_decollision_is_idempotent_on_a_clear_long_marker():
-    """A long unpinned marker already clear of every border / caption is left at
-    its near-source default — ``resolve_marker_collisions`` returns ``{}``."""
+    """A long pinned marker already clear of every border / caption is left at
+    its near-source pin — ``resolve_marker_collisions`` returns ``{}``."""
     length = 3.0 * LONG_EDGE_MARKER_OFFSET
+    pos = near_source_label_pos([(178.0, 400.0), (100.0 + length, 400.0)])
     geo = DiagramGeometry(
         nodes={
             "a": Box("a", 100, 361, 78, 78),
@@ -150,7 +157,8 @@ def test_decollision_is_idempotent_on_a_clear_long_marker():
         containers={},  # no borders to ride
         edges=[
             EdgeGeom(id="e", source="a", target="b", orthogonal=True,
-                     exit=(1.0, 0.5), entry=(0.0, 0.5), points=[], label="7"),
+                     exit=(1.0, 0.5), entry=(0.0, 0.5), points=[], label="7",
+                     label_pos=pos),
         ],
     )
     assert resolve_marker_collisions(geo) == {}

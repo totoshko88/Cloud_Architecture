@@ -648,3 +648,18 @@ containers:
     icon_id: mxgraph.aws4.group_security_group
     brand_hex: "#DD344C"
     style: "shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_security_group;grStroke=1;fillColor=none;strokeColor=#DD344C;dashed=1;verticalAlign=top;align=left;spacingLeft=30;fontColor=#C7314A;fontSize=12;html=1"
+  # 1.13.0 (task item 14): a peer AWS account drawn as a DISJOINT SIBLING
+  # boundary outside the primary account — the draw.io AWS Groups account
+  # group (same group_account icon and tokens as `boundary`) in neutral grey,
+  # so it never reads as the primary account. Caption #545B64 = 6.9:1 on white.
+  peer_account:
+    icon_id: mxgraph.aws4.group_account
+    brand_hex: "#232F3E"
+    style: "shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_account;grStroke=1;fillColor=none;strokeColor=#7D8998;dashed=0;verticalAlign=top;align=left;spacingLeft=30;fontColor=#545B64;fontSize=12;html=1"
+  # 1.13.0 (task item 14): a peer cloud / external system (Azure, GCP, Atlas,
+  # SaaS) drawn as a sibling boundary outside the account — AWS ships no group
+  # for it, so a dashed neutral rectangle.
+  external_cloud:
+    icon_id: aws.external_cloud
+    brand_hex: "#232F3E"
+    style: "rounded=0;dashed=1;dashPattern=8 4;fillColor=none;strokeColor=#7D8998;fontColor=#545B64;verticalAlign=top;align=left;spacingLeft=10;fontStyle=1;html=1;whiteSpace=wrap;fontSize=12"

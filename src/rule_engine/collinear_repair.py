@@ -37,7 +37,7 @@ on that order, and nothing depends on unordered iteration.
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Dict, FrozenSet, List, Optional, Set, Tuple
+from typing import AbstractSet, Dict, FrozenSet, List, Optional, Set, Tuple
 
 from rule_engine import caption_routing as _cr
 from rule_engine import crossing_repair as _xr
@@ -136,10 +136,15 @@ def _best_single(geo: DiagramGeometry, eid: str, base: _Base) -> Optional[Move]:
 # --------------------------------------------------------------------------- #
 
 
-def plan_collinear_shift_geo(geo: DiagramGeometry) -> Tuple[CaptionPlan, DiagramGeometry]:
+def plan_collinear_shift_geo(
+    geo: DiagramGeometry, frozen: AbstractSet[str] = frozenset(),
+) -> Tuple[CaptionPlan, DiagramGeometry]:
     """Plan re-routes so every collinear pair a legal single-edge re-route can
     separate — without adding any other finding — is separated. Returns the
-    plan and the geometry it produces; ``geo`` is not modified."""
+    plan and the geometry it produces; ``geo`` is not modified.
+
+    ``frozen`` (1.13.0): edge ids never moved (they remain obstacles)."""
+    frozen = frozenset(frozen)
     work = replace(geo, edges=list(geo.edges), containers=dict(geo.containers),
                    text_boxes=dict(geo.text_boxes))
     routes: Dict[str, Route] = {}
@@ -170,7 +175,8 @@ def plan_collinear_shift_geo(geo: DiagramGeometry) -> Tuple[CaptionPlan, Diagram
             tried.add(key)
             base = _Base(work, cap)
             # Try moving either edge of the pair; keep the better result.
-            found = _better(_best_single(work, a, base), _best_single(work, b, base))
+            found = _better(None if a in frozen else _best_single(work, a, base),
+                            None if b in frozen else _best_single(work, b, base))
             if found is None:
                 continue
             moved, grown, _dx, _sc = found

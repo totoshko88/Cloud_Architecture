@@ -41,7 +41,7 @@ every applicable rule against every artifact.
 | `secret-safety` | A snapshot file (any text file under `inventory-*`, not only `.json`) carries a secret detected from parsed content — a credential-suffixed key or a secret-shaped value; `[REDACTED]` and `SecureString`/public-cert metadata are not flagged, nor are AWS idempotency / pagination tokens (`ClientToken`, `LockToken`, `NextToken`, `IdempotencyToken`, `ContinuationToken`, `NextContinuationToken`, `PaginationToken` — opaque request ids on the `METADATA_KEYS` allow-list; a secret-shaped value under one is still flagged, 1.13.0). | CRITICAL | R7 AC11 / R3 |
 | `title-versioned` | A diagram title cell has no version identifier or no date, matched structurally against the full title format (not a `vN` token appearing anywhere). | WARNING | R7 AC12 / R5 AC9 / R1 AC11 |
 | `mermaid-type` | Mermaid is used for a diagram type other than sequence, flow, or state. | WARNING | R7 AC13 / R1 AC2 |
-| `flow-legend` | A diagram uses numeric flow markers on edges but has no `Flow` legend cell covering every marker. | WARNING | diagram-standards Numbered Flow Legend |
+| `flow-legend` | A diagram uses numeric flow markers on edges but has no `Flow` legend cell covering every marker (reason `uncovered-markers:<N,...>`, offenders `marker-<N>`). A Flow cell carrying the `see companion` pointer (`flow_steps='document'`), or no Flow cell at all, is covered by the companion's `## Flow` section (else a sibling `.flow.md`). **ERROR on both classes** when the steps are written nowhere — no Flow cell and no companion section (reason `flow-steps-missing`, 1.13.0). | WARNING/ERROR | diagram-standards Numbered Flow Legend |
 | `edge-routing` | A diagram edge is not orthogonally routed, crosses a node icon, shares a corridor with a parallel edge, overlaps a label/legend, or two edges leave/enter one node side on the same contact point. **Raised to ERROR** when an edge's run cuts through a node icon — an unrelated node (`*-through-*`) or its own target reached from the wrong side (`pierces-target-*`). | WARNING/ERROR | diagram-standards Edge Routing |
 | `container-padding` | A container border sits flush against or straddles a child node (no grid-step padding), reason `padding`; or (1.13.0) a member node's caption, at its real text width (7.0px/char), runs past the left/right border of the tightest container holding its icon, reason `caption-outside-container`. The vertical-spill test skips a node marked `external=1` or whose scope is `global` (an edge service above the account is not a spilled tier). Raised to ERROR for `landscape`. | WARNING/ERROR | diagram-standards Container Padding |
 | `container-dead-space` | A Boundary container is sized far larger than its direct children: its area exceeds the summed child footprint-plus-padding demand by more than a calibrated ratio: **2.5** for an outer (top-level) Boundary that no other container encloses (reason `outer-dead-space`), **5.0** for a nested one (reason `dead-space`), each set above the sparsest legitimate corpus tier. The mirror of `container-padding` (which checks the minimum clearance). Advisory on both classes; a childless container is skipped. | WARNING | diagram-standards Container Padding |
@@ -182,7 +182,16 @@ every applicable rule against every artifact.
   went unnoticed. Only a hand-authored diagram could hit it, which is exactly the
   case a fresh install produces. A marker line may separate with `N.` or `N)`. An
   artifact whose Flow cell was not parsed (a programmatic `Artifact` with no
-  `flow_legend_lines`) is **skipped**, not assumed to fail.
+  `flow_legend_lines`) is **skipped**, not assumed to fail. **Companion steps
+  (1.13.0).** When the Flow cell carries the `see companion` pointer a
+  `flow_steps='document'` build draws, or the diagram has no Flow cell, the
+  parser reads the numbered `N.` / `N)` lines of the companion
+  `<name>.diagram.md` `## Flow` section (until the next heading), else a sibling
+  `<name>.flow.md`, and records `flow_source` (`canvas` / `companion` /
+  `missing`). Markers the companion leaves uncovered stay a WARNING naming
+  them; markers whose steps are written nowhere (`flow_source=missing`) are an
+  **ERROR** with reason `flow-steps-missing` (`reason_escalations`), offenders
+  every marker. `flow-step-undrawn` judges the companion steps the same way.
 - **`node-connectivity` (WARNING)** — *Topology-enforced from the parsed model.*
   A role-bearing node drawn with **zero incident edges** tells the reader nothing
   about how it participates; when most of the nodes float, the picture has stopped

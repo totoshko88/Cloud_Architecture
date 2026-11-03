@@ -48,7 +48,7 @@ from __future__ import annotations
 
 import itertools
 from dataclasses import replace
-from typing import Dict, FrozenSet, List, Optional, Sequence, Set, Tuple
+from typing import AbstractSet, Dict, FrozenSet, List, Optional, Sequence, Set, Tuple
 
 from rule_engine import caption_routing as _cr
 from rule_engine.caption_routing import CaptionPlan, Route
@@ -569,10 +569,22 @@ def _best_joint(geo: DiagramGeometry, a: str, b: str, base: _Base) -> Optional[M
 # --------------------------------------------------------------------------- #
 
 
-def plan_crossing_repair_geo(geo: DiagramGeometry) -> Tuple[CaptionPlan, DiagramGeometry]:
+def plan_crossing_repair_geo(
+    geo: DiagramGeometry, frozen: AbstractSet[str] = frozenset(),
+) -> Tuple[CaptionPlan, DiagramGeometry]:
     """Plan re-routes so every crossing a legal face / corridor change can
     remove without adding a finding is removed. Returns the plan and the
-    geometry it produces; ``geo`` is not modified."""
+    geometry it produces; ``geo`` is not modified.
+
+    ``frozen`` (1.13.0): edge ids never moved (they remain obstacles); a
+    move that would re-route one is rejected."""
+    frozen = frozenset(frozen)
+
+    def ok(m: Optional[Move]) -> Optional[Move]:
+        if m is None or not frozen or not (set(m[0]) & frozen):
+            return m
+        return None
+
     work = replace(geo, edges=list(geo.edges), containers=dict(geo.containers),
                    text_boxes=dict(geo.text_boxes))
     routes: Dict[str, Route] = {}
@@ -598,15 +610,19 @@ def plan_crossing_repair_geo(geo: DiagramGeometry) -> Tuple[CaptionPlan, Diagram
             # node route to swap, so the crossing-repair pass never reroutes it.
             if not is_node_edge(work, ea) or not is_node_edge(work, eb):
                 continue
+            if a in frozen and b in frozen:
+                continue  # 1.13.0: both routes are hand-pinned
             key = (a, b, len(routes))
             if key in tried:
                 continue
             tried.add(key)
             base = _Base(work, cap)
             found = None
-            for move in (lambda: _swap_moves(work, a, b, base),
-                         lambda: _better(_best_single(work, a, base), _best_single(work, b, base)),
-                         lambda: _best_joint(work, a, b, base)):
+            for move in (lambda: ok(_swap_moves(work, a, b, base)),
+                         lambda: _better(
+                             None if a in frozen else ok(_best_single(work, a, base)),
+                             None if b in frozen else ok(_best_single(work, b, base))),
+                         lambda: ok(_best_joint(work, a, b, base))):
                 found = move()
                 if found is not None:
                     break
