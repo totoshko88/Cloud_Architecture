@@ -59,6 +59,17 @@ def test_respect_pins_keeps_the_points_byte_identical(caplog):
     assert not caplog.records
 
 
+def test_pinned_ids_empty_marks_engine_routed_edges(caplog):
+    """Integration (1.13.0): layout()-routed edges carry points too; a builder
+    passing ``pinned_ids=()`` gets the same document and no false warning."""
+    report: list = []
+    with caplog.at_level(logging.WARNING, logger="rule_engine.diagram_layout"):
+        text = _build(pinned_ids=(), reroute_report=report)
+    assert report == []
+    assert not caplog.records
+    assert text == _build()
+
+
 def test_new_keywords_default_to_the_old_output():
     assert _build() == _build(respect_pins=False, membership=None)
     # an unpinned diagram is unaffected by respect_pins

@@ -101,6 +101,7 @@ def build(skin: GenaiSkin) -> str:
         legend_x=placed.legend_x, legend_w=placed.legend_w,
         page_w=max(right, placed.legend_x + placed.legend_w) + _PAGE_MARGIN,
         page_h=bottom + _PAGE_MARGIN,
+        pinned_ids=(),  # layout()-routed edges, none hand-pinned
     )
 
 

@@ -8,7 +8,9 @@ The scored solver and the repair oracle judge a candidate on the ROUTING rules
 them, because they need context a candidate does not carry cheaply (the
 provider's container styles, the spec's roles): ``scope-placement``,
 ``geometric-containment``, ``container-style``, ``container-caption-overflow``
-``caption-overprints-node`` and ``legend-placement`` ``overlaps-node``. A ``layout()`` result could therefore
+``caption-overprints-node``, ``legend-placement`` ``overlaps-node`` and
+``container-padding`` ``caption-outside-container`` (a landscape ERROR since
+1.13.0, item 17). A ``layout()`` result could therefore
 look clean (``layout_warnings == ()``) and still be blocked by the linter.
 
 :func:`postcheck` runs those rules ONCE on the finished diagram, so the
@@ -52,6 +54,7 @@ BLOCKING_RULES = (
     "container-style",
     "container-caption-overflow",
     "legend-placement",
+    "container-padding",
 )
 
 
@@ -193,6 +196,11 @@ def postcheck(placed: PlacedDiagram) -> Tuple[List[str], bool]:
     add("legend-placement", [
         f for f in _geo.check_legend_placement(geo)
         if str(f[1]).startswith("overlaps-node-")])
+    # Integration (1.13.0): the item-17 reason, an ERROR on a landscape. The
+    # spec's own captions are serialized, so the overhang is the published one.
+    add("container-padding", [
+        (nid, cid, f"caption-outside-container:+{over:g}")
+        for nid, cid, over in _geo.check_caption_outside_container(geo)])
     return lines, bool(lines)
 
 

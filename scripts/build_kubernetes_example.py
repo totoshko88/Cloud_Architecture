@@ -317,6 +317,7 @@ def _build(spec: DS, *, extra_legend=()) -> str:
         legend_w=placed.legend_w,
         page_w=page_w,
         page_h=page_h,
+        pinned_ids=(),  # layout()-routed edges, none hand-pinned
     )
 
 

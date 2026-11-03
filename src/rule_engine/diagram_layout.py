@@ -37,7 +37,9 @@ import math
 import re
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import AbstractSet, Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import (
+    AbstractSet, Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple,
+)
 
 from rule_engine.engine_assets import locate_asset, sniff_mime
 from rule_engine.text_metrics import FURNITURE_CHAR_W
@@ -1782,6 +1784,7 @@ def build_diagram(
     membership: Optional[Mapping[str, str]] = None,
     respect_pins: bool = False,
     reroute_report: Optional[List[str]] = None,
+    pinned_ids: Optional[Iterable[str]] = None,
 ) -> str:
     """Assemble a full ``.drawio`` document from the standard building blocks.
 
@@ -1825,6 +1828,11 @@ def build_diagram(
     stays an obstacle). With ``False`` (default) they may; every pinned edge
     they re-route is logged as a warning on the ``rule_engine.diagram_layout``
     logger and appended to ``reroute_report`` when a list is given.
+    ``pinned_ids`` (1.13.0): which edges count as pinned. ``None`` (default)
+    means every edge with explicit ``points``. A builder that hands over
+    ``layout()``-routed edges (their points are the engine's own route, not a
+    hand pin) passes ``()``, so no false reroute warning is logged; with
+    ``respect_pins=True`` only the listed edges are frozen.
     """
     # 1.11.0 WS2: fail-honest on an unknown flow_steps presentation mode.
     if flow_steps not in ("box", "document", "panel"):
@@ -1861,7 +1869,8 @@ def build_diagram(
         membership=membership,
     )
     routed = _orthogonalised(edges, nodes)
-    pinned = frozenset(e.id for e in edges if e.points)
+    pinned = (frozenset(e.id for e in edges if e.points) if pinned_ids is None
+              else frozenset(pinned_ids))
     frozen = pinned if respect_pins else frozenset()
     text = _assemble_document(routed=routed, **kwargs)
     # Variant A finishing (`_plan_from_text` = caption-safe + crossing-repair +

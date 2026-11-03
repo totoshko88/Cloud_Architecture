@@ -420,6 +420,7 @@ def build_summary(skin: ProviderSkin, legacy: bool = False) -> str:
         legend_x=placed.legend_x, legend_w=placed.legend_w,
         page_w=page_w, page_h=page_h,
         caption_plan=_caption_plan(placed, {"vpc": "region"}),
+        pinned_ids=(),  # layout()-routed edges, none hand-pinned
     )
 
 
@@ -461,6 +462,7 @@ def build_landscape(skin: ProviderSkin, legacy: bool = False) -> str:
         caption_plan=_caption_plan(
             placed, legend_y_flow=120, legend_y_legend=460,
             legend_lines=STANDARD_LEGEND_LINES + LANDSCAPE_LEGEND_EXTRA),
+        pinned_ids=(),  # layout()-routed edges, none hand-pinned
     )
 
 

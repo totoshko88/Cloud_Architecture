@@ -533,6 +533,9 @@ def build_drawio(
         # 1.13.0 (task item 13): parent each node to the box the SPEC puts it
         # in, never to one it merely overlaps.
         membership=membership_of(placed),
+        # Every edge here is layout()-routed, none hand-pinned: no false
+        # "rerouted hand-pinned edges" warning (1.13.0 integration).
+        pinned_ids=(),
     )
 
 

@@ -204,7 +204,12 @@ def test_l2_sep09_exit_face_up_adds_no_blocker_within_bounds(tmp_path):
 #: the one-line ``peer-ext`` caption (``edge-crosses-container-label``); with
 #: it the caption wraps onto two lines and no edge crosses it. X 1 and own 1
 #: (e4) either way; collinear pairs go 1 -> 3 (e13/e8-a and e6/e8-a join
-#: e5/e9-a), recorded as the bound.
+#: e5/e9-a), recorded as the bound. Integration trace: both builds start from
+#: the same pre-finishing document (11 crossings, 6 pairs); with the shorter
+#: wrapped caption the crossing repair may drop e8-a at x=480 through the
+#: peer-ext caption column, next to e13 (x=480) and e6 (y=620). The collinear
+#: shift runs after it but finds no admissible move for those two pairs, so
+#: the extra pairs are a routing limit, not a skipped pass.
 L5_BOUND = {"X": 1, "own": 1, "col": 3}
 #: Blocking findings of the synced 08 that the lever does not touch: the CICD
 #: and NAT captions run outside peer-ext / the VPC (caption-outside-container).

@@ -52,6 +52,19 @@ def test_postcheck_is_quiet_on_a_clean_layout():
     assert not any(w.startswith("scope-placement:") for w in placed.layout_warnings)
 
 
+def test_caption_outside_container_is_reported():
+    """Integration (1.13.0): item 17's landscape ERROR reaches layout_warnings.
+    A 60-character caption on a lone node in the region overhangs the box."""
+    spec = _spec(None)
+    long_label = "x" * 60
+    spec = dataclasses.replace(spec, node_labels=(("fn", long_label),))
+    placed = layout(spec)
+    hits = [w for w in placed.layout_warnings
+            if w.startswith("container-padding:") and "caption-outside-container" in w]
+    assert hits and "'fn'" in hits[0], placed.layout_warnings
+    assert placed.degraded is True
+
+
 def test_postcheck_never_raises():
     placed = layout(_spec(None))
     broken = dataclasses.replace(placed, nodes={})
