@@ -55,6 +55,7 @@ on that order, and nothing depends on dict iteration of unordered sets.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from typing import AbstractSet, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -131,6 +132,9 @@ _SHIFT_STEPS = 12
 _ORACLE_BUDGET = 24
 #: A route longer than this multiple of its contacts' Manhattan distance is a
 #: detour hook (``geometry.DETOUR_HOOK_COEFF``); keep a margin under it.
+#: Deliberately stricter than the lint coefficient (2.4 < 2.5): a re-route the
+#: finishing pass keeps must never land on the ``detour-hook`` threshold, where a
+#: sub-pixel grid snap could tip it over into a new WARNING.
 _DETOUR_LIMIT = 2.4
 #: Passes over the offending edges (a later fix can free a face for an earlier one).
 _MAX_PASSES = 3
@@ -180,6 +184,63 @@ _MOVE_EVAL_BUDGET = 20000
 #: Remaining move-search budget for the current ``_plan_once`` run (reset at the
 #: start of each run). A list so the counter is mutable across helper calls.
 _MOVE_EVAL_LEFT = [_MOVE_EVAL_BUDGET]
+#: FEAT-004 (1.13.0) work budget: the number of candidate-route admissibility
+#: tests (:func:`_admissible`, the inner loop of every finishing search) one
+#: planning run may spend. ``_MOVE_EVAL_BUDGET`` counts ``_find_move`` calls,
+#: but one call can rank thousands of candidates (the joint search), so on the
+#: SEP 02 flow (11 nodes) the caption-safe pass made ~1.6M ``_admissible``
+#: calls and ran for minutes. When the budget is spent ``_admissible`` rejects
+#: every further candidate and ``_find_move`` returns None, so the remaining
+#: edges keep their route and the plan found so far stands. Counts work units,
+#: never wall-clock, so the result is deterministic. Calibrated so no shipped
+#: golden reaches it (their finishing output is unchanged).
+_ADMISSIBLE_BUDGET = 250000
+#: FEAT-004: the share of that budget one search for an edge on an OVERLOADED
+#: source face (three other right exits, so the bottom exit is unavoidable) may
+#: spend, the caption-wrap macro for it included. R1 (1.11.0) accepts a masked
+#: residual on such a face; measured across every golden and SEP fixture
+#: (~130 such searches, 3.0M admissibility tests on SEP 02 alone) none ever
+#: produced a move, so the search is kept but bounded. Only while
+#: ``_CORNER_EXIT_FALLBACK`` is off (:func:`_overloaded_cap`).
+_OVERLOADED_BUDGET = 2000
+#: Remaining admissibility tests of the current planning run, or None outside
+#: a budgeted run (lint and metrics callers of :func:`_admissible` are never
+#: budgeted). Set by :func:`_plan_once` and :func:`admissible_budget`.
+_ADMISSIBLE_LEFT: List[Optional[int]] = [None]
+def admissible_budget_spent() -> bool:
+    """True inside a budgeted planning run whose admissibility budget is spent."""
+    left = _ADMISSIBLE_LEFT[0]
+    return left is not None and left <= 0
+@contextmanager
+def admissible_budget(units: Optional[int] = None):
+    """Run a finishing planner (crossing repair, collinear shift) under its own
+    fresh :data:`_ADMISSIBLE_BUDGET`; the previous counter is restored after."""
+    prev = _ADMISSIBLE_LEFT[0]
+    _ADMISSIBLE_LEFT[0] = _ADMISSIBLE_BUDGET if units is None else units
+    try:
+        yield
+    finally:
+        _ADMISSIBLE_LEFT[0] = prev
+def _overloaded_cap() -> Optional[int]:
+    """The sub-budget of a search for an edge on an overloaded face: bounded
+    while the corner-exit fallback is off (the default, R1: such a face keeps
+    its masked residual); unbounded when the fallback is on, since the corner
+    exit and the caption wrap can then fix it."""
+    return None if _CORNER_EXIT_FALLBACK[0] else _OVERLOADED_BUDGET
+@contextmanager
+def _sub_budget(units: Optional[int]):
+    """Cap the admissibility tests of one search at ``units`` (None: no cap)
+    inside a budgeted run; what the search spends is charged to the run."""
+    outer = _ADMISSIBLE_LEFT[0]
+    if units is None or outer is None:
+        yield
+        return
+    cap = min(outer, units)
+    _ADMISSIBLE_LEFT[0] = cap
+    try:
+        yield
+    finally:
+        _ADMISSIBLE_LEFT[0] = outer - (cap - max(_ADMISSIBLE_LEFT[0], 0))
 #: Edges the current plan must never move (1.13.0, ``build_diagram(
 #: respect_pins=True)``): hand-pinned routes stay as given, but remain
 #: obstacles. Set by :func:`plan_caption_safe_geo`; empty by default.
@@ -784,7 +845,14 @@ def _admissible(
     edge's own caption (its text extent in corner mode), a detour hook, a long
     run on another edge's line, a run riding a container border, a cut through
     a container holding neither endpoint, and a point leaving the containers
-    that hold both endpoints by more than they may grow."""
+    that hold both endpoints by more than they may grow.
+    Inside a budgeted planning run (FEAT-004, :data:`_ADMISSIBLE_BUDGET`) each
+    call spends one unit; once the budget is spent every candidate is rejected."""
+    left = _ADMISSIBLE_LEFT[0]
+    if left is not None:
+        if left <= 0:
+            return None
+        _ADMISSIBLE_LEFT[0] = left - 1
     legs = list(zip(poly, poly[1:]))
     if not legs or any(leg_axis(p, q) not in ("H", "V") for p, q in legs):
         return None
@@ -793,6 +861,12 @@ def _admissible(
         (required_leg_axis(contact_faces(*pf)) or ("V" if ctx.corner else None), legs[0]),
         (required_leg_axis(contact_faces(*qf)), legs[-1]),
     )):
+        return None
+    # A detour hook first: the cheapest test (every test here only rejects,
+    # so their order never changes the verdict).
+    routed = sum(abs(q[0] - p[0]) + abs(q[1] - p[1]) for p, q in legs)
+    direct = abs(poly[-1][0] - poly[0][0]) + abs(poly[-1][1] - poly[0][1])
+    if direct > 2 * GRID and routed > _DETOUR_LIMIT * direct:
         return None
     # Icons, text boxes, then captions (own caption in corner mode: its text).
     own_src = _text(geo, e.source) if ctx.corner else None
@@ -806,10 +880,6 @@ def _admissible(
             if segment_crosses_box(p, q, b, inset=inset):
                 return None  # an icon, a text box, or a caption is struck
     hits = 0
-    routed = sum(abs(q[0] - p[0]) + abs(q[1] - p[1]) for p, q in legs)
-    direct = abs(poly[-1][0] - poly[0][0]) + abs(poly[-1][1] - poly[0][1])
-    if direct > 2 * GRID and routed > _DETOUR_LIMIT * direct:
-        return None
     grown = _growth(ctx.chain, poly[1:-1])
     if grown is None:
         return None
@@ -943,7 +1013,10 @@ def _ranked(
     hit = _RANK_CACHE.get(key)
     if hit is None or hit[0] is not geo:
         hit = (geo, _ranked_uncached(geo, e, free, corner))
-        _RANK_CACHE[key] = hit
+        # FEAT-004: a ranking cut short by a spent budget is not cached, so a
+        # later search (with budget left) never reuses the truncated list.
+        if not admissible_budget_spent():
+            _RANK_CACHE[key] = hit
     return hit[1][:limit] if limit else list(hit[1])
 
 
@@ -956,6 +1029,8 @@ def _ranked_uncached(
     not reserve a face slot and their routes are not counted as obstacles here
     (the joint search counts them itself). The rank key leads with the
     crossings against every other edge, then whether a container must grow."""
+    if admissible_budget_spent():
+        return []  # FEAT-004: no candidate could be admitted; skip the shapes
     view = _without(geo, free) if free else geo
     polys = _polylines(geo)
     skip = {e.id, *free}
@@ -966,6 +1041,8 @@ def _ranked_uncached(
     out: List[Cand] = []
     seen = set()
     for order, (P, pf, Q, qf, pts) in enumerate(shapes):
+        if admissible_budget_spent():
+            break  # FEAT-004: the run's work budget is spent
         interior = _normalised(P, pf, Q, qf, pts)
         poly = [tuple(P)] + interior + [tuple(Q)]
         key = (round(pf[0], 4), round(pf[1], 4), round(qf[0], 4), round(qf[1], 4),
@@ -1130,22 +1207,28 @@ def _partners(geo: DiagramGeometry, e: EdgeGeom, corner: bool) -> List[EdgeGeom]
     return [o for o in out if None not in o.exit and None not in o.entry][:_MAX_PARTNERS]
 
 
+def _face_slot(frac, exit: bool) -> Tuple[str, float]:
+    """``(face, along-face coordinate)`` of a contact fraction."""
+    faces = contact_faces(*frac)
+    if exit:
+        face = "right" if "right" in faces else "bottom"
+    else:
+        face = "top" if "top" in faces else "left"
+    return face, (frac[1] if face in ("left", "right") else frac[0])
+
+
+def _slots_clash(sa: Tuple[str, float], sb: Tuple[str, float]) -> bool:
+    """Two contact slots on one node face are closer than ``_MIN_FACE_SEP``."""
+    return sa[0] == sb[0] and abs(sa[1] - sb[1]) < _MIN_FACE_SEP
+
+
 def _distinct(ra: Route, rb: Route, a: EdgeGeom, b: EdgeGeom) -> bool:
     """Two re-routed edges do not share a contact slot on a common node face."""
-    def slot(frac, exit: bool):
-        faces = contact_faces(*frac)
-        if exit:
-            face = "right" if "right" in faces else "bottom"
-        else:
-            face = "top" if "top" in faces else "left"
-        return face, (frac[1] if face in ("left", "right") else frac[0])
-
     for na, fa, ea in ((a.source, ra[0], True), (a.target, ra[1], False)):
         for nb, fb, eb in ((b.source, rb[0], True), (b.target, rb[1], False)):
             if na != nb or ea != eb:
                 continue
-            sa, sb = slot(fa, ea), slot(fb, eb)
-            if sa[0] == sb[0] and abs(sa[1] - sb[1]) < _MIN_FACE_SEP:
+            if _slots_clash(_face_slot(fa, ea), _face_slot(fb, eb)):
                 return False
     return True
 
@@ -1327,7 +1410,7 @@ def _find_move(work: DiagramGeometry, e: EdgeGeom, base: _Score) -> Optional[Mov
     frozen = _FROZEN[0]
     if e.id in frozen:
         return None
-    if _MOVE_EVAL_LEFT[0] <= 0:
+    if _MOVE_EVAL_LEFT[0] <= 0 or admissible_budget_spent():
         return None
     _MOVE_EVAL_LEFT[0] -= 1
 
@@ -1339,14 +1422,16 @@ def _find_move(work: DiagramGeometry, e: EdgeGeom, base: _Score) -> Optional[Mov
         return None
 
     found = None
-    for start in (2 * GRID, GRID):
-        _CORRIDOR_START[0] = start
-        found = (ok(_best_single(work, e, base, False))
-                 or ok(_best_joint(work, e, base, False, 2))
-                 or ok(_best_joint(work, e, base, False, 3)))
-        if found is not None:
-            break
-    _CORRIDOR_START[0] = 2 * GRID
+    overloaded = _overloaded(work, e)
+    with _sub_budget(_overloaded_cap() if overloaded else None):
+        for start in (2 * GRID, GRID):
+            _CORRIDOR_START[0] = start
+            found = (ok(_best_single(work, e, base, False))
+                     or ok(_best_joint(work, e, base, False, 2))
+                     or ok(_best_joint(work, e, base, False, 3)))
+            if found is not None:
+                break
+        _CORRIDOR_START[0] = 2 * GRID
     if (
         found is None
         and _CORNER_EXIT_FALLBACK[0]
@@ -1425,6 +1510,7 @@ def _plan_once(geo: DiagramGeometry, reverse: bool) -> Tuple[CaptionPlan, Diagra
     reverse) order; returns the plan and the geometry it produces."""
     _RANK_CACHE.clear()
     _MOVE_EVAL_LEFT[0] = _MOVE_EVAL_BUDGET  # G21: reset the per-plan work budget
+    _ADMISSIBLE_LEFT[0] = _ADMISSIBLE_BUDGET  # FEAT-004: and the admissibility budget
     work = replace(geo, edges=list(geo.edges), containers=dict(geo.containers),
                    text_boxes=dict(geo.text_boxes))
     routes: Dict[str, Route] = {}
@@ -1452,7 +1538,8 @@ def _plan_once(geo: DiagramGeometry, reverse: bool) -> Tuple[CaptionPlan, Diagra
                 # No bottom position outside a caption wider than the icon:
                 # wrap the caption onto two lines and re-plan that node's
                 # edges, judged as a whole against the UNWRAPPED diagram.
-                macro = _wrap_move(work, e, base, order)
+                with _sub_budget(_overloaded_cap()):
+                    macro = _wrap_move(work, e, base, order)
                 if macro is not None:
                     work, m_routes, m_grown, m_dx, label = macro
                     routes.update(m_routes)
@@ -1507,10 +1594,12 @@ def plan_caption_safe_geo(
 
     ``frozen`` (1.13.0): edge ids the plan never moves (they stay obstacles)."""
     _FROZEN[0] = frozenset(frozen)
+    prev = _ADMISSIBLE_LEFT[0]
     try:
         return _plan_caption_safe_geo(geo)
     finally:
         _FROZEN[0] = frozenset()
+        _ADMISSIBLE_LEFT[0] = prev
 
 
 def _plan_caption_safe_geo(geo: DiagramGeometry) -> Tuple[CaptionPlan, DiagramGeometry]:

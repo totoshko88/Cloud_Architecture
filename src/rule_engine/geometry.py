@@ -5333,5 +5333,13 @@ def rule_violations(
     )
     for rule, fn in advisory:
         for finding in fn(geo):
-            warnings.append((rule, repr(finding)))
+            # FEAT-004 (1.13.0): two contacts on the SAME point of one face
+            # (``exits-identical`` / ``entries-identical``) are a lint ERROR
+            # (FEAT-002), so the solver and the repair oracle rank them with
+            # the errors and never prefer such a candidate.
+            if (rule in ("exit-thirds", "entry-thirds")
+                    and "-identical" in str(finding[1])):
+                errors.append((rule, repr(finding)))
+            else:
+                warnings.append((rule, repr(finding)))
     return tuple(sorted(errors)), tuple(sorted(warnings))

@@ -67,6 +67,7 @@ try:  # package-relative import when used as ``rule_engine.layout.pipeline``
         spread_entries,
         spread_contacts,
         spill_over_connected_faces,
+        separate_identical_contacts,
     )
     from .place import place_nodes, size_containers, centre_block_in_vpc, lift_subject_over_external_lane, place_and_size
     from .routers import (
@@ -114,6 +115,7 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
         spread_entries,
         spread_contacts,
         spill_over_connected_faces,
+        separate_identical_contacts,
     )
     from layout.place import place_nodes, size_containers, centre_block_in_vpc, lift_subject_over_external_lane, place_and_size  # type: ignore[no-redef]
     from layout.routers import (  # type: ignore[no-redef]
@@ -711,6 +713,7 @@ def _global_contacts(
         if taken_left:
             continue                              # left band occupied → keep spread band
         exits[eid] = (_UPPER_QUARTER, exits[eid][1])  # bottom-LEFT band (0.25)
+    _variant_a_bottom_bands(spec, placed, exits, order_of, _mk)
 
     # 2b4. Monotone exit bands on the RIGHT face (v1.6.0), replacing the old
     #     Rule H. Rule H had the right idea — "a run rising into an above-row
@@ -774,6 +777,18 @@ def _global_contacts(
     #     to the entry's band when the source's right face does — the spread
     #     siblings keep their bands, so no stub crosses another.
     _align_straight_contacts(spec, placed, exits, entries)
+    # 2b6. Distinct contacts per face (FEAT-004, 1.13.0): the band rules above
+    #     rewrite single bands after the spreads, so two edges can end on the
+    #     SAME point of one face (``exits-identical`` / ``entries-identical``, a
+    #     lint ERROR and a ``rule_violations`` error). The later edge (marker
+    #     order) moves to the first free band; distinct faces are untouched.
+    exit_groups: Dict[Tuple[str, str], List[str]] = {}
+    entry_groups: Dict[Tuple[str, str], List[str]] = {}
+    for edge in sorted(spec.edges, key=lambda e: (_mk(e.id), order_of[e.id])):
+        exit_groups.setdefault((edge.source, _exit_side(exits[edge.id])), []).append(edge.id)
+        entry_groups.setdefault((edge.target, _entry_face(entries[edge.id])), []).append(edge.id)
+    separate_identical_contacts(exit_groups, exits)
+    separate_identical_contacts(entry_groups, entries, entry=True)
 
     # 2c. Snap every contact FRACTION so its absolute point lands on the grid
     #     (icon centre 0.5 → x0+39 is off-grid; a grid-snapped waypoint would
@@ -785,6 +800,58 @@ def _global_contacts(
         entries[edge.id] = _grid_contact(placed[edge.target], entries[edge.id])
 
     return exits, entries, lane_sides
+
+
+def _variant_a_bottom_bands(
+    spec: DiagramSpec,
+    placed: Dict[str, "Box"],
+    exits: Dict[str, Contact],
+    order_of: Dict[str, int],
+    marker_key,
+) -> None:
+    """Variant A on the bottom face (FEAT-004, 1.13.0), in place.
+
+    A source whose caption sits under its icon (every node with a non-empty
+    label) must not fan out of its bottom on side bands (0.25 / 0.75): each
+    such stub crosses the name. A bottom exit whose target lies to the right
+    (or below-right) of the source moves to the RIGHT face while that face has
+    room (at most :data:`MAX_SIDE_EXITS`; step 2b4 hands out the right-face
+    bands), farthest-right target first. A lone bottom exit left after that
+    takes the bottom CENTRE, a straight drop the caption-safe pass may still
+    re-route. Two or more bottom exits that cannot move (an overloaded source:
+    the right face is full) keep their distinct bands, since two stubs on one
+    point is the worse defect (``exits-identical``)."""
+    labels = dict(getattr(spec, "node_labels", ()) or ())
+    by_src: Dict[str, Dict[str, List[str]]] = {}
+    for edge in spec.edges:
+        side = _exit_side(exits[edge.id])
+        if side in ("right", "bottom"):
+            by_src.setdefault(edge.source, {"right": [], "bottom": []})[side].append(edge.id)
+    target_of = {e.id: e.target for e in spec.edges}
+    for src_id in sorted(by_src):
+        faces = by_src[src_id]
+        bottom = faces["bottom"]
+        if not bottom or not labels.get(src_id, src_id):
+            continue
+        if len(bottom) == 1 and abs(exits[bottom[0]][0] - 0.5) < 1e-9:
+            continue  # a lone centred drop: no side band to remove
+        src = placed[src_id]
+        cx = src.x + src.w / 2.0
+
+        def _dx(eid: str) -> float:
+            t = placed[target_of[eid]]
+            return (t.x + t.w / 2.0) - cx
+
+        movable = sorted((eid for eid in bottom if _dx(eid) > 1.0),
+                         key=lambda eid: (-_dx(eid), marker_key(eid), order_of[eid]))
+        for eid in movable:
+            if len(faces["right"]) >= MAX_SIDE_EXITS:
+                break
+            exits[eid] = (1.0, 0.5)
+            faces["right"].append(eid)
+            bottom.remove(eid)
+        if len(bottom) == 1:
+            exits[bottom[0]] = _with_band(exits[bottom[0]], "bottom", 0.5)
 
 
 def _align_straight_contacts(
@@ -1263,8 +1330,12 @@ def layout(
                 # back-edges or crossings and no more of either
                 # (``order="manual"`` skips it).
                 from .ordering import order_and_place as _order_and_place
-                return _with_scope_membership(_order_and_place(
-                    spec, lambda s: _solve_placement(s, strict=strict)), strict=strict)
+                from .postcheck import with_postcheck as _with_postcheck
+                # FEAT-004: the lint-only ERROR rules run once on the finished
+                # diagram (never inside the solver loop, whose nested layout()
+                # calls take the ``_placement=False`` path below).
+                return _with_postcheck(_with_scope_membership(_order_and_place(
+                    spec, lambda s: _solve_placement(s, strict=strict)), strict=strict))
             # Inner scored route path (the placement loop's per-variant step, and the
             # 1.8.0 route-only path): no placement search, just place → size → centre
             # → scored solve → repair.

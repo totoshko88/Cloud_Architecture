@@ -19,7 +19,7 @@ from their leaf modules, so it never participates in an import cycle.
 
 from __future__ import annotations
 
-from typing import Dict, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 try:  # package-relative import when used as ``rule_engine.layout.contacts``
     from ..diagram_layout import COL_STEP
@@ -474,3 +474,51 @@ def spread_contacts(edges_on_side: list) -> list:
         (eid, _with_band(pt, side, band))
         for (eid, pt), band in zip(edges_on_side, bands)
     ]
+
+
+#: Bands a contact may take on one face, in the order a displaced duplicate
+#: tries them (FEAT-004): the centre, then the two quarters.
+_FREE_BANDS = (0.5, _UPPER_QUARTER, _LOWER_QUARTER)
+
+
+def separate_identical_contacts(
+    groups: Dict[Tuple[str, str], List[str]],
+    contacts: Dict[str, Contact],
+    entry: bool = False,
+) -> None:
+    """Guarantee distinct contact points per node face, in place (FEAT-004).
+
+    ``groups`` maps ``(node, face)`` to the edge ids on that face in priority
+    order; ``contacts`` maps edge id to its contact. The spreads above hand out
+    distinct bands, but later passes (the bottom-band rules, the straight-line
+    alignment) rewrite single bands, so two edges can end on the SAME point —
+    the ``exits-identical`` / ``entries-identical`` ERROR, one doubled line at
+    the glyph. Every later edge on an occupied band moves to the first free one
+    of :data:`_FREE_BANDS`; a face with no free band is left as is (it is
+    over-connected, which the spill / ``OverConnectedError`` own). Faces whose
+    contacts are already distinct are untouched."""
+    for (_node, face), eids in sorted(groups.items()):
+        if len(eids) < 2:
+            continue
+        band_of = (lambda pt: _entry_band(pt, face)) if entry else (
+            lambda pt: _band_of(pt, face))
+        taken: List[float] = []
+        for eid in eids:
+            band = round(band_of(contacts[eid]), 6)
+            if band not in taken:
+                taken.append(band)
+                continue
+            free = next((b for b in _FREE_BANDS if all(abs(b - t) >= MERGE_THRESHOLD
+                                                       for t in taken)), None)
+            if free is None:
+                taken.append(band)
+                continue
+            contacts[eid] = (_with_entry_band(contacts[eid], face, free) if entry
+                             else _with_band(contacts[eid], face, free))
+            taken.append(free)
+
+
+def _band_of(exit_pt: Contact, side: str) -> float:
+    """The along-face band coordinate of an exit on ``side``."""
+    fx, fy = exit_pt
+    return fx if side in ("bottom", "top") else fy

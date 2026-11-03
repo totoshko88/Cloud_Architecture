@@ -648,10 +648,12 @@ def measure_finished(placed: PlacedDiagram, finishing: bool = True) -> Finished:
         # The finishing passes every ``build_diagram`` call applies (Variant A
         # caption-safe re-routes, then the WS3 crossing repair), so the
         # candidates are compared as they will be published.
-        from ..caption_routing import plan_caption_safe_geo
+        from ..caption_routing import admissible_budget, plan_caption_safe_geo
         from ..crossing_repair import plan_crossing_repair_geo
         _plan, geo = plan_caption_safe_geo(geo)
-        _plan, geo = plan_crossing_repair_geo(geo)
+        # FEAT-004: under the same work budget as build_diagram's pass.
+        with admissible_budget():
+            _plan, geo = plan_crossing_repair_geo(geo)
     back = 0
     for e in geo.edges:
         s, t = geo.nodes.get(e.source), geo.nodes.get(e.target)

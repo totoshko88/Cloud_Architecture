@@ -102,18 +102,13 @@ MIN_FONT_SIZE = 12
 #: builder draws edges at this width; the ``arrow-style`` lint rule flags thinner.
 EDGE_STROKE_WIDTH = 1.5
 
-#: G33 (1.11.0, FEAT-002): dense-landscape finishing gate for ``build_diagram``.
-#: At or above this many service nodes, the greedy Variant A finishing
-#: (caption-safe + crossing-repair + collinear re-route) is SKIPPED and the
-#: crossing-minimised ``layout()`` geometry is kept as-is. It mirrors
-#: ``ordering.FINISH_NODE_BUDGET`` (the same value and rationale: only a dense
-#: landscape reaches it, so every flow golden is well under it and byte-
-#: identical). On a dense cross-band landscape the unbounded finishing pass both
-#: overran the 300s build guard (260s on 09-crosscloud) and NET-WORSENED the
-#: geometry (crossings ~9 -> 19, SEP account grown into the external sibling
-#: bands), so keeping the authoritative scored placement is both faster and
-#: better. An explicit ``caption_plan`` is never gated.
-_FINISH_NODE_GATE = 20
+#: The Variant A finishing passes ``build_diagram`` plans, in order (FEAT-004,
+#: 1.13.0). G33 (1.11.0) skipped all three at >= 20 nodes; that gate is gone:
+#: the planners carry a work budget (``caption_routing._ADMISSIBLE_BUDGET``) and
+#: the result is kept only when it is no worse (:func:`_no_worse`). When the
+#: full plan fails that guard, ``_FINISH_PASSES[1:]`` (crossing + collinear,
+#: the caption plan dropped) is tried under the same guard.
+_FINISH_PASSES = ("caption", "crossing", "collinear")
 
 #: Standard node label style suffix (label sits directly under the icon). The
 #: label font is held at ``MIN_FONT_SIZE`` so node captions clear the 12px floor.
@@ -1835,58 +1830,58 @@ def build_diagram(
     pinned = frozenset(e.id for e in edges if e.points)
     frozen = pinned if respect_pins else frozenset()
     text = _assemble_document(routed=routed, **kwargs)
-    # G33 (1.11.0, FEAT-002): dense-landscape finishing gate. The Variant A
-    # finishing (`_plan_from_text` = caption-safe + crossing-repair + collinear)
-    # is a greedy, whole-diagram re-route planned on the ASSEMBLED document. On a
-    # SMALL flow diagram it cheaply removes the last own-caption strike or
-    # crossing and never worsens the picture — that is the case it was built for.
-    # On a DENSE landscape with many long cross-band edges converging on a shared
-    # external datastore (09-crosscloud: Lambda AND the EC2 Syndicate Server both
-    # reaching the MongoDB Atlas band, plus the sandbox-control fan-out) it does
-    # the opposite: measured on 09 it ran 260s (over the 300s build guard) AND it
-    # NET-WORSENED the geometry — the layout() output crosses ~9 pairs, but the
-    # finishing plan's container growth + re-routes pushed it to 19 crossings and
-    # grew the SEP account box into the external sibling bands (container-overlap,
-    # an ERROR on a landscape). The scored solver in `layout()` already
-    # crossing-minimises the placement for such a diagram (it is the authoritative
-    # geometry), so for a dense diagram the right move is to KEEP it rather than
-    # let an unbounded greedy finishing pass worsen it. This mirrors the existing
-    # `ordering.FINISH_NODE_BUDGET` gate, which already skips the per-candidate
-    # finishing MEASUREMENT in the auto-order loop at the same size — here we skip
-    # the APPLY in the standalone build_diagram path too. Scoped to >= the node
-    # budget (only a dense landscape reaches it): every shipped flow golden is far
-    # under it, so their output is byte-identical. A residual own-caption strike
-    # on the dense landscape degrades to a WARNING (edge-crosses-own-label), which
-    # a landscape already tolerates, in exchange for a clean crossing/overlap
-    # result that publishes and a build that stays under the guard.
-    # An explicitly-supplied caption_plan is always honoured (the caller chose
-    # it deliberately); the gate applies only to the AUTO-planned path, where the
-    # cost and the net-worsening both live.
-    _gated = caption_plan is None and len(nodes) >= _FINISH_NODE_GATE
-    if caption_safe and not _gated:
+    # Variant A finishing (`_plan_from_text` = caption-safe + crossing-repair +
+    # collinear): a greedy, whole-diagram re-route planned on the ASSEMBLED
+    # document. FEAT-004 (1.13.0) replaced the G33 node-count gate (at >= 20
+    # nodes every pass was skipped) with a work budget inside the planners
+    # (`caption_routing._ADMISSIBLE_BUDGET`) and a NO-WORSE guard on the result:
+    # the re-assembled candidate is kept only when it has no more
+    # `rule_violations` errors, crossings or `container-overlap` findings than
+    # the document before the plan (the G33 regression on 09-crosscloud was
+    # crossings ~9 -> 19 and the SEP account grown into sibling bands). If the
+    # full plan fails the guard, the crossing + collinear passes are planned
+    # alone (the caption plan dropped) under the same guard; else the layout()
+    # geometry is kept. An explicitly-supplied caption_plan is always honoured
+    # (the caller chose it deliberately).
+    if caption_safe:
         if caption_plan is not None:
-            plan = caption_plan
+            attempts = [lambda: caption_plan]
         else:
-            # ``frozen`` is passed only when non-empty, so the one-argument
-            # call (and any caller that replaces the planner) is unchanged.
-            plan = _plan_from_text(text, frozen) if frozen else _plan_from_text(text)
-        if plan is not None and frozen and set(plan.routes) & frozen:
-            # A precomputed plan may name a pinned edge; drop those routes.
-            plan = replace(plan, routes={k: v for k, v in plan.routes.items()
-                                         if k not in frozen})
-        if plan is not None and not respect_pins:
-            rerouted = sorted(pinned & set(plan.routes))
-            if rerouted:
-                logging.getLogger("rule_engine.diagram_layout").warning(
-                    "build_diagram rerouted hand-pinned edges: %s "
-                    "(pass respect_pins=True to keep them)", ", ".join(rerouted))
-                if reroute_report is not None:
-                    reroute_report.extend(rerouted)
-        safe = _apply_plan(plan, routed, boundaries, legend_x)
-        if safe is not None:
-            routed, kwargs["boundaries"], kwargs["legend_x"] = safe
-            kwargs["nodes"] = _apply_wraps(plan, nodes)
-            text = _assemble_document(routed=routed, **kwargs)
+            # The one-argument call (and any caller that replaces the
+            # planner) is unchanged; ``frozen`` is passed only when non-empty.
+            attempts = [
+                lambda: _plan_from_text(text, frozen) if frozen else _plan_from_text(text),
+                lambda: _plan_from_text(text, frozen, passes=_FINISH_PASSES[1:]),
+            ]
+        base_score = None
+        for attempt in attempts:
+            plan = attempt()
+            if plan is not None and frozen and set(plan.routes) & frozen:
+                # A precomputed plan may name a pinned edge; drop those routes.
+                plan = replace(plan, routes={k: v for k, v in plan.routes.items()
+                                             if k not in frozen})
+            safe = _apply_plan(plan, routed, boundaries, legend_x)
+            if safe is None:
+                break  # nothing to apply (a subset of the passes changes no more)
+            cand_routed, cand_bounds, cand_legend_x = safe
+            cand_kwargs = dict(kwargs, boundaries=cand_bounds, legend_x=cand_legend_x,
+                               nodes=_apply_wraps(plan, nodes))
+            candidate = _assemble_document(routed=cand_routed, **cand_kwargs)
+            if caption_plan is None:
+                if base_score is None:
+                    base_score = _finishing_score(text)
+                if not _no_worse(_finishing_score(candidate), base_score):
+                    continue  # the plan made the diagram worse: drop it
+            if not respect_pins:
+                rerouted = sorted(pinned & set(plan.routes))
+                if rerouted:
+                    logging.getLogger("rule_engine.diagram_layout").warning(
+                        "build_diagram rerouted hand-pinned edges: %s "
+                        "(pass respect_pins=True to keep them)", ", ".join(rerouted))
+                    if reroute_report is not None:
+                        reroute_report.extend(rerouted)
+            routed, kwargs, text = cand_routed, cand_kwargs, candidate
+            break
     # Flow-marker hygiene (1.10.7 D37): markers are de-collided from each other
     # and slid along their own edge off any foreign edge's line, so every
     # builder (rule-engine-draw, the HA builders, hand-written layout() +
@@ -1901,16 +1896,44 @@ def build_diagram(
         marker_hygiene_text(pin_long_marker_anchors_text(text))[0], page_w, page_h)
 
 
-def _plan_from_text(text: str, frozen: AbstractSet[str] = frozenset()):
+def _finishing_score(text: str) -> Optional[Tuple[int, int, int]]:
+    """``(rule_violations errors, crossings, container-overlap findings)`` of an
+    assembled document, the quantities the FEAT-004 no-worse guard compares;
+    None when it does not parse. Function-local imports: geometry imports this
+    module."""
+    from rule_engine.drawio_model import DrawioParseError, parse_drawio
+    from rule_engine.geometry import (
+        build_geometry, check_container_overlap, edge_crossing_stats, rule_violations)
+    try:
+        pages = parse_drawio(text.encode("utf-8"), path="<build_diagram>")
+    except DrawioParseError:
+        return None
+    if not pages:
+        return None
+    geo = build_geometry(pages[0])
+    errors, _warnings = rule_violations(geo)
+    return (len(errors), edge_crossing_stats(geo)[0], len(check_container_overlap(geo)))
+def _no_worse(after: Optional[Tuple[int, int, int]],
+              before: Optional[Tuple[int, int, int]]) -> bool:
+    """True when a finishing candidate scoring ``after`` is no worse than the
+    document it replaces on every component (errors, crossings, overlaps)."""
+    if after is None:
+        return False
+    if before is None:
+        return True
+    return all(a <= b for a, b in zip(after, before))
+def _plan_from_text(text: str, frozen: AbstractSet[str] = frozenset(),
+                    passes: Sequence[str] = _FINISH_PASSES):
     """The Variant A plan for an assembled document (None when unparsable).
     ``frozen``: edge ids no pass may move (1.13.0, ``respect_pins``).
+    ``passes``: which of :data:`_FINISH_PASSES` to plan (FEAT-004); each pass
+    plans on the result of the previous one it runs.
     Function-local imports: geometry imports this module."""
-    from rule_engine.caption_routing import CaptionPlan, plan_caption_safe_geo
+    from rule_engine.caption_routing import CaptionPlan, admissible_budget, plan_caption_safe_geo
     from rule_engine.collinear_repair import plan_collinear_shift_geo
     from rule_engine.crossing_repair import plan_crossing_repair_geo
     from rule_engine.drawio_model import DrawioParseError, parse_drawio
     from rule_engine.geometry import build_geometry
-
     try:
         pages = parse_drawio(text.encode("utf-8"), path="<build_diagram>")
     except DrawioParseError:
@@ -1918,14 +1941,22 @@ def _plan_from_text(text: str, frozen: AbstractSet[str] = frozenset()):
     if not pages:
         return None
     kw = {"frozen": frozen} if frozen else {}
-    caption, work = plan_caption_safe_geo(build_geometry(pages[0]), **kw)
+    work = build_geometry(pages[0])
+    empty = CaptionPlan({}, {}, 0.0)
+    caption = crossing = collinear = empty
+    if "caption" in passes:
+        caption, work = plan_caption_safe_geo(work, **kw)
     # 1.10.12 WS3: the final crossing-repair pass plans on the caption-safe
     # result, so a re-route it keeps never brings a caption strike back.
-    crossing, work = plan_crossing_repair_geo(work, **kw)
+    if "crossing" in passes:
+        with admissible_budget():
+            crossing, work = plan_crossing_repair_geo(work, **kw)
     # 1.10.12 WS8: the collinear-shift pass plans on the crossing-repaired
     # result, so separating two lines never re-introduces a crossing or a
     # caption strike an earlier pass removed.
-    collinear, _ = plan_collinear_shift_geo(work, **kw)
+    if "collinear" in passes:
+        with admissible_budget():
+            collinear, _ = plan_collinear_shift_geo(work, **kw)
     if not crossing.routes and not collinear.routes:
         return caption
     return CaptionPlan(
@@ -1934,8 +1965,6 @@ def _plan_from_text(text: str, frozen: AbstractSet[str] = frozenset()):
         text_dx=caption.text_dx + crossing.text_dx + collinear.text_dx,
         wraps=dict(caption.wraps),
     )
-
-
 def _apply_plan(
     plan, routed: Sequence[Edge], boundaries: Sequence[Boundary], legend_x: int,
 ) -> Optional[Tuple[List[Edge], List[Boundary], int]]:

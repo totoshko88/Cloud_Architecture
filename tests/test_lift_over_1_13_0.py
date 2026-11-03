@@ -152,14 +152,31 @@ def _without_lift_over(fn):
         variants._lift_over_variant = orig
 
 
+def _without_variant_a_bottom_bands(fn):
+    from rule_engine.layout import pipeline
+
+    orig = pipeline._variant_a_bottom_bands
+    pipeline._variant_a_bottom_bands = lambda *a, **k: None
+    try:
+        return fn()
+    finally:
+        pipeline._variant_a_bottom_bands = orig
+
+
 def test_lift_over_removes_an_up_climb_crossing_through_the_solver():
     # Two climbers (slots 0,1 above the hub row) + two descenders (slots 3,4):
     # the up-climb branch crosses the siblings, and the lift-over removes one.
+    # FEAT-004 (1.13.0): the Variant A bottom-band step now moves the
+    # descenders' bottom exits onto the hub's free right face, which removes
+    # more crossings than the lift-over (7 -> 4), so the lift-over mechanism is
+    # pinned with that step off, and the default must be no worse than it.
     spec = _fan_spec([("rds", 0, "dynamodb"), ("s3", 1, "object_store"),
                       ("ddb", 3, "dynamodb"), ("sqs", 4, "message_queue")])
-    with_lift = _crossings(spec)
-    without_lift = _without_lift_over(lambda: _crossings(spec))
+    with_lift = _without_variant_a_bottom_bands(lambda: _crossings(spec))
+    without_lift = _without_variant_a_bottom_bands(
+        lambda: _without_lift_over(lambda: _crossings(spec)))
     assert with_lift < without_lift, (with_lift, without_lift)
+    assert _crossings(spec) <= with_lift
 
 
 def test_fan_out_with_no_up_climb_is_byte_identical_with_the_variant():

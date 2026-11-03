@@ -216,7 +216,8 @@ def _spec_container_id(cand: "PlacedDiagram", oid: object) -> object:
     return oid
 
 
-def _serialize_candidate(cand: "PlacedDiagram", labels: Optional[Dict[str, str]] = None) -> str:
+def _serialize_candidate(cand: "PlacedDiagram", labels: Optional[Dict[str, str]] = None,
+                         membership: Optional[Dict[str, str]] = None) -> str:
     """Serialize a candidate to ``.drawio`` text via ``build_diagram`` (stub icons).
 
     Builds the ``Node`` / ``Edge`` / ``Boundary`` objects ``build_diagram``
@@ -228,7 +229,10 @@ def _serialize_candidate(cand: "PlacedDiagram", labels: Optional[Dict[str, str]]
 
     ``labels`` (1.10.12 WS4) captions each stub node with its display label
     instead of its id, so the finishing passes (caption-safe re-routes, caption
-    wraps) see the real caption widths."""
+    wraps) see the real caption widths.
+    ``membership`` (FEAT-004) parents each node to its spec box
+    (``build_diagram(membership=)``), for the post-layout check; None (the
+    oracle) keeps the geometric tightest-box rule."""
     # 1.10.6: draw each container with the caption and style the skin will use
     # when the spec carries them, so the oracle and the scored solver see the
     # caption exactly where the linter will (``edge-crosses-container-label``).
@@ -291,6 +295,7 @@ def _serialize_candidate(cand: "PlacedDiagram", labels: Optional[Dict[str, str]]
         # The oracle judges the geometry the engine routed; the Variant A
         # re-route is the shared builder's finishing pass on the real document.
         caption_safe=False,
+        **({"membership": membership} if membership is not None else {}),
     )
 
 

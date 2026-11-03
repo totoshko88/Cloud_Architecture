@@ -8,10 +8,11 @@ to the number of crossing pairs that involve a cross-band edge
 bands — the collapsed-routing case the cap exists to catch — gets zero headroom
 and still trips the ERROR.
 
-G33 — dense-landscape finishing gate. ``build_diagram`` skips the greedy
-Variant A finishing (caption-safe + crossing-repair + collinear) at or above
-``_FINISH_NODE_GATE`` nodes, keeping the crossing-minimised ``layout()``
-geometry (faster, and never worse on a dense cross-band landscape).
+G33 — dense-landscape finishing. 1.11.0 skipped the greedy Variant A
+finishing (caption-safe + crossing-repair + collinear) at or above 20 nodes;
+FEAT-004 (1.13.0) replaced that gate with a work budget and a no-worse guard,
+so a dense diagram is planned too and the plan is kept only when it is no
+worse (``tests/test_finishing_budget_1_13_0_fix.py``).
 
 G35 — export-overshoot correction (FEAT-001). The exporter re-exports once when
 the actual PNG width exceeds the class budget by a few px of wrapped-text render
@@ -146,15 +147,17 @@ def test_corpus_hard_cap_unaffected(src):
 # G33 — the dense-landscape finishing gate
 # --------------------------------------------------------------------------- #
 
-def test_finish_node_gate_value():
-    """The gate mirrors ordering.FINISH_NODE_BUDGET (20): dense landscapes only."""
+def test_finish_node_gate_removed():
+    """FEAT-004: build_diagram has no node-count gate any more (the auto-order
+    measurement keeps its own ordering.FINISH_NODE_BUDGET)."""
     from rule_engine.layout import ordering
-    assert _dl._FINISH_NODE_GATE == ordering.FINISH_NODE_BUDGET == 20
+    assert not hasattr(_dl, "_FINISH_NODE_GATE")
+    assert ordering.FINISH_NODE_BUDGET == 20
 
 
-def test_finish_gate_skips_caption_plan_for_dense(monkeypatch):
-    """At >= the gate, build_diagram does NOT invoke the auto caption-safe plan
-    (the 260s pass); below it, it does."""
+def test_finishing_plans_dense_diagrams_too(monkeypatch):
+    """FEAT-004: the auto plan is computed for a small AND a dense (>= 20 node)
+    diagram; the no-worse guard, not the size, decides whether it is kept."""
     calls = {"n": 0}
     import rule_engine.diagram_layout as dl
 
@@ -185,10 +188,10 @@ def test_finish_gate_skips_caption_plan_for_dense(monkeypatch):
     calls["n"] = 0
     dl.build_diagram(nodes=_mk_nodes(3), **common)
     assert calls["n"] == 1
-    # At/above the gate (20 nodes): the auto plan is SKIPPED.
+    # 20 nodes (the former gate): the auto plan is computed too.
     calls["n"] = 0
     dl.build_diagram(nodes=_mk_nodes(20), **common)
-    assert calls["n"] == 0
+    assert calls["n"] == 1
 
 
 # --------------------------------------------------------------------------- #
