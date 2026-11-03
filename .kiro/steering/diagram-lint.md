@@ -558,11 +558,14 @@ every applicable rule against every artifact.
   caption is no longer silently exempt (1.10.12, WS2):** a bottom drop that
   strikes the name under its *own* icon is reported under the distinct reason
   **`edge-crosses-own-label`** (an unrelated-caption crossing keeps the reason
-  `crosses-label-band`). The engine's WS2 caption-safe pass drives this to **0 on
-  the corpus and SEP** — spine edges from a captioned source take the Variant A
-  side corridor (see diagram-standards → *Vertical spine vs straight bottom drop*),
-  and the remaining masked cases draw the edge beneath the vertex so the opaque
-  caption background hides the line. A hand-authored bottom drop through the
+  `crosses-label-band`). The engine's WS2 caption-safe pass removes the cut wherever
+  a legal side corridor exists — spine edges from a captioned source take the
+  Variant A side corridor (see diagram-standards → *Vertical spine vs straight
+  bottom drop*), and the remaining masked cases draw the edge beneath the vertex
+  so the opaque caption background hides the line. It does not reach zero
+  everywhere: after 1.13.0 the 17 shipped goldens carry 5 own-caption cuts (on
+  overloaded faces) and the SEP regression fixtures carry 0-5 each, mostly on
+  hand-pinned edges (REVIEW.md G15 lists the measured numbers). A hand-authored bottom drop through the
   source's own name trips `edge-crosses-own-label`. The layout engine's scored
   objective keeps the icon-width band, so engine output is unchanged. Advisory
   (WARNING) for both classes.

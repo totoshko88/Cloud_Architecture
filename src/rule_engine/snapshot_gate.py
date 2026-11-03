@@ -217,6 +217,10 @@ def is_failures_file(name: str | Path) -> bool:
     contracts: this gate counts list items in every other ``*.json`` and never
     rejects a file for its shape; reconcile adapts raw-CLI-shaped domain files
     and skips (with a WARNING) parsable files that are not service domains.
+    The divergence is deliberate: control-plane files (``identity.json``,
+    ``iam.json``) enumerate OUs, accounts and policies that inventory-standards
+    §5 requires a ``resources/`` subfolder for, so this gate counts them, while
+    reconcile skips them because they carry no diagram role.
     """
     return os.path.basename(str(name)).lower() == "failures.json"
 
@@ -413,7 +417,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "--root", "--workspace-root", dest="root", default=None,
         help="directory to scan for inventory-* snapshot folders "
              "(default: the current directory); --workspace-root is the "
-             "name every gate accepts (1.13.0)",
+             "name every root-scanning gate accepts: lint, verify-icon, "
+             "check-rasters, check-snapshot, check-asset-paths (1.13.0)",
     )
     parser.add_argument(
         "--snapshot", action="append", default=[],

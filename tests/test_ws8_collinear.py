@@ -201,30 +201,46 @@ def _without_ws8(build):
         col.plan_collinear_shift_geo = orig
 
 
-#: Collinear pairs left after the WS8 pass, per SEP fixture (FEAT-005, 1.13.0).
-#: SEP 03 is the coordinate-free spec the WS8 acceptance was written against
-#: (``build_03_coordfree.py``; the synced SEPARCH 03 is hand-pinned, so it
-#: exercises no layout); it still reaches zero (one pair, e12/e2, without WS8).
-#: SEP 08 is the synced SEPARCH builder, which now materialises each VPC peering
-#: into a node with two legs (G23): WS8 separates three of the four pairs it
-#: makes (e10-a/e5, e5/e6, e6/e8-a); the remaining one, e5 (RDS -> interface
-#: endpoint) beside the e9-a peering leg, has no legal re-route that keeps the
-#: crossing count (X 1) and back-edges (2), so it is recorded as the bound.
+#: Collinear pairs left after the WS8 pass, per SEP fixture (1.13.0), and
+#: whether WS8 itself must lower the count on that fixture.
+#:
+#: * ``build_03_coordfree.py`` is the coordinate-free 03 spec the WS8 acceptance
+#:   was written against; WS8 still takes it to zero (one pair, e12/e2, without).
+#: * ``build_sep_account_landscape.py`` is the synced SEPARCH 03. Its hand-pinned
+#:   edges still go through the WS8 pass, because ``build_diagram`` re-routes
+#:   pinned edges by default (item 15) and the finishing passes run on dense
+#:   diagrams since item 11. WS8 separates none of its 3 pairs: every candidate
+#:   re-route of e11/e13, e15/e4 or e6/e8 either keeps the pair count (the new
+#:   route lands collinear with another edge) or adds a crossing (measured
+#:   1.13.0: X 8, back 3, own 5). The bound records that residual.
+#: * ``build_08_network_crossaccount.py`` is the synced SEPARCH 08, which now
+#:   materialises each VPC peering into a node with two legs (G23): WS8 separates
+#:   three of the four pairs it makes (e10-a/e5, e5/e6, e6/e8-a); the remaining
+#:   one, e5 (RDS -> interface endpoint) beside the e9-a peering leg, has no legal
+#:   re-route that keeps the crossing count (X 1) and back-edges (2).
+#: * ``build_13_sep_dataflow.py`` is the synced SEPARCH 13: WS8 separates none of
+#:   its 2 pairs (every move of e8/e11/e12 keeps the count or adds a crossing,
+#:   and moving e12 also adds an oracle error; measured X 5, back 1, own 5).
 _SEP_COLLINEAR_BOUND = {
-    "build_03_coordfree.py": [],
-    "build_08_network_crossaccount.py": [("e5", "e9-a")],
+    "build_03_coordfree.py": ([], True),
+    "build_sep_account_landscape.py": ([("e11", "e13"), ("e15", "e4"), ("e6", "e8")], False),
+    "build_08_network_crossaccount.py": ([("e5", "e9-a")], True),
+    "build_13_sep_dataflow.py": ([("e11", "e12"), ("e12", "e8")], False),
 }
 
 
 @pytest.mark.slow
 @pytest.mark.sep
-def test_sep_03_and_08_reach_zero_collinear_pairs():
-    for script, bound in _SEP_COLLINEAR_BOUND.items():
-        module = _load_builder(script)
-        on = _geo(module._build())
-        off = _geo(_without_ws8(module._build))
-        assert set(_collinear(on)) <= set(bound), (script, _collinear(on))
+@pytest.mark.parametrize("script", sorted(_SEP_COLLINEAR_BOUND))
+def test_sep_collinear_pairs_stay_within_measured_bounds(script):
+    bound, must_reduce = _SEP_COLLINEAR_BOUND[script]
+    module = _load_builder(script)
+    on = _geo(module._build())
+    off = _geo(_without_ws8(module._build))
+    assert set(_collinear(on)) <= set(bound), (script, _collinear(on))
+    assert len(_collinear(on)) <= len(_collinear(off)), script
+    if must_reduce:
         assert len(_collinear(on)) < len(_collinear(off)) or not _collinear(off), script
-        # WS8 must not buy the separation with a crossing or a back-edge.
-        assert _crossings(on) <= _crossings(off), script
-        assert _back_edges(on) <= _back_edges(off), script
+    # WS8 must not buy the separation with a crossing or a back-edge.
+    assert _crossings(on) <= _crossings(off), script
+    assert _back_edges(on) <= _back_edges(off), script

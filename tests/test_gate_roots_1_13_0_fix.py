@@ -5,7 +5,7 @@ from __future__ import annotations
 import shutil
 from pathlib import Path
 
-from rule_engine import raster_gate, snapshot_gate
+from rule_engine import asset_paths_guard, raster_gate, snapshot_gate
 
 REPO = Path(__file__).resolve().parents[1]
 STEM = "01-aws-agent-platform"
@@ -59,3 +59,13 @@ def test_snapshot_gate_accepts_workspace_root(tmp_path, capsys):
     assert snapshot_gate.main(["--workspace-root", str(root)]) == snapshot_gate.main(
         ["--root", str(root)]
     )
+
+
+def test_asset_paths_guard_accepts_workspace_root(tmp_path, capsys):
+    """``--workspace-root`` and the ``--repo-root`` alias give one result."""
+    new = asset_paths_guard.main(["--workspace-root", str(tmp_path)])
+    out_new = capsys.readouterr()
+    old = asset_paths_guard.main(["--repo-root", str(tmp_path)])
+    out_old = capsys.readouterr()
+    assert new == old == 0
+    assert (out_new.out, out_new.err) == (out_old.out, out_old.err)

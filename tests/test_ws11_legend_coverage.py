@@ -178,25 +178,28 @@ def test_lint_is_silent_once_the_inner_line_is_dropped(tmp_path):
 
 def _geo_of_script(name: str):
     import os
+    import shutil
+    import tempfile
     from rule_engine.icon_resolver import _load_mapping_cached
-    path = _FIXTURES / name
     cwd = os.getcwd()
-    # The 01 / 04 builders write their .drawio into the fixture root at import.
-    # A test checkout has no vendor icon packs, so that rebuild would replace the
-    # committed (icon-embedded) fixture: keep the committed bytes (1.13.0).
-    committed = {p: p.read_bytes() for p in _FIXTURES.parent.glob("*.drawio")}
-    os.chdir(_FIXTURES.parent)   # SEP scripts resolve assets relative to the root
-    _load_mapping_cached.cache_clear()
-    try:
-        spec = importlib.util.spec_from_file_location(path.stem + "_ws11", path)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)  # build_diagram runs at import
-    finally:
-        os.chdir(cwd)
-        for p, data in committed.items():
-            if p.read_bytes() != data:
-                p.write_bytes(data)
+    # The 01 / 04 builders write their .drawio into the cwd at import. Run them
+    # in a temporary copy of the fixture root (assets + mappings resolve
+    # relative to it), so a crashed or killed worker can never leave a
+    # committed fixture overwritten (1.13.0).
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp) / "sep"
+        shutil.copytree(_FIXTURES.parent, root,
+                        ignore=shutil.ignore_patterns("*.png", "__pycache__", "*.drawio"))
+        path = root / "scripts" / name
+        os.chdir(root)
         _load_mapping_cached.cache_clear()
+        try:
+            spec = importlib.util.spec_from_file_location(path.stem + "_ws11", path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)  # build_diagram runs at import
+        finally:
+            os.chdir(cwd)
+            _load_mapping_cached.cache_clear()
     return geo.build_geometry(parse_drawio(module.drawio, path=name + ".drawio")[0]), module
 
 
@@ -205,6 +208,23 @@ def test_build_diagram_filters_an_explicit_legend_by_drawn_boundaries():
     SEP 01 / 04 builders) loses only the undrawn inner line."""
     xml = _account_only_xml(list(dl.STANDARD_LEGEND_LINES))
     assert _OUTER in xml and _INNER not in xml
+
+
+def test_build_diagram_logs_the_dropped_legend_line(caplog):
+    """1.13.0: the explicit-legend filter is not a silent rewrite."""
+    with caplog.at_level("WARNING", logger="rule_engine.diagram_layout"):
+        _account_only_xml(list(dl.STANDARD_LEGEND_LINES))
+    dropped = [r.getMessage() for r in caplog.records
+               if "dropped a Legend line" in r.getMessage()]
+    assert dropped and _INNER in dropped[0]
+
+
+def test_build_diagram_keeps_an_explicit_legend_without_an_inner_line(caplog):
+    lines = [line for line in dl.STANDARD_LEGEND_LINES if line != _INNER]
+    with caplog.at_level("WARNING", logger="rule_engine.diagram_layout"):
+        xml = _account_only_xml(lines)
+    assert _OUTER in xml
+    assert not [r for r in caplog.records if "dropped a Legend line" in r.getMessage()]
 
 
 def _drawn_legend(xml: str, name: str):

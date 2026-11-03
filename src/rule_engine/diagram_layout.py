@@ -1598,12 +1598,15 @@ def _drop_undrawn_boundary_lines(
     so a builder that started from :data:`STANDARD_LEGEND_LINES` on an
     account-only canvas (SEP 01 / 04) still listed ``Inner boundary = ...`` and
     tripped ``legend-boundary-coverage``. When the boundaries declare a
-    ``kind`` (the builder states what it draws), the two standard boundary
-    lines are filtered by the same structural test the lint rule uses
-    (:func:`rule_engine.geometry._container_nesting`): ``Outer boundary``
-    needs at least one boundary, ``Inner boundary`` a boundary strictly inside
-    another. Every other line, and a legend whose boundaries declare no kind,
-    is returned unchanged, so the filter only removes lines lint would flag.
+    ``kind`` (the builder states what it draws), the standard ``Inner
+    boundary`` line is dropped unless a boundary sits strictly inside another
+    (the structural test the lint rule uses,
+    :func:`rule_engine.geometry._container_nesting`). Only that line is ever
+    filtered: ``Outer boundary`` is kept (any declared boundary satisfies it),
+    as is every other line and a legend whose boundaries declare no kind, so
+    the filter only removes a line lint would flag. A dropped line is logged
+    as a WARNING on ``rule_engine.diagram_layout``, so the caller sees that
+    its explicit Legend was edited.
     """
     lines = tuple(lines)
     if not boundaries or {b.kind for b in boundaries} == {""}:
@@ -1614,8 +1617,11 @@ def _drop_undrawn_boundary_lines(
         and o.w * o.h > i.w * i.h
         for i in boundaries for o in boundaries if i is not o
     )
-    if has_inner:
+    if has_inner or _INNER_BOUNDARY_LINE not in lines:
         return lines
+    logging.getLogger("rule_engine.diagram_layout").warning(
+        "build_diagram dropped a Legend line that names no drawn boundary: %r "
+        "(no boundary is nested inside another)", _INNER_BOUNDARY_LINE)
     return tuple(line for line in lines if line != _INNER_BOUNDARY_LINE)
 
 
