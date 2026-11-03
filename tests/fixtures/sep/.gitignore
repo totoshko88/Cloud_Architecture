@@ -1,0 +1,3 @@
+# Written by the SEP builders' clarify gate (also when tests import a builder);
+# a build by-product, not a fixture.
+*.assumptions.txt

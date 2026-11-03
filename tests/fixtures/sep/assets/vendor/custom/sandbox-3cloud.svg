@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="128" viewBox="0 0 160 128">
+  <title>Sandbox fleets — three clouds (AWS / Azure / GCP)</title>
+  <!-- Composite mark for the multi-cloud sandbox fleet: a single cloud outline
+       enclosing the three provider marks. The sandbox fleets span AWS, Azure
+       and GCP, so all three official-colour provider marks sit inside one cloud.
+       Icon-Fidelity note: this is a hand-authored composite using each provider's
+       brand COLOUR plus a recognizable mark/wordmark (the sanctioned tri-colour
+       cloud fallback), not a look-alike of any single-provider service icon. -->
+
+  <!-- cloud outline -->
+  <path d="M44 104
+           a26 26 0 0 1 -4 -51
+           a30 30 0 0 1 58 -10
+           a24 24 0 0 1 22 14
+           a22 22 0 0 1 2 47
+           Z"
+        fill="#F4F7FB" stroke="#5B6B7B" stroke-width="3" stroke-linejoin="round"/>
+
+  <!-- AWS mark (left): orange smile + 'aws' wordmark -->
+  <g transform="translate(30 52)">
+    <text x="12" y="6" font-family="Arial, Helvetica, sans-serif" font-size="13"
+          font-weight="700" fill="#232F3E" text-anchor="middle">aws</text>
+    <path d="M2 14 q10 7 20 0" fill="none" stroke="#FF9900" stroke-width="3"
+          stroke-linecap="round"/>
+    <path d="M18 11 l5 2 l-2 5" fill="none" stroke="#FF9900" stroke-width="3"
+          stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+
+  <!-- Azure mark (right): blue 'A' chevron -->
+  <g transform="translate(96 46)">
+    <path d="M14 0 L24 24 L4 24 L12 9 L17 9 L13 1 Z"
+          fill="#0078D4"/>
+    <path d="M12 9 L4 24 L15 24 Z" fill="#3FA2F7"/>
+  </g>
+
+  <!-- GCP mark (bottom-centre): Google four-colour hex/arc -->
+  <g transform="translate(62 70)">
+    <path d="M18 2 a16 16 0 0 1 14 8 l-7 4 a8 8 0 0 0 -7 -4 Z" fill="#EA4335"/>
+    <path d="M32 10 a16 16 0 0 1 0 16 l-7 -4 a8 8 0 0 0 0 -8 Z" fill="#FBBC05"/>
+    <path d="M32 26 a16 16 0 0 1 -14 8 l0 -8 a8 8 0 0 0 7 -4 Z" fill="#34A853"/>
+    <path d="M18 34 a16 16 0 0 1 -14 -8 l7 -4 a8 8 0 0 0 7 4 Z" fill="#4285F4"/>
+    <circle cx="18" cy="18" r="6" fill="#F4F7FB"/>
+  </g>
+</svg>

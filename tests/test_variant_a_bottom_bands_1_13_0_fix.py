@@ -8,10 +8,12 @@ exit left after that takes the bottom centre. Two or more bottom exits that
 cannot move (an overloaded source: the right face is full) keep distinct
 bands, because two stubs on one point is the worse defect.
 
-SEP regression bound: the SEP 02 fixture keeps two own-caption cuts, both on
-``lambda-core``, whose five exits overload it (three on the right face, so
-``e8`` / ``e9`` must leave the bottom; R1 keeps them on distinct thirds, masked
-by the caption background).
+SEP regression bound: the SEP 02 fixture keeps its own-caption cuts on
+``lambda-core`` only, whose exits overload it (three on the right face, so the
+rest must leave the bottom; R1 keeps them on distinct thirds, masked by the
+caption background). The FEAT-004 fixture had five exits (cuts ``e8`` /
+``e9``); the builder synced from SEPARCH in FEAT-005 adds the Atlas edge
+``e11``, so six exits and three bottom cuts (``e7`` / ``e9`` / ``e11``).
 """
 from __future__ import annotations
 
@@ -115,9 +117,9 @@ def test_sep_02_own_caption_cuts_are_the_overloaded_residual():
     g = geo.build_geometry(parse_drawio(_build_sep("build_02_sep_summary.py"),
                                         path="02.drawio")[0])
     cuts = sorted(eid for eid, _ in geo.check_edge_crosses_own_label(g))
-    assert cuts == ["e8", "e9"]
+    assert cuts == ["e11", "e7", "e9"]
     right = [e for e in g.edges if e.source == "lambda-core" and e.exit[0] >= 1.0]
     assert len(right) == 3                          # the right face is full
     by_id = {e.id: e for e in g.edges}
     assert {by_id[c].source for c in cuts} == {"lambda-core"}
-    assert by_id["e8"].exit != by_id["e9"].exit     # distinct thirds
+    assert len({by_id[c].exit for c in cuts}) == len(cuts)   # distinct thirds

@@ -1485,6 +1485,9 @@ def text_cell(cid: str, lines: Sequence[str], x: int, y: int, w: int = 320, h: i
     )
 
 
+#: The full standard Legend. 1.13.0: no longer in ``__all__`` (a builder should
+#: call :func:`legend_lines_for` so only drawn boundaries are named); the name
+#: stays importable for existing builders.
 STANDARD_LEGEND_LINES = (
     "Legend",
     "Solid line = primary flow",
@@ -1581,6 +1584,37 @@ def legend_lines_for(boundaries: Sequence[Boundary]) -> Tuple[str, ...]:
     if "vpc" not in kinds:
         drop.add(_INNER_BOUNDARY_LINE)
     return tuple(line for line in STANDARD_LEGEND_LINES if line not in drop)
+
+
+
+def _drop_undrawn_boundary_lines(
+    lines: Sequence[str], boundaries: Sequence[Boundary],
+) -> Tuple[str, ...]:
+    """Drop an explicit Legend's boundary lines that describe no drawn box (1.13.0).
+
+    ``build_diagram`` used to pass a caller's ``legend_lines`` through verbatim,
+    so a builder that started from :data:`STANDARD_LEGEND_LINES` on an
+    account-only canvas (SEP 01 / 04) still listed ``Inner boundary = ...`` and
+    tripped ``legend-boundary-coverage``. When the boundaries declare a
+    ``kind`` (the builder states what it draws), the two standard boundary
+    lines are filtered by the same structural test the lint rule uses
+    (:func:`rule_engine.geometry._container_nesting`): ``Outer boundary``
+    needs at least one boundary, ``Inner boundary`` a boundary strictly inside
+    another. Every other line, and a legend whose boundaries declare no kind,
+    is returned unchanged, so the filter only removes lines lint would flag.
+    """
+    lines = tuple(lines)
+    if not boundaries or {b.kind for b in boundaries} == {""}:
+        return lines
+    has_inner = any(
+        o.x <= i.x and i.x + i.w <= o.x + o.w
+        and o.y <= i.y and i.y + i.h <= o.y + o.h
+        and o.w * o.h > i.w * i.h
+        for i in boundaries for o in boundaries if i is not o
+    )
+    if has_inner:
+        return lines
+    return tuple(line for line in lines if line != _INNER_BOUNDARY_LINE)
 
 
 def _node_membership(
@@ -2339,7 +2373,8 @@ def _assemble_document(
     # overlay marker must document it — ``overlay-legend-coverage``).
     # Without an explicit list the Legend names only the boundaries drawn
     # (:func:`legend_lines_for`, 1.10.7).
-    legend_body = legend_lines_for(boundaries) if legend_lines is None else tuple(legend_lines)
+    legend_body = (legend_lines_for(boundaries) if legend_lines is None
+                   else _drop_undrawn_boundary_lines(legend_lines, boundaries))
     if flow_steps == "document":
         # 1.13.0: document mode never drops the Flow silently. The Flow slot
         # holds an index pointing at the companion ``## Flow`` section
@@ -2473,7 +2508,7 @@ __all__ = [
     "Node", "Edge", "Boundary", "IconRenderer",
     "builtin_icon", "embed_oci_stencil", "OciStencilIcon", "OciStencilError",
     "title_cell", "boundary_cell", "edge_cell", "text_cell",
-    "STANDARD_LEGEND_LINES", "legend_lines_for", "build_diagram", "caption_safe_plan",
+    "legend_lines_for", "build_diagram", "caption_safe_plan",
     "fit_boundary_captions",
     "OVERLAY_LEGEND_LINES", "overlay_legend_lines", "overlay_ring_cell",
     "document_flow_index", "flow_companion_section", "DOCUMENT_MARKER_LEGEND_LINE",

@@ -27,12 +27,20 @@ from rule_engine.diagram_layout import (
     Boundary,
     Edge,
     Node,
-    legend_lines_for,
+    STANDARD_LEGEND_LINES,
+    Skin,
     build_diagram,
 )
 from rule_engine.icon_resolver import resolve_icon, resolve_container
 
 OUT = Path("04-flow-lms-launch.drawio")
+
+# 1.11.0 native skin (FEAT-001): light Flow/Legend furniture (#B3B3B3), grey
+# edges (#5A6B7B), circle marker badges (#1A1A1A disc + white numeral). Applied
+# through the shared build_diagram() skin channel, so the presentation channels
+# land on the engine-emitted edge/marker/furniture style strings while the
+# hand-pinned node/edge GEOMETRY (coordinates) stays byte-stable.
+NATIVE_SKIN = Skin(furniture_stroke="light", edge_stroke="#5A6B7B", marker_badge="circle")
 
 # --------------------------------------------------------------------------- #
 # Renderers
@@ -186,12 +194,11 @@ flow_lines = [
     "7. lti-adapter returns the grade / score to the LMS (async callback)",
 ]
 
-# Legend: only the boundaries actually drawn (legend_lines_for, WS11/C10 — this
-# flow draws the SEP account box but NO VPC, so no "Inner boundary" line). No
+# Legend: standard lines (asset-generated boundary lines) are enough here; no
 # optional overlay vocabulary is used on this draft.
-legend_lines = list(legend_lines_for([account]))
+legend_lines = list(STANDARD_LEGEND_LINES)
 
-title = "aws SEP LMS launch — 870325637521 / eu-central-1 | 2026-10-17 | v5"
+title = "aws SEP LMS launch — 870325637521 / eu-central-1 | 2026-10-23 | v7"
 
 # Right-margin Flow/Legend: clear the external column + its wide captions.
 legend_x = EXT_X + ICON_SIZE + 200   # 1178
@@ -212,6 +219,7 @@ drawio = build_diagram(
     legend_lines=legend_lines,
     page_w=legend_x + legend_w + 60,
     page_h=760,
+    skin=NATIVE_SKIN,
 )
 
 OUT.write_text(drawio, encoding="utf-8")

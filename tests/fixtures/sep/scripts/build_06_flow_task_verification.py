@@ -14,17 +14,22 @@ Grouping to stay <= 12 and readable:
     (workspace-local 'batch' role; RE gap: no bundled batch role).
   - 'lti-adapter' (SEP API core Lambda) is BOTH the submit handler and the
     callback target: one node, so the callback is drawn as an edge BACK to it.
-  - external SRE/KTM targets folded into ONE neutral box 'SRE / student cluster'
-    (Syndicate Rule Engine EC2 in EPM-CMTR + the EKS clusters in other accounts).
-  - MongoDB Atlas is EXTERNAL (non-AWS, over peering): neutral generic cylinder,
+  - external KTM target = the ED-KRSB student EKS cluster 'development-dev'
+    (account 183631338639), reached by the se-ktm-job-definition Batch job via
+    the cluster's public API endpoint. One neutral box OUTSIDE the account.
+  - MongoDB Atlas is EXTERNAL (non-AWS, over peering): MongoDB brand leaf,
     OUTSIDE the account boundary.
 
-SEP cloud nodes (socket-handler, lti-adapter, batch, ECR, S3, Bedrock) sit INSIDE
-the account boundary 'SEP — 870325637521 / eu-central-1'. The student, the
-SRE/student-cluster external targets, and MongoDB Atlas are OUTSIDE it, drawn as
-neutral grayscale boxes (no faked AWS icon). The EKS clusters / SRE EC2 live in
-OTHER AWS accounts (EPM-CMTR 088595288622, ED-KRSB 183631338639) and over VPC
-peering, so they are external to this account.
+Task-4 (owner 2026-10-23): the Syndicate Rule Engine (SRE) verifier is a SEP
+in-account Batch job (ECR image syndicate/sep/task-manager/sre:latest), NOT an
+external 'Syndicate Rule Engine EC2 in EPM-CMTR' box — the Rule Engine control
+plane is the SEP-internal Syndicate Server. The deprecated EPM-CMTR dev/cicd
+framing is removed: the ONLY external verification target is the ED-KRSB student
+EKS cluster (KTM). SEP cloud nodes (socket-handler, lti-adapter, batch, ECR, S3,
+Bedrock) sit INSIDE the account boundary 'SEP — 870325637521 / eu-central-1'. The
+student, the ED-KRSB EKS cluster, and MongoDB Atlas are OUTSIDE it. The EKS
+cluster lives in ANOTHER AWS account (ED-KRSB 183631338639), reached over the
+public endpoint, so it is external to this account.
 """
 from __future__ import annotations
 
@@ -41,6 +46,7 @@ from rule_engine.diagram_layout import (
     CONTAINER_PAD,
     ROW_STEP,
     Node,
+    Skin,
     build_diagram,
     image_icon,
     legend_lines_for,
@@ -51,7 +57,10 @@ from rule_engine.layout.model import ContainerSpec, EdgeSpec, NodeSpec
 
 ROOT = Path(__file__).resolve().parent.parent
 BASENAME = "06-flow-task-verification"
-TITLE = "aws SEP task verification — 870325637521 / eu-central-1 | 2026-10-17 | v4"
+TITLE = "aws SEP task verification — 870325637521 / eu-central-1 | 2026-10-23 | v11"
+
+# 1.11.0 native skin (see FEAT-001): light furniture, grey edges, circle badges.
+NATIVE_SKIN = Skin(furniture_stroke="light", edge_stroke="#5A6B7B", marker_badge="circle")
 
 _PAGE_MARGIN = 2 * CONTAINER_PAD
 
@@ -156,20 +165,22 @@ NODES = (
     # накладання" fully resolved).
     _n("s3", "object_store", "data", 0, "S3 tasks / outputs", sub=3),
 
-    # --- EXTERNAL targets (on-premises lane, OUTSIDE the account) ----------
-    # The external verification targets are ONE neutral box: the Syndicate Rule
-    # Engine EC2 host (SRE jobs) in EPM-CMTR and the student EKS clusters (KTM
-    # jobs) in ED-KRSB, both reached over VPC peering. The full descriptive
-    # caption is deliberate -- it both names the real targets and, as the
+    # --- EXTERNAL target (on-premises lane, OUTSIDE the account) -----------
+    # Task-4: the ONLY external verification target is the ED-KRSB student EKS
+    # cluster 'development-dev' (account 183631338639), reached by the
+    # se-ktm-job-definition Batch job via the cluster's public API endpoint. The
+    # deprecated external 'Syndicate Rule Engine EC2 in EPM-CMTR' box is removed
+    # (the Rule Engine control plane is the SEP-internal Syndicate Server, and
+    # the EPM-CMTR dev/cicd account is dropped from every diagram). The full
+    # descriptive caption is deliberate -- it names the real target and, as the
     # right-most rendered element, sets the natural canvas width near the
     # exporter's no-scale threshold so the flow raster exports at scale ~1.0 and
     # lands under the 1600px budget (a node caption is OVER-measured by the
     # exporter at 7.0px/char, so the draw.io CLI renders it narrower -- the same
     # mechanism that keeps 02-sep-summary at 1575px). node-label-length flags it
-    # as a WARNING (non-blocking); the detail belongs here rather than in a
-    # callout because it is the honest identity of the external targets.
+    # as a WARNING (non-blocking).
     _n("ext", "server", "on-premises", 0,
-       "Syndicate Rule Engine EC2 and student EKS clusters", kind="server"),
+       "ED-KRSB student EKS cluster (development-dev)", kind="server"),
     # atlas dropped to sub-row 4 (was 2) — owner feedback 2026-10-17 (h):
     # "8 наїхала на S3 tasks". The e8 (lti -> atlas) horizontal corridor tracks
     # atlas's approach row; at sub=2 it sat at y=360, slicing the S3 icon
@@ -205,16 +216,36 @@ EDGES = (
     EdgeSpec(id="e4", source="batch", target="ecr", marker="4"),
     EdgeSpec(id="e5", source="batch", target="s3", marker="5"),
     EdgeSpec(id="e6", source="batch", target="ext", marker="6"),
-    # 1.10.12 WS5: e7, e10 and e11 are drawn again (1.10.11 folded them into
-    # the Flow legend, leaving steps 7/10/11 undrawn and Bedrock orphaned); the
-    # engine lays the two dashed replies (e7, e11) on the return bus.
-    EdgeSpec(id="e7", source="batch", target="lti", marker="7", dashed=True,
-             kind_hint="cross-region"),
+    # e7 (batch -> lti, "7. Signed callback to lti") FOLDED into the Flow legend
+    # (Theme 36 edge-folding, 1.10.11). This dashed leftward callback back-edge
+    # raked across the whole flow and was the single most crossing-toxic edge
+    # (6 of the 23 baseline crossings). Its step is still named by legend line 7,
+    # so coverage is preserved; neither batch (e3/e4/e5/e6) nor lti
+    # (e2/e3/e8/e9/e10) is orphaned by dropping it. Folding e7 + e11 cuts
+    # edge-crossing-excess 23/12 -> 6/10 with no new findings (and removes the
+    # e11 edge-escapes-container WARNING), staying lint [OK].
+    # EdgeSpec(id="e7", source="batch", target="lti", marker="7", dashed=True,
+    #          kind_hint="cross-region"),
     EdgeSpec(id="e8", source="lti", target="atlas", marker="8"),
     EdgeSpec(id="e9", source="lti", target="s3", marker="9"),
+    # e10 (lti -> bedrock, "10. lti asks Bedrock summary") RESTORED in wave-2
+    # (owner review 2026-10-23: "хтось явно повинен звертатись до Angry EdA" —
+    # Bedrock must be drawn-connected, not a floating glyph). It is a SOLID
+    # primary data-flow: lti-adapter calls Bedrock for the Angry EdA summary.
+    # The edge-fold had left Bedrock with no incident edge (node-connectivity
+    # WARNING + a visually orphaned icon). To keep the lti fan readable without
+    # re-introducing the old 6/9/10 corridor-sharing, bedrock drops to its own
+    # lower sub-row (sub=5 below) so e10's approach corridor sits clear of e8
+    # (lti->atlas) and e9 (lti->s3); verified on the exported PNG + lint.
     EdgeSpec(id="e10", source="lti", target="bedrock", marker="10"),
-    EdgeSpec(id="e11", source="lti", target="socket", marker="11", dashed=True,
-             kind_hint="cross-region"),
+    # e11 (lti -> socket, "11. lti pushes to WebSocket") FOLDED into the Flow
+    # legend (Theme 36 edge-folding). The second dashed leftward back-edge
+    # (5 baseline crossings), it looped from lti all the way back to the socket
+    # front door and also tripped edge-escapes-container. Marker 11 keeps its
+    # legend line; socket still carries e1/e2/e12 and lti is richly connected, so
+    # no node is orphaned.
+    # EdgeSpec(id="e11", source="lti", target="socket", marker="11", dashed=True,
+    #          kind_hint="cross-region"),
     EdgeSpec(id="e12", source="socket", target="student", marker="12", dashed=True,
              kind_hint="cross-region"),
 )
@@ -231,7 +262,7 @@ FLOW = (
     "3. lti submits Batch job",
     "4. Batch pulls ECR image",
     "5. Batch reads S3 task",
-    "6. SRE->Rule Engine; KTM->EKS",
+    "6. KTM job -> ED-KRSB EKS",
     "7. Signed callback to lti",
     "8. lti records grade (Atlas)",
     "9. lti writes logs to S3",
@@ -255,8 +286,8 @@ LEGEND_LINES = (
     "Outer box = Account",
     "Markers 1..N = steps",
     "Grey = external acct",
-    "SRE: EPM-CMTR 088595288622",
     "EKS: ED-KRSB 183631338639",
+    "SRE verify = in-account Batch",
     "Callback 7 = signed HTTP",
 )
 
@@ -325,6 +356,23 @@ def _renderer_for(nid: str):
 
 def _build() -> str:
     spec = _spec()
+
+    # Clarify gate (WS5): read-only, byte-inert for the .drawio. 06 is expected
+    # to surface ~8 assumptions (FEAT-004 writes them into the companion).
+    from rule_engine.layout.clarify import scan_uncertainties, format_assumptions_markdown
+    def _rr(role):
+        try:
+            from rule_engine.icon_resolver import resolve_icon
+            resolve_icon(role, "aws")
+            return True
+        except Exception:
+            return False
+    ASSUMPTIONS = scan_uncertainties(spec, role_resolves=_rr)
+    if ASSUMPTIONS:
+        (ROOT / f"{BASENAME}.assumptions.txt").write_text(
+            format_assumptions_markdown(ASSUMPTIONS), encoding="utf-8")
+    print(f"[clarify] {len(ASSUMPTIONS)} assumption(s)")
+
     placed = layout(spec, strict=False)
     for w in placed.layout_warnings:
         print(f"[layout WARNING] {w}")
@@ -449,7 +497,6 @@ def _build() -> str:
     from rule_engine.diagram_layout import theme43_legend_placement
     legend_x, legend_y_flow, legend_mode, page_w, page_h = theme43_legend_placement(
         nodes, boundaries, FLOW, LEGEND_LINES, legend_w,
-        edges=edges,  # 1.10.12 WS6: Mode B clears the lowest route too
     )
 
     return build_diagram(
@@ -467,6 +514,19 @@ def _build() -> str:
         legend_mode=legend_mode,
         page_w=page_w,
         page_h=page_h,
+        skin=NATIVE_SKIN,
+        # WS2 flow_groups (1.11.0): decorative context box behind the members;
+        # the engine now classifies flowgroup-* as furniture (not a node), so
+        # intra-group edges no longer trip edge-routing. Node coords unchanged.
+        flow_groups=(("On-Premises", ("ext", "atlas")),),
+        # FEAT-002 ITEM B/C: the Flow legend is back ON canvas (the owner asked
+        # for it — "Flow можна повернути на діаграму, адже місця багато але варто
+        # реалізувати багато стовпчиків"). The 12-step list is reflowed into
+        # TWO side-by-side columns via the FEAT-001 flow_columns capability, so
+        # it fits the wide-and-short Theme-43 row-below slot without pushing the
+        # flow raster past the 1600px budget. flow_steps defaults to "box"
+        # (on-canvas); the companion keeps the full prose.
+        flow_columns=2,
     )
 
 

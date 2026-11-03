@@ -80,6 +80,11 @@ b08.FLOW = (
     "11. PUBLIC EKS endpoint to control-plane shared (088595288622) via NAT — not peering",
     "12. PUBLIC EKS endpoint to student development-dev (183631338639) via NAT — not peering",
 )
+# FEAT-005 (1.13.0): the synced production 08 materialises every peering into a
+# vpc_peering node (``peering_as_node=True``, G23). This variant pins the WS10
+# idiom instead — ONE direct boundary-to-boundary edge — so it turns that off.
+_spec_with_nodes = b08._spec
+b08._spec = lambda: dataclasses.replace(_spec_with_nodes(), peering_as_node=False)
 b08.LEGEND_EXTRA = b08.LEGEND_EXTRA + (
     "supporting = peer target reached over VPC peering (drawn as a boundary-to-"
     "boundary edge, not a per-host edge)",

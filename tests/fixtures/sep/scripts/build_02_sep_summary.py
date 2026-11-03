@@ -18,41 +18,64 @@ from __future__ import annotations
 import dataclasses
 from pathlib import Path
 
-from rule_engine.diagram_layout import Edge, ICON_SIZE, Node, CONTAINER_PAD, build_diagram, image_icon
+from rule_engine.diagram_layout import Edge, ICON_SIZE, Node, CONTAINER_PAD, Skin, build_diagram, image_icon
 from rule_engine.icon_resolver import resolve_icon
 from rule_engine.layout import layout
 from rule_engine.layout.model import ContainerSpec, DiagramSpec, EdgeSpec, NodeSpec
 
 HERE = Path(__file__).resolve().parent
 BASENAME = "02-sep-summary"
-TITLE = "aws SEP summary — 870325637521 / eu-central-1 | 2026-10-15 | v3"
+TITLE = "aws SEP summary — 870325637521 / eu-central-1 | 2026-10-28 | v7"
+
+# 1.11.0 native skin: light furniture border (#B3B3B3), grey edges (#5A6B7B),
+# circle marker badges (#1A1A1A disc + white numeral). Opt-in and byte-inert
+# at its defaults; enabled here on all nine triples.
+NATIVE_SKIN = Skin(furniture_stroke="light", edge_stroke="#5A6B7B", marker_badge="circle")
 
 # --- node declarations (coordinate-free) ---------------------------------- #
 # lane order: actors -> edge -> router -> async -> workers -> platform -> data -> on-premises
 NODES = (
     NodeSpec(id="client", role="client", lane="actors", region="", slot=0),
-    NodeSpec(id="rest-apis", role="api_gateway", lane="edge", region="", slot=0),
-    NodeSpec(id="socket-api", role="api_gateway", lane="edge", region="", slot=1),
+    # WAF is GLOBAL/edge (syndicate_education_cloudfront_waf, wafv2 global,
+    # attached to CloudFront). It sits in the EDGE lane in front of the REST
+    # front door, OUTSIDE any VPC/region boundary (02 draws only the account
+    # boundary, so the edge lane is not inside a network boundary).
+    NodeSpec(id="waf", role="waf", lane="edge", region="", slot=0),
+    NodeSpec(id="rest-apis", role="api_gateway", lane="edge", region="", slot=1),
+    NodeSpec(id="socket-api", role="api_gateway", lane="edge", region="", slot=2),
     NodeSpec(id="lambda-core", role="serverless_fn", lane="workers", region="", slot=0),
     NodeSpec(id="sqs", role="message_queue", lane="async", region="", slot=0),
     NodeSpec(id="batch", role="batch", lane="workers", region="", slot=1),
     NodeSpec(id="bedrock", role="llm_platform", lane="platform", region="", slot=0),
     NodeSpec(id="s3", role="object_store", lane="data", region="", slot=0),
+    # RDS sep-strapi-pg (Postgres, Multi-AZ) — the AWS managed-SQL datastore.
+    # Drawn alongside Atlas so the Atlas-vs-RDS datastore split is visible.
+    NodeSpec(id="rds", role="managed_sql", lane="data", region="", slot=1),
     # Atlas is EXTERNAL (non-AWS, over VPC peering): on-premises lane => drawn
     # OUTSIDE the account boundary, neutral generic cylinder.
-    NodeSpec(id="atlas", role="managed_sql", lane="on-premises", region="", slot=0),
+    # wave-10 B4 (owner: "9 вийде лівіше і піде нижче"): Atlas is nudged down
+    # half a row (sub=1) so the Lambda->Atlas edge (e9) runs in a LOWER band than
+    # the Lambda->S3 edge (e8); the two fan-out edges then nest instead of
+    # crossing (S3 up/inner, Atlas lower/outer). A placement nudge (not an edge
+    # reorder — reordering the two fan-out edges made the scored solver search
+    # pathologically slow on this spec), so the build stays fast.
+    NodeSpec(id="atlas", role="managed_sql", lane="on-premises", region="", slot=0, sub=2),
 )
 
 EDGES = (
     EdgeSpec(id="e1", source="client", target="rest-apis", marker="1"),
     EdgeSpec(id="e2", source="client", target="socket-api", marker="2", dashed=True),
-    EdgeSpec(id="e3", source="rest-apis", target="lambda-core", marker="3"),
-    EdgeSpec(id="e4", source="socket-api", target="lambda-core", marker="4"),
-    EdgeSpec(id="e5", source="lambda-core", target="sqs", marker="5", dashed=True),
-    EdgeSpec(id="e6", source="lambda-core", target="batch", marker="6"),
-    EdgeSpec(id="e7", source="lambda-core", target="bedrock", marker="7"),
-    EdgeSpec(id="e8", source="lambda-core", target="s3", marker="8"),
-    EdgeSpec(id="e9", source="lambda-core", target="atlas", marker="9"),
+    # WAF (CloudFront WAF) inspects/protects the REST front door.
+    EdgeSpec(id="e3", source="waf", target="rest-apis", marker="3"),
+    EdgeSpec(id="e4", source="rest-apis", target="lambda-core", marker="4"),
+    EdgeSpec(id="e5", source="socket-api", target="lambda-core", marker="5"),
+    EdgeSpec(id="e6", source="lambda-core", target="sqs", marker="6", dashed=True),
+    EdgeSpec(id="e7", source="lambda-core", target="batch", marker="7"),
+    EdgeSpec(id="e8", source="lambda-core", target="bedrock", marker="8"),
+    EdgeSpec(id="e9", source="lambda-core", target="s3", marker="9"),
+    # RDS sep-strapi-pg write path (Postgres managed SQL datastore).
+    EdgeSpec(id="e10", source="lambda-core", target="rds", marker="10"),
+    EdgeSpec(id="e11", source="lambda-core", target="atlas", marker="11"),
 )
 
 CONTAINERS = (
@@ -62,6 +85,7 @@ CONTAINERS = (
 # Short display labels (<=4 words / <=40 chars for service nodes).
 LABELS = {
     "client": "Client",
+    "waf": "WAF (CloudFront)",
     "rest-apis": "REST APIs",
     "socket-api": "WebSocket API",
     "lambda-core": "Lambda core (13 fns)",
@@ -69,6 +93,7 @@ LABELS = {
     "batch": "AWS Batch (5 CE)",
     "bedrock": "Bedrock (Angry EdA)",
     "s3": "S3 (25 buckets)",
+    "rds": "RDS sep-strapi-pg",
     "atlas": "Atlas (3 DBs)",
 }
 
@@ -76,13 +101,15 @@ FLOW_LINES = (
     "Flow",
     "1. Client to REST APIs",
     "2. Client to WebSocket",
-    "3. REST to Lambda",
-    "4. WebSocket to Lambda",
-    "5. Lambda to SQS (async)",
-    "6. Lambda submits Batch",
-    "7. Lambda to Bedrock",
-    "8. Lambda to S3",
-    "9. Lambda to Atlas",
+    "3. WAF protects REST edge",
+    "4. REST to Lambda",
+    "5. WebSocket to Lambda",
+    "6. Lambda to SQS (async)",
+    "7. Lambda submits Batch",
+    "8. Lambda to Bedrock",
+    "9. Lambda to S3",
+    "10. Lambda to RDS sep-strapi-pg",
+    "11. Lambda to Atlas",
 )
 
 
@@ -127,6 +154,22 @@ def build() -> str:
         compact=True,
         node_labels=tuple(LABELS.items()),
     )
+    # Clarify gate (WS5): read-only scan of the spec's silent defaults. Byte-inert
+    # for the .drawio — it only surfaces assumptions for the companion.
+    from rule_engine.layout.clarify import scan_uncertainties, format_assumptions_markdown
+    def _rr(role):
+        try:
+            from rule_engine.icon_resolver import resolve_icon
+            resolve_icon(role, "aws")
+            return True
+        except Exception:
+            return False
+    ASSUMPTIONS = scan_uncertainties(spec, role_resolves=_rr)
+    if ASSUMPTIONS:
+        (HERE.parent / f"{BASENAME}.assumptions.txt").write_text(
+            format_assumptions_markdown(ASSUMPTIONS), encoding="utf-8")
+    print(f"[clarify] {len(ASSUMPTIONS)} assumption(s)")
+
     placed = layout(spec)
     for w in placed.layout_warnings:
         print("layout WARNING:", w)
@@ -198,7 +241,6 @@ def build() -> str:
     legend_w = placed.legend_w
     legend_x, legend_y_flow, legend_mode, page_w, page_h = theme43_legend_placement(
         nodes, boundaries, spec.flow_lines, _legend_lines, legend_w,
-        edges=edges,  # 1.10.12 WS6: Mode B clears the lowest route too
     )
 
     return build_diagram(
@@ -215,6 +257,11 @@ def build() -> str:
         legend_mode=legend_mode,
         page_w=page_w,
         page_h=page_h,
+        skin=NATIVE_SKIN,
+        # WS2 flow_groups (1.11.0): decorative context boxes behind the members;
+        # the engine now classifies flowgroup-* as furniture (not a node), so
+        # intra-group edges no longer trip edge-routing. Node coords unchanged.
+        flow_groups=(("Edge", ("rest-apis", "socket-api")), ("Workers", ("lambda-core", "batch"))),
     )
 
 

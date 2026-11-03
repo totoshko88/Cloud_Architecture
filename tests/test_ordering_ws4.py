@@ -366,7 +366,7 @@ def test_dense_landscape_layout_returns_fast():
     from pathlib import Path
 
     fixture = (Path(__file__).resolve().parents[1]
-               / "tests/fixtures/sep/scripts/build_09_crosscloud_landscape.py")
+               / "tests/fixtures/sep/scripts/build_09_coordfree.py")
     assert fixture.exists(), fixture
     mod_spec = importlib.util.spec_from_file_location("sep_build_09", fixture)
     mod = importlib.util.module_from_spec(mod_spec)

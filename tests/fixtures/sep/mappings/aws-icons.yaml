@@ -181,31 +181,6 @@ resources:
     brand_hex: "#E7157B"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Management-Tools/48/Arch_Amazon-CloudWatch_48.svg"
 
-  license_manager:           # AWS License Manager (service, Management & Governance family — pink)
-    icon_id: aws.license_manager
-    icon_provenance: service
-    brand_hex: "#E7157B"
-    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Management-Tools/48/Arch_AWS-License-Manager_48.svg"
-
-  organizations:             # AWS Organizations (service, org-level — Management & Governance, pink). Mirrored here for the asset-path gate; resolution reads mappings/local/.
-    icon_id: aws.organizations
-    icon_provenance: service
-    brand_hex: "#E7157B"
-    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Management-Tools/48/Arch_AWS-Organizations_48.svg"
-
-  # --- Education / brand marks (regen9) — mirrored here for the asset-path gate ---
-  education:                 # LMS mortarboard / graduation cap (generic learning glyph, custom asset)
-    icon_id: edu.mortarboard
-    icon_provenance: neutral
-    brand_hex: "#2D7FF9"
-    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/education/mortarboard.svg"
-
-  dial:                      # EPAM DIAL AI proxy brand mark (owner-supplied asset)
-    icon_id: dial.brand
-    icon_provenance: neutral
-    brand_hex: "#D4157C"
-    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/dial-brand/dial.svg"
-
   # --- AI/ML ---
   bedrock_agentcore:         # Amazon Bedrock AgentCore (service)
     icon_id: aws.bedrock_agentcore
@@ -300,6 +275,50 @@ resources:
     brand_hex: "#232F3E"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_General-Icons/Res_48_Light/Res_Server_48_Light.svg"
 
+  # --- External role classes (1.11.0 ITEM B, SEP audit E-02 / E-03 / F7) ---
+  # Neutral EXTERNAL glyphs. actor/users are AWS General *user* glyphs — NEVER
+  # the IAM Role shield (E-02). saas/on_prem_app are the NEUTRAL General
+  # Client/Server glyphs used for any SaaS/on-prem system that has no curated
+  # brand mark (R2-3: GitLab/Jenkins/Jira/Confluence/Slack use THESE, never a
+  # claimed brand mark and never a random AWS service icon; brand marks exist
+  # ONLY for the curated mongodb/redis/postgresql/keycloak roles). All carry
+  # brand_hex #232F3E Squid-Ink (neutral, white-background General glyphs — no
+  # service family).
+  actor:                     # External human actor (General User glyph)
+    icon_id: aws.res.user
+    icon_provenance: resource
+    brand_hex: "#232F3E"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_General-Icons/Res_48_Light/Res_User_48_Light.svg"
+
+  users:                     # Group of external users (General Users glyph, plural)
+    icon_id: aws.res.users
+    icon_provenance: resource
+    brand_hex: "#232F3E"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_General-Icons/Res_48_Light/Res_Users_48_Light.svg"
+
+  saas:                      # Third-party / SaaS system, NO brand mark (General Client glyph)
+    icon_id: aws.res.client
+    icon_provenance: resource
+    brand_hex: "#232F3E"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_General-Icons/Res_48_Light/Res_Client_48_Light.svg"
+
+  on_prem_app:               # Traditional on-prem application, NO brand mark (General Server glyph)
+    icon_id: aws.res.server
+    icon_provenance: resource
+    brand_hex: "#232F3E"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_General-Icons/Res_48_Light/Res_Server_48_Light.svg"
+
+  # Egress-only IGW — IPv6 outbound-only VPC edge (F7). AWS ships NO dedicated
+  # egress-only IGW icon; this uses the IGW-family glyph (closest official) and
+  # the egress-only identity is carried in the node caption, never a look-alike
+  # of a different service. Unused this wave (AZ/subnet CORE deferred, G40);
+  # added for completeness and default-inertness. Networking family purple.
+  egress_only_igw:
+    icon_id: aws.res.egress_only_igw
+    icon_provenance: resource
+    brand_hex: "#8C4FFF"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_Networking-Content-Delivery/Res_Amazon-VPC_Internet-Gateway_48.svg"
+
   # --- Compute / registry services (Theme 5) ---
   batch:                     # AWS Batch (service, Compute family — orange)
     icon_id: aws.batch
@@ -343,6 +362,55 @@ resources:
     icon_provenance: resource
     brand_hex: "#8C4FFF"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_Networking-Content-Delivery/Res_Amazon-VPC_Peering-Connection_48.svg"
+
+  # --- 1.11.0 WS6: network diagram-type roles (extended roles only; not in
+  # constants.RESOURCE_TYPES). All AWS networking purple #8C4FFF; Network
+  # Firewall is a Security-Identity service (brand #DD344C). ------------------
+  transit_gateway:           # AWS Transit Gateway (architecture icon)
+    icon_id: aws.arch.transit_gateway
+    icon_provenance: architecture
+    brand_hex: "#8C4FFF"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Networking-Content-Delivery/48/Arch_AWS-Transit-Gateway_48.svg"
+  vpn_gateway:               # VPC VPN Gateway (resource icon)
+    icon_id: aws.res.vpn_gateway
+    icon_provenance: resource
+    brand_hex: "#8C4FFF"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_Networking-Content-Delivery/Res_Amazon-VPC_VPN-Gateway_48.svg"
+  direct_connect:            # AWS Direct Connect (architecture icon)
+    icon_id: aws.arch.direct_connect
+    icon_provenance: architecture
+    brand_hex: "#8C4FFF"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Networking-Content-Delivery/48/Arch_AWS-Direct-Connect_48.svg"
+  route_table:               # VPC Route Table (resource icon)
+    icon_id: aws.res.route_table
+    icon_provenance: resource
+    brand_hex: "#8C4FFF"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_Networking-Content-Delivery/Res_Amazon-Route-53_Route-Table_48.svg"
+  network_firewall:          # AWS Network Firewall (architecture icon)
+    icon_id: aws.arch.network_firewall
+    icon_provenance: architecture
+    brand_hex: "#DD344C"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Security-Identity/48/Arch_AWS-Network-Firewall_48.svg"
+
+  # --- 1.11.0 WS7 access diagram type: principal / policy / resource ---
+  # IAM is the AWS access model: a principal is an IAM Role, a policy is an IAM
+  # Permissions document, and a resource is a neutral generic-application glyph
+  # (the thing a policy grants access to — role-agnostic). Extended roles only.
+  principal:                 # IAM Role (resource icon) — the access subject
+    icon_id: aws.res.iam_role
+    icon_provenance: resource
+    brand_hex: "#DD344C"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_Security-Identity/Res_AWS-Identity-Access-Management_Role_48.svg"
+  policy:                    # IAM Permissions (resource icon) — the grant
+    icon_id: aws.res.iam_permissions
+    icon_provenance: resource
+    brand_hex: "#DD344C"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_Security-Identity/Res_AWS-Identity-Access-Management_Permissions_48.svg"
+  resource:                  # generic application (resource icon) — the object
+    icon_id: aws.res.generic_application
+    icon_provenance: resource
+    brand_hex: "#232F3E"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_General-Icons/Res_48_Light/Res_Generic-Application_48_Light.svg"
 
   # --- External / third-party systems (Theme 1) ---
   # Vendor-neutral node for an EXTERNAL (non-AWS) system — neutral dashed box,
@@ -421,6 +489,98 @@ resources:
     brand_hex: "#E7157B"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_Management-Governance/Res_AWS-Organizations_Management-Account_48.svg"
 
+  # AWS Organizations — the ORGANIZATION-level service glyph (1.10.12, SEP
+  # feedback §1): an org / management scope drawn as one node (e.g. a
+  # "Sandbox-mgmt + Logging org"). Distinct from peer_account (the single
+  # Res_AWS-Organizations_Account glyph) and external_cloud (the
+  # management-account resource glyph) — one role per distinct service.
+  # Management & Governance family pink.
+  organizations:
+    icon_id: aws.organizations
+    icon_provenance: service
+    brand_hex: "#E7157B"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Management-Tools/48/Arch_AWS-Organizations_48.svg"
+
+  # Education / learning system (1.10.12, SEP feedback §2.1) — an LMS or
+  # course platform. Provider-neutral graduation-mortarboard glyph, authored in
+  # this repository under CC0 1.0 and bundled with the engine
+  # (rule_engine/engine_assets/education/mortarboard.svg); the canonical
+  # assets/vendor/education/ path resolves to the bundled copy when the
+  # workspace has none. Grayscale, so it is valid on every profile. An external
+  # system: drawn outside the cloud boundaries, unclassified in ROLE_SCOPE.
+  education:
+    icon_id: education.mortarboard
+    icon_provenance: neutral
+    brand_hex: "#333333"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/education/mortarboard.svg"
+
+  # --- WS9 icon-coverage fill-in (common-service roles, service icons) ---
+  # Management & Governance family pink (#E7157B), Containers orange (#ED7100),
+  # Security-Identity red (#DD344C), Analytics purple (#8C4FFF), AI teal
+  # (#01A88D). Each brand_hex matches the category background of its own
+  # Arch_*_48.svg. SageMaker's base service glyph ships as
+  # Arch_Amazon-SageMaker-AI_48.svg (AWS renamed the service to "SageMaker AI");
+  # that is the real asset, not a look-alike.
+  cloudtrail:                # AWS CloudTrail (service, Management & Governance)
+    icon_id: aws.cloudtrail
+    icon_provenance: service
+    brand_hex: "#E7157B"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Management-Tools/48/Arch_AWS-CloudTrail_48.svg"
+
+  config:                    # AWS Config (service, Management & Governance)
+    icon_id: aws.config
+    icon_provenance: service
+    brand_hex: "#E7157B"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Management-Tools/48/Arch_AWS-Config_48.svg"
+
+  ecs:                       # Amazon Elastic Container Service (service, Containers)
+    icon_id: aws.ecs
+    icon_provenance: service
+    brand_hex: "#ED7100"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Containers/48/Arch_Amazon-Elastic-Container-Service_48.svg"
+
+  fargate:                   # AWS Fargate (service, Containers)
+    icon_id: aws.fargate
+    icon_provenance: service
+    brand_hex: "#ED7100"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Containers/48/Arch_AWS-Fargate_48.svg"
+
+  kms:                       # AWS Key Management Service (service, Security & Identity)
+    icon_id: aws.kms
+    icon_provenance: service
+    brand_hex: "#DD344C"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Security-Identity/48/Arch_AWS-Key-Management-Service_48.svg"
+
+  guardduty:                 # Amazon GuardDuty (service, Security & Identity)
+    icon_id: aws.guardduty
+    icon_provenance: service
+    brand_hex: "#DD344C"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Security-Identity/48/Arch_Amazon-GuardDuty_48.svg"
+
+  kinesis:                   # Amazon Kinesis (service, Analytics)
+    icon_id: aws.kinesis
+    icon_provenance: service
+    brand_hex: "#8C4FFF"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Analytics/48/Arch_Amazon-Kinesis_48.svg"
+
+  athena:                    # Amazon Athena (service, Analytics)
+    icon_id: aws.athena
+    icon_provenance: service
+    brand_hex: "#8C4FFF"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Analytics/48/Arch_Amazon-Athena_48.svg"
+
+  glue:                      # AWS Glue (service, Analytics)
+    icon_id: aws.glue
+    icon_provenance: service
+    brand_hex: "#8C4FFF"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Analytics/48/Arch_AWS-Glue_48.svg"
+
+  sagemaker:                 # Amazon SageMaker AI (service, AI/ML)
+    icon_id: aws.sagemaker
+    icon_provenance: service
+    brand_hex: "#01A88D"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Artificial-Intelligence/48/Arch_Amazon-SageMaker-AI_48.svg"
+
 # Container styles for boundaries (using mxgraph.aws4.group for proper draw.io
 # group behavior — these are structural elements, not service icons)
 # `brand_hex` on a container entry is the PROVIDER ANCHOR (AWS Squid Ink
@@ -448,14 +608,25 @@ containers:
   region:
     icon_id: mxgraph.aws4.group_region
     brand_hex: "#232F3E"
-    # Region — group_region (flag icon), dashed teal.
-    style: "shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_region;grStroke=1;fillColor=none;strokeColor=#00A4A6;dashed=1;verticalAlign=top;align=left;spacingLeft=30;fontColor=#0F6FA8;fontSize=12;html=1"
+    # Region — group_region (flag icon), official teal #00A4A6, DOTTED border.
+    # Wave-10 (G46): the official AWS Icon-package_07312026 / awslabs Groups
+    # all.puml draw the Region group with a DOTTED border (not dashed). The
+    # engine's dotted convention is `dashed=1;dashPattern=1 3` (same as the
+    # `supporting` overlay), which draws as short dots rather than long dashes.
+    # fontColor is the DELIBERATELY darkened #0F6FA8 (not the pack's pure
+    # #00A4A6) — a 4.5:1-contrast accessibility choice; do NOT regress it.
+    style: "shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_region;grStroke=1;fillColor=none;strokeColor=#00A4A6;dashed=1;dashPattern=1 3;verticalAlign=top;align=left;spacingLeft=30;fontColor=#0F6FA8;fontSize=12;html=1"
   availability_domain:
     icon_id: aws.availability_zone
     brand_hex: "#232F3E"
     # Availability Zone — AWS ships NO group icon for an AZ: the official entry
-    # is a plain dashed #147EBA rectangle with a centred caption.
-    style: "rounded=0;whiteSpace=wrap;html=1;dashed=1;fillColor=none;strokeColor=#147EBA;verticalAlign=top;align=center;fontStyle=0;fontColor=#0F6FA8;fontSize=12"
+    # is a plain DASHED rectangle with a centred caption. Wave-10 (G46): the
+    # official AWS Icon-package_07312026 / awslabs Groups all.puml give the AZ
+    # group the teal stroke #00A4A6 (was #147EBA, a pre-pack value); the dashed
+    # line is correct and kept. fontColor is the DELIBERATELY darkened #0F6FA8
+    # (not the pack's pure #00A4A6) — a 4.5:1-contrast accessibility choice; do
+    # NOT regress it.
+    style: "rounded=0;whiteSpace=wrap;html=1;dashed=1;fillColor=none;strokeColor=#00A4A6;verticalAlign=top;align=center;fontStyle=0;fontColor=#0F6FA8;fontSize=12"
   subnet:
     icon_id: mxgraph.aws4.group_security_group
     brand_hex: "#232F3E"
@@ -471,6 +642,12 @@ containers:
     brand_hex: "#232F3E"
     # Corporate data center — the official on-premises group.
     style: "shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_corporate_data_center;grStroke=1;whiteSpace=wrap;fillColor=none;strokeColor=#7D8998;dashed=0;verticalAlign=top;align=left;spacingLeft=30;fontColor=#5A6C86;fontSize=12;html=1"
+  # 1.11.0 WS6: Security Group — official AWS SG group (padlock), dashed border,
+  # no fill so member nodes show through. A LEAF boundary (nodes nest directly).
+  security_group:
+    icon_id: mxgraph.aws4.group_security_group
+    brand_hex: "#DD344C"
+    style: "shape=mxgraph.aws4.group;grIcon=mxgraph.aws4.group_security_group;grStroke=1;fillColor=none;strokeColor=#DD344C;dashed=1;verticalAlign=top;align=left;spacingLeft=30;fontColor=#C7314A;fontSize=12;html=1"
   # 1.13.0 (task item 14): a peer AWS account drawn as a DISJOINT SIBLING
   # boundary outside the primary account — the draw.io AWS Groups account
   # group (same group_account icon and tokens as `boundary`) in neutral grey,

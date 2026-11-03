@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96">
+  <title>Neutral license / certificate (vendor-neutral)</title>
+  <!-- Vendor-neutral license/certificate glyph: a document with a wax-seal
+       ribbon. Grayscale only (no vendor brand colour, no AWS glyph) so it reads
+       as "a license service, vendor-neutral" per Icon-Fidelity. -->
+  <g fill="none" stroke="#3C3C3C" stroke-width="3" stroke-linejoin="round" stroke-linecap="round">
+    <!-- certificate sheet -->
+    <rect x="16" y="12" width="52" height="64" rx="4" fill="#FFFFFF"/>
+    <!-- text lines on the sheet -->
+    <line x1="26" y1="26" x2="58" y2="26" stroke-width="3"/>
+    <line x1="26" y1="36" x2="58" y2="36" stroke-width="3"/>
+    <line x1="26" y1="46" x2="48" y2="46" stroke-width="3"/>
+  </g>
+  <!-- wax seal (grey) + ribbon -->
+  <circle cx="62" cy="64" r="15" fill="#E0E0E0" stroke="#3C3C3C" stroke-width="3"/>
+  <g fill="none" stroke="#3C3C3C" stroke-width="2.5" stroke-linejoin="round">
+    <!-- scalloped seal inner ring -->
+    <circle cx="62" cy="64" r="8" fill="#BDBDBD"/>
+    <!-- ribbon tails -->
+    <path d="M55 77 L52 92 L62 85 L72 92 L69 77" fill="#D0D0D0"/>
+  </g>
+  <!-- small check / tick inside the seal = validated license -->
+  <path d="M58 64 l3 3 l5 -6" fill="none" stroke="#3C3C3C" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

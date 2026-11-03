@@ -36,19 +36,28 @@ from rule_engine.diagram_layout import (
     ICON_SIZE,
     CONTAINER_PAD,
     Node,
+    Skin,
     build_diagram,
     image_icon,
     legend_lines_for,
     overlay_suffix,
 )
-from rule_engine.layout import DiagramSpec, layout
+from rule_engine.layout import (
+    DiagramSpec,
+    layout,
+    peering_id_for,
+    peering_label_for,
+)
 from rule_engine.layout.model import ContainerSpec, EdgeSpec, NodeSpec
 
 ROOT = Path(__file__).resolve().parent.parent
 BASENAME = "08-network-crossaccount"
 PROVIDER = "aws"
-TITLE = "aws SEP network — 870325637521 / eu-central-1 | 2026-10-15 | v3"
+TITLE = "aws SEP network — 870325637521 / eu-central-1 | 2026-10-28 | v11"
 SUMMARY_OF = "02-sep-summary"
+
+# 1.11.0 native skin (see FEAT-001): light furniture, grey edges, circle badges.
+NATIVE_SKIN = Skin(furniture_stroke="light", edge_stroke="#5A6B7B", marker_badge="circle")
 
 _PAGE_MARGIN = 2 * CONTAINER_PAD
 
@@ -101,8 +110,20 @@ NEUTRAL_BOUNDARY_STYLE = (
 )
 
 
+def _role_style(role: str) -> str:
+    # Prefer the workspace mapping (merged with mappings/local/); fall back to
+    # the engine's resolver (the bundled tree) for roles the stale top-level
+    # mapping lacks — e.g. `ecs`. Same pattern as 13-sep-dataflow. No mapping is
+    # modified; resolution is read-only.
+    style = AWS_STYLES.get(role)
+    if style:
+        return style
+    from rule_engine.icon_resolver import resolve_icon
+    return resolve_icon(role, PROVIDER)["style_string"]
+
+
 def _image_renderer(role: str):
-    img = AWS_STYLES[role].split("image=", 1)[1]
+    img = _role_style(role).split("image=", 1)[1]
     return image_icon(img)
 
 
@@ -166,7 +187,21 @@ NODES = (
        container="boundary-vpc-a"),
     _n("vpce-gw", "vpc_endpoint", "workers", "a", 4, "VPCe S3 + DynamoDB",
        container="boundary-vpc-a", sub=1),
-    _n("vpce-if", "vpc_endpoint", "workers", "a", 5, "VPCe ECR interface",
+    # Strapi content host, migrating EC2 -> ECS (drawn as ECS in the private
+    # app/batch subnet tier). Its DB write path is strapi -> RDS sep-strapi-pg,
+    # so the RDS is no longer a producer-less node. VPC-scoped (ecs effective
+    # scope = network), so it is scope-placement-clean inside the se VPC. Placed
+    # on the lower sub-row left of the RDS column so strapi -> RDS reads forward
+    # (exit right, enter left/top) instead of piercing the target from below.
+    # wave-13 C.1: slot/order sweeps (peer swap, strapi slot 4) each traded the
+    # e13/e8-a collinear for a worse pairing or an extra crossing on this dense
+    # cross-account layout, so strapi keeps its slot-5 sub-row position and the
+    # single residual collinear:1 (e13, e8-a) + the e8-a peer-ext caption
+    # crossing are left as a 1.13.0 engine routing limitation (recorded in
+    # DIAGRAM-ENGINE-FEEDBACK-1.13.0.md). Both are WARNINGs and do not block.
+    _n("strapi", "ecs", "workers", "a", 5, "ECS strapi",
+       container="boundary-vpc-a", sub=1),
+    _n("vpce-if", "vpc_endpoint", "workers", "a", 6, "VPCe ECR interface",
        container="boundary-vpc-a", sub=1),
 
     # --- EXTERNAL peers (1.10.11, Theme 27): every external node is a MEMBER of
@@ -229,14 +264,30 @@ EDGES = (
     EdgeSpec(id="e4", source="lambda", target="vpce-gw", marker="4", dashed=True),
     EdgeSpec(id="e5", source="rds", target="vpce-if", marker="5", dashed=True),
     EdgeSpec(id="e6", source="lambda", target="rds", marker="6"),
-    # The 4 VPC peerings (down to the peer accounts; sources above their targets)
-    EdgeSpec(id="e7", source="lambda", target="atlas", marker="7", kind_hint="cross-region"),
-    EdgeSpec(id="e8", source="lambda", target="cmtr-sre", marker="8", kind_hint="cross-region"),
-    EdgeSpec(id="e9", source="rds", target="cmtr-cmtm", marker="9", kind_hint="cross-region"),
-    EdgeSpec(id="e10", source="rds", target="cicd", marker="10", dashed=True, kind_hint="cross-region"),
-    # Public EKS endpoints (NAT egress over the internet, NOT peering)
-    EdgeSpec(id="e11", source="nat", target="eks-shared", marker="11", dashed=True, kind_hint="cross-region"),
-    EdgeSpec(id="e12", source="nat", target="eks-dev", marker="12", dashed=True, kind_hint="cross-region"),
+    # Strapi content host persists to RDS sep-strapi-pg (the RDS producer).
+    EdgeSpec(id="e13", source="strapi", target="rds", marker="7"),
+    # The 4 VPC peerings (down to the peer accounts; sources above their
+    # targets). peering=True + DiagramSpec.peering_as_node (G23) materializes
+    # each into a vpc_peering RESOURCE node between the SEP VPC side and the peer
+    # account, with two legs attaching. Empty marker so no 'peering' word prints;
+    # the pcx id + peer CIDR stay in the Flow legend (steps 7..10).
+    EdgeSpec(id="e7", source="lambda", target="atlas", marker="",
+             peering=True, peering_label="Atlas peering",
+             peering_id="pcx-0e257b23d337fda0b", kind_hint="cross-region"),
+    EdgeSpec(id="e8", source="lambda", target="cmtr-sre", marker="",
+             peering=True, peering_label="CMTR-SRE peering",
+             peering_id="pcx-0ba890357ddac7479", kind_hint="cross-region"),
+    EdgeSpec(id="e9", source="rds", target="cmtr-cmtm", marker="",
+             peering=True, peering_label="CMTR-CloudMentor",
+             peering_id="pcx-0bd56ed835959cbbc", kind_hint="cross-region"),
+    EdgeSpec(id="e10", source="rds", target="cicd", marker="",
+             peering=True, peering_label="CICD peering",
+             peering_id="pcx-0754f6dee2f5bf2fd", kind_hint="cross-region"),
+    # Public EKS endpoints (NAT egress over the internet, NOT peering). Markers
+    # 8/9 keep the numbered flow contiguous (1..9) now the four peerings are
+    # resource NODES carried as P1..P4 in the Flow legend, not numbered steps.
+    EdgeSpec(id="e11", source="nat", target="eks-shared", marker="8", dashed=True, kind_hint="cross-region"),
+    EdgeSpec(id="e12", source="nat", target="eks-dev", marker="9", dashed=True, kind_hint="cross-region"),
 )
 
 FLOW = (
@@ -246,18 +297,19 @@ FLOW = (
     "3. IGW fronts the public path into the VPC-attached Lambda tier",
     "4. S3 + DynamoDB reached via gateway VPC endpoints (no NAT hop)",
     "5. ECR dkr + api reached via interface VPC endpoints",
-    "6. Lambda / Strapi persist content to RDS sep-strapi-pg (VPC-scoped)",
-    "7. PEERING pcx-0e257b23d337fda0b to MongoDB Atlas 781849312837 (peer 192.168.246.0/24) — app data path",
-    "8. PEERING pcx-0ba890357ddac7479 to EPM-CMTR SRE 088595288622 (peer 192.168.190.0/24, SRE EC2 .190.77)",
-    "9. PEERING pcx-0bd56ed835959cbbc to EPM-CMTR CloudMentor 088595288622 (peer 172.31.0.0/16) — active Task Manager",
-    "10. PEERING pcx-0754f6dee2f5bf2fd to CICD 884218299410 (peer 192.168.254.0/24)",
-    "11. PUBLIC EKS endpoint to control-plane shared (088595288622) via NAT over the internet — not peering",
-    "12. PUBLIC EKS endpoint to student development-dev (183631338639) via NAT over the internet — not peering",
+    "6. Lambda reaches the Strapi RDS sep-strapi-pg (VPC-scoped)",
+    "7. ECS strapi persists Strapi content to RDS sep-strapi-pg",
+    "8. PUBLIC EKS endpoint to control-plane shared (088595288622) via NAT over the internet — not peering",
+    "9. PUBLIC EKS endpoint to student development-dev (183631338639) via NAT over the internet — not peering",
+    "P1. VPC Peering pcx-0e257b23d337fda0b to MongoDB Atlas 781849312837 (peer 192.168.246.0/24) — app data path",
+    "P2. VPC Peering pcx-0ba890357ddac7479 to EPM-CMTR SRE 088595288622 (peer 192.168.190.0/24, SRE EC2 .190.77)",
+    "P3. VPC Peering pcx-0bd56ed835959cbbc to EPM-CMTR CloudMentor 088595288622 (peer 172.31.0.0/16)",
+    "P4. VPC Peering pcx-0754f6dee2f5bf2fd to CICD 884218299410 (peer 192.168.254.0/24)",
 )
 
 LEGEND_EXTRA = (
     "Nesting: Account > Region > VPC (se 192.168.128.0/20) > private subnet tier",
-    "Solid peering line = active VPC peering (pcx + peer CIDR on the Flow list)",
+    "VPC Peering Connection icon = an active VPC peering drawn as a resource node, between the SEP VPC side and the peer account (pcx + peer CIDR on the Flow list)",
     "Grey box = external, non-AWS (MongoDB Atlas) or an external peer AWS account",
     "VPC endpoints: S3 + DynamoDB gateway, ECR dkr + api interface; NAT egress for the rest",
     "EKS clusters reached over PUBLIC endpoints (not peering); student peering pcx-0fc81284930ddf8e4 is route-less",
@@ -278,10 +330,19 @@ def _spec() -> DiagramSpec:
         title=TITLE,
         node_labels=node_labels,
         container_captions=tuple(CONTAINER_CAPTIONS.items()),
+        # G23: materialize each peering=True edge (e7..e10) into a vpc_peering
+        # resource node between the SEP VPC side and the peer account. The
+        # public-EKS edges (e11/e12) stay ordinary dashed edges (NOT peerings).
+        peering_as_node=True,
     )
 
 
 def _renderer_for(nid: str):
+    # Materialized vpc_peering nodes (G23) are added by layout() as "<edge>-pcx"
+    # and are not in NODE_META — render them with the AWS VPC Peering Connection
+    # icon.
+    if nid not in NODE_META:
+        return _image_renderer("vpc_peering")
     meta = NODE_META[nid]
     if meta["kind"] == "db":
         # 1.10.11: MongoDB Atlas renders the real brand-green leaf
@@ -299,6 +360,22 @@ def _renderer_for(nid: str):
 
 def _build() -> str:
     spec = _spec()
+
+    # Clarify gate (WS5): read-only, byte-inert for the .drawio.
+    from rule_engine.layout.clarify import scan_uncertainties, format_assumptions_markdown
+    def _rr(role):
+        try:
+            from rule_engine.icon_resolver import resolve_icon
+            resolve_icon(role, "aws")
+            return True
+        except Exception:
+            return False
+    ASSUMPTIONS = scan_uncertainties(spec, role_resolves=_rr)
+    if ASSUMPTIONS:
+        (ROOT / f"{BASENAME}.assumptions.txt").write_text(
+            format_assumptions_markdown(ASSUMPTIONS), encoding="utf-8")
+    print(f"[clarify] {len(ASSUMPTIONS)} assumption(s)")
+
     # strict=False: accept the best candidate even if it carries a residual
     # WARNING-level finding (here a single corridor-sharing on the ingress stub,
     # a WARNING in the lint ruleset that does not block publication). All
@@ -322,6 +399,38 @@ def _build() -> str:
         for n in spec.nodes
         if n.id in placed.nodes
     ]
+    # Materialized vpc_peering nodes (G23): ids in placed.nodes that are not in
+    # the declared spec. Each sits between the SEP VPC side and its peer account
+    # with the two legs attaching.
+    declared_ids = {n.id for n in spec.nodes}
+    for pid, box in placed.nodes.items():
+        if pid in declared_ids:
+            continue
+        # ENG-1 (owner 08: "VPC peering варто давати імена, на основі назви
+        # ресурса"): each materialized pcx node carries the SHORT peer-resource
+        # name (e.g. "Atlas peering") set on its peering EdgeSpec and surfaced by
+        # the engine via peering_label_for(placed.spec, pcx_id). The pcx-id +
+        # peer CIDR stay in the Flow legend (P1..P4) — a pcx-id caption would
+        # trip node-label-length. Fall back to the generic "VPC Peering" caption
+        # when no per-peering label was declared.
+        pcx_label = peering_label_for(placed.spec, pid) or "VPC Peering"
+        # E-PCX (owner wave-11: "Peering має ідентифікатор і його варто
+        # додавати, як підпис, особливо в схемах із багатьма peering"). Put the
+        # raw pcx-id on a SECOND caption line below the short peer name, surfaced
+        # by the engine via peering_id_for. The two short lines stay under
+        # node-label-length (a pcx-id on line 1 alone would trip it); the peer
+        # CIDR stays in the Flow legend (P1..P4). Single-line fallback when no
+        # id was declared.
+        pcx_id = peering_id_for(placed.spec, pid)
+        label = f"{pcx_label}\n{pcx_id}" if pcx_id else pcx_label
+        nodes.append(Node(
+            id=pid,
+            label=label,
+            x=int(box.x),
+            y=int(box.y),
+            render=_renderer_for(pid),
+            overlay=None,
+        ))
 
     boundaries: List[Boundary] = []
     kind_of = {c.id: c.kind for c in spec.containers}
@@ -382,6 +491,7 @@ def _build() -> str:
         legend_lines=legend_lines,
         page_w=page_w,
         page_h=page_h,
+        skin=NATIVE_SKIN,
     )
 
 

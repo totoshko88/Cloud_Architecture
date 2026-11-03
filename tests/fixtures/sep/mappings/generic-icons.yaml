@@ -114,6 +114,15 @@ resources:
     brand_hex: "#333333"
     style: "rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#333333;dashed=1;verticalAlign=middle;fontSize=12"
 
+  # Education / learning system (1.10.12, SEP feedback §2.1) — the
+  # provider-neutral CC0 mortarboard bundled with the engine (see
+  # aws-icons.yaml `education`). Grayscale line-art, so it keeps the generic
+  # profile's no-vendor-colour rule.
+  education:
+    icon_id: education.mortarboard
+    brand_hex: "#333333"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/education/mortarboard.svg"
+
 containers:
   # fontSize=12 keeps the container caption at the 12px accessibility floor
   # (draw.io's default is 11px); added in 1.10.7 when generic/01 switched from
