@@ -10,7 +10,7 @@
         </mxCell>
 
         <mxCell id="s1" value="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.7692307692307693;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.7692307692307693;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="dns" target="lb_a">
-          <mxGeometry relative="1" as="geometry">
+          <mxGeometry x="-0.2457" relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="660.00" y="120.00" />
               <mxPoint x="660.00" y="200.00" />
@@ -77,7 +77,7 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="s9" value="9" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="db_a" target="db_b">
-          <mxGeometry relative="1" as="geometry">
+          <mxGeometry x="-0.3561" relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="190.00" y="600.00" />
               <mxPoint x="190.00" y="680.00" />

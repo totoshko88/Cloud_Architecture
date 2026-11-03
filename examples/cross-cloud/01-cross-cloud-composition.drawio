@@ -13,7 +13,7 @@
           <mxGeometry x="0.8" relative="1" as="geometry" />
         </mxCell>
         <mxCell id="e2" value="2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="auth-lambda" target="openai-service">
-          <mxGeometry relative="1" as="geometry">
+          <mxGeometry x="-0.0605" relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="490.00" y="520.00" />
               <mxPoint x="490.00" y="360.00" />
@@ -30,7 +30,7 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="e4" value="4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=1.0;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="service-bus" target="vertex-ai">
-          <mxGeometry relative="1" as="geometry">
+          <mxGeometry x="-0.0605" relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="970.00" y="520.00" />
               <mxPoint x="970.00" y="360.00" />
@@ -47,7 +47,7 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="e6" value="6" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.7692307692307693;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.7692307692307693;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="cloud-storage" target="edge-gateway">
-          <mxGeometry relative="1" as="geometry">
+          <mxGeometry x="-0.67" relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="1280.00" y="540.00" />
               <mxPoint x="1280.00" y="670.00" />
