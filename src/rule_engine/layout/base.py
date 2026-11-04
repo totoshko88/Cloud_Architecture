@@ -232,6 +232,16 @@ def effective_scope(node) -> Optional[str]:
 #: region container, so they are not in this nesting set.
 _FOREIGN_LEAF_KINDS: frozenset = frozenset({"namespace", "security_group"})
 
+#: The external band / leaf kinds that sit OUTSIDE the primary account as
+#: disjoint siblings (``_wrap_external_bands``). An ``external=True`` node whose
+#: declared container is one of these stays a MEMBER of the band (1.13.0 item 9,
+#: F14), so the band has children to size around; a cloud container on an
+#: external node is still ignored. ``edge_lane`` (item 15d) is the caption-only
+#: band for the global/edge nodes above the account.
+_EXTERNAL_BAND_KINDS: frozenset = frozenset(
+    {"peer_account", "external_cloud", "edge_lane"}
+)
+
 #: The container kinds a foreign leaf boundary may be parented to (Req 3.1/3.4).
 #: Two legitimate hosts:
 #:  * a **region-network** container — ``vpc`` / ``network_boundary`` (modelled
@@ -2123,8 +2133,23 @@ def _assign_nodes_to_leaves(
     #    for SIZING it is wrapped by the Account (not the Region) — otherwise the
     #    Region box would grow down to enclose the CI/CD strip. ``band="south"``
     #    stays inside its declared Region (wrapped by it, as declared).
+    #    1.13.0 item 9 (F14): an ``external=True`` node whose declared
+    #    ``container`` is itself an EXTERNAL band kind (``peer_account`` /
+    #    ``external_cloud`` / ``edge_lane``) is a MEMBER of that external band —
+    #    it is already outside every cloud boundary, so keeping it assigned does
+    #    not pull it into the account; it gives the band children to size around
+    #    (the F14 ``has no children to size around`` SpecError). It is still
+    #    treated as external for scope judgement (item 15b) because it emits the
+    #    ``external=1`` token. A cloud ``container`` on an external node is still
+    #    ignored (the node is forced outside, as before).
+    kind_of_container = {c.id: c.kind for c in spec.containers}
     for n in spec.nodes:
-        if n.container is not None and not getattr(n, "external", False):
+        _is_external = getattr(n, "external", False)
+        _external_band = (
+            n.container is not None
+            and kind_of_container.get(n.container) in _EXTERNAL_BAND_KINDS
+        )
+        if n.container is not None and (not _is_external or _external_band):
             if (getattr(n, "band", None) in ("account-south", "account-north")
                     and account_id is not None):
                 assignment[account_id].append(n.id)

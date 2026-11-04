@@ -330,10 +330,23 @@ def _container_style(kind: str, provider: str) -> str:
     else:  # vpc / anything else structural
         preferred = ("network_boundary",)
 
+    # 1.13.0 item 15c / item 9: a leaf band kind shares its signature with the
+    # primary account / a region box (the accepted ``grIcon=group_account`` /
+    # neutral-dashed overlaps), so an engine-drawn peer/external/edge-lane box
+    # carries an explicit ``kind=`` disambiguation token. ``classify_container_kinds``
+    # then resolves it unambiguously — a ``peer_account`` is not read as the
+    # primary ``account`` (so an external member inside it does not trip
+    # ``external-in-account``), and a neutral ``edge_lane`` / ``external_cloud``
+    # is not read as a region box. Additive: no shipped golden draws these kinds.
+    _kind_token_for = frozenset({"peer_account", "external_cloud", "edge_lane"})
+
     last_exc: Optional[Exception] = None
     for map_kind in preferred:
         try:
-            return resolve_container(map_kind, provider)["style_string"]
+            style = resolve_container(map_kind, provider)["style_string"]
+            if map_kind in _kind_token_for and "kind=" not in style:
+                style = f"{style};kind={map_kind}"
+            return style
         except UnresolvedTypeError as exc:
             # Only an ABSENT kind falls back; a declared-but-malformed entry
             # (AssetSourceError) is a profile defect and must surface.
