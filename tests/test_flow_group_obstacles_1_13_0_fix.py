@@ -39,12 +39,16 @@ def test_edge_along_group_caption_is_flagged():
     assert ("e1", "group:flowgroup-0") in geo.check_edge_crosses_container_label(g)
 
 
-def test_member_edge_into_group_is_exempt():
+def test_member_edge_clean_approach_is_exempt():
+    # 1.13.0 phase 3 (item 6, F1): the exemption is scoped to the member's own
+    # final APPROACH leg. A member edge that drops straight into the group from
+    # above (its only caption-band segment is the vertical entry drop) is still
+    # exempt — the entry leg must cross the band to reach its member.
     g = _group_geo()
     g.nodes["m"] = Box("m", 400, 160, 78, 78)   # a member inside the group
     g.edges.append(EdgeGeom(id="e1", source="a", target="m", orthogonal=True,
-                            exit=(1.0, 0.5), entry=(0.0, 0.5),
-                            points=[(200, 199), (200, 110), (380, 110), (380, 199)]))
+                            exit=(1.0, 0.5), entry=(0.5, 0.0),
+                            points=[(200, 199), (200, 90), (439, 90)]))
     assert geo.check_edge_crosses_container_label(g) == []
 
 

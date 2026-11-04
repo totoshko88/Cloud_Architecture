@@ -1812,17 +1812,36 @@ def check_edge_crosses_container_label(
             crossed = polyline_cuts_container_caption(polyline, c, caption, band)
             if crossed:
                 out.append((e.id, cid))
-        # 1.13.0: a decorative group's caption strip is an obstacle too. An edge
-        # with an endpoint inside the group (a member's own edge entering or
-        # leaving it) is exempt; the reason names the group as ``group:<id>``.
+        # 1.13.0: a decorative group's caption strip is an obstacle too.
+        # 1.13.0 phase 3 (item 6, F1): the old rule exempted ANY edge with an
+        # endpoint inside the group, so a member edge that RAN ALONG the group
+        # caption (06 e8 lti→Atlas, 07 e7 through "Async") linted clean. Now the
+        # exemption is scoped to the member's own **final approach leg** — the
+        # one segment incident to the in-group endpoint, which must cross the
+        # caption band to reach its member. The rest of a member edge's polyline
+        # is judged like any other route, so a long run along the caption is
+        # flagged (reason ``group:<id>``).
         for gid, gb in geo.group_boxes.items():
-            if _box_inside(s, gb) or _box_inside(t, gb):
-                continue
+            s_in = _box_inside(s, gb)
+            t_in = _box_inside(t, gb)
             gband = group_caption_band(gid)
             caption = container_caption_geom(
                 geo.group_labels.get(gid, ""), geo.group_styles.get(gid), gb, gband
             )
-            if polyline_cuts_container_caption(polyline, gb, caption, gband):
+            if not (s_in or t_in):
+                tested = polyline
+            else:
+                # Drop the approach leg incident to the in-group endpoint: the
+                # first leg when the source is inside, the last leg when the
+                # target is inside (both when both are, a wholly-internal edge).
+                tested = list(polyline)
+                if t_in and len(tested) >= 2:
+                    tested = tested[:-1]
+                if s_in and len(tested) >= 2:
+                    tested = tested[1:]
+                if len(tested) < 2:
+                    continue
+            if polyline_cuts_container_caption(tested, gb, caption, gband):
                 out.append((e.id, f"group:{gid}"))
     return sorted(set(out))
 
