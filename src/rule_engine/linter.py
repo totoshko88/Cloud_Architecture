@@ -1565,7 +1565,11 @@ def _check_node_label_length(a: Artifact):
     for name in a.node_names:
         if not name:
             continue
-        words = name.split()
+        # 1.13.0 phase 3 (item 7d): a bare punctuation token (``+``, ``&``,
+        # ``/``, ``-``) is a connector, not a word — "Syndicate Server (EE +
+        # Syndi)" reads as four words, not five. Count only tokens carrying at
+        # least one alphanumeric character.
+        words = [w for w in name.split() if any(ch.isalnum() for ch in w)]
         if len(words) > LABEL_WORD_CAP or len(name) > LABEL_CHAR_CAP:
             offenders.append(name)
     if not offenders:

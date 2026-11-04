@@ -1210,6 +1210,51 @@ def _wrap_caption_at_slash(label: str) -> Optional[str]:
     return f"{a} /<br>{b}"
 
 
+def _wrap_node_captions(
+    nodes: Sequence[Node], boundaries: Sequence[Boundary], max_lines: int,
+) -> List[Node]:
+    """Wrap a node label wider than its enclosing boundary onto <= ``max_lines``
+    lines (1.13.0 phase 3, item 7b).
+
+    A node whose single-line caption (``text_metrics.caption_text_width``) runs
+    past the tightest boundary that geometrically holds its icon is re-labelled
+    with the fewest ``<br>`` lines (2..``max_lines``) whose LONGEST line fits the
+    box; a label that already wraps, has no spaces, or cannot be split is left
+    unchanged. Pure presentation — the icon box and every coordinate are
+    untouched — so a diagram whose captions all fit is byte-identical."""
+    from rule_engine.text_metrics import caption_text_width
+
+    def _holder_width(n: Node) -> Optional[float]:
+        holders = [
+            b for b in boundaries
+            if b.x <= n.x and n.x + ICON_SIZE <= b.x + b.w
+            and b.y <= n.y and n.y + ICON_SIZE <= b.y + b.h
+        ]
+        if not holders:
+            return None
+        return min(b.w for b in holders)
+
+    out: List[Node] = []
+    for n in nodes:
+        w = _holder_width(n)
+        label = n.label or ""
+        if (w is None or "<br" in label or " " not in label.strip()
+                or caption_text_width(label) <= w):
+            out.append(n)
+            continue
+        wrapped = None
+        for k in range(2, max_lines + 1):
+            cand = _wrap_caption_n_lines(label, k)
+            if cand is None:
+                continue
+            longest = max(caption_text_width(ln) for ln in cand.split("<br>"))
+            if longest <= w:
+                wrapped = cand
+                break
+        out.append(replace(n, label=wrapped) if wrapped else n)
+    return out
+
+
 def _local_background(n: Node, boundaries: Sequence[Boundary]) -> str:
     """The fill of the innermost FILLED container holding ``n`` (else white)."""
     best: Optional[Boundary] = None
@@ -1833,6 +1878,7 @@ def build_diagram(
     band_groups: Sequence[Tuple[str, Sequence[str]]] = (),
     band_group_styles: Optional[dict] = None,
     container_caption_wrap: int = 0,
+    node_caption_wrap: int = 0,
     membership: Optional[Mapping[str, str]] = None,
     respect_pins: Optional[bool] = None,
     reroute_report: Optional[List[str]] = None,
@@ -1928,6 +1974,13 @@ def build_diagram(
     # 1.13.0: the ``standby`` label channel (``-standby`` suffix) is applied
     # before anything measures a caption.
     nodes = _overlay_labelled(nodes)
+    # 1.13.0 phase 3 (item 7b): wrap a node label whose single-line caption is
+    # wider than the boundary it sits in onto up to ``node_caption_wrap`` lines,
+    # so a long member name does not print across its container's border without
+    # the caller shortening it by hand. A no-op (byte-identical) when
+    # ``node_caption_wrap`` is 0 (the default) or no label overhangs.
+    if node_caption_wrap and node_caption_wrap >= 2:
+        nodes = _wrap_node_captions(nodes, boundaries, node_caption_wrap)
     # 1.10.12 WS6: a boundary narrower than its caption grows right into free
     # space or wraps the caption (a no-op on layout() output, which is fitted).
     boundaries = fit_boundary_captions(
