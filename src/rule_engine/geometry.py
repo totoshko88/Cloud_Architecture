@@ -1471,6 +1471,29 @@ COLLINEAR_GAP = 120.0
 _COLLINEAR_KIND_RANK = {"end-to-end-merge": 0, "pass-through-illusion": 1, "collinear": 2}
 
 
+def _same_face_trunk(ea, eb, shared) -> bool:
+    """1.13.0 phase 3 (item 11, F16): True when ``ea`` and ``eb`` both LEAVE
+    the shared node on the same face, or both ENTER it on the same face.
+
+    Such a pair is a fan-out (fan-in) trunk whose two legs are held apart on
+    distinct bands by ``exit-thirds`` / ``entry-thirds`` — they run parallel on
+    one face and so never meet at a single contact point, but they belong to
+    one node and read as a fan, not as one merged line. ``None`` contacts (a
+    floated edge) are never a same-face trunk."""
+    if ea is None or eb is None:
+        return False
+    for n in sorted(shared):
+        if ea.source == n and eb.source == n and None not in ea.exit and None not in eb.exit:
+            fa, fb = contact_faces(*ea.exit), contact_faces(*eb.exit)
+            if fa & fb:
+                return True
+        if ea.target == n and eb.target == n and None not in ea.entry and None not in eb.entry:
+            fa, fb = contact_faces(*ea.entry), contact_faces(*eb.entry)
+            if fa & fb:
+                return True
+    return False
+
+
 def collinear_edge_findings(
     geo: DiagramGeometry, polys: Optional[Dict[str, List[Point]]] = None,
 ) -> List[Tuple[str, str, str]]:
@@ -1518,17 +1541,28 @@ def collinear_edge_findings(
             kind = "collinear"
             shared = ends[a[0]] & ends[b[0]]
             if shared:
+                ea, eb = by_id.get(a[0]), by_id.get(b[0])
+                # A fan-out (both LEAVE the shared node) or fan-in (both ENTER
+                # it) trunk of one node.
+                trunk = ea is not None and eb is not None and any(
+                    (ea.source == n and eb.source == n)
+                    or (ea.target == n and eb.target == n)
+                    for n in sorted(shared)
+                )
                 pts_a, pts_b = {a[5], a[6]}, {b[5], b[6]}
-                if any(abs(pa[0] - pb[0]) < AXIS_EPS and abs(pa[1] - pb[1]) < AXIS_EPS
-                       for pa in pts_a for pb in pts_b):
-                    ea, eb = by_id.get(a[0]), by_id.get(b[0])
-                    trunk = ea is not None and eb is not None and any(
-                        (ea.source == n and eb.source == n)
-                        or (ea.target == n and eb.target == n)
-                        for n in sorted(shared)
-                    )
-                    if trunk:
-                        continue  # fan-out / fan-in trunk junction of one node
+                meet = any(abs(pa[0] - pb[0]) < AXIS_EPS and abs(pa[1] - pb[1]) < AXIS_EPS
+                           for pa in pts_a for pb in pts_b)
+                if trunk and (meet or _same_face_trunk(ea, eb, shared)):
+                    # 1.13.0 phase 3 (item 11, F16): a fan-out / fan-in trunk is
+                    # exempt EVEN when its two legs never meet at a single point
+                    # — ``exit-thirds`` / ``entry-thirds`` force distinct bands
+                    # on one face, so same-source (same-target) parallel legs
+                    # leaving (entering) that face can never share a contact.
+                    # Pre-1.13.0 the exemption required a shared meeting point,
+                    # so the 08 trunks (IGW fan-out, NAT fan-in, RDS fan-in,
+                    # CloudFront origins) were flagged ``collinear``.
+                    continue
+                if meet:
                     kind = "pass-through-illusion"
             if gap > 0:
                 # A node icon in the gap terminates both lines visibly (a chain

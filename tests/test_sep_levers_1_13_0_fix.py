@@ -203,14 +203,14 @@ def test_l2_sep09_exit_face_up_adds_no_blocker_within_bounds(tmp_path):
 #: Measured in FEAT-005. Without the lever the peering legs e7-a / e8-a cross
 #: the one-line ``peer-ext`` caption (``edge-crosses-container-label``); with
 #: it the caption wraps onto two lines and no edge crosses it. X 1 and own 1
-#: (e4) either way; collinear pairs go 1 -> 3 (e13/e8-a and e6/e8-a join
-#: e5/e9-a), recorded as the bound. Integration trace: both builds start from
-#: the same pre-finishing document (11 crossings, 6 pairs); with the shorter
-#: wrapped caption the crossing repair may drop e8-a at x=480 through the
-#: peer-ext caption column, next to e13 (x=480) and e6 (y=620). The collinear
-#: shift runs after it but finds no admissible move for those two pairs, so
-#: the extra pairs are a routing limit, not a skipped pass.
-L5_BOUND = {"X": 1, "own": 1, "col": 3}
+#: (e4) either way. 1.13.0 phase 3 (item 11, F16): collinear pairs drop to 1 —
+#: the 08 fan-out / fan-in trunks (IGW fan-out, NAT fan-in, RDS fan-in,
+#: CloudFront origins) are same-source / same-target parallel legs on one face
+#: held apart by exit-thirds / entry-thirds, and are now exempt from
+#: ``collinear-edges`` even though they never meet at one point (phase 1 had
+#: them at 3). The residual pair ``e13 / e8-a`` is a genuine collinear (not a
+#: trunk) and stays flagged.
+L5_BOUND = {"X": 1, "own": 1, "col": 1}
 #: Blocking findings of the synced 08 that the lever does not touch: the CICD
 #: and NAT captions run outside peer-ext / the VPC (caption-outside-container).
 L5_BUILDER_BLOCKING = {("container-padding", "caption-outside-container")}
