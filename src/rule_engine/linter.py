@@ -213,6 +213,7 @@ RULE_MARKER_ON_GROUP_BORDER = "marker-on-group-border"
 RULE_SUPPORTING_DATA_EDGES = "supporting-data-edges"
 RULE_LEGEND_PLACEMENT = "legend-placement"
 RULE_FLOW_LEGEND = "flow-legend"
+RULE_COMPANION_MARKER_REF = "companion-marker-ref"
 RULE_NODE_CONNECTIVITY = "node-connectivity"
 RULE_EDGE_APPROACH = "edge-approach"
 # honest-gates 1.7.0 (task 10.2): three new rules.
@@ -623,6 +624,10 @@ class Artifact:
     # sibling ``.flow.md``, read for ``flow_steps='document'``) or ``"missing"``
     # (no Flow cell and no companion steps). ``None``: not parsed.
     flow_source: Optional[str] = None
+
+    # Marker numbers the companion prose cites (``(10)``, ``marker 7``, ...),
+    # for ``companion-marker-ref`` (1.13.0 phase 3). ``None``: not parsed.
+    companion_cited_markers: Optional[Sequence[int]] = None
 
     # Document
     frontmatter: Optional[Mapping[str, Any]] = None
@@ -2362,6 +2367,28 @@ def _check_flow_legend(a: Artifact):
     )
 
 
+def _check_companion_marker_ref(a: Artifact):
+    """companion-marker-ref: the companion prose cites a marker number that is
+    neither a Flow step nor an edge label (WARNING, both classes; 1.13.0
+    phase 3). Only judged when the diagram has numeric markers. Reason
+    ``unknown-marker:<n,...>``; offenders ``marker-<n>``."""
+    if not _is_diagram(a) or not a.companion_cited_markers:
+        return False
+    drawn = _drawn_markers(a)
+    if not drawn:
+        return False
+    known = set(drawn)
+    for line in list(a.flow_legend_lines or [])[1:]:
+        m = re.match(r"^\s*(\d+)\s*[.)]", str(line))
+        if m:
+            known.add(int(m.group(1)))
+    unknown = sorted(set(a.companion_cited_markers) - known)
+    if not unknown:
+        return False
+    return RuleHit(offenders=tuple(f"marker-{n}" for n in unknown),
+                   reason="unknown-marker:" + ",".join(str(n) for n in unknown))
+
+
 #: A Flow step line ``N. <text>`` / ``N) <text>``.
 _FLOW_STEP_RE = re.compile(r"^\s*(\d+)\s*[.)]")
 #: An edge label that is only marker numbers (``7``, ``7, 8``, ``7/8``).
@@ -3107,6 +3134,7 @@ RULES: Tuple[Tuple[RuleSpec, Callable[[Artifact], _PredicateResult]], ...] = (
                  reason_escalations={"flow-steps-missing": Severity.ERROR}),
         _check_flow_legend,
     ),
+    (RuleSpec(RULE_COMPANION_MARKER_REF, Severity.WARNING), _check_companion_marker_ref),
     (RuleSpec(RULE_NODE_CONNECTIVITY, Severity.WARNING), _check_node_connectivity),
     # supporting-data-edges (1.13.0): a supporting node on a numbered flow edge.
     (RuleSpec(RULE_SUPPORTING_DATA_EDGES, Severity.WARNING, landscape=Severity.ERROR), _check_supporting_data_edges),
@@ -3455,6 +3483,7 @@ __all__ = [
     "RULE_EDGE_JOG",
     "RULE_LEGEND_PLACEMENT",
     "RULE_FLOW_LEGEND",
+    "RULE_COMPANION_MARKER_REF",
     "RULE_NODE_CONNECTIVITY",
     "RULE_EDGE_APPROACH",
     "RULE_PARSE_ERROR",

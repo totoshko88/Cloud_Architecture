@@ -209,6 +209,50 @@ def _markdown_flow_steps(path: str, whole_file: bool = False) -> Optional[List[s
     return None
 
 
+_PROSE_MARKER_RES = (
+    re.compile(r"\(\s*(\d{1,3})\s*\)"),
+    re.compile(r"\bmarkers?\s+(\d{1,3})\b", re.IGNORECASE),
+    re.compile(r"\bstep\s+(\d{1,3})\b", re.IGNORECASE),
+    re.compile(r"\bflow\s+(\d{1,3})\b", re.IGNORECASE),
+)
+
+
+def _companion_cited_markers(path: str) -> Optional[List[int]]:
+    """Marker numbers the companion PROSE cites (1.13.0 phase 3,
+    ``companion-marker-ref``): ``(10)``, ``marker 7``, ``step 3``, ``flow 2``,
+    outside the ``## Flow`` section, fenced code, inline backticks and the
+    frontmatter. ``None`` when there is no companion."""
+    comp = _companion_path(path)
+    if not os.path.isfile(comp):
+        return None
+    try:
+        with open(comp, "r", encoding="utf-8") as fh:
+            _block, body = _kb_validator.split_frontmatter(fh.read())
+    except OSError:
+        return None
+    cited: List[int] = []
+    in_flow = in_fence = False
+    for line in body.splitlines():
+        if line.lstrip().startswith(("```", "~~~")):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        m = _MD_HEADING_RE.match(line)
+        if m:
+            in_flow = m.group(2).strip().casefold() == _FLOW_HEADING
+            continue
+        if in_flow:
+            continue
+        text = re.sub(r"`[^`]*`", " ", line)
+        for rx in _PROSE_MARKER_RES:
+            for mm in rx.finditer(text):
+                if mm.start() == 0 and rx is _PROSE_MARKER_RES[0]:  # list prefix
+                    continue
+                cited.append(int(mm.group(1)))
+    return sorted(set(cited))
+
+
 def _flow_steps_from_companion(path: str) -> Optional[List[str]]:
     """Flow steps for a diagram whose Flow is not on canvas (1.13.0): the
     companion ``<base>.diagram.md`` ``## Flow`` section, else a sibling
@@ -493,6 +537,7 @@ def _parse_drawio_page(path: str, page: Page, text: str) -> Artifact:
         legend_overlay_terms=legend_overlay_terms,
         flow_legend_lines=flow_legend_lines,
         flow_source=flow_source,
+        companion_cited_markers=_companion_cited_markers(path),
     )
 
 
