@@ -1434,16 +1434,43 @@ def _route_container_edges(
     diagram carries ``full_spec`` so downstream (serialize / lint / reconcile)
     sees every edge, container ones included."""
     from .routers import container_edge_contacts, route_container_edge
+    from .contacts import separate_identical_contacts
 
     boxes: Dict[str, "Box"] = dict(placed.nodes)
     boxes.update(placed.containers)
 
+    # First pass: pick each boundary edge's exit/entry contacts independently.
+    present = [e for e in container_edges
+               if boxes.get(e.source) is not None and boxes.get(e.target) is not None]
+    exits: Dict[str, Contact] = {}
+    entries: Dict[str, Contact] = {}
+    for e in present:
+        exit_pt, entry_pt = container_edge_contacts(boxes[e.source], boxes[e.target])
+        exits[e.id] = exit_pt
+        entries[e.id] = entry_pt
+
+    # 1.13.0 (item 5b, F9): two boundary edges leaving one container face (two
+    # VPC→peer peerings) both get ``(0.5, 1.0)`` from
+    # ``container_edge_contacts`` — the ``exits-identical`` / ``entries-identical``
+    # ERROR. ``separate_identical_contacts`` (the same spread the node-edge path
+    # uses in step 2b6) moves the later edge to a free band on the same face.
+    # Group by (endpoint id, face) so only edges sharing a container face are
+    # separated; node-endpoint edges that share a face with a container edge are
+    # grouped under the same box key too.
+    exit_groups: Dict[Tuple[str, str], List[str]] = {}
+    entry_groups: Dict[Tuple[str, str], List[str]] = {}
+    for e in present:
+        for face in contact_faces(*exits[e.id]):
+            exit_groups.setdefault((e.source, face), []).append(e.id)
+        for face in contact_faces(*entries[e.id]):
+            entry_groups.setdefault((e.target, face), []).append(e.id)
+    separate_identical_contacts(exit_groups, exits)
+    separate_identical_contacts(entry_groups, entries, entry=True)
+
     routed: Dict[str, PlacedEdge] = {}
-    for e in container_edges:
-        src, tgt = boxes.get(e.source), boxes.get(e.target)
-        if src is None or tgt is None:  # a dropped node (degraded) — skip it
-            continue
-        exit_pt, entry_pt = container_edge_contacts(src, tgt)
+    for e in present:
+        src, tgt = boxes[e.source], boxes[e.target]
+        exit_pt, entry_pt = exits[e.id], entries[e.id]
         pts = route_container_edge(src, tgt, exit_pt, entry_pt)
         pts = orthogonalise_route(
             _contact_point(src, exit_pt),

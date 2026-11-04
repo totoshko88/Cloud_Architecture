@@ -394,6 +394,40 @@ class Edge:
     points: Sequence[Tuple[float, float]] = ()
 
 
+def peering_legs(
+    source: str,
+    pcx: str,
+    target: str,
+    *,
+    edge_id: str = "pcx",
+    marker: str = "peering",
+    dashed: bool = True,
+) -> "List[Edge]":
+    """Two labelled peering legs for a HAND-PINNED build (1.13.0, item 5e).
+
+    ``materialize_peerings`` (``rule_engine.layout.peering``) only runs inside
+    :func:`~rule_engine.layout.layout`; a builder that composes its own pinned
+    geometry (SEP 08 / 10) had to hand-write the ``source → pcx → target`` chain
+    and discovered that a bare ``peering=True`` edge rendered an EMPTY label
+    (``edge-label`` WARNING). This helper returns the two legs the engine would
+    materialize — ``<edge_id>-a`` (``source → pcx``, carrying ``marker``) and
+    ``<edge_id>-b`` (``pcx → target``, carrying the word ``peering``) — as plain,
+    non-``peering`` :class:`Edge` objects so ``edge-label`` is satisfied and the
+    legs carry the marker/label the builder wants. ``source``/``target`` may be
+    a node id OR a container id (the boundary-edge path routes a container
+    endpoint from its face). ``dashed=True`` keeps the dashed presentation of a
+    peering line; the caller supplies contact points / waypoints as it would for
+    any pinned edge.
+    """
+    leg_marker = (marker or "").strip() or "peering"
+    return [
+        Edge(id=f"{edge_id}-a", source=source, target=pcx, marker=leg_marker,
+             dashed=dashed, peering=False),
+        Edge(id=f"{edge_id}-b", source=pcx, target=target, marker="peering",
+             dashed=dashed, peering=False),
+    ]
+
+
 @dataclass
 class Boundary:
     """A Boundary / Network-Boundary container rectangle."""
@@ -1454,6 +1488,10 @@ def edge_cell(e: Edge, parent: str = "1", origin: Tuple[float, float] = (0, 0),
     # narrative (or, on a network topology view, materialized as a vpc_peering
     # resource node, see layout.peering). So emit an empty value when
     # peering=True; every non-peering edge keeps its numbered marker verbatim.
+    # 1.13.0 (item 5e): a hand-pinned build that WANTS a labelled peering leg
+    # uses :func:`peering_legs`, which emits plain (``peering=False``) legs that
+    # carry the ``peering`` word — so the label fix lives there, not here, and
+    # G23's empty-value rule for a direct ``peering=True`` edge is unchanged.
     value = "" if e.peering else _marker_value(e.marker, skin)
     head = (
         f'        <mxCell id="{e.id}" value="{value}" style="{style}" '
@@ -2642,7 +2680,7 @@ def _cover_page(text: str, page_w: int, page_h: int) -> str:
 __all__ = [
     "ICON_SIZE", "GRID", "COL_STEP", "ROW_STEP", "CONTAINER_PAD",
     "STACK_BOUNDARY_STROKE", "NETWORK_BOUNDARY_STROKE",
-    "Node", "Edge", "Boundary", "IconRenderer",
+    "Node", "Edge", "Boundary", "IconRenderer", "peering_legs",
     "builtin_icon", "embed_oci_stencil", "OciStencilIcon", "OciStencilError",
     "title_cell", "boundary_cell", "edge_cell", "text_cell",
     "legend_lines_for", "build_diagram", "caption_safe_plan",

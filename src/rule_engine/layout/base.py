@@ -290,14 +290,33 @@ def _validate_spec(spec: DiagramSpec) -> None:
         )
 
     node_ids = set()
-    seen_slots: dict[Tuple[str, str, int, int], str] = {}
+    # 1.13.0 (item 5a, F8): the placement key includes the node's leaf container
+    # for external peer / external-cloud boxes. Two peerings from one VPC to two
+    # single-node peer boxes materialize two pcx nodes that each take slot 0 of
+    # their own peer box (lane/region coincide because both peer boxes are drawn
+    # in the same external lane). They are NOT a duplicate slot — they live in
+    # different containers — so the key distinguishes them by container. The
+    # account envelope and shared (containerless / az / vpc) bands keep the bare
+    # (lane, region, slot, az_band) key so the existing per-band uniqueness is
+    # unchanged for every non-leaf node.
+    leaf_container_kinds = frozenset({"peer_account", "external_cloud"})
+
+    def _slot_container(n) -> str:
+        cid = n.container or ""
+        c = container_by_id.get(cid)
+        if c is not None and c.kind in leaf_container_kinds:
+            return cid
+        return ""
+
+    seen_slots: dict[Tuple[str, str, int, int, str], str] = {}
     for node in spec.nodes:
         if node.lane not in LANE_INDEX:
             raise SpecError(
                 f"node {node.id!r} declares unknown lane {node.lane!r}; "
                 f"lane must be one of {LANES}"
             )
-        key = (node.lane, node.region, node.slot, az_band[node.id])
+        key = (node.lane, node.region, node.slot, az_band[node.id],
+               _slot_container(node))
         if key in seen_slots:
             raise SpecError(
                 f"duplicate slot (lane={node.lane!r}, region={node.region!r}, "

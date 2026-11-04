@@ -2443,8 +2443,33 @@ def graph_components(geo: DiagramGeometry) -> List[List[str]]:
     not part of the flow. Each component is a sorted id list; components are
     ordered by size (descending), then by their first id, so the result is
     deterministic."""
+    # 1.13.0 (item 5d, F18): a labelled container-endpoint leg (a peering drawn
+    # from a VPC / peer-account box face) joins the box to the node on the other
+    # end. ``graph-islands`` must treat it as connecting the container's MEMBERS,
+    # or a peer box wired to the account only through such a leg reads as an
+    # island. An endpoint is resolved to node ids: the node itself when it is a
+    # node, else every node whose icon box falls geometrically inside the
+    # container (the same geometric membership ``container-padding`` uses).
+    def _endpoint_nodes(eid: str) -> List[str]:
+        if eid in geo.nodes:
+            return [eid]
+        box = geo.containers.get(eid)
+        if box is None:
+            return []
+        return sorted(
+            nid for nid, nb in geo.nodes.items()
+            if _box_inside(nb, box)
+        )
+
+    resolved_edges: List[Tuple[List[str], List[str]]] = []
+    for e in geo.edges:
+        src = _endpoint_nodes(e.source)
+        tgt = _endpoint_nodes(e.target)
+        if src and tgt:
+            resolved_edges.append((src, tgt))
+
     members = {
-        n for e in geo.edges for n in (e.source, e.target)
+        n for src, tgt in resolved_edges for n in (*src, *tgt)
         if n in geo.nodes and n not in geo.overlay_nodes
     }
     parent = {n: n for n in members}
@@ -2455,9 +2480,12 @@ def graph_components(geo: DiagramGeometry) -> List[List[str]]:
             x = parent[x]
         return x
 
-    for e in geo.edges:
-        if e.source in parent and e.target in parent:
-            parent[find(e.source)] = find(e.target)
+    for src, tgt in resolved_edges:
+        # Union every resolved source node with every resolved target node
+        # (a container endpoint fans to all its members).
+        heads = [n for n in (*src, *tgt) if n in parent]
+        for n in heads[1:]:
+            parent[find(heads[0])] = find(n)
     groups: Dict[str, List[str]] = {}
     for n in members:
         groups.setdefault(find(n), []).append(n)
