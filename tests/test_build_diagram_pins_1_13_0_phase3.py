@@ -72,6 +72,17 @@ def test_default_keeps_a_legal_pin_approach_and_pinned_ids_empty_opts_out():
     assert _points(default) == pts[1:]  # 20px entry lane kept by default
     assert _points(_doc(pts, b=(500, 300), pinned_ids=())) != pts[1:]  # seed: stretched
     assert default == _doc(pts, b=(500, 300))
+
+
+def test_named_legal_pin_keeps_its_lane_by_default():
+    """Naming a hand pin (``pinned_ids=("e1",)``) must give at least as much
+    protection as leaving it inferred: with ``respect_pins`` at its default the
+    already-legal 20px approach lane is kept, not stretched to STAIR_STEP."""
+    pts = ((200.0, 140.0), (480.0, 140.0), (480.0, 340.0))
+    named = _doc(pts, b=(500, 300), pinned_ids=("e1",))
+    assert _points(named) == pts[1:]  # 20px entry lane kept, not stretched
+    # identical geometry to the inferred-pin default
+    assert _points(named) == _points(_doc(pts, b=(500, 300)))
 def test_named_pins_get_the_hand_pinned_message(caplog):
     pts = ((140.0, 290.0), (360.0, 290.0))
     with caplog.at_level(logging.WARNING, logger="rule_engine.diagram_layout"):

@@ -1838,25 +1838,36 @@ def build_diagram(
     overlaps; ``None`` (default) keeps the geometric tightest-box rule.
 
     ``respect_pins`` (1.13.0): an input edge with explicit ``points`` is
-    *pinned*. With ``True`` the finishing passes never move a pinned edge (it
-    stays an obstacle) and a pin that is already legal (axis-aligned, contact
-    legs head-on, exit right/bottom, entry left/top, no self-pierce;
-    :func:`rule_engine.geometry.pin_is_legal`) is kept verbatim: its approach
-    lane is NOT stretched to the minimum approach (:data:`STAIR_STEP`, three
-    grid steps, which an unpinned or illegal route is given). An illegal pin is
-    still repaired. With ``False`` the finishing passes may move a pinned edge;
-    every pinned edge they re-route is logged as a warning on the
-    ``rule_engine.diagram_layout`` logger and appended to ``reroute_report``
-    when a list is given, and (phase 3) each such re-route is kept only when
-    the pin itself would score worse (per-edge no-worse guard, at most
-    ``_PIN_GUARD_MAX`` edges). The default stays ``False``: an Edge cannot
-    tell a hand pin from a ``layout()`` route copied into ``points``, and
-    defaulting to ``True`` froze the engine's own routes in every builder
-    that does not pass ``pinned_ids=()`` (measured 1.13.0 phase 3: SEP 08
-    collinear pairs 1 -> 6, the coordinate-free 03 0 -> 2). A hand-pinned
-    build passes ``respect_pins=True``. The minimum approach an unpinned or
-    illegal route gets is :data:`STAIR_STEP` (three grid steps) before the
-    entry face and after the exit face.
+    *pinned*. A pin that is already legal (axis-aligned, contact legs head-on,
+    exit right/bottom, entry left/top, no self-pierce;
+    :func:`rule_engine.geometry.pin_is_legal`) keeps its approach lane verbatim
+    whenever it is *kept*: the lane is NOT stretched to the minimum approach
+    (:data:`STAIR_STEP`, three grid steps, which an unpinned or illegal route
+    is given). An illegal pin is always repaired.
+
+    - ``True`` — the finishing passes never move a pinned edge (it stays an
+      obstacle) and every legal pin is kept.
+    - ``None`` (the default) — legal pins are kept whether they are inferred
+      from ``Edge.points`` (``pinned_ids is None``) or named explicitly
+      (``pinned_ids=("e1", …)``); naming a hand pin must never give it LESS
+      protection than leaving it inferred. The finishing passes may still
+      re-route a pin (logged as a warning on the ``rule_engine.diagram_layout``
+      logger and appended to ``reroute_report`` when a list is given), and
+      (phase 3) each such re-route is kept only when the pin itself would score
+      worse (per-edge no-worse guard, at most ``_PIN_GUARD_MAX`` edges). The
+      exception is ``pinned_ids=()`` (engine/solver seeds, below): those are
+      stretched to :data:`STAIR_STEP` like an unpinned route, because an Edge
+      cannot tell a hand pin from a ``layout()`` route copied into ``points``
+      and freezing the engine's own routes regressed every seed-carrying
+      builder (measured 1.13.0 phase 3: SEP 08 collinear pairs 1 -> 6, the
+      coordinate-free 03 0 -> 2).
+    - ``False`` — every pin is stretched to :data:`STAIR_STEP` and the
+      finishing passes may move it freely (re-routes logged / reported as
+      above).
+
+    The minimum approach an unpinned or illegal (or ``pinned_ids=()`` seed)
+    route gets is :data:`STAIR_STEP` (three grid steps) before the entry face
+    and after the exit face.
     ``pinned_ids`` (1.13.0): which edges count as pinned. ``None`` (default)
     means every edge with explicit ``points``. A builder that hands over
     ``layout()``-routed edges (their points are the engine's own route, not a
@@ -1901,13 +1912,18 @@ def build_diagram(
     )
     pinned = (frozenset(e.id for e in edges if e.points) if pinned_ids is None
               else frozenset(pinned_ids))
-    # 1.13.0 phase 3: with ``respect_pins`` left at None and explicit points
-    # given, legal pins keep their approach lane (no stretch to STAIR_STEP);
-    # the finishing passes may still re-route them (no-worse guarded).
-    # ``True`` additionally freezes them; ``False`` stretches everything.
+    # ``respect_pins=True`` additionally freezes pins (never moved, still
+    # obstacles); ``None``/``False`` let the finishing passes re-route them.
     frozen = pinned if respect_pins else frozenset()
-    keep = pinned if (respect_pins or (respect_pins is None and pinned_ids is None)) \
-        else frozenset()
+    # Which legal pins keep their approach lane (no stretch to STAIR_STEP):
+    # ``True`` and ``None`` keep them -- whether inferred from ``Edge.points``
+    # (``pinned_ids is None``) or named explicitly (``pinned_ids=("e1", ...)``),
+    # so naming a hand pin never gives it LESS protection than leaving it
+    # inferred. ``False`` stretches everything; ``None`` with ``pinned_ids=()``
+    # (engine/solver seeds) also opts out.
+    keep = frozenset() if respect_pins is False \
+        or (respect_pins is None and pinned_ids == ()) \
+        else pinned
     routed = _orthogonalised(edges, nodes, keep_legal=keep)
     seeds = sorted({e.id for e in edges if e.points} - pinned)
     pin_routes = {e.id: e for e in routed if e.id in pinned and e.points}
