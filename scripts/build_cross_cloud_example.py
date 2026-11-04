@@ -241,6 +241,13 @@ def build() -> str:
         boundaries=boundaries,
         nodes=nodes,
         edges=EDGES,
+        # These edges carry hand-authored ``points`` that are route SEEDS to be
+        # normalised by the finishing passes (not pins to keep verbatim). Pass
+        # ``pinned_ids=()`` so the 1.13.0 ``respect_pins=None`` default does not
+        # treat the seeds as legal pins and keep them unchanged — matching every
+        # other shipped generator and the committed golden geometry (phase 3 P0
+        # review B1).
+        pinned_ids=(),
         flow_lines=FLOW_LINES,
         legend_lines=LEGEND_LINES,
         # Right margin, just past the GCP Project boundary (right edge 1298) by

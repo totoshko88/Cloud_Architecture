@@ -226,6 +226,11 @@ def build() -> str:
         boundaries=boundaries,
         nodes=nodes,
         edges=EDGES,
+        # Hand-authored ``points`` here are route SEEDS to normalise, not pins to
+        # keep verbatim; ``pinned_ids=()`` opts out of the 1.13.0
+        # ``respect_pins=None`` keep-legal-pins default so the committed golden
+        # geometry is reproduced byte-for-byte (phase 3 P0 review B1).
+        pinned_ids=(),
         flow_lines=FLOW_LINES,
         # Right margin, one grid step past the Environment boundary right edge
         # (1178). Pinned narrow (legend_w) so the Flow/Legend block wraps taller

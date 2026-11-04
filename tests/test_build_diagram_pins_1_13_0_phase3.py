@@ -55,8 +55,10 @@ def test_legal_pin_with_short_approach_survives():
 
 
 def test_default_still_reroutes_and_does_not_call_unnamed_points_hand_pins(caplog):
-    """The default stays respect_pins=False (an Edge cannot tell a hand pin
-    from a layout() seed); the warning for unnamed points says so."""
+    """An unnamed, illegal route (points that are not a legal pin) is still
+    rerouted under the respect_pins=None default, and the warning for unnamed
+    points calls them layout() seeds, not hand pins (an Edge cannot tell a hand
+    pin from a layout() seed copied into points)."""
     pts = ((140.0, 290.0), (360.0, 290.0))
     with caplog.at_level(logging.WARNING, logger="rule_engine.diagram_layout"):
         text = _doc(pts, exit_=(0.5, 1.0), entry=(0.5, 0.0), b=(320, 400))
