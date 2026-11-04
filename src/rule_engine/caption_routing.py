@@ -1432,15 +1432,45 @@ def _find_move(work: DiagramGeometry, e: EdgeGeom, base: _Score) -> Optional[Mov
             if found is not None:
                 break
         _CORRIDOR_START[0] = 2 * GRID
+    strikes_text = e.id in {x for x, _ in check_edge_strikes_own_text(work)}
     if (
         found is None
         and _CORNER_EXIT_FALLBACK[0]
         and _overloaded(work, e)
-        and e.id in {x for x, _ in check_edge_strikes_own_text(work)}
+        and strikes_text
     ):
         found = (ok(_best_single(work, e, base, True))
                  or ok(_best_joint(work, e, base, True, 2)))
+    # 1.13.0 phase 3 (item 10): a post-solver Variant A fix-up for a LONE
+    # straight bottom drop that strikes its own caption (03 e10 lambda->bedrock
+    # same-column spine, 09 e2 cloudfront->apigw). The side corridor could not
+    # clear it (``found is None`` above), so try the corner-contact exit even
+    # when the source is NOT overloaded and the global fallback flag is off.
+    # It is still only KEPT by the caller under ``_no_worse`` + ``_layout_findings``
+    # (``_wrap_move`` / ``_plan_once`` gate the whole result), so a golden whose
+    # corner route would add a crossing or finding is unchanged.
+    if found is None and not _overloaded(work, e) and strikes_text \
+            and _lone_bottom_drop(work, e):
+        found = (ok(_best_single(work, e, base, True))
+                 or ok(_best_joint(work, e, base, True, 2)))
     return found
+
+
+def _lone_bottom_drop(geo: DiagramGeometry, e: EdgeGeom) -> bool:
+    """True when ``e`` leaves its source on a bottom-centre contact as the only
+    bottom exit and runs a straight (single-column) vertical drop — the Variant
+    A case a side corridor cannot relieve (item 10)."""
+    s = geo.nodes.get(e.source)
+    if s is None or None in e.exit:
+        return False
+    if "bottom" not in contact_faces(*e.exit):
+        return False
+    # Only this one edge leaves the bottom face (no OTHER bottom exit).
+    if _face_fractions(geo, e, e.source, "bottom", exit=True):
+        return False
+    # A straight drop: every waypoint shares the exit x-column (within a grid).
+    ex = s.x + float(e.exit[0]) * s.w
+    return all(abs(px - ex) <= GRID for px, _py in e.points)
 
 
 def _apply_move(
