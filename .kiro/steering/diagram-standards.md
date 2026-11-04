@@ -489,7 +489,12 @@ the source and left by a top drop or a lane in the gap left of the target.
 Contract-legal by construction (right exit, left/top entry), it is taken only
 when it removes crossings without adding a finding: as `return-bus-*` variants
 in the scored search (judged like a face swap) and as bus shapes in the final
-crossing-repair pass. Two replies leaving one node **nest** instead of
+crossing-repair pass. A **lower-row reply** is eligible too (1.13.0): a response
+whose target sits a full row BELOW the source and not to its right (not only a
+same-row leftward one) is offered the bus, since its ordinary row-gap loop cuts
+the forward flow between rows (SEP 05 `e7`'s five crossings). It is still taken
+only on strictly fewer crossings, so a below-row reply that is already clean
+keeps its route. Two replies leaving one node **nest** instead of
 crossing: the run that reaches farther left (on a tie, the one whose target
 sits farther from the bus, since it detours past the nearer one) takes the
 outer lane, the outer rise column and the exit band on the far side of the

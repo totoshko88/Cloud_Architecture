@@ -363,13 +363,31 @@ def _back_edge_variants(edge: "EdgeSpec", rule_exit: Contact,
 
 
 def _is_return(edge: "EdgeSpec", placed: Dict[str, "Box"]) -> bool:
-    """True for a leftward / response edge: the target's centre sits left of
-    the source's left edge (a back-edge, a reply queue, an actor callback)."""
+    """True for a leftward / response edge eligible for the return bus.
+
+    Two shapes qualify:
+
+    * **leftward** — the target's centre sits left of the source's left edge
+      (a back-edge, a reply queue, an actor callback); the original case.
+    * **lower-row reply** (1.13.0 item 8a, F7) — the target sits a full row or
+      more BELOW the source and is NOT to its right (its centre is at or left of
+      the source's right edge). SEP 05 ``e7`` is this case: EE's reply queue on a
+      lower row, directly below-left, whose ordinary row-gap loop cut five
+      forward edges. The bus run (a lane outside the content rows) removes those
+      crossings. The bus is still variant-scored (``face_swap``), so it is taken
+      ONLY when it strictly lowers crossings with no new rule finding — a
+      below-row reply that is already clean keeps its ordinary route."""
     src = placed.get(edge.source)
     tgt = placed.get(edge.target)
     if src is None or tgt is None:
         return False
-    return tgt.x + tgt.w / 2.0 < src.x
+    tgt_cx = tgt.x + tgt.w / 2.0
+    if tgt_cx < src.x:
+        return True
+    # Lower-row reply: a full row below and not to the right of the source.
+    below = tgt.y >= src.y + src.h
+    not_right = tgt_cx <= src.right
+    return below and not_right
 
 
 def _return_bus_variants(edge: "EdgeSpec", placed: Dict[str, "Box"], kind: str,
