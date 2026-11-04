@@ -100,10 +100,10 @@ def summary_spec() -> DS:
             NS(id="data-svc", role="k8s_service", lane="router", region="b", slot=0, container="ns-data"),
             NS(id="sts", role="k8s_statefulset", lane="data", region="b", slot=0, container="ns-data"),
             NS(id="pvc", role="k8s_pvc", lane="data", region="b", slot=1, container="ns-data"),
-            # Namespace: kube-system (region c) — one visible control-plane node,
-            # supporting (dotted outline, off the numbered spine).
+            # Namespace: kube-system (region c) — one visible control-plane node
+            # that admits the Deployment (a real step, so not `supporting`).
             NS(id="api", role="k8s_api", lane="platform", region="c", slot=0,
-               container="ns-system", overlay="supporting"),
+               container="ns-system"),
         ),
         edges=(
             ES(id="e1", source="client", target="ing", marker="1"),
@@ -176,11 +176,11 @@ def landscape_spec() -> DS:
             NS(id="pod2", role="k8s_pod", lane="workers", region="b", slot=3,
                container="ns-app"),
             NS(id="app-hpa", role="k8s_hpa", lane="platform", region="b", slot=0,
-               container="ns-app", overlay="supporting"),
+               container="ns-app"),
             NS(id="app-cm", role="k8s_configmap", lane="platform", region="b", slot=1,
-               container="ns-app", overlay="supporting"),
+               container="ns-app"),
             NS(id="app-sa", role="k8s_sa", lane="platform", region="b", slot=2,
-               container="ns-app", overlay="supporting"),
+               container="ns-app"),
             # Namespace: data (region c)
             NS(id="data-svc", role="k8s_service", lane="router", region="c", slot=0,
                container="ns-data"),
@@ -192,14 +192,15 @@ def landscape_spec() -> DS:
             # face from the spine edge (data-svc -> data-sts), avoiding an
             # entry-thirds merge on the StatefulSet top face.
             NS(id="data-secret", role="k8s_secret", lane="platform", region="c", slot=0,
-               container="ns-data", overlay="supporting"),
+               container="ns-data"),
             # Namespace: kube-system (region d) — the control plane, rightmost.
-            # Every node is supporting (dotted outline), off the numbered spine;
-            # only api<->etcd carries a light edge.
+            # sched / cm-ctrl are supporting (dotted outline, edge-less); the
+            # nodes that carry an edge are real participants, not `supporting`
+            # (phase 3: supporting-data-edges is an ERROR on a landscape).
             NS(id="api", role="k8s_api", lane="platform", region="d", slot=0,
-               container="ns-system", overlay="supporting"),
+               container="ns-system"),
             NS(id="etcd", role="k8s_etcd", lane="data", region="d", slot=0,
-               container="ns-system", overlay="supporting"),
+               container="ns-system"),
             NS(id="sched", role="k8s_scheduler", lane="platform", region="d", slot=1,
                container="ns-system", overlay="supporting"),
             NS(id="cm-ctrl", role="k8s_controller_manager", lane="platform", region="d", slot=2,
