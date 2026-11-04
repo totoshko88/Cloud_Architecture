@@ -1306,7 +1306,8 @@ def band_group_cells(
 
 
 def _orthogonalised(
-    edges: Sequence[Edge], nodes: Sequence[Node]
+    edges: Sequence[Edge], nodes: Sequence[Node],
+    keep_legal: AbstractSet[str] = frozenset(),
 ) -> List[Edge]:
     """Return ``edges`` with every route rewritten to axis-aligned legs (v1.6.0).
 
@@ -1325,6 +1326,10 @@ def _orthogonalised(
 
     A route that is already orthogonal with perpendicular contact legs is returned
     unchanged, so this is a no-op for a correct hand-authored edge.
+    ``keep_legal`` (1.13.0 phase 3): ids of pinned edges whose route, when it is
+    already legal (:func:`rule_engine.geometry.pin_is_legal`), is returned
+    verbatim, so the contact-approach stretch does not move a deliberate lane
+    (a 20px approach stays 20px instead of becoming ``STAIR_STEP``).
 
     **Contacts are grid-resolved first.** A hand-written fraction such as ``0.25``
     on a 78px icon resolves to ``y0 + 19.5`` — half a pixel off the 10-grid that
@@ -1337,7 +1342,7 @@ def _orthogonalised(
     on the same face and the directional contract is unaffected.
     """
     from rule_engine.geometry import (
-        Box, contact_faces, grid_resolve_contact, orthogonalise_route,
+        Box, contact_faces, grid_resolve_contact, orthogonalise_route, pin_is_legal,
     )
 
     boxes = {n.id: Box(n.id, n.x, n.y, ICON_SIZE, ICON_SIZE) for n in nodes}
@@ -1349,9 +1354,12 @@ def _orthogonalised(
             continue
         exit_abs, exit_frac = grid_resolve_contact(src, e.exit)
         entry_abs, entry_frac = grid_resolve_contact(tgt, e.entry)
+        legal = e.id in keep_legal and pin_is_legal(
+            exit_abs, e.points, entry_abs, exit_frac, entry_frac, src, tgt)
         pts = orthogonalise_route(
             exit_abs, e.points, entry_abs,
             contact_faces(*exit_frac), contact_faces(*entry_frac),
+            stretch=not legal,
         )
         out.append(
             Edge(
@@ -1831,14 +1839,31 @@ def build_diagram(
 
     ``respect_pins`` (1.13.0): an input edge with explicit ``points`` is
     *pinned*. With ``True`` the finishing passes never move a pinned edge (it
-    stays an obstacle). With ``False`` (default) they may; every pinned edge
-    they re-route is logged as a warning on the ``rule_engine.diagram_layout``
-    logger and appended to ``reroute_report`` when a list is given.
+    stays an obstacle) and a pin that is already legal (axis-aligned, contact
+    legs head-on, exit right/bottom, entry left/top, no self-pierce;
+    :func:`rule_engine.geometry.pin_is_legal`) is kept verbatim: its approach
+    lane is NOT stretched to the minimum approach (:data:`STAIR_STEP`, three
+    grid steps, which an unpinned or illegal route is given). An illegal pin is
+    still repaired. With ``False`` the finishing passes may move a pinned edge;
+    every pinned edge they re-route is logged as a warning on the
+    ``rule_engine.diagram_layout`` logger and appended to ``reroute_report``
+    when a list is given, and (phase 3) each such re-route is kept only when
+    the pin itself would score worse (per-edge no-worse guard, at most
+    ``_PIN_GUARD_MAX`` edges). The default stays ``False``: an Edge cannot
+    tell a hand pin from a ``layout()`` route copied into ``points``, and
+    defaulting to ``True`` froze the engine's own routes in every builder
+    that does not pass ``pinned_ids=()`` (measured 1.13.0 phase 3: SEP 08
+    collinear pairs 1 -> 6, the coordinate-free 03 0 -> 2). A hand-pinned
+    build passes ``respect_pins=True``. The minimum approach an unpinned or
+    illegal route gets is :data:`STAIR_STEP` (three grid steps) before the
+    entry face and after the exit face.
     ``pinned_ids`` (1.13.0): which edges count as pinned. ``None`` (default)
     means every edge with explicit ``points``. A builder that hands over
     ``layout()``-routed edges (their points are the engine's own route, not a
     hand pin) passes ``()``, so no false reroute warning is logged; with
-    ``respect_pins=True`` only the listed edges are frozen.
+    ``respect_pins=True`` only the listed edges are frozen. Edges that carry
+    ``points`` but are not listed are engine/solver seeds: they are re-routed
+    freely and only mentioned at DEBUG, never as "hand-pinned".
     """
     # 1.11.0 WS2: fail-honest on an unknown flow_steps presentation mode.
     if flow_steps not in ("box", "document", "panel"):
@@ -1874,10 +1899,12 @@ def build_diagram(
         container_caption_wrap=container_caption_wrap,
         membership=membership,
     )
-    routed = _orthogonalised(edges, nodes)
     pinned = (frozenset(e.id for e in edges if e.points) if pinned_ids is None
               else frozenset(pinned_ids))
     frozen = pinned if respect_pins else frozenset()
+    routed = _orthogonalised(edges, nodes, keep_legal=frozen)
+    seeds = sorted({e.id for e in edges if e.points} - pinned)
+    pin_routes = {e.id: e for e in routed if e.id in pinned and e.points}
     text = _assemble_document(routed=routed, **kwargs)
     # Variant A finishing (`_plan_from_text` = caption-safe + crossing-repair +
     # collinear): a greedy, whole-diagram re-route planned on the ASSEMBLED
@@ -1923,10 +1950,27 @@ def build_diagram(
                     continue  # the plan made the diagram worse: drop it
             if not respect_pins:
                 rerouted = sorted(pinned & set(plan.routes))
-                if rerouted:
-                    logging.getLogger("rule_engine.diagram_layout").warning(
+                log = logging.getLogger("rule_engine.diagram_layout")
+                if seeds and set(seeds) & set(plan.routes):
+                    log.debug("build_diagram re-routed engine-seeded edges: %s",
+                              ", ".join(sorted(set(seeds) & set(plan.routes))))
+                if rerouted and caption_plan is None:
+                    cand_routed, candidate = _revert_worse_reroutes(
+                        rerouted, pin_routes, cand_routed, candidate, cand_kwargs)
+                    rerouted = [r for r in rerouted
+                                if _route_of(cand_routed, r) != _route_of(routed, r)]
+                if rerouted and pinned_ids is not None:
+                    log.warning(
                         "build_diagram rerouted hand-pinned edges: %s "
                         "(pass respect_pins=True to keep them)", ", ".join(rerouted))
+                elif rerouted:
+                    # Unnamed: these may be layout()/solver seeds, not owner pins.
+                    log.warning(
+                        "build_diagram rerouted edges with explicit points "
+                        "(hand pins or layout() seeds; not told apart): %s. Pass "
+                        "pinned_ids=<hand-pinned ids> to name real pins (or () for "
+                        "layout() routes), respect_pins=True to keep them",
+                        ", ".join(rerouted))
                     if reroute_report is not None:
                         reroute_report.extend(rerouted)
             routed, kwargs, text = cand_routed, cand_kwargs, candidate
@@ -1943,6 +1987,62 @@ def build_diagram(
 
     return _cover_page(
         marker_hygiene_text(pin_long_marker_anchors_text(text))[0], page_w, page_h)
+
+
+#: Most re-routed pinned edges the per-edge no-worse guard re-scores; above it
+#: the whole-plan guard stands alone (each probe re-assembles the document).
+_PIN_GUARD_MAX = 12
+
+
+def _route_of(routed: Sequence[Edge], eid: str):
+    for e in routed:
+        if e.id == eid:
+            return (tuple(e.points), e.exit, e.entry)
+    return None
+
+
+def _revert_worse_reroutes(rerouted, pin_routes, cand_routed, candidate, cand_kwargs):
+    """Per-edge no-worse guard (phase 3): the accepted plan moved the pinned
+    edges ``rerouted``; for each (sorted) put just that edge back on its pin and
+    keep the pin when the document scores no worse on (errors, crossings,
+    overlaps) than the plan's. Deterministic; skipped above ``_PIN_GUARD_MAX``
+    edges. Returns the possibly reverted ``(routed, text)``."""
+    if len(rerouted) > _PIN_GUARD_MAX:
+        logging.getLogger("rule_engine.diagram_layout").info(
+            "build_diagram: %d pinned edges re-routed, per-edge guard skipped",
+            len(rerouted))
+        return cand_routed, candidate
+    current = _pin_guard_score(candidate)
+    for eid in sorted(rerouted):
+        pin = pin_routes.get(eid)
+        if pin is None:
+            continue
+        trial = [pin if e.id == eid else e for e in cand_routed]
+        text = _assemble_document(routed=trial, **cand_kwargs)
+        score = _pin_guard_score(text)
+        # Revert only when the pin is no worse on every component AND strictly
+        # better on one: a tie keeps the plan's route (which exists to fix a
+        # caption strike the score would otherwise not see).
+        if (score is not None and current is not None
+                and all(a <= b for a, b in zip(score, current)) and score != current):
+            cand_routed, candidate, current = trial, text, score
+    return cand_routed, candidate
+
+
+def _pin_guard_score(text: str) -> Optional[Tuple[int, ...]]:
+    """:func:`_finishing_score` plus the caption-class findings the per-edge pin
+    guard must see: an edge through its own / another node's caption and an edge
+    through a container caption (01/02/03 got a worse top entry through the
+    account caption). None when the document does not parse."""
+    base = _finishing_score(text)
+    if base is None:
+        return None
+    from rule_engine.drawio_model import parse_drawio
+    from rule_engine.geometry import (
+        build_geometry, check_edge_crosses_container_label, check_edge_crosses_label)
+    geo = build_geometry(parse_drawio(text.encode("utf-8"), path="<build_diagram>")[0])
+    return base + (len(check_edge_crosses_label(geo)),
+                   len(check_edge_crosses_container_label(geo)))
 
 
 def _finishing_score(text: str) -> Optional[Tuple[int, int, int]]:

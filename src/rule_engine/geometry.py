@@ -3651,8 +3651,13 @@ def orthogonalise_route(
     exit_faces: frozenset[str],
     entry_faces: frozenset[str],
     grid: int = GRID,
+    stretch: bool = True,
 ) -> List[Point]:
     """Return ``points`` rewritten so every leg of the route is axis-aligned.
+
+    ``stretch=False`` (1.13.0 phase 3, a legal hand pin) skips
+    :func:`stretch_contact_approach`, so a deliberate approach lane shorter
+    than :data:`STAIR_STEP` is kept; sub-pixel misalignment is still fixed.
 
     Three passes: insert the corners the source left implicit
     (:func:`insert_orthogonal_corners`), collapse redundant midpoints and
@@ -3678,15 +3683,64 @@ def orthogonalise_route(
     # shorter than one stair, so the arrow steps cleanly into the glyph instead
     # of starting inside it. Re-run the corner/collapse passes so the leg feeding
     # the moved turn stays aligned.
-    pts = stretch_contact_approach(
-        pts, required_leg_axis(entry_faces), at_end=True, faces=entry_faces, grid=grid
-    )
-    pts = stretch_contact_approach(
-        pts, required_leg_axis(exit_faces), at_end=False, faces=exit_faces, grid=grid
-    )
+    if stretch:
+        pts = stretch_contact_approach(
+            pts, required_leg_axis(entry_faces), at_end=True, faces=entry_faces, grid=grid
+        )
+        pts = stretch_contact_approach(
+            pts, required_leg_axis(exit_faces), at_end=False, faces=exit_faces, grid=grid
+        )
     pts = insert_orthogonal_corners(pts, required_leg_axis(exit_faces))
     pts = collapse_collinear(pts)
     return [(snap(x, grid), snap(y, grid)) for x, y in pts[1:-1]]
+
+
+def pin_is_legal(
+    exit_abs: Point,
+    points: Sequence[Point],
+    entry_abs: Point,
+    exit_frac: Tuple[float, float],
+    entry_frac: Tuple[float, float],
+    src: "Box",
+    tgt: "Box",
+    tol: float = 1.0,
+) -> bool:
+    """True when a hand-pinned route needs no rewrite (1.13.0 phase 3).
+
+    The route ``[exit] + points + [entry]`` is legal when every leg is axis-
+    aligned (within ``tol`` px), the contact legs meet their faces head-on,
+    the exit leaves outward and the entry arrives from outside (no
+    ``pierces-source`` / ``pierces-target``), and the directional contract
+    holds (exit right/bottom, entry left/top). Such a pin is kept verbatim by
+    :func:`rule_engine.diagram_layout.build_diagram` (``respect_pins``), so a
+    deliberate approach lane shorter than :data:`STAIR_STEP` is not pushed
+    out. An illegal pin still goes through :func:`orthogonalise_route`."""
+    if not points:
+        return False
+    ef, nf = contact_faces(*exit_frac), contact_faces(*entry_frac)
+    if not (ef & {"right", "bottom"}) or not (nf & {"left", "top"}):
+        return False
+    poly = [tuple(exit_abs)] + [tuple(p) for p in points] + [tuple(entry_abs)]
+    axes: List[str] = []
+    for (x0, y0), (x1, y1) in zip(poly, poly[1:]):
+        if abs(x1 - x0) <= tol and abs(y1 - y0) <= tol:
+            axes.append("")  # zero-length leg
+        elif abs(y1 - y0) <= tol:
+            axes.append("H")
+        elif abs(x1 - x0) <= tol:
+            axes.append("V")
+        else:
+            return False
+    want_exit, want_entry = required_leg_axis(ef), required_leg_axis(nf)
+    if want_exit and axes[0] != want_exit:
+        return False
+    if want_entry and axes[-1] != want_entry:
+        return False
+    if _departure_pierces_source(poly[0], poly[1], exit_frac, src):
+        return False
+    if _approach_pierces_target(poly[-2], poly[-1], entry_frac, tgt):
+        return False
+    return True
 
 
 #: The headings that mark a text cell as the diagram's Flow/Legend furniture.

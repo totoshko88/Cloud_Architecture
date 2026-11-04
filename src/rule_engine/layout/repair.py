@@ -295,6 +295,8 @@ def _serialize_candidate(cand: "PlacedDiagram", labels: Optional[Dict[str, str]]
         # The oracle judges the geometry the engine routed; the Variant A
         # re-route is the shared builder's finishing pass on the real document.
         caption_safe=False,
+        # engine-routed candidate, not hand pins (1.13.0 phase 3 default)
+        pinned_ids=(),
         **({"membership": membership} if membership is not None else {}),
     )
 

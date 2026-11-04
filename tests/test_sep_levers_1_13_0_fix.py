@@ -246,7 +246,11 @@ L6_FIT = ("az-b",)
 #: draws az-a over sub-batch-a (container-overlap ERROR), so it is not used.
 L6_BOUND = {"X": 3, "own": 1, "col": 0, "spread": 1, "dead": 0}
 L6_AZ_B_MAX_W = 438
-L6_BUILDER_BLOCKING = {("container-padding", "caption-outside-container")}
+#: Phase 3: supporting-data-edges is an ERROR on a landscape; the SEP 10
+#: fixture spec puts a supporting node on a numbered edge (a builder defect the
+#: SEP builder must fix, not an engine lever regression).
+L6_BUILDER_BLOCKING = {("container-padding", "caption-outside-container"),
+                       ("supporting-data-edges", "supporting-carries-data-edges")}
 
 
 def _fit(spec):

@@ -44,9 +44,10 @@ def _points(text: str, eid: str = "e1"):
 def test_default_reroutes_the_pinned_edge_and_reports_it(caplog):
     report: list = []
     with caplog.at_level(logging.WARNING, logger="rule_engine.diagram_layout"):
-        text = _build(reroute_report=report)
+        text = _build(respect_pins=False, reroute_report=report)
     assert report == ["e1"]
-    assert any("rerouted hand-pinned edges: e1" in r.getMessage() for r in caplog.records)
+    assert any("rerouted edges with explicit points" in r.getMessage()
+               and "e1" in r.getMessage() for r in caplog.records)
     assert _points(text) != _PINS
 
 
@@ -67,7 +68,7 @@ def test_pinned_ids_empty_marks_engine_routed_edges(caplog):
         text = _build(pinned_ids=(), reroute_report=report)
     assert report == []
     assert not caplog.records
-    assert text == _build()
+    assert text == _build(respect_pins=False)
 
 
 def test_new_keywords_default_to_the_old_output():
