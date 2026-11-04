@@ -445,6 +445,17 @@ class Boundary:
     #: / ``az``), 1.10.7. Drives the conditional Legend (:func:`legend_lines_for`);
     #: ``""`` (the default, every hand-authored builder) keeps the full legend.
     kind: str = ""
+    #: The declared container-kind name (one of
+    #: :data:`~rule_engine.constants.CONTAINER_KINDS`, e.g. ``peer_account`` /
+    #: ``external_cloud`` / ``edge_lane``), 1.13.0 item 15c. When set, the box
+    #: style emits a ``kind=<container_kind>`` token that
+    #: :func:`~rule_engine.geometry.classify_container_kinds` trusts over the
+    #: signature match — disambiguating the accepted signature overlaps (a peer
+    #: account from the primary account; a neutral dashed ``external_cloud`` from
+    #: a region box). ``""`` (the default) emits no token, so goldens are
+    #: byte-identical. This is the container KIND, distinct from the presentation
+    #: ``kind`` above (which is legend-only).
+    container_kind: str = ""
 
 
 @dataclass
@@ -949,11 +960,17 @@ def title_cell(text: str, x: int = 40, y: int = 20, w: int = 900) -> str:
 
 
 def _boundary_style(b: Boundary) -> str:
-    return b.style or (
+    base = b.style or (
         "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;"
         f"strokeColor={b.stroke};fillColor=none;verticalAlign=top;"
         f"fontColor={b.stroke};fontSize=12"
     )
+    # 1.13.0 item 15c: carry an explicit container-kind disambiguation token when
+    # the builder declared one. ``container_kind=""`` (the default) adds nothing,
+    # so every shipped golden is byte-identical.
+    if b.container_kind and "kind=" not in base:
+        base = f"{base};kind={b.container_kind}"
+    return base
 
 
 def _set_style_token(style: str, key: str, value: str) -> str:
@@ -1311,6 +1328,35 @@ def boundary_cell(b: Boundary) -> str:
         f'          <mxGeometry x="{b.x}" y="{b.y}" width="{b.w}" height="{b.h}" as="geometry" />\n'
         "        </mxCell>\n"
     )
+
+
+def container_style(kind: str, provider: str, *, with_kind_token: bool = True) -> str:
+    """Return the draw.io style string for container ``kind`` on ``provider``
+    (1.13.0 item 15a).
+
+    A thin, public convenience wrapper over
+    :func:`rule_engine.icon_resolver.resolve_container` so a builder need not
+    import ``icon_resolver`` and reach into its ``{"style_string": ...}`` dict to
+    draw a ``peer_account`` / ``external_cloud`` / ``edge_lane`` band. The style
+    is read from the BUNDLED mapping (plus any ``mappings/local`` overlay), never
+    a stale workspace top-level copy, so the newer container kinds resolve even
+    in a workspace whose own ``mappings/<provider>-icons.yaml`` predates them.
+
+    When ``with_kind_token`` is True (the default) the returned style carries an
+    explicit ``kind=<kind>`` token (item 15c) so
+    :func:`rule_engine.geometry.classify_container_kinds` recognises the box
+    unambiguously — a ``peer_account`` is not mistaken for the primary account,
+    and a neutral dashed ``external_cloud`` / ``edge_lane`` is not mistaken for a
+    region box. Pass it through :class:`Boundary` ``container_kind`` for the same
+    effect in a `build_diagram` build. ``kind`` must be a member of
+    :data:`~rule_engine.constants.CONTAINER_KINDS`; an unknown kind or a provider
+    that declares no style raises the underlying
+    :class:`~rule_engine.icon_resolver.IconResolverError`."""
+    from rule_engine import icon_resolver
+    style = icon_resolver.resolve_container(kind, provider)["style_string"]
+    if with_kind_token and "kind=" not in style:
+        style = f"{style};kind={kind}"
+    return style
 
 
 #: Light-grey logical-group box style (1.11.0 WS2): a named context group drawn
@@ -2807,7 +2853,7 @@ __all__ = [
     "ICON_SIZE", "GRID", "COL_STEP", "ROW_STEP", "CONTAINER_PAD",
     "STACK_BOUNDARY_STROKE", "NETWORK_BOUNDARY_STROKE",
     "Node", "Edge", "Boundary", "IconRenderer", "peering_legs",
-    "Callout", "callout_cell",
+    "Callout", "callout_cell", "container_style",
     "builtin_icon", "embed_oci_stencil", "OciStencilIcon", "OciStencilError",
     "title_cell", "boundary_cell", "edge_cell", "text_cell",
     "legend_lines_for", "build_diagram", "caption_safe_plan",

@@ -280,3 +280,9 @@ containers:
     icon_id: gcp.zone
     brand_hex: "#4285F4"
     style: "rounded=0;whiteSpace=wrap;html=1;fillColor=#F1F3F4;strokeColor=none;verticalAlign=top;align=center;fontColor=#202124;fontStyle=1;fontSize=12"
+  # 1.13.0 item 15d: neutral edge lane — caption-only dotted grey band, no fill,
+  # leaf. Groups the global/edge nodes drawn above the Project.
+  edge_lane:
+    icon_id: gcp.edge_lane
+    brand_hex: "#4285F4"
+    style: "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=1 4;strokeColor=#879196;fillColor=none;verticalAlign=top;align=left;spacingLeft=8;fontColor=#5A6C86;fontStyle=2;fontSize=12"

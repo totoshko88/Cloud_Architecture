@@ -286,3 +286,9 @@ containers:
     icon_id: oci.security_group
     brand_hex: "#F80000"
     style: "rounded=0;whiteSpace=wrap;html=1;dashed=1;strokeWidth=1;align=left;verticalAlign=top;fontFamily=Oracle Sans,Helvetica,Arial,sans-serif;fillColor=none;strokeColor=#F80000;fontColor=#B30000;fontSize=12;spacingLeft=5;fontStyle=1"
+  # 1.13.0 item 15d: neutral edge lane — Oracle-neutral dotted caption-only band,
+  # no fill, leaf. Groups the global/edge nodes drawn above the Compartment.
+  edge_lane:
+    icon_id: oci.edge_lane
+    brand_hex: "#F80000"
+    style: "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=1 4;strokeWidth=1;align=left;verticalAlign=top;fontFamily=Oracle Sans,Helvetica,Arial,sans-serif;fillColor=none;strokeColor=#9E9892;fontColor=#312D2A;fontSize=12;spacingLeft=5;fontStyle=2"

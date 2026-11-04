@@ -239,3 +239,9 @@ containers:
     icon_id: k8s.namespace
     brand_hex: "#326CE5"
     style: "rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#326CE5;dashed=1;verticalAlign=top;align=left;spacingLeft=30;fontColor=#326CE5;fontSize=12"
+  # 1.13.0 item 15d: neutral edge lane — caption-only dotted grey band, no fill,
+  # leaf. Groups the external/edge nodes drawn above the Cluster.
+  edge_lane:
+    icon_id: k8s.edge_lane
+    brand_hex: "#326CE5"
+    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#879196;dashed=1;dashPattern=1 4;verticalAlign=top;align=left;spacingLeft=8;fontColor=#5A6C86;fontStyle=2;fontSize=12"

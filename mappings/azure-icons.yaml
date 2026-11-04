@@ -266,3 +266,9 @@ containers:
     icon_id: azure.security_group
     brand_hex: "#0078D4"
     style: "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=8 4;strokeColor=#0078D4;fillColor=none;verticalAlign=top;align=left;spacingLeft=8;fontColor=#000000;fontSize=12"
+  # 1.13.0 item 15d: neutral edge lane — caption-only dotted grey band, no fill,
+  # leaf. Groups the global/edge nodes drawn above the Subscription.
+  edge_lane:
+    icon_id: azure.edge_lane
+    brand_hex: "#0078D4"
+    style: "rounded=0;whiteSpace=wrap;html=1;dashed=1;dashPattern=1 4;strokeColor=#879196;fillColor=none;verticalAlign=top;align=left;spacingLeft=8;fontColor=#000000;fontStyle=2;fontSize=12"

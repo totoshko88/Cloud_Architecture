@@ -3165,10 +3165,30 @@ def classify_container_kinds(
     ``mappings`` is ``{provider: <containers table>}``. An ``overlay=`` cell is an
     overlay marker, not a Boundary, and yields the empty set. A style matching no
     declared kind yields the empty set (unrecognised → its nodes are not judged),
-    which is what keeps the rule default-inert on a bespoke box. Pure."""
+    which is what keeps the rule default-inert on a bespoke box.
+
+    1.13.0 item 15c: an explicit ``kind=<name>`` style token (emitted by the
+    builder when a boundary is built from ``resolve_container``) is TRUSTED over
+    the signature match — it disambiguates the accepted signature overlaps the
+    signature match cannot tell apart (the AWS primary ``boundary`` and
+    ``peer_account`` share ``grIcon=group_account`` + ``fillColor=none``; a
+    neutral dashed ``external_cloud`` with ``align=left`` can match a region /
+    availability-domain box on a plain-rectangle provider). The token is honoured
+    only when it names a known container kind of some ``provider`` here; an
+    unknown token falls back to the signature match. No shipped golden carries a
+    ``kind=`` token, so the signature path is unchanged for every golden. Pure."""
     drawn = _style_tokens(style)
     if "overlay" in drawn:
         return set()
+    hint = drawn.get("kind")
+    if hint:
+        known = {
+            kind
+            for provider in providers
+            for kind in (mappings.get(provider) or {})
+        }
+        if hint in known:
+            return {hint}
     gr = drawn.get("grIcon")
     kinds: Set[str] = set()
     for provider in providers:
@@ -3312,6 +3332,7 @@ def check_scope_placement(
         categories: Set[str] = set()
         in_private_subnet = False
         in_public_subnet = False
+        in_external_box = False  # 1.13.0 item 15b: inside a peer_account / external_cloud
         for cid, c in geo.containers.items():
             if cid in geo.nodes:  # a container is never a node, but be safe
                 continue
@@ -3320,6 +3341,19 @@ def check_scope_placement(
             cat = category_of.get(cid)
             if cat is not None:
                 categories.add(cat)
+            # 1.13.0 item 15b: a node inside an UNAMBIGUOUS peer_account /
+            # external_cloud leaf is drawn in the peer's box by design (its VPC
+            # is not drawn). "Unambiguous" means the box classifies to ONLY those
+            # leaf kinds — not also the primary ``boundary`` (the AWS account and
+            # peer_account share ``grIcon=group_account`` + ``fillColor=none``, an
+            # accepted signature overlap) nor a region / network box. A builder
+            # that wants the exemption emits ``kind=peer_account`` /
+            # ``kind=external_cloud`` (item 15c), which classifies to exactly that
+            # kind; a bare grey account box stays ambiguous and is NOT exempted,
+            # so the primary-account case keeps flagging vpc-scoped-outside-vpc.
+            ck = kinds_of.get(cid, set())
+            if ck and ck <= {"peer_account", "external_cloud"}:
+                in_external_box = True
             # E-EDGE: a VPC-edge device belongs at the VPC edge, outside every
             # PRIVATE subnet; but a NAT gateway (and any VPC-edge device) sitting
             # inside a PUBLIC subnet is the canonical AWS pattern (a NAT needs a
@@ -3349,7 +3383,11 @@ def check_scope_placement(
             if pscope == "outside_vpc" and "network" in categories:
                 out.append((nid, f"regional-in-vpc:{nid}"))
             elif (pscope == "network" and has_network_boundary
-                  and "network" not in categories):
+                  and "network" not in categories and not in_external_box):
+                # 1.13.0 item 15b (F11/D): a VPC-scoped role drawn inside a
+                # peer_account / external_cloud box is NOT "outside its VPC" —
+                # the peer account is external and its VPC is not drawn, so the
+                # node is shown in the peer's box by design.
                 out.append((nid, f"vpc-scoped-outside-vpc:{nid}"))
             if scope != "global":
                 continue
@@ -3376,6 +3414,7 @@ def check_scope_placement(
                 scope_is_explicit(nid)
                 and has_network_boundary
                 and "network" not in categories
+                and not in_external_box  # 1.13.0 item 15b: peer-account member
             ):
                 out.append((nid, f"vpc-scoped-outside-vpc:{nid}"))
 

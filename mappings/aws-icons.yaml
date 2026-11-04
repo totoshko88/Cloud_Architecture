@@ -663,3 +663,11 @@ containers:
     icon_id: aws.external_cloud
     brand_hex: "#232F3E"
     style: "rounded=0;dashed=1;dashPattern=8 4;fillColor=none;strokeColor=#7D8998;fontColor=#545B64;verticalAlign=top;align=left;spacingLeft=10;fontStyle=1;html=1;whiteSpace=wrap;fontSize=12"
+  # 1.13.0 item 15d: a neutral "edge lane" that groups the global/edge nodes
+  # (user / cdn / waf / dns) drawn ABOVE the account. Caption-only dashed-grey
+  # rectangle, no group icon; distinct `dashPattern=1 4` so it never matches the
+  # external_cloud (`8 4`) or availability_domain signature. A LEAF boundary.
+  edge_lane:
+    icon_id: aws.edge_lane
+    brand_hex: "#232F3E"
+    style: "rounded=0;dashed=1;dashPattern=1 4;fillColor=none;strokeColor=#879196;fontColor=#5A6C86;verticalAlign=top;align=left;spacingLeft=10;fontStyle=2;html=1;whiteSpace=wrap;fontSize=12"

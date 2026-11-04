@@ -138,6 +138,14 @@ CONTAINER_KINDS: Tuple[str, ...] = (
     # boundary-ONLY kind (a trust perimeter is a scope, not a service node).
     # Default-inert: no shipped golden declares it.
     "trust_boundary",
+    # 1.13.0 item 15d: a neutral "edge lane" drawn as a caption-only dashed-grey
+    # LEAF boundary that groups the global/edge nodes (user / cdn / waf / dns)
+    # sitting ABOVE the account, so an edge lane reads as a labelled band rather
+    # than free-floating icons. A boundary-ONLY kind (no `edge_lane` node glyph);
+    # its members are treated as external (no scope judgement) and are exempt
+    # from the container-padding vertical spill. Default-inert: no shipped golden
+    # declares it, so every golden `.drawio` stays byte-identical.
+    "edge_lane",
 )
 
 #: The two container kinds EVERY profile must declare (Requirement 2 AC6). The

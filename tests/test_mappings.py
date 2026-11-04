@@ -69,6 +69,8 @@ CONTAINER_KINDS = frozenset(
         # 1.13.0: AWS peer account / external cloud sibling boundaries.
         "peer_account",
         "external_cloud",
+        # 1.13.0 item 15d: neutral edge lane (caption-only leaf band).
+        "edge_lane",
     }
 )
 

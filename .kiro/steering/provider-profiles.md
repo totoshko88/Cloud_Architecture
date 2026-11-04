@@ -163,7 +163,23 @@ external system (kind `external_cloud`) is a dashed neutral rectangle
 (`dashed=1;dashPattern=8 4`, `#7D8998` / `#545B64`), since AWS ships no group for it.
 `container-style` matches a `group_account` box against both `boundary` and
 `peer_account`, so the grey peer passes and a Squid Ink `#232F3E` account still
-fails. Azure network boxes
+fails.
+
+A neutral **`edge_lane`** kind (1.13.0) groups the global/edge nodes (user / CDN /
+WAF / DNS) drawn ABOVE the account as a caption-only dotted-grey LEAF band, so an
+edge lane reads as a labelled band rather than free-floating icons. It is a
+boundary-ONLY kind (no `edge_lane` node glyph) declared by every profile with a
+distinct `dashPattern=1 4` signature, so it never collides with a region /
+availability-domain / `external_cloud` box; its members are treated as external
+(no scope judgement) and are exempt from the container-padding vertical spill via
+`Node(external=True)`. Because the AWS primary `boundary` and `peer_account` share
+one `group_account` signature (and a neutral dashed `external_cloud` can match a
+region box on a plain-rectangle provider), a builder disambiguates a drawn box with
+an explicit **`kind=<name>` style token** (emitted by `diagram_layout.container_style`
+/ `Boundary.container_kind`): `classify_container_kinds` trusts the token over the
+signature match, and `scope-placement` exempts a VPC-scoped role inside an
+unambiguous `peer_account` / `external_cloud` leaf from `vpc-scoped-outside-vpc`
+(the peer account is external, its VPC is not drawn). Azure network boxes
 carry their corner icon via `shape=label;image=img/lib/azure2/networking/…;imageAlign=left;imageVerticalAlign=top`
 (VNet: Virtual Networks, `subnet`: Subnet). No builder hardcodes a container style.
 Captions must meet 4.5:1 on white. Where a brand stroke colour is lighter than
