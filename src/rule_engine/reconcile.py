@@ -684,6 +684,11 @@ class ReconcileReport:
     #: Basenames of parsable snapshot ``*.json`` files that are not service-
     #: domain files (1.13.0, G45): skipped, never an error, listed as a WARNING.
     skipped_files: List[str] = field(default_factory=list)
+    #: 1.13.0 phase 3 (item 12a): roles the companion declared
+    #: ``reconcile_exempt`` with a justification. Each ``{role, reason}``; the
+    #: role's resources are removed from ``omissions`` and the exemption is
+    #: recorded so the justification is visible in the output / JSON.
+    exempted: List[Dict[str, str]] = field(default_factory=list)
 
     @property
     def eligible(self) -> bool:
@@ -705,6 +710,7 @@ class ReconcileReport:
             "roleless_count": len(self.roleless),
             "roleless": list(self.roleless),
             "skipped_files": list(self.skipped_files),
+            "exempted": list(self.exempted),
         }
 
 
@@ -834,16 +840,51 @@ def _parse_diagram(diagram_path: Path) -> Tuple[List[Any], str]:
 
 def _coverage_class_of(diagram_path: Path) -> str:
     """Read ``diagram_class`` (``flow`` default) from the companion frontmatter."""
-    # Reuse the CLI's companion loader so the class is read exactly as the Linter
-    # reads it (companion path convention + shared YAML frontmatter loader).
+    cls, _exempt = _coverage_meta_of(diagram_path)
+    return cls
+
+
+#: 1.13.0 phase 3 (item 12a): companion ``scope:`` values that map a
+#: network-slice / dataflow landscape to SCOPED (``flow``) coverage, so a
+#: deliberately partial view is not forced to total coverage.
+_SCOPED_SCOPES = frozenset({"network-slice", "dataflow"})
+
+
+def _coverage_meta_of(diagram_path: Path) -> Tuple[str, List[Dict[str, str]]]:
+    """Return ``(coverage_class, reconcile_exempt)`` from the companion (1.13.0).
+
+    * ``coverage_class`` — the explicit companion ``coverage_class:`` key, else a
+      ``scope:`` of ``network-slice`` / ``dataflow`` (mapped to ``flow``), else
+      the ``diagram_class`` (``landscape`` or ``flow`` default). This lets a
+      companion declare a scoped coverage even when it is drawn as a landscape.
+    * ``reconcile_exempt`` — a list of ``{role, reason}`` entries (the justified
+      omissions, e.g. regional/global roles drawn on another diagram). A missing
+      ``reason`` is a usage error (fail-closed) raised by :func:`reconcile`.
+    """
     from rule_engine.cli import _companion_path, _load_companion_frontmatter
 
     fm, _failed = _load_companion_frontmatter(_companion_path(str(diagram_path)))
+    cover = "flow"
+    exempt: List[Dict[str, str]] = []
     if fm:
-        cls = str(fm.get("diagram_class", "") or "").strip().lower()
-        if cls == "landscape":
-            return "landscape"
-    return "flow"
+        cov = str(fm.get("coverage_class", "") or "").strip().lower()
+        scope = str(fm.get("scope", "") or "").strip().lower()
+        dcls = str(fm.get("diagram_class", "") or "").strip().lower()
+        if cov in ("flow", "landscape"):
+            cover = cov
+        elif scope in _SCOPED_SCOPES:
+            cover = "flow"
+        elif dcls == "landscape":
+            cover = "landscape"
+        raw = fm.get("reconcile_exempt")
+        if isinstance(raw, (list, tuple)):
+            for entry in raw:
+                if isinstance(entry, Mapping):
+                    exempt.append({
+                        "role": str(entry.get("role", "")).strip(),
+                        "reason": str(entry.get("reason", "")).strip(),
+                    })
+    return cover, exempt
 
 
 def reconcile(
@@ -925,9 +966,22 @@ def reconcile(
 
     # Drawn: the union of possible roles across every page's node icons.
     pages, detected_class = _parse_diagram(diagram)
-    cover = (coverage_class or detected_class).strip().lower()
+    # 1.13.0 phase 3 (item 12a): the companion may declare a coverage_class /
+    # scope and a justified reconcile_exempt list. The explicit CLI
+    # coverage_class still wins over the companion's.
+    companion_class, exempt_entries = _coverage_meta_of(diagram)
+    cover = (coverage_class or companion_class or detected_class).strip().lower()
     if cover not in ("flow", "landscape"):
         cover = "flow"
+    # A reconcile_exempt entry with no justification is a usage error
+    # (fail-closed): an exemption must say WHY the role is justified as absent.
+    for entry in exempt_entries:
+        if not entry.get("role") or not entry.get("reason"):
+            raise ReconcileError(
+                "reconcile_exempt entry needs a non-empty 'role' and 'reason' "
+                f"(got {entry!r}); an exemption must record its justification"
+            )
+    exempt_roles = {e["role"] for e in exempt_entries}
     drawn: Set[str] = set()
     for page in pages:
         drawn |= drawn_roles(page, provider)
@@ -959,6 +1013,16 @@ def reconcile(
         # not block a scoped view.)
         uncovered_roles = frozenset()
 
+    # 1.13.0 phase 3 (item 12a): remove companion-exempted roles from the
+    # uncovered set and record the justified exemptions so they are visible.
+    recorded_exempt: List[Dict[str, str]] = []
+    if exempt_roles:
+        applied = uncovered_roles & exempt_roles
+        uncovered_roles = uncovered_roles - exempt_roles
+        for e in exempt_entries:
+            if e["role"] in applied:
+                recorded_exempt.append(e)
+
     for role in sorted(uncovered_roles):
         for resource_id in expected_by_role.get(role, []):
             omissions.append({"role": role, "resource": resource_id})
@@ -974,6 +1038,7 @@ def reconcile(
         enumerated_count=enumerated,
         roleless=roleless,
         skipped_files=skipped,
+        exempted=recorded_exempt,
     )
 
 
@@ -1018,6 +1083,13 @@ def _print_report(report: ReconcileReport) -> None:
             f"[WARNING] skipped {len(report.skipped_files)} non-domain file(s): "
             + ", ".join(report.skipped_files)
         )
+    if report.exempted:
+        print(
+            f"[INFO] {len(report.exempted)} companion-exempted role(s) "
+            "(reconcile_exempt, justified):"
+        )
+        for ex in report.exempted:
+            print(f"    - role {ex['role']}: {ex['reason']}")
 
 
 def main(argv: Optional[List[str]] = None) -> int:
