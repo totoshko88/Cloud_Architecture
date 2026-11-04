@@ -1,7 +1,8 @@
 """1.13.0 phase 3, P0 item 3: ``build_diagram`` pin handling.
 
 (a) under ``respect_pins=True`` a legal pin is kept verbatim (a short approach
-lane is not stretched); the default stays ``False``;
+lane is not stretched); with ``respect_pins`` left at ``None`` and explicit
+points the legal approach is kept too (``pinned_ids=()`` opts out);
 (b) the reroute message names only real hand pins, never engine seeds;
 (c) the per-edge no-worse guard puts a better pin back.
 """
@@ -65,6 +66,12 @@ def test_default_still_reroutes_and_does_not_call_unnamed_points_hand_pins(caplo
     assert any("layout() seeds" in m for m in msgs)
 
 
+def test_default_keeps_a_legal_pin_approach_and_pinned_ids_empty_opts_out():
+    pts = ((200.0, 140.0), (480.0, 140.0), (480.0, 340.0))
+    default = _doc(pts, b=(500, 300))
+    assert _points(default) == pts[1:]  # 20px entry lane kept by default
+    assert _points(_doc(pts, b=(500, 300), pinned_ids=())) != pts[1:]  # seed: stretched
+    assert default == _doc(pts, b=(500, 300))
 def test_named_pins_get_the_hand_pinned_message(caplog):
     pts = ((140.0, 290.0), (360.0, 290.0))
     with caplog.at_level(logging.WARNING, logger="rule_engine.diagram_layout"):
@@ -109,7 +116,7 @@ def test_message_names_only_real_pins(caplog):
             nodes=nodes, edges=edges, flow_lines=["Flow", "1. x", "2. y"],
             legend_x=1100, page_w=1500, page_h=700,
             respect_pins=False, pinned_ids=("e1",), reroute_report=report)
-    assert "e2" not in report
+    assert report == ["e1"]  # the named pin that moved, never the seed e2
     warn = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
     assert all("e2" not in m for m in warn)
 

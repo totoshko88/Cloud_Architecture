@@ -1796,7 +1796,7 @@ def build_diagram(
     band_group_styles: Optional[dict] = None,
     container_caption_wrap: int = 0,
     membership: Optional[Mapping[str, str]] = None,
-    respect_pins: bool = False,
+    respect_pins: Optional[bool] = None,
     reroute_report: Optional[List[str]] = None,
     pinned_ids: Optional[Iterable[str]] = None,
 ) -> str:
@@ -1901,8 +1901,14 @@ def build_diagram(
     )
     pinned = (frozenset(e.id for e in edges if e.points) if pinned_ids is None
               else frozenset(pinned_ids))
+    # 1.13.0 phase 3: with ``respect_pins`` left at None and explicit points
+    # given, legal pins keep their approach lane (no stretch to STAIR_STEP);
+    # the finishing passes may still re-route them (no-worse guarded).
+    # ``True`` additionally freezes them; ``False`` stretches everything.
     frozen = pinned if respect_pins else frozenset()
-    routed = _orthogonalised(edges, nodes, keep_legal=frozen)
+    keep = pinned if (respect_pins or (respect_pins is None and pinned_ids is None)) \
+        else frozenset()
+    routed = _orthogonalised(edges, nodes, keep_legal=keep)
     seeds = sorted({e.id for e in edges if e.points} - pinned)
     pin_routes = {e.id: e for e in routed if e.id in pinned and e.points}
     text = _assemble_document(routed=routed, **kwargs)
@@ -1971,8 +1977,8 @@ def build_diagram(
                         "pinned_ids=<hand-pinned ids> to name real pins (or () for "
                         "layout() routes), respect_pins=True to keep them",
                         ", ".join(rerouted))
-                    if reroute_report is not None:
-                        reroute_report.extend(rerouted)
+                if rerouted and reroute_report is not None:
+                    reroute_report.extend(rerouted)
             routed, kwargs, text = cand_routed, cand_kwargs, candidate
             break
     # Flow-marker hygiene (1.10.7 D37): markers are de-collided from each other

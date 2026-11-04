@@ -456,6 +456,7 @@ def _build() -> str:
         page_h=page_h,
         skin=NATIVE_SKIN,
         flow_steps="document",
+        pinned_ids=(),  # EDGES are solver-seeded routes, not hand pins
     )
 
 
