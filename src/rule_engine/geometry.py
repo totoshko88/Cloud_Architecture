@@ -1150,6 +1150,12 @@ def check_edge_routing(geo: DiagramGeometry) -> List[Tuple[str, str]]:
         if pierce:
             out.append((e.id, f"pierces-target-{e.target}"))
             continue
+        # (1b) Own-source self-pierce (1.13.0 phase 3, 08 IGW->EKS): the first
+        #      leg must LEAVE the exit face outward. A right exit whose first
+        #      waypoint lies to the left runs back through the source glyph.
+        if e.points and _departure_pierces_source(p, e.points[0], e.exit, s):
+            out.append((e.id, f"pierces-source-{e.source}"))
+            continue
         # (2) A run that cuts an UNRELATED node icon.
         #
         #   * **waypoint-free** edge — sample its straight source→target run
@@ -1210,6 +1216,36 @@ def _orthogonal_knee(
     if abs(x1 - x0) < 1 or abs(y1 - y0) < 1:
         return [a, b]
     return [a, (x1, y0), b]
+
+
+def _departure_pierces_source(
+    exit_pt: Tuple[float, float],
+    first: Tuple[float, float],
+    exit_frac: Tuple[Optional[float], Optional[float]],
+    source: Box,
+) -> bool:
+    """Return True when the first leg leaves ``exit_pt`` INTO the source glyph.
+
+    Mirror of :func:`_approach_pierces_target` for the exit end: a right exit
+    must head right (``first_x >= exit_x``), a left exit left, a bottom exit
+    down, a top exit up. Only a clearly inward first leg (beyond a 2px
+    tolerance) is a pierce. A corner contact lies on two faces and is not
+    judged (only a contact strictly inside a face's span is)."""
+    fx, fy = exit_frac
+    ax, ay = first
+    ex, ey = exit_pt
+    tol = 2.0
+    if fy is not None and 0.0 < fy < 1.0 and fx is not None:
+        if fx >= 1.0 and ax < ex - tol:
+            return True
+        if fx <= 0.0 and ax > ex + tol:
+            return True
+    if fx is not None and 0.0 < fx < 1.0 and fy is not None:
+        if fy >= 1.0 and ay < ey - tol:
+            return True
+        if fy <= 0.0 and ay > ey + tol:
+            return True
+    return False
 
 
 def _approach_pierces_target(

@@ -39,3 +39,41 @@ def test_supporting_clean_cases():
     assert _supporting("landscape", None) == []
     assert _supporting("landscape", "peering") == []
     assert _supporting("landscape", "") == []
+
+
+# ---- item 2: own-source self-pierce (08 IGW -> EKS shape) -------------------
+
+def _routing(exit_, pts, entry=(0.0, 0.5), cls="flow"):
+    g = DiagramGeometry()
+    g.nodes["igw"] = Box("igw", 370, 530, 78, 78)
+    g.nodes["eks"] = Box("eks", 40, 750, 78, 78)
+    g.edges.append(EdgeGeom(id="e13", source="igw", target="eks", orthogonal=True,
+                            exit=exit_, entry=entry, points=list(pts), label="13"))
+    art = Artifact(kind="diagram", node_names=["igw", "eks"], geometry=g, diagram_class=cls)
+    return [f for f in lint(art)["findings"] if f["rule"] == "edge-routing"]
+
+
+def test_exit_leg_back_through_own_source_is_error_on_both_classes():
+    for cls in ("flow", "landscape"):
+        hits = _routing((1.0, 0.5), [(20, 569), (20, 789)], cls=cls)
+        assert hits and hits[0]["severity"] == "ERROR", hits
+        assert hits[0]["reason"] == "pierces-source-igw"
+
+
+def test_normal_exits_are_clean():
+    # right exit heading right, then down and left via a corridor
+    ok = _routing((1.0, 0.5), [(480, 569), (480, 700), (20, 700), (20, 789)], entry=(0.0, 0.5))
+    assert not [f for f in ok if f["reason"].startswith("pierces-source")]
+    # bottom exit going down
+    ok = _routing((0.5, 1.0), [(409, 700), (20, 700), (20, 789)])
+    assert not [f for f in ok if f["reason"].startswith("pierces-source")]
+    # corner contact is not judged
+    ok = _routing((1.0, 0.0), [(360, 530), (360, 700), (20, 700), (20, 789)])
+    assert not [f for f in ok if f["reason"].startswith("pierces-source")]
+
+
+def test_target_wrong_side_still_pierces_target():
+    # left entry approached from the right: the final leg runs through eks
+    hits = _routing((1.0, 0.5), [(480, 569), (480, 789), (100, 789)])
+    assert hits and hits[0]["reason"] == "pierces-target-eks"
+    assert hits[0]["severity"] == "ERROR"
