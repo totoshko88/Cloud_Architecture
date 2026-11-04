@@ -447,6 +447,39 @@ class Boundary:
     kind: str = ""
 
 
+@dataclass
+class Callout:
+    """An explanatory text annotation (1.13.0 phase 3, item 14).
+
+    A callout carries prose that will not fit in a short node label
+    (diagram-standards → *Overlay Vocabulary → `callout`*). It is a TEXT cell,
+    not a node — not counted toward the node budget, its text exempt from the
+    node-label caps — carrying ``overlay=callout`` so the linter recognises it
+    (``overlay-legend-coverage`` when the Legend documents the term). Builders
+    (SEP 01 / 12 / 13) hand-wrote this XML before; ``build_diagram(callouts=…)``
+    renders it with the standard text-box padding."""
+
+    id: str
+    text: str
+    x: int
+    y: int
+    w: int = 200
+    h: int = 60
+
+
+def callout_cell(c: "Callout") -> str:
+    """Render a :class:`Callout` as a padded ``overlay=callout`` text cell."""
+    value = "&#10;".join(_xml_escape(line) for line in c.text.split("\n"))
+    style = _TEXT_STYLE + ";overlay=callout"
+    return (
+        f'        <mxCell id="{c.id}" value="{value}" style="{style}" '
+        f'vertex="1" parent="1">\n'
+        f'          <mxGeometry x="{c.x}" y="{c.y}" width="{c.w}" height="{c.h}" '
+        'as="geometry" />\n'
+        "        </mxCell>\n"
+    )
+
+
 # An icon renderer produces the node's mxCell XML. Signature: (node, parent_id).
 IconRenderer = Callable[[Node, str], str]
 
@@ -1879,6 +1912,7 @@ def build_diagram(
     band_group_styles: Optional[dict] = None,
     container_caption_wrap: int = 0,
     node_caption_wrap: int = 0,
+    callouts: Sequence["Callout"] = (),
     membership: Optional[Mapping[str, str]] = None,
     respect_pins: Optional[bool] = None,
     reroute_report: Optional[List[str]] = None,
@@ -2098,6 +2132,14 @@ def build_diagram(
     # judges it and the de-collision pass starts from it.
     from rule_engine.orthogonalise import marker_hygiene_text, pin_long_marker_anchors_text
 
+    # 1.13.0 phase 3 (item 14): emit any Callout text cells. A callout is a text
+    # annotation, not a node, so it is injected after routing/finishing (it is
+    # never a routing obstacle) and before the page cover, right before
+    # </root>. ``callouts=()`` (default) is byte-identical.
+    if callouts:
+        cells = "".join(callout_cell(c) for c in callouts)
+        text = text.replace("      </root>", cells + "      </root>", 1)
+
     return _cover_page(
         marker_hygiene_text(pin_long_marker_anchors_text(text))[0], page_w, page_h)
 
@@ -2277,6 +2319,25 @@ def _render_node(n: Node, parent_id: str) -> str:
     would silently vanish. Renderers that escape the label (or not) are all
     covered; a one-line label is emitted byte-identically."""
     out = n.render(n, parent_id)
+    # 1.13.0 phase 3 (items 14/15e): a CUSTOM ``render=`` callable that does not
+    # call ``overlay_suffix`` (the SEP 01 / 12 builders used bespoke renderers)
+    # drops the ``scope=`` / ``external=1`` tokens the ``scope-placement`` lint
+    # reads from the model. Carry them over: when the node declares a scope /
+    # external and the rendered style string lacks the token, inject it into the
+    # node's own ``style="…"`` attribute. A renderer that already emitted the
+    # token (via ``overlay_suffix``) is unchanged (byte-identical).
+    if (n.scope or n.external):
+        inject = ""
+        if n.scope and "scope=" not in out:
+            inject += f";scope={n.scope}"
+        if n.external and "external=1" not in out:
+            inject += ";external=1"
+        if inject:
+            spat = re.compile(
+                r'(<mxCell\b[^>]*?\bid="' + re.escape(n.id) + r'"[^>]*?\bstyle=")([^"]*)(")',
+                re.S)
+            out = spat.sub(lambda m: m.group(1) + m.group(2) + inject + m.group(3),
+                           out, count=1)
     if "\n" not in n.label:
         return out
     pat = re.compile(r'(<mxCell\b[^>]*?\bid="' + re.escape(n.id) + r'"[^>]*?\bvalue=")([^"]*)(")', re.S)
@@ -2672,7 +2733,19 @@ def _assemble_document(
             legend_y = max(legend_y_legend, legend_y_flow + tallest + GRID)
             parts.append(text_cell("legend", legend_body, legend_x, legend_y, box_w, legend_h, skin=skin))
         else:
-            legend_y = max(legend_y_legend, legend_y_flow + flow_h + GRID)
+            # 1.13.0 phase 3 (item 14): in DOCUMENT mode the Flow box is a short
+            # index (a few lines), so a caller's ``legend_y_legend`` computed
+            # from the full step list (SEP 09 passed ~900px, sized for 28 steps)
+            # would push the Legend far below the short index and open a
+            # ``canvas-quality empty-rectangle`` hole. Size the offset from the
+            # index's real height instead — the caller value becomes a HINT
+            # capped at the computed position, not a minimum. Box/panel modes
+            # keep the caller value as a minimum (byte-identical).
+            computed_legend_y = legend_y_flow + flow_h + GRID
+            if flow_steps == "document":
+                legend_y = computed_legend_y
+            else:
+                legend_y = max(legend_y_legend, computed_legend_y)
             # Panel mode: stretch the Flow box into a full-height furniture strip
             # (top of the Flow slot down to one container-pad above the page
             # bottom), never shorter than its natural text height. box/document
@@ -2734,6 +2807,7 @@ __all__ = [
     "ICON_SIZE", "GRID", "COL_STEP", "ROW_STEP", "CONTAINER_PAD",
     "STACK_BOUNDARY_STROKE", "NETWORK_BOUNDARY_STROKE",
     "Node", "Edge", "Boundary", "IconRenderer", "peering_legs",
+    "Callout", "callout_cell",
     "builtin_icon", "embed_oci_stencil", "OciStencilIcon", "OciStencilError",
     "title_cell", "boundary_cell", "edge_cell", "text_cell",
     "legend_lines_for", "build_diagram", "caption_safe_plan",
