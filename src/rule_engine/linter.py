@@ -2484,18 +2484,32 @@ def _check_supporting_data_edges(a: Artifact):
     if not supporting:
         return False
     offenders: List[str] = []
+    labelled_only = False
     for nid in supporting:
-        numbered = sorted(
-            e.id for e in geo.edges
-            if nid in (e.source, e.target)
-            and re.fullmatch(r"\s*\d+(\s*,\s*\d+)*\s*", e.label or "")
-        )
-        if numbered:
-            offenders.extend([nid] + numbered)
+        numbered = []
+        labelled = []
+        for e in geo.edges:
+            if nid not in (e.source, e.target):
+                continue
+            lab = (e.label or "").strip()
+            if re.fullmatch(r"\d+(\s*,\s*\d+)*", lab):
+                numbered.append(e.id)
+            elif lab and lab.lower() not in ("peering", "callout"):
+                labelled.append(e.id)
+        if numbered or labelled:
+            offenders.extend([nid] + sorted(numbered) + sorted(labelled))
+            if labelled and not numbered:
+                labelled_only = True
     if not offenders:
         return False
-    return RuleHit(offenders=tuple(dict.fromkeys(offenders)),
-                   reason="supporting-carries-data-edges")
+    # 1.13.0 phase 3: a word-labelled edge is also a data edge (09's fabricated
+    # CloudWatch -> DynamoDB -> SSM chain); numeric keeps its original reason.
+    reason = ("supporting-carries-labelled-edge" if labelled_only
+              and not any(re.fullmatch(r"\d+(\s*,\s*\d+)*", (e.label or "").strip())
+                          for e in geo.edges
+                          if e.id in offenders)
+              else "supporting-carries-data-edges")
+    return RuleHit(offenders=tuple(dict.fromkeys(offenders)), reason=reason)
 
 
 def _check_legend_placement(a: Artifact):
@@ -3095,7 +3109,7 @@ RULES: Tuple[Tuple[RuleSpec, Callable[[Artifact], _PredicateResult]], ...] = (
     ),
     (RuleSpec(RULE_NODE_CONNECTIVITY, Severity.WARNING), _check_node_connectivity),
     # supporting-data-edges (1.13.0): a supporting node on a numbered flow edge.
-    (RuleSpec(RULE_SUPPORTING_DATA_EDGES, Severity.WARNING), _check_supporting_data_edges),
+    (RuleSpec(RULE_SUPPORTING_DATA_EDGES, Severity.WARNING, landscape=Severity.ERROR), _check_supporting_data_edges),
     # 1.10.12 WS5: dropped Flow steps (both classes) and landscape islands.
     (RuleSpec(RULE_FLOW_STEP_UNDRAWN, Severity.WARNING), _check_flow_step_undrawn),
     (RuleSpec(RULE_GRAPH_ISLANDS, Severity.WARNING), _check_graph_islands),

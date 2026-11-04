@@ -77,6 +77,6 @@ def test_supporting_node_on_numbered_edge():
     hits = [f for f in lint(art)["findings"] if f["rule"] == "supporting-data-edges"]
     assert len(hits) == 1 and hits[0]["offenders"] == ["mon", "e1"]
     assert hits[0]["reason"] == "supporting-carries-data-edges"
-    g.edges[0] = _e("e1", "app", "mon", [], label="metrics")
+    g.edges[0] = _e("e1", "app", "mon", [], label="")
     hits = [f for f in lint(art)["findings"] if f["rule"] == "supporting-data-edges"]
-    assert hits == []
+    assert hits == []  # a word label is flagged since phase 3 (test_lint_truth_1_13_0_phase3)
