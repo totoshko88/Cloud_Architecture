@@ -105,10 +105,14 @@ LABELS: Dict[str, str] = {
     "app_a1": "app-az1", "cache_a1": "cache-az1", "db_a1": "db-writer-az1", "obj_a1": "objstore-az1",
     "api_a1": "api-az1", "app_a2": "app-az2", "cache_a2": "cache-az2", "db_a2": "db-standby-az2",
     "obj_a2": "objstore-az2", "api_a2": "api-az2", "mon_a": "observability-primary",
-    "queue_b": "queue-passive", "fn_b": "worker-passive", "sec_b": "secrets-passive",
+    # 1.13.0: a passive-region peer marked ``standby`` already reads
+    # ``<name>-standby`` (the overlay label channel), so its base name drops the
+    # redundant ``-passive`` (``secrets-passive-standby`` ran past the region
+    # box: container-padding ``caption-outside-container``).
+    "queue_b": "queue", "fn_b": "worker", "sec_b": "secrets",
     "app_b1": "app-az1", "cache_b1": "cache-az1", "db_b1": "db-writer-az1", "obj_b1": "objstore-az1",
-    "api_b1": "api-az1", "app_b2": "app-az2", "cache_b2": "cache-az2", "db_b2": "db-standby-az2",
-    "obj_b2": "objstore-az2", "api_b2": "api-az2", "mon_b": "observability-passive",
+    "api_b1": "api-az1", "app_b2": "app-az2", "cache_b2": "cache-az2", "db_b2": "db-az2",
+    "obj_b2": "objstore-az2", "api_b2": "api-az2", "mon_b": "observability",
 }
 
 
@@ -416,6 +420,7 @@ def build_summary(skin: ProviderSkin, legacy: bool = False) -> str:
         legend_x=placed.legend_x, legend_w=placed.legend_w,
         page_w=page_w, page_h=page_h,
         caption_plan=_caption_plan(placed, {"vpc": "region"}),
+        pinned_ids=(),  # layout()-routed edges, none hand-pinned
     )
 
 
@@ -457,6 +462,7 @@ def build_landscape(skin: ProviderSkin, legacy: bool = False) -> str:
         caption_plan=_caption_plan(
             placed, legend_y_flow=120, legend_y_legend=460,
             legend_lines=STANDARD_LEGEND_LINES + LANDSCAPE_LEGEND_EXTRA),
+        pinned_ids=(),  # layout()-routed edges, none hand-pinned
     )
 
 

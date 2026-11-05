@@ -15,6 +15,8 @@ Pinned here on small synthetic diagrams:
 """
 from __future__ import annotations
 
+import pytest
+
 from dataclasses import replace
 
 from rule_engine import crossing_repair as cr
@@ -209,17 +211,30 @@ def test_nested_bus_runs_do_not_depend_on_routing_order_and_never_cross():
     assert not any(geo.segments_cross(p, q) for p in zip(r1, r1[1:]) for q in zip(r2, r2[1:]))
 
 
-def _sep05_text() -> str:
+def _sep05_text(script: str = "build_05_coordfree.py") -> str:
+    """Build a SEP 05 fixture. The default is the pre-sync spec the WS5
+    return-bus test was written against (preserved in FEAT-005, 1.13.0); the
+    synced SEPARCH builder is ``build_flow_sandbox_lifecycle.py``."""
     import importlib.util
     from pathlib import Path
-    path = (Path(__file__).parent / "fixtures" / "sep" / "scripts"
-            / "build_flow_sandbox_lifecycle.py")
-    spec = importlib.util.spec_from_file_location("_sep05_builder", path)
+    path = Path(__file__).parent / "fixtures" / "sep" / "scripts" / script
+    spec = importlib.util.spec_from_file_location("_sep05_builder_" + path.stem, path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod._build()
 
 
+#: Measured on the synced SEPARCH 05 builder (FEAT-005, 1.13.0): the builder
+#: moved deletion-notification-queue to a lower row, so ``e7`` (Syndicate ->
+#: deln-q) no longer rides the upper bus. It leaves Syndicate's bottom and runs
+#: the inter-row gap at y=250 across e5/e6/e8/e10/e11 to drop into deln-q's top:
+#: five crossings, all on e7. Recorded as an upper bound so a regression fails;
+#: the fix belongs to the builder (slot deln-q on the upper row) or to a
+#: return-bus offer for a reply whose target sits BELOW the source row.
+SEP05_SYNCED_MAX_CROSSINGS = 5
+
+
+@pytest.mark.sep
 def test_sep05_replies_nest_on_the_upper_bus_with_no_crossing():
     """WS5 review F1: SEP 05 ``e3`` (Syndicate -> activation-queue) and ``e7``
     (Syndicate -> deletion-notification-queue) both ride the upper bus. ``e7``
@@ -242,6 +257,14 @@ def test_sep05_replies_nest_on_the_upper_bus_with_no_crossing():
     assert rise_x(polys["e7"]) > rise_x(polys["e3"])
     exits = {e.id: e.exit for e in g.edges if e.id in ("e3", "e7")}
     assert exits["e7"][1] > exits["e3"][1]
+
+
+@pytest.mark.sep
+def test_sep05_synced_builder_crossings_stay_within_the_measured_bound():
+    g = _geo(_sep05_text("build_flow_sandbox_lifecycle.py"))
+    pairs = cr.crossing_pairs(g)
+    assert len(pairs) <= SEP05_SYNCED_MAX_CROSSINGS, pairs
+    assert all("e7" in p[:2] for p in pairs), pairs
 
 
 def test_router_lays_the_bus_outside_the_content_rows():

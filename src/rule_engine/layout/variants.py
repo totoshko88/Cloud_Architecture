@@ -104,6 +104,9 @@ class RoutePlan(str, Enum):
     TURN_NEAR_TARGET = "turn-near-target"  # long haul: run horizontal first,
     #                                        put the long vertical at the TARGET's
     #                                        approach column (Theme 38b)
+    LIFT_OVER = "lift-over"         # 1.13.0 L3: up-climb fan-out branch rises in
+    #                                the pre-fan gap column and runs across a lane
+    #                                ABOVE the whole fan into the target
     RETURN_BUS_ABOVE = "return-bus-above"  # 1.10.12 WS5: leftward / response
     RETURN_BUS_BELOW = "return-bus-below"  # edge on a lane outside every content
     #                                        row it spans (the return bus)
@@ -222,11 +225,19 @@ def _rule_based_contacts(
 # ---------------------------------------------------------------------------
 
 def _variant(edge_id: str, family: str, exit_pt: Contact, entry_pt: Contact,
-             plan: RoutePlan, rank: int, face_swap: bool = False) -> RouteVariant:
+             plan: RoutePlan, rank: int, face_swap: bool = False,
+             allow_external_exit: bool = False) -> RouteVariant:
     """Build one :class:`RouteVariant`, asserting contract-legality by
     construction (a family that ever emits an illegal face is a coding bug, not
-    an input condition)."""
-    assert _exit_is_contract_legal(exit_pt), (
+    an input condition).
+
+    ``allow_external_exit`` (1.13.0, L2) exempts the rule-based seed of an
+    external-fan edge whose source forced a top/left exit (``NodeSpec.exit_face``
+    toward an EXTERNAL target). That exit is contract-legal precisely because the
+    target is external — the long-haul exception ``check_edge_direction`` already
+    honours — so the by-construction right/bottom assertion is relaxed only for
+    that seed. The entry stays a normal left/top face, so its assertion holds."""
+    assert allow_external_exit or _exit_is_contract_legal(exit_pt), (
         f"variant {edge_id}/{family}: exit {exit_pt} is not on the right/bottom face"
     )
     assert _entry_is_contract_legal(entry_pt), (
@@ -296,6 +307,44 @@ def _turn_near_target_variant(edge: "EdgeSpec", rule_exit: Contact,
     ]
 
 
+def _is_up_climb(edge: "EdgeSpec", placed: Dict[str, "Box"]) -> bool:
+    """True when ``edge``'s target sits a row or more ABOVE the source and to
+    its right — the up-climbing branch of a single-hub fan-out (1.13.0 L3).
+
+    The hub fans out to targets stacked in a column to its right; most descend
+    (same row or below), but one climbs. Gated on a genuine climb (target top at
+    least two rows above the source top) so an ordinary same-row / descending
+    fan-out, where the lane-side family already routes cleanly, is never offered
+    the lift-over shape and the scored search keeps its current geometry."""
+    src = placed.get(edge.source)
+    tgt = placed.get(edge.target)
+    if src is None or tgt is None:
+        return False
+    return (tgt.x + tgt.w / 2.0 > src.x + src.w / 2.0
+            and tgt.y <= src.y - 2 * ROW_STEP)
+
+
+def _lift_over_variant(edge: "EdgeSpec", rule_exit: Contact,
+                       rule_entry: Contact, start_rank: int) -> List[RouteVariant]:
+    """lift-over family (1.13.0 L3): the up-climbing branch of a single-hub
+    fan-out rises in the pre-fan gap column (left of every descending sibling's
+    turn column) and runs across a lane ABOVE the whole fan into the target,
+    instead of climbing amongst the siblings' corridors where it cuts their
+    left-approach legs (:func:`rule_engine.layout.routers.route_fan_out_row`'s
+    ``lift_over`` shape).
+
+    Same contract-legal contacts as the rule-based route — a right exit and a
+    left/top entry — so no ``edge-direction`` finding regardless of selection;
+    only the route PLAN differs. The solver scores this shape against the
+    default with the whole-diagram ``route_cost`` and keeps it only when it
+    scores strictly fewer crossings (rule-based stays rank 0), so every shipped
+    golden with no up-climbing fan-out branch is byte-identical."""
+    return [
+        _variant(edge.id, "lift-over", rule_exit, rule_entry,
+                 RoutePlan.LIFT_OVER, start_rank),
+    ]
+
+
 def _back_edge_variants(edge: "EdgeSpec", rule_exit: Contact,
                         rule_entry: Contact, start_rank: int) -> List[RouteVariant]:
     """back-edge family: loop-above vs descend-near (REVIEW.md experiment 2).
@@ -314,13 +363,31 @@ def _back_edge_variants(edge: "EdgeSpec", rule_exit: Contact,
 
 
 def _is_return(edge: "EdgeSpec", placed: Dict[str, "Box"]) -> bool:
-    """True for a leftward / response edge: the target's centre sits left of
-    the source's left edge (a back-edge, a reply queue, an actor callback)."""
+    """True for a leftward / response edge eligible for the return bus.
+
+    Two shapes qualify:
+
+    * **leftward** — the target's centre sits left of the source's left edge
+      (a back-edge, a reply queue, an actor callback); the original case.
+    * **lower-row reply** (1.13.0 item 8a, F7) — the target sits a full row or
+      more BELOW the source and is NOT to its right (its centre is at or left of
+      the source's right edge). SEP 05 ``e7`` is this case: EE's reply queue on a
+      lower row, directly below-left, whose ordinary row-gap loop cut five
+      forward edges. The bus run (a lane outside the content rows) removes those
+      crossings. The bus is still variant-scored (``face_swap``), so it is taken
+      ONLY when it strictly lowers crossings with no new rule finding — a
+      below-row reply that is already clean keeps its ordinary route."""
     src = placed.get(edge.source)
     tgt = placed.get(edge.target)
     if src is None or tgt is None:
         return False
-    return tgt.x + tgt.w / 2.0 < src.x
+    tgt_cx = tgt.x + tgt.w / 2.0
+    if tgt_cx < src.x:
+        return True
+    # Lower-row reply: a full row below and not to the right of the source.
+    below = tgt.y >= src.y + src.h
+    not_right = tgt_cx <= src.right
+    return below and not_right
 
 
 def _return_bus_variants(edge: "EdgeSpec", placed: Dict[str, "Box"], kind: str,
@@ -607,6 +674,20 @@ def generate(
     else:
         rule_exit, rule_entry = _rule_based_contacts(edge, placed, containers, kind)
 
+    # 1.13.0 (L2): an external-fan forced exit. When the source node forced a
+    # top/left exit toward an EXTERNAL target (NodeSpec.exit_face), the seed
+    # exit is non-canonical (not right/bottom) — a face the normal pipeline
+    # never produces. Emit ONLY the rule-based seed for it: every alternative
+    # family (spine / lane-side / back-edge) rebuilds a right/bottom exit, and
+    # offering one would let the solver's argmin pick it and silently undo the
+    # forced face. The seed carries ``allow_external_exit`` so the by-
+    # construction right/bottom assertion is relaxed for this one legal case.
+    if not _exit_is_contract_legal(rule_exit):
+        return [
+            _variant(edge.id, "rule-based", rule_exit, rule_entry,
+                     RoutePlan.RULE_BASED, 0, allow_external_exit=True)
+        ]
+
     # The rule-based variant is ALWAYS present and preferred (rank 0), so the
     # solver's argmin can never do worse than today (R3.3, Property 4).
     variants: List[RouteVariant] = [
@@ -623,6 +704,10 @@ def generate(
         lane = _lane_side_variants(edge, rule_exit, rule_entry, rank)
         variants.extend(lane)
         rank += len(lane)
+        if kind == "fan-out-row" and _is_up_climb(edge, placed):
+            lift = _lift_over_variant(edge, rule_exit, rule_entry, rank)
+            variants.extend(lift)
+            rank += len(lift)
         if kind == "cross-region" and _vertical_haul_dominates(edge, placed):
             tnt = _turn_near_target_variant(edge, rule_exit, rule_entry, rank)
             variants.extend(tnt)

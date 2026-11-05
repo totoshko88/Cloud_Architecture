@@ -300,6 +300,8 @@ def relayout_text(text: str, path: str = "<relayout>") -> str:
         legend_lines=legend_lines or None,
         page_w=page_w,
         page_h=page_h,
+        # the points are a previous engine run's routes, not hand pins (phase 3)
+        pinned_ids=(),
     )
 
 

@@ -18,6 +18,32 @@
     }
   },
   "roles": {
+    "acm": {
+      "aws": {
+        "display_name": "AWS Certificate Manager",
+        "note": "resolved 'Certificate Manager'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Security-Identity/32/Arch_AWS-Certificate-Manager_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "App Service Certificates",
+        "note": "resolved 'App Service Certificates'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/web/00049-icon-service-App-Service-Certificates.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "SecurityIdentity",
+        "note": "category icon (Security Identity) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Certificates",
+        "note": "resolved 'certificates'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#certificates",
+        "source": "stencil"
+      }
+    },
     "actor": {
       "aws": {
         "display_name": "User 48 Light",
@@ -379,6 +405,32 @@
         "display_name": "CDN",
         "note": "resolved 'cdn'",
         "ref": "assets/vendor/oci-stencils/stencils.json#cdn",
+        "source": "stencil"
+      }
+    },
+    "certificate_manager": {
+      "aws": {
+        "display_name": "AWS Certificate Manager",
+        "note": "resolved 'Certificate Manager'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Security-Identity/32/Arch_AWS-Certificate-Manager_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "App Service Certificates",
+        "note": "resolved 'App Service Certificates'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/web/00049-icon-service-App-Service-Certificates.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "SecurityIdentity",
+        "note": "category icon (Security Identity) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "Certificates",
+        "note": "resolved 'certificates'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#certificates",
         "source": "stencil"
       }
     },
@@ -848,6 +900,32 @@
         "note": "no query declared",
         "ref": "",
         "source": "unresolved"
+      }
+    },
+    "elasticsearch_service": {
+      "aws": {
+        "display_name": "Amazon OpenSearch Service",
+        "note": "resolved 'OpenSearch Service'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Analytics/32/Arch_Amazon-OpenSearch-Service_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Cognitive Search",
+        "note": "resolved 'Cognitive Search'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/web/10044-icon-service-Cognitive-Search.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "DataAnalytics",
+        "note": "category icon (Data Analytics) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Data Analytics/SVG/DataAnalytics-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "OpenSearch",
+        "note": "resolved 'opensearch'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#opensearch",
+        "source": "stencil"
       }
     },
     "eventbridge": {
@@ -1422,6 +1500,32 @@
         "source": "stencil"
       }
     },
+    "neptune": {
+      "aws": {
+        "display_name": "Amazon Neptune",
+        "note": "resolved 'Neptune'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Databases/32/Arch_Amazon-Neptune_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Azure Cosmos DB",
+        "note": "resolved 'Cosmos DB'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/iot/10121-icon-service-Azure-Cosmos-DB.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "Databases",
+        "note": "category icon (Databases) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Databases/SVG/Databases-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "NoSQL",
+        "note": "resolved 'nosql'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#nosql",
+        "source": "stencil"
+      }
+    },
     "network_boundary": {
       "aws": {
         "display_name": "Amazon Virtual Private Cloud",
@@ -1524,6 +1628,32 @@
         "note": "no query declared",
         "ref": "",
         "source": "unresolved"
+      }
+    },
+    "opensearch": {
+      "aws": {
+        "display_name": "Amazon OpenSearch Service",
+        "note": "resolved 'OpenSearch Service'",
+        "ref": "assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Analytics/32/Arch_Amazon-OpenSearch-Service_32.svg",
+        "source": "product"
+      },
+      "azure": {
+        "display_name": "Cognitive Search",
+        "note": "resolved 'Cognitive Search'",
+        "ref": "assets/vendor/azure-icons/Azure_Public_Service_Icons/Icons/web/10044-icon-service-Cognitive-Search.svg",
+        "source": "product"
+      },
+      "gcp": {
+        "display_name": "DataAnalytics",
+        "note": "category icon (Data Analytics) — no product glyph",
+        "ref": "assets/vendor/gcp-category/Category Icons/Data Analytics/SVG/DataAnalytics-512-color.svg",
+        "source": "category"
+      },
+      "oci": {
+        "display_name": "OpenSearch",
+        "note": "resolved 'opensearch'",
+        "ref": "assets/vendor/oci-stencils/stencils.json#opensearch",
+        "source": "stencil"
       }
     },
     "organizations": {

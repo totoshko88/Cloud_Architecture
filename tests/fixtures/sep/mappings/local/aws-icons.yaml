@@ -10,18 +10,33 @@ resources:
     brand_hex: "#ED7100"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Compute/48/Arch_AWS-Lambda_48.svg"
 
-  # AWS License Manager (feedback 2026-10-17, owner item g). A real AWS
-  # architecture icon in the Management & Governance family (pink #E7157B) — a
-  # distinct service with its own glyph, not a look-alike. The bundled 1.10.11
-  # mapping does not ship a license_manager role, so it is added here in the
-  # workspace-local overlay (merged per-key over the bundled mapping). Same
-  # 78x78 aspect=fixed image shape, label below at 12px. Mirrored for the
-  # asset-path gate in mappings/aws-icons.yaml.
-  license_manager:           # AWS License Manager (service, Management & Governance family)
-    icon_id: aws.license_manager
-    icon_provenance: service
-    brand_hex: "#E7157B"
-    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Management-Tools/48/Arch_AWS-License-Manager_48.svg"
+  # Vendor-NEUTRAL license / certificate glyph (FIX 1, 2026-10-21). The SEP
+  # "License Manager" node on 01 and 09 is an EPAM licensing service (account
+  # 652063929809), NOT the AWS License Manager service. Rendering it with the
+  # real AWS License Manager icon was an Icon-Fidelity violation (a look-alike
+  # that implies an AWS service). It now resolves to a hand-authored,
+  # vendor-neutral grayscale certificate-with-seal SVG under assets/vendor/custom/
+  # — reads as "a license service, vendor-neutral", consistent with how MongoDB
+  # (own brand) and DIAL (own brand) are handled. Neutral mark → neutral brand
+  # grey, no AWS pink. The retired `license_manager` role (real AWS glyph) is no
+  # longer defined — no SEP node references it.
+  license_neutral:           # vendor-neutral license / certificate (NOT AWS License Manager)
+    icon_id: neutral.license
+    icon_provenance: neutral
+    brand_hex: "#3C3C3C"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/custom/license-neutral.svg"
+
+  # Multi-cloud sandbox fleet (FIX 3, 2026-10-21). The 09 "Sandbox fleets (3
+  # clouds)" node spans AWS + Azure + GCP. It renders as a single cloud outline
+  # enclosing the three provider marks (hand-authored composite under
+  # assets/vendor/custom/ — each provider's brand colour + a recognizable mark,
+  # the sanctioned tri-cloud fallback; not a look-alike of any one service icon).
+  # Neutral/composite, so a neutral slate brand grey.
+  sandbox_multicloud:        # one cloud with AWS / Azure / GCP marks inside
+    icon_id: custom.sandbox_3cloud
+    icon_provenance: neutral
+    brand_hex: "#5B6B7B"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/custom/sandbox-3cloud.svg"
 
   # SEP brand mark (custom) — the Syndicate Education Platform system node on the
   # 01 C4-context view. File-path image shape (NO base64 → base64 trips
@@ -77,6 +92,17 @@ resources:
     icon_provenance: neutral
     brand_hex: "#D4157C"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/dial-brand/dial.svg"
+
+  # Argo CD brand mark (owner-supplied asset argo-cd.png, 2026-10-22, DIAG-11).
+  # The in-cluster GitOps controller on 11-hybrid-eks. No fetched pack ships the
+  # Argo CD mark, so an owner-supplied brand asset is the clean path (not a
+  # look-alike). Same PNG-in-SVG wrapper the DIAL/SEP logos use (the embedded-
+  # asset inliner hardcodes the svg+xml MIME, so a raw PNG would render broken).
+  argocd:                    # Argo CD GitOps controller brand mark (owner-supplied)
+    icon_id: argocd.brand
+    icon_provenance: neutral
+    brand_hex: "#EF7B4D"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/custom/argocd.svg"
 
   # AWS Organizations SERVICE icon (owner request 2026-10-17, regen9). The
   # ORGANIZATION-level service glyph (Arch_AWS-Organizations), DISTINCT from the

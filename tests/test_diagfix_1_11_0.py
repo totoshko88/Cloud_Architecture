@@ -12,6 +12,8 @@ R3 — a decorative flow-group box renders at the very back (before every edge),
 
 from __future__ import annotations
 
+import pytest
+
 import re
 
 from rule_engine import caption_routing as cr
@@ -58,6 +60,7 @@ def _sep_summary_spec() -> DiagramSpec:
     )
 
 
+@pytest.mark.slow
 def test_r1_codirectional_bottom_exits_leave_distinct_thirds():
     placed = layout(_sep_summary_spec())
     by_id = {e.spec.id: e for e in placed.edges}

@@ -243,6 +243,7 @@ def _lay_variant(
         lane_above,
         turn_near_target=variant.plan is RoutePlan.TURN_NEAR_TARGET,
         bus=_BUS_SIDE.get(variant.plan),
+        lift_over=variant.plan is RoutePlan.LIFT_OVER,
     )
     src_box = placed[edge.source]
     tgt_box = placed[edge.target]

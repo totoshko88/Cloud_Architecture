@@ -66,6 +66,11 @@ CONTAINER_KINDS = frozenset(
         "on_premises",
         # 1.11.0 WS6: Security Group leaf boundary (network diagram type).
         "security_group",
+        # 1.13.0: AWS peer account / external cloud sibling boundaries.
+        "peer_account",
+        "external_cloud",
+        # 1.13.0 item 15d: neutral edge lane (caption-only leaf band).
+        "edge_lane",
     }
 )
 

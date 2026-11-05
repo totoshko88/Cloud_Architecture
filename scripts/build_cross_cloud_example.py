@@ -126,7 +126,7 @@ NODE_SPECS = [
     ("auth-lambda", "auth-lambda", "resolved", _AWS_LAMBDA, X_AWS, ROW_BOT),
     ("openai-service", "openai-service", "image", _AZ_OPENAI, X_AZ, ROW_TOP),
     ("service-bus", "service-bus", "image", _AZ_SERVICEBUS, X_AZ, ROW_BOT),
-    ("vertex-ai", "gemini-agent-platform", "image", _GCP_VERTEX, X_GCP, ROW_TOP),
+    ("vertex-ai", "gemini-agent-<br>platform", "image", _GCP_VERTEX, X_GCP, ROW_TOP),
     ("cloud-storage", "cloud-storage", "image", _GCP_STORAGE, X_GCP, ROW_BOT),
 ]
 
@@ -241,6 +241,13 @@ def build() -> str:
         boundaries=boundaries,
         nodes=nodes,
         edges=EDGES,
+        # These edges carry hand-authored ``points`` that are route SEEDS to be
+        # normalised by the finishing passes (not pins to keep verbatim). Pass
+        # ``pinned_ids=()`` so the 1.13.0 ``respect_pins=None`` default does not
+        # treat the seeds as legal pins and keep them unchanged — matching every
+        # other shipped generator and the committed golden geometry (phase 3 P0
+        # review B1).
+        pinned_ids=(),
         flow_lines=FLOW_LINES,
         legend_lines=LEGEND_LINES,
         # Right margin, just past the GCP Project boundary (right edge 1298) by

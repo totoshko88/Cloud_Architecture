@@ -41,7 +41,7 @@ and passes all CRITICAL and ERROR lint rules.
 
 The diagram places nodes according to their deployment scope. Inside the VPC
 boundary: the EKS cluster (`agent-eks-cluster`) receives traffic via the ALB
-(`agent-alb`), and the RDS database (`agent-conversation-db`) stores persistent
+(`agent-alb`), and the RDS database (`agent-history-db`) stores persistent
 data. Outside the VPC but inside the Account: Lambda (`agent-tool-invoker`)
 processes requests, SQS (`agent-task-queue`) handles async messaging, Bedrock
 (`agent-bedrock-llm`) provides LLM inference, Secrets Manager (`agent-api-secrets`)

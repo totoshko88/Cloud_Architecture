@@ -205,8 +205,15 @@ RULE_GEOMETRIC_CONTAINMENT = "geometric-containment"
 #                     otherwise. Lint-only (NOT in rule_violations / the solver
 #                     oracle).
 RULE_SCOPE_PLACEMENT = "scope-placement"
+# 1.13.0: a numbered flow-marker on a decorative flow/band group frame
+# (WARNING, both classes) — the group sibling of marker-on-container-border.
+RULE_MARKER_ON_GROUP_BORDER = "marker-on-group-border"
+# 1.13.0: an overlay=supporting node that nevertheless carries a numbered
+# data-flow edge (WARNING, both classes).
+RULE_SUPPORTING_DATA_EDGES = "supporting-data-edges"
 RULE_LEGEND_PLACEMENT = "legend-placement"
 RULE_FLOW_LEGEND = "flow-legend"
+RULE_COMPANION_MARKER_REF = "companion-marker-ref"
 RULE_NODE_CONNECTIVITY = "node-connectivity"
 RULE_EDGE_APPROACH = "edge-approach"
 # honest-gates 1.7.0 (task 10.2): three new rules.
@@ -287,6 +294,14 @@ RULE_MARKER_LABEL_COLLISION = "marker-label-collision"
 #                                Lint-only (NOT in rule_violations / the solver
 #                                oracle), like the other marker-* rules.
 RULE_MARKER_ON_CONTAINER_BORDER = "marker-on-container-border"
+# 1.13.0 phase 3 item 16. The caption sibling of marker-on-container-border
+# (box border), marker-label-collision (node caption) and marker-on-icon (node
+# glyph):
+#   marker-on-container-caption — a numbered flow-marker whose rendered anchor
+#                                 falls inside a Boundary container's left-
+#                                 aligned caption text; WARNING, ERROR on a
+#                                 network / component / flow diagram. Lint-only.
+RULE_MARKER_ON_CONTAINER_CAPTION = "marker-on-container-caption"
 # 1.10.12 WS3 (C7). A crossing a single legal face swap removes:
 #   edge-crossing-avoidable — one edge re-routed onto another legal exit/entry
 #                             face pair (exit right/bottom, entry left/top)
@@ -482,6 +497,8 @@ class Edge:
     source: str = ""
     target: str = ""
     label: Optional[str] = None
+    #: The draw.io cell id (1.13.0): the offender ``edge-label`` names.
+    id: str = ""
 
 
 @dataclass
@@ -610,6 +627,15 @@ class Artifact:
     # means "not parsed" (e.g. a programmatic artifact) and the rule is skipped;
     # an empty list means the diagram has no Flow cell at all.
     flow_legend_lines: Optional[Sequence[str]] = None
+    # Where ``flow_legend_lines`` came from (1.13.0): ``"canvas"`` (an on-canvas
+    # Flow cell), ``"companion"`` (the companion ``## Flow`` section or a
+    # sibling ``.flow.md``, read for ``flow_steps='document'``) or ``"missing"``
+    # (no Flow cell and no companion steps). ``None``: not parsed.
+    flow_source: Optional[str] = None
+
+    # Marker numbers the companion prose cites (``(10)``, ``marker 7``, ...),
+    # for ``companion-marker-ref`` (1.13.0 phase 3). ``None``: not parsed.
+    companion_cited_markers: Optional[Sequence[int]] = None
 
     # Document
     frontmatter: Optional[Mapping[str, Any]] = None
@@ -742,15 +768,30 @@ def _check_node_count(a: Artifact):
     return Severity.ERROR if n > MAX_NODES else False
 
 
-def _check_edge_label(a: Artifact) -> bool:
-    """edge-label: a diagram edge has no non-empty label (WARNING)."""
+def _check_edge_label(a: Artifact):
+    """edge-label: a diagram edge has no non-empty label (WARNING).
+
+    1.13.0: returns a :class:`RuleHit` naming every unlabelled edge (its cell
+    id, else ``<source>-><target>``) with reason ``empty-label:<n>``, rather
+    than a bare ``True`` that told the author nothing about which edge.
+    """
     if not _is_diagram(a):
         return False
+    offenders: List[str] = []
     for edge in a.edges:
-        label = getattr(edge, "label", None) if not isinstance(edge, Mapping) else edge.get("label")
+        get = edge.get if isinstance(edge, Mapping) else (
+            lambda k, _e=edge: getattr(_e, k, None)
+        )
+        label = get("label")
         if label is None or str(label).strip() == "":
-            return True
-    return False
+            ident = str(get("id") or "")
+            if not ident:
+                ident = f"{get('source') or ''}->{get('target') or ''}"
+            offenders.append(ident)
+    if not offenders:
+        return False
+    offenders = sorted(set(offenders))
+    return RuleHit(offenders=tuple(offenders), reason=f"empty-label:{len(offenders)}")
 
 
 def _check_node_quote(a: Artifact) -> bool:
@@ -816,7 +857,29 @@ def _check_legend_boundary_coverage(a: Artifact):
     if geo is None:
         return False
     from rule_engine import geometry as _geo
-    offenders = _geo.check_legend_boundary_coverage(geo, a.legend_lines)
+    from rule_engine import icon_resolver
+
+    # 1.13.0 phase 3 item 17 (F5): also flag a Legend naming Region / AZ / Subnet
+    # that is not drawn. Precision-first: classify the drawn container kinds from
+    # the provider mapping (the same recognition container-style uses); only when
+    # that classification is available do we judge the named-level lines. A C4 /
+    # unrecognised-style diagram leaves drawn_kinds = None and only the
+    # structural outer/inner check runs (unchanged).
+    drawn_kinds = None
+    if not _is_c4_diagram(a) and getattr(geo, "container_styles", None):
+        providers = _container_style_providers(a)
+        mappings: Dict[str, Mapping[str, Any]] = {}
+        for provider in providers:
+            try:
+                mappings[provider] = icon_resolver.load_mapping(provider).get("containers") or {}
+            except icon_resolver.IconResolverError:
+                continue
+        if mappings:
+            kinds: set = set()
+            for style in geo.container_styles.values():
+                kinds |= _geo.classify_container_kinds(style, providers, mappings)
+            drawn_kinds = kinds
+    offenders = _geo.check_legend_boundary_coverage(geo, a.legend_lines, drawn_kinds)
     if not offenders:
         return False
     return RuleHit(offenders=tuple(offenders), reason="legend-names-undrawn-boundary")
@@ -1267,10 +1330,37 @@ def _check_container_padding(a: Artifact):
     if geo is None:
         return False
     from rule_engine import geometry as _geo
-    findings = _geo.check_container_padding(geo)
-    if not findings:
+    # 1.13.0 (review E5): a global/edge service or an external node is not a
+    # spilled tier — it sits above/below the account by design.
+    roles_by_cell = _node_roles_by_icon(a, _container_style_providers(a))
+    node_styles = getattr(geo, "node_styles", {}) or {}
+
+    def spill_exempt(nid: str) -> bool:
+        from rule_engine.layout.base import role_scope
+        st = node_styles.get(nid, "")
+        if _geo._style_token(st, "external") == "1":
+            return True
+        tok = _geo._style_token(st, "scope")
+        if tok is not None:
+            return tok == "global"
+        scopes = {role_scope(r) for r in roles_by_cell.get(nid, ())}
+        return scopes == {"global"}
+
+    findings = _geo.check_container_padding(geo, spill_exempt=spill_exempt)
+    # 1.13.0: a member's caption printed across its container's left/right
+    # border is a padding defect too (ERROR on landscape via the RuleSpec).
+    outside = _geo.check_caption_outside_container(geo)
+    hits: List[RuleHit] = []
+    if findings:
+        hits.append(RuleHit(offenders=_offender_ids(findings), reason="padding"))
+    if outside:
+        hits.append(RuleHit(
+            offenders=tuple(dict.fromkeys(x for nid, cid, _o in outside for x in (nid, cid))),
+            reason="caption-outside-container",
+        ))
+    if not hits:
         return False
-    return RuleHit(offenders=_offender_ids(findings), reason="padding")
+    return hits[0] if len(hits) == 1 else hits
 
 
 def _check_container_dead_space(a: Artifact):
@@ -1441,9 +1531,17 @@ def _check_node_overlap(a: Artifact):
         return False
     from rule_engine import geometry as _geo
     findings = _geo.check_node_overlap(geo)
-    if not findings:
+    # 1.13.0: two names printed over each other (or over a neighbour's icon)
+    # at the real caption width, while the icon-width footprints clear.
+    captions = _geo.check_caption_overlap(geo)
+    hits: List[RuleHit] = []
+    if findings:
+        hits.append(RuleHit(offenders=_offender_ids(findings), reason="overlap"))
+    if captions:
+        hits.append(RuleHit(offenders=_offender_ids(captions), reason="caption-overlap"))
+    if not hits:
         return False
-    return RuleHit(offenders=_offender_ids(findings), reason="overlap")
+    return hits[0] if len(hits) == 1 else hits
 
 
 def _check_arrow_style(a: Artifact):
@@ -1497,7 +1595,11 @@ def _check_node_label_length(a: Artifact):
     for name in a.node_names:
         if not name:
             continue
-        words = name.split()
+        # 1.13.0 phase 3 (item 7d): a bare punctuation token (``+``, ``&``,
+        # ``/``, ``-``) is a connector, not a word — "Syndicate Server (EE +
+        # Syndi)" reads as four words, not five. Count only tokens carrying at
+        # least one alphanumeric character.
+        words = [w for w in name.split() if any(ch.isalnum() for ch in w)]
         if len(words) > LABEL_WORD_CAP or len(name) > LABEL_CHAR_CAP:
             offenders.append(name)
     if not offenders:
@@ -1851,16 +1953,29 @@ def _check_corridor_sharing(a: Artifact):
     return RuleHit(offenders=_offender_ids(findings), reason="shared-corridor")
 
 
+def _thirds_hits(findings, identical_marker: str):
+    """Split exit/entry-thirds findings into an identical-contact hit (reported
+    first; its reason carries ``exits-identical`` / ``entries-identical``, which
+    the RuleSpec escalates to ERROR, 1.13.0) and a hit for the rest."""
+    if not findings:
+        return False
+    same = [f for f in findings if identical_marker in f[1]]
+    rest = [f for f in findings if identical_marker not in f[1]]
+    hits: List[RuleHit] = []
+    if same:
+        hits.append(RuleHit(offenders=_offender_ids(same), reason=same[0][1]))
+    if rest:
+        hits.append(RuleHit(offenders=_offender_ids(rest), reason=_first_reason(rest)))
+    return hits[0] if len(hits) == 1 else hits
+
+
 def _check_exit_thirds(a: Artifact):
     """exit-thirds: same-side fan-out is not centred / even-thirds, or >3 exits (WARNING)."""
     geo = _geometry_of(a)
     if geo is None:
         return False
     from rule_engine import geometry as _geo
-    findings = _geo.check_exit_thirds(geo)
-    if not findings:
-        return False
-    return RuleHit(offenders=_offender_ids(findings), reason=_first_reason(findings))
+    return _thirds_hits(_geo.check_exit_thirds(geo), "-exits-identical")
 
 
 def _check_edge_crosses_label(a: Artifact):
@@ -2071,10 +2186,44 @@ def _check_scope_placement(a: Artifact):
         roles = roles_by_cell.get(nid) or set()
         return any(_is_vpc_edge_role(r) for r in roles)
 
+    # 1.13.0: provider-aware role scope (profiles/service-scope.yaml). Only a
+    # diagram whose title names exactly ONE provider is judged by role; a
+    # multi-cloud / unknown title has no single Service Scope table to apply.
+    provider_scope = None
+    title_token = ((a.title_cell or "").split() or [""])[0].lower()
+    if title_token in providers and len(providers) == 1:
+        from rule_engine.layout.base import provider_role_scope
+
+        def provider_scope(nid: str) -> Optional[str]:
+            # An icon can stand for several roles (the RDS icon is managed_sql
+            # and managed_mysql; GCP's Security category icon is secrets_store
+            # AND network_firewall). At least one role must be LISTED in the
+            # provider table and every listed role must agree; an unlisted
+            # role whose generic ROLE_SCOPE contradicts it makes the icon
+            # ambiguous -> not judged. An icon with no listed role (e.g. AWS
+            # Lambda) is never judged by role.
+            roles = roles_by_cell.get(nid)
+            if not roles:
+                return None
+            listed = {s for r in roles if (s := provider_role_scope(r, title_token))}
+            if len(listed) != 1:
+                return None
+            only = next(iter(listed))
+            for r in roles:
+                if provider_role_scope(r, title_token) is not None:
+                    continue
+                generic = role_scope(r)
+                if generic is None:
+                    continue
+                if ("network" if generic == "network" else "outside_vpc") != only:
+                    return None
+            return only
+
     findings = _geo.check_scope_placement(
         geo, scope_of, is_external, providers, mappings,
         scope_is_explicit=scope_is_explicit,
         is_vpc_edge=is_vpc_edge,
+        provider_scope=provider_scope,
     )
     if not findings:
         return False
@@ -2164,10 +2313,7 @@ def _check_entry_thirds(a: Artifact):
     if geo is None:
         return False
     from rule_engine import geometry as _geo
-    findings = _geo.check_entry_thirds(geo)
-    if not findings:
-        return False
-    return RuleHit(offenders=_offender_ids(findings), reason=_first_reason(findings))
+    return _thirds_hits(_geo.check_entry_thirds(geo), "-entries-identical")
 
 
 def _check_edge_float(a: Artifact):
@@ -2205,7 +2351,7 @@ def _numeric_flow_markers(a: Artifact) -> List[int]:
     return sorted(set(markers))
 
 
-def _check_flow_legend(a: Artifact) -> bool:
+def _check_flow_legend(a: Artifact):
     """flow-legend: numeric edge markers without a covering ``Flow`` legend (WARNING).
 
     diagram-standards (*Numbered Flow Legend*): when a diagram labels its edges
@@ -2224,19 +2370,57 @@ def _check_flow_legend(a: Artifact) -> bool:
     markers = _numeric_flow_markers(a)
     if not markers:
         return False
+    if a.flow_source == "missing":
+        # 1.13.0: the steps are written nowhere — no on-canvas Flow cell and no
+        # companion ``## Flow`` section. ERROR (reason_escalations).
+        return RuleHit(
+            offenders=tuple(f"marker-{n}" for n in markers), reason="flow-steps-missing"
+        )
     if a.flow_legend_lines is None:
         # Not parsed (programmatic artifact): skip rather than assume a failure.
         return False
     lines = [str(line).strip() for line in a.flow_legend_lines]
     if not lines:
-        return True  # numeric markers used, but there is no Flow cell at all
+        # Numeric markers used, but there is no Flow cell at all (1.13.0: every
+        # marker is an offender).
+        return RuleHit(
+            offenders=tuple(f"marker-{n}" for n in markers), reason="no-flow-cell"
+        )
     # Line 1 is the heading ``Flow``; the rest must cover every marker.
     covered = set()
     for line in lines[1:]:
         m = re.match(r"^(\d+)\s*[.)]", line)
         if m:
             covered.add(int(m.group(1)))
-    return not set(markers).issubset(covered)
+    uncovered = sorted(set(markers) - covered)
+    if not uncovered:
+        return False
+    return RuleHit(
+        offenders=tuple(f"marker-{n}" for n in uncovered),
+        reason="uncovered-markers:" + ",".join(str(n) for n in uncovered),
+    )
+
+
+def _check_companion_marker_ref(a: Artifact):
+    """companion-marker-ref: the companion prose cites a marker number that is
+    neither a Flow step nor an edge label (WARNING, both classes; 1.13.0
+    phase 3). Only judged when the diagram has numeric markers. Reason
+    ``unknown-marker:<n,...>``; offenders ``marker-<n>``."""
+    if not _is_diagram(a) or not a.companion_cited_markers:
+        return False
+    drawn = _drawn_markers(a)
+    if not drawn:
+        return False
+    known = set(drawn)
+    for line in list(a.flow_legend_lines or [])[1:]:
+        m = re.match(r"^\s*(\d+)\s*[.)]", str(line))
+        if m:
+            known.add(int(m.group(1)))
+    unknown = sorted(set(a.companion_cited_markers) - known)
+    if not unknown:
+        return False
+    return RuleHit(offenders=tuple(f"marker-{n}" for n in unknown),
+                   reason="unknown-marker:" + ",".join(str(n) for n in unknown))
 
 
 #: A Flow step line ``N. <text>`` / ``N) <text>``.
@@ -2344,6 +2528,49 @@ def _check_node_connectivity(a: Artifact):
     if not findings:
         return False
     return RuleHit(offenders=_offender_ids(findings), reason="no-incident-edge")
+
+
+def _check_supporting_data_edges(a: Artifact):
+    """supporting-data-edges: an ``overlay=supporting`` node (an ops /
+    observability service declared NOT a data-flow step) carries at least one
+    edge with a numbered flow marker (1.13.0, WARNING, both classes). Either the
+    node is a real step (drop the overlay) or the edge is not a data flow (drop
+    its marker / describe it in a callout). offenders = the node, then the
+    numbered edges."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    supporting = sorted(n for n, term in (geo.overlay_nodes or {}).items()
+                        if term == "supporting")
+    if not supporting:
+        return False
+    offenders: List[str] = []
+    labelled_only = False
+    for nid in supporting:
+        numbered = []
+        labelled = []
+        for e in geo.edges:
+            if nid not in (e.source, e.target):
+                continue
+            lab = (e.label or "").strip()
+            if re.fullmatch(r"\d+(\s*,\s*\d+)*", lab):
+                numbered.append(e.id)
+            elif lab and lab.lower() not in ("peering", "callout"):
+                labelled.append(e.id)
+        if numbered or labelled:
+            offenders.extend([nid] + sorted(numbered) + sorted(labelled))
+            if labelled and not numbered:
+                labelled_only = True
+    if not offenders:
+        return False
+    # 1.13.0 phase 3: a word-labelled edge is also a data edge (09's fabricated
+    # CloudWatch -> DynamoDB -> SSM chain); numeric keeps its original reason.
+    reason = ("supporting-carries-labelled-edge" if labelled_only
+              and not any(re.fullmatch(r"\d+(\s*,\s*\d+)*", (e.label or "").strip())
+                          for e in geo.edges
+                          if e.id in offenders)
+              else "supporting-carries-data-edges")
+    return RuleHit(offenders=tuple(dict.fromkeys(offenders)), reason=reason)
 
 
 def _check_legend_placement(a: Artifact):
@@ -2641,11 +2868,31 @@ def _check_collinear_edges(a: Artifact):
     if geo is None:
         return False
     from rule_engine import geometry as _geo
-    pairs = sorted(_geo.collinear_edge_pairs(geo))
-    if not pairs:
+    findings = _geo.collinear_edge_findings(geo)
+    if not findings:
         return False
-    offenders = tuple(eid for pair in pairs for eid in pair)
-    return RuleHit(offenders=offenders, reason=f"collinear:{len(pairs)}")
+    # 1.13.0: the reason names each kind with its pair count; an
+    # ``end-to-end-merge`` (two unrelated edges reading as ONE continuous line)
+    # is an ERROR on a landscape, carried on its own hit.
+    merge = [f for f in findings if f[2] == "end-to-end-merge"]
+    rest = [f for f in findings if f[2] != "end-to-end-merge"]
+    hits: List[RuleHit] = []
+    if merge:
+        hits.append(RuleHit(
+            offenders=tuple(eid for a_, b_, _k in merge for eid in (a_, b_)),
+            reason=f"end-to-end-merge:{len(merge)}",
+            severity=(Severity.ERROR
+                      if (a.diagram_class or DIAGRAM_CLASS_FLOW).lower() == DIAGRAM_CLASS_LANDSCAPE
+                      else None),
+        ))
+    if rest:
+        kinds = sorted({k for _a, _b, k in rest}, key=lambda k: (k != "collinear", k))
+        counts = ",".join(f"{k}:{sum(1 for f in rest if f[2] == k)}" for k in kinds)
+        hits.append(RuleHit(
+            offenders=tuple(eid for a_, b_, _k in rest for eid in (a_, b_)),
+            reason=counts,
+        ))
+    return hits[0] if len(hits) == 1 else hits
 
 
 def _check_marker_label_collision(a: Artifact):
@@ -2685,13 +2932,53 @@ def _check_marker_on_container_border(a: Artifact):
     if geo is None:
         return False
     from rule_engine import geometry as _geo
-    findings = _geo.check_marker_on_container_border(geo)
+    # 1.13.0 phase 3 item 17 (F3): a NON-numeric text edge label on the border is
+    # reported under the same rule as a numeric flow-marker (08's `peering` leg
+    # label printed on the account border).
+    findings = (_geo.check_marker_on_container_border(geo)
+                + _geo.check_text_label_on_container_border(geo))
+    findings = sorted(set(findings))
     if not findings:
         return False
     # ITEM C: ERROR on a network / component / flow diagram, WARNING otherwise.
     sev = Severity.ERROR if _is_network_component_or_flow(a) else None
     return RuleHit(offenders=_offender_ids(findings), reason="marker-on-border",
                    severity=sev)
+
+
+def _check_marker_on_container_caption(a: Artifact):
+    """marker-on-container-caption: a numbered flow-marker renders inside a
+    Boundary container's left-aligned caption text and overprints the account /
+    VPC / subnet name (1.13.0 phase 3 item 16). The caption sibling of
+    marker-on-container-border (box border), marker-label-collision (node
+    caption) and marker-on-icon (node glyph). offenders = the marker edge and
+    the container id. ERROR on a network / component / flow diagram, WARNING
+    otherwise."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    findings = _geo.check_marker_on_container_caption(geo)
+    if not findings:
+        return False
+    sev = Severity.ERROR if _is_network_component_or_flow(a) else None
+    return RuleHit(offenders=_offender_ids(findings),
+                   reason="marker-on-container-caption", severity=sev)
+
+
+def _check_marker_on_group_border(a: Artifact):
+    """marker-on-group-border: a numbered flow-marker renders within
+    ``MARKER_BORDER_CLEARANCE`` of a decorative ``flowgroup-*`` / ``bandgroup-*``
+    frame (1.13.0, WARNING, both classes). offenders = the marker edge and the
+    ``<group>.<side>``."""
+    geo = _geometry_of(a)
+    if geo is None or not getattr(geo, "group_boxes", None):
+        return False
+    from rule_engine import geometry as _geo
+    findings = _geo.check_marker_on_group_border(geo)
+    if not findings:
+        return False
+    return RuleHit(offenders=_offender_ids(findings), reason="marker-on-group-border")
 
 
 def _check_detour_hook(a: Artifact):
@@ -2846,11 +3133,18 @@ RULES: Tuple[Tuple[RuleSpec, Callable[[Artifact], _PredicateResult]], ...] = (
         RuleSpec(RULE_EDGE_FLOAT, Severity.WARNING, landscape=Severity.ERROR),
         _check_edge_float,
     ),
-    (RuleSpec(RULE_EXIT_THIRDS, Severity.WARNING), _check_exit_thirds),
+    # exit-thirds: WARNING; two exits pinned to the SAME contact point
+    # (``exits-identical``) are an ERROR on both classes (1.13.0).
+    (
+        RuleSpec(RULE_EXIT_THIRDS, Severity.WARNING,
+                 reason_escalations={"exits-identical": Severity.ERROR}),
+        _check_exit_thirds,
+    ),
     # entry-thirds: WARNING for flow, ERROR for landscape (arrivals on one face
     # must stay distinct on a dense diagram).
     (
-        RuleSpec(RULE_ENTRY_THIRDS, Severity.WARNING, landscape=Severity.ERROR),
+        RuleSpec(RULE_ENTRY_THIRDS, Severity.WARNING, landscape=Severity.ERROR,
+                 reason_escalations={"entries-identical": Severity.ERROR}),
         _check_entry_thirds,
     ),
     (RuleSpec(RULE_EDGE_CROSSES_LABEL, Severity.WARNING), _check_edge_crosses_label),
@@ -2892,8 +3186,17 @@ RULES: Tuple[Tuple[RuleSpec, Callable[[Artifact], _PredicateResult]], ...] = (
     (RuleSpec(RULE_EDGE_CROSSES_TITLE, Severity.WARNING), _check_edge_crosses_title),
     (RuleSpec(RULE_EDGE_JOG, Severity.WARNING), _check_edge_jog),
     (RuleSpec(RULE_LEGEND_PLACEMENT, Severity.WARNING), _check_legend_placement),
-    (RuleSpec(RULE_FLOW_LEGEND, Severity.WARNING), _check_flow_legend),
+    # flow-legend: WARNING; numbered markers whose steps are written NOWHERE
+    # (no Flow cell, no companion ``## Flow`` section, 1.13.0) are an ERROR.
+    (
+        RuleSpec(RULE_FLOW_LEGEND, Severity.WARNING,
+                 reason_escalations={"flow-steps-missing": Severity.ERROR}),
+        _check_flow_legend,
+    ),
+    (RuleSpec(RULE_COMPANION_MARKER_REF, Severity.WARNING), _check_companion_marker_ref),
     (RuleSpec(RULE_NODE_CONNECTIVITY, Severity.WARNING), _check_node_connectivity),
+    # supporting-data-edges (1.13.0): a supporting node on a numbered flow edge.
+    (RuleSpec(RULE_SUPPORTING_DATA_EDGES, Severity.WARNING, landscape=Severity.ERROR), _check_supporting_data_edges),
     # 1.10.12 WS5: dropped Flow steps (both classes) and landscape islands.
     (RuleSpec(RULE_FLOW_STEP_UNDRAWN, Severity.WARNING), _check_flow_step_undrawn),
     (RuleSpec(RULE_GRAPH_ISLANDS, Severity.WARNING), _check_graph_islands),
@@ -2927,6 +3230,14 @@ RULES: Tuple[Tuple[RuleSpec, Callable[[Artifact], _PredicateResult]], ...] = (
         RuleSpec(RULE_MARKER_ON_CONTAINER_BORDER, Severity.WARNING),
         _check_marker_on_container_border,
     ),
+    # marker-on-container-caption (1.13.0 phase 3 item 16): a flow-marker on a
+    # Boundary container's caption text. Lint-only, sibling of
+    # marker-on-container-border; severity escalated by the hit on a
+    # network / component / flow diagram.
+    (
+        RuleSpec(RULE_MARKER_ON_CONTAINER_CAPTION, Severity.WARNING),
+        _check_marker_on_container_caption,
+    ),
     # edge-crossing-excess: WARNING above ceil(0.25 x E) on both classes; the
     # 1.10.7 landscape hard cap (> 0.5 x E) is an ERROR carried by the hit's own
     # severity, since it depends on the measured ratio, not the class alone.
@@ -2943,6 +3254,11 @@ RULES: Tuple[Tuple[RuleSpec, Callable[[Artifact], _PredicateResult]], ...] = (
     (
         RuleSpec(RULE_COLLINEAR_EDGES, Severity.WARNING),
         _check_collinear_edges,
+    ),
+    # marker-on-group-border (1.13.0): a marker on a decorative group frame.
+    (
+        RuleSpec(RULE_MARKER_ON_GROUP_BORDER, Severity.WARNING),
+        _check_marker_on_group_border,
     ),
     (RuleSpec(RULE_DETOUR_HOOK, Severity.WARNING), _check_detour_hook),
     (
@@ -3234,6 +3550,7 @@ __all__ = [
     "RULE_EDGE_JOG",
     "RULE_LEGEND_PLACEMENT",
     "RULE_FLOW_LEGEND",
+    "RULE_COMPANION_MARKER_REF",
     "RULE_NODE_CONNECTIVITY",
     "RULE_EDGE_APPROACH",
     "RULE_PARSE_ERROR",

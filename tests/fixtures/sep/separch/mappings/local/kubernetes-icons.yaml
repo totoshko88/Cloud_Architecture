@@ -1,0 +1,35 @@
+# Workspace-local Kubernetes icon overlay (1.10.12).
+#
+# Migrated from the top-level mappings/kubernetes-icons.yaml, whose edits the
+# 1.10.12 engine reports as inert ("differs from the effective (bundled +
+# overlay) entry — move it to mappings/local/kubernetes-icons.yaml"). These
+# control-plane component roles point at the unlabeled Kubernetes Icons Set SVGs
+# (community pack, Apache-2.0 / CC-BY-4.0). No SEP diagram currently uses them;
+# they are kept here so the overlay is authoritative and the build-icon-sets
+# warnings are cleared.
+resources:
+  k8s_api:
+    icon_id: k8s.api
+    icon_provenance: resource
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/control_plane_components/unlabeled/api.svg"
+  k8s_etcd:
+    icon_id: k8s.etcd
+    icon_provenance: resource
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/control_plane_components/unlabeled/etcd.svg"
+  k8s_scheduler:
+    icon_id: k8s.sched
+    icon_provenance: resource
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/control_plane_components/unlabeled/sched.svg"
+  k8s_controller_manager:
+    icon_id: k8s.c_m
+    icon_provenance: resource
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/control_plane_components/unlabeled/c-m.svg"
+  k8s_kubelet:
+    icon_id: k8s.kubelet
+    icon_provenance: resource
+    brand_hex: "#326CE5"
+    style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/k8s-icons/icons/svg/control_plane_components/unlabeled/kubelet.svg"

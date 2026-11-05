@@ -1230,6 +1230,7 @@ from rule_engine.geometry import check_edge_routing, segment_crosses_box
 from rule_engine.layout_engine import (
     CROSS_REGION_SPAN,
     EDGE_KINDS,
+    CoincidentNodesError,
     UnclassifiableEdgeError,
     classify_edge,
     route_back_edge,
@@ -1360,11 +1361,16 @@ def test_classify_unknown_kind_hint_raises():
 
 
 def test_classify_unclassifiable_edge_raises_fail_honest():
-    # Coincident boxes (dx=0, dy=0) match no class → raise, never guess (Req 7.1).
+    # Coincident boxes (dx=0, dy=0) are a spec authoring mistake, not an
+    # unroutable edge class (1.13.0 phase 3 item 19): classify_edge raises the
+    # dedicated CoincidentNodesError — a subtype of UnclassifiableEdgeError, so
+    # the Req 7.1 fail-honest guard still holds — naming the edge and explaining
+    # the coincidence, never guessing a class.
     placed = _placed(Box("s", 100, 100, _S, _S), Box("t", 100, 100, _S, _S))
     with pytest.raises(UnclassifiableEdgeError) as ei:
         classify_edge(_spec_edge("s", "t"), placed)
-    assert "e" in str(ei.value) and EDGE_KINDS[0] in str(ei.value)
+    assert isinstance(ei.value, CoincidentNodesError)
+    assert "'e'" in str(ei.value) and "same position" in str(ei.value)
 
 
 # --- per-class router shape + no-obstacle-crossing --------------------------

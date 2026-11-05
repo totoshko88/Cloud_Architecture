@@ -138,6 +138,14 @@ CONTAINER_KINDS: Tuple[str, ...] = (
     # boundary-ONLY kind (a trust perimeter is a scope, not a service node).
     # Default-inert: no shipped golden declares it.
     "trust_boundary",
+    # 1.13.0 item 15d: a neutral "edge lane" drawn as a caption-only dashed-grey
+    # LEAF boundary that groups the global/edge nodes (user / cdn / waf / dns)
+    # sitting ABOVE the account, so an edge lane reads as a labelled band rather
+    # than free-floating icons. A boundary-ONLY kind (no `edge_lane` node glyph);
+    # its members are treated as external (no scope judgement) and are exempt
+    # from the container-padding vertical spill. Default-inert: no shipped golden
+    # declares it, so every golden `.drawio` stays byte-identical.
+    "edge_lane",
 )
 
 #: The two container kinds EVERY profile must declare (Requirement 2 AC6). The
@@ -216,6 +224,21 @@ def _resolve_terminology_path() -> Path:
 TERMINOLOGY_PATH: Path = _resolve_terminology_path()
 
 
+def resolve_profile_file(name: str) -> Path:
+    """Locate ``profiles/<name>`` with :func:`_resolve_terminology_path`'s order
+    (repo root, bundled payload, CWD); falls back to the repo-root path."""
+    here = Path(__file__).resolve()
+    repo_root = here.parents[2] / "profiles" / name
+    for candidate in (
+        repo_root,
+        here.parent / "_bootstrap" / "profiles" / name,
+        Path.cwd() / "profiles" / name,
+    ):
+        if candidate.is_file():
+            return candidate
+    return repo_root
+
+
 def resolve_bundled_dir(name: str) -> Path:
     """Locate a bundled data directory (``mappings`` / ``schemas``) in any install.
 
@@ -281,6 +304,18 @@ BRAND_HEX: Dict[str, str] = {
 ROOT_LAYER_ID = "1"
 
 
+#: Id prefix of the overlay RING cell ``diagram_layout`` draws around a node
+#: carrying an overlay term (``standby`` / ``supporting`` / ``unconfirmed``,
+#: 1.13.0). The ring is the overlay's visible shape channel — never a node, a
+#: Boundary container or a service vertex — so every parser skips it by id.
+OVERLAY_RING_PREFIX = "overlayring-"
+
+
+def is_overlay_ring(cell_id: str) -> bool:
+    """True for an overlay ring cell (:data:`OVERLAY_RING_PREFIX`)."""
+    return (cell_id or "").startswith(OVERLAY_RING_PREFIX)
+
+
 def is_boundary_container_style(cell_id: str, style: str) -> bool:
     """Return True when a vertex is a Boundary / Network-Boundary container.
 
@@ -310,6 +345,10 @@ def is_boundary_container_style(cell_id: str, style: str) -> bool:
     A group cell is therefore a boundary only when it names a ``group_`` /
     ``grIcon=`` container icon.
     """
+    if is_overlay_ring(cell_id):
+        # 1.13.0: an overlay ring is a dashed borderless rectangle by design,
+        # but it outlines a node; it is never a Boundary.
+        return False
     low = (style or "").lower()
     is_group = "group" in low or "container=1" in low
     is_dashed = "dashed=1" in low and "fillcolor=none" in low

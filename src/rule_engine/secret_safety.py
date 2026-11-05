@@ -113,6 +113,18 @@ METADATA_KEYS: frozenset[str] = frozenset(
         "objectkey",
         "s3key",
         "keypairname",
+        # 1.13.0: AWS idempotency / pagination tokens (``ClientToken`` on an EFS
+        # or EC2 response, a Terraform ``LockToken``, ``NextToken`` and the S3
+        # ``ContinuationToken`` pair) are opaque request identifiers, not
+        # credentials. They end with ``token`` but grant no access. A secret-
+        # shaped VALUE under one of them is still caught by the value rule.
+        "clienttoken",
+        "locktoken",
+        "nexttoken",
+        "idempotencytoken",
+        "continuationtoken",
+        "nextcontinuationtoken",
+        "paginationtoken",
     }
 )
 

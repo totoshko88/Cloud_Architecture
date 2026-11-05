@@ -19,6 +19,8 @@ severities through the linter on a parsed golden example.
 
 from __future__ import annotations
 
+import pytest
+
 import glob
 import os
 
@@ -738,7 +740,8 @@ def test_entry_thirds_two_identical_left_entries_flagged():
         _edge_id("e2", "b", "rds", (1.0, 0.5), (0.0, 0.5)),
     ])
     hits = geo.check_entry_thirds(g)
-    assert any(node == "rds" and "merge" in reason for node, reason in hits)
+    # 1.13.0: an exactly shared contact is reported as ``entries-identical``.
+    assert any(node == "rds" and "entries-identical" in reason for node, reason in hits)
 
 
 def test_entry_thirds_two_distinct_left_entries_clean():
@@ -770,10 +773,11 @@ def test_entry_thirds_over_connected_face_flagged():
 
 def test_entry_thirds_landscape_is_error_flow_is_warning():
     """entry-thirds is WARNING for flow, ERROR for landscape (routing-family
-    escalation, matching edge-direction/edge-float)."""
+    escalation, matching edge-direction/edge-float). 1.13.0: two distinct but
+    merging arrivals (an IDENTICAL pair is an ERROR on both classes)."""
     g = DiagramGeometry(edges=[
         _edge_id("e1", "a", "rds", (1.0, 0.5), (0.0, 0.5)),
-        _edge_id("e2", "b", "rds", (1.0, 0.5), (0.0, 0.5)),
+        _edge_id("e2", "b", "rds", (1.0, 0.5), (0.0, 0.55)),
     ])
     flow = Artifact(kind="diagram", node_names=["rds"], geometry=g, diagram_class="flow")
     land = Artifact(kind="diagram", node_names=["rds"], geometry=g, diagram_class="landscape")
@@ -1000,6 +1004,7 @@ def test_all_golden_landscapes_clear_container_labels():
 # --------------------------------------------------------------------------- #
 
 
+@pytest.mark.slow
 def test_free_left_corridor_used_for_same_column_tier_skip():
     """A spine to a same-column target past an intermediate node routes down the
     LEFT gap and enters the target's LEFT face (edge 4: lb->app-az2), not a

@@ -25,12 +25,20 @@ from rule_engine.diagram_layout import (
     Boundary,
     Edge,
     Node,
-    legend_lines_for,
+    STANDARD_LEGEND_LINES,
+    Skin,
     build_diagram,
 )
 from rule_engine.icon_resolver import resolve_icon, resolve_container
 
 OUT = Path("01-sep-context.drawio")
+
+# 1.11.0 native skin (FEAT-001): light Flow/Legend furniture (#B3B3B3), grey
+# edges (#5A6B7B), circle marker badges (#1A1A1A disc + white numeral). Applied
+# through the shared build_diagram() skin channel, so the three presentation
+# channels land on the engine-emitted edge/marker/furniture style strings while
+# the hand-pinned node/edge GEOMETRY (coordinates) stays byte-stable.
+NATIVE_SKIN = Skin(furniture_stroke="light", edge_stroke="#5A6B7B", marker_badge="circle")
 
 # --------------------------------------------------------------------------- #
 # Renderers
@@ -100,6 +108,12 @@ AX = 40          # actors column
 SEP_X = 440      # SEP platform node inside the account boundary
 EDGE_X = SEP_X   # edge node (CloudFront/DNS) directly above SEP for a clean drop
 EXT_X = 860      # external systems column
+WAF_X = 240      # WAF node, edge lane, LEFT of CloudFront so it exits RIGHT
+                 # into CloudFront's LEFT face (WAF fronts/protects CloudFront).
+                 # GLOBAL/edge service — OUTSIDE the account/VPC, never inside.
+SANDBOX_X = 600  # Sandbox fleets node, OUTSIDE the account, right-below the
+                 # Syndicate Server (which provisions + cleans them). Kept left
+                 # of e9's x=720 corridor so no edge crosses it.
 
 nodes = [
     # Actors (OUTSIDE the boundary, left column). Rows chosen so none shares a
@@ -125,43 +139,64 @@ nodes = [
     # longer prints over the CloudFront icon/caption (edge-crosses-title /
     # title keep-out — the user's "заголовок наліз на CloudFront" finding).
     Node("edge", "CloudFront + DNS", EDGE_X, 130, render=aws_renderer("cdn")),
+    # WAF (syndicate_education_cloudfront_waf, wafv2 GLOBAL/us-east-1) fronts
+    # CloudFront. Role `waf`; GLOBAL/edge, so it sits in the EDGE lane OUTSIDE
+    # the account boundary, LEFT of CloudFront (so the protect edge exits WAF's
+    # right face into CloudFront's left face — contract-legal). Short caption so
+    # node-label-length stays <=4 words / <=40 chars and the caption band clears
+    # the Student edge.
+    Node("waf", "WAF (CloudFront)", WAF_X, 130, render=aws_renderer("waf")),
     # SEP platform — the ONE representative AWS node, inside the account boundary.
     # Rendered with the custom SEP brand mark (sep_platform role, assets/local).
     Node("sep", "SEP platform", SEP_X, 420, render=aws_renderer("sep_platform")),
-    # External systems (OUTSIDE the boundary, right column). cmtr kept clear of
-    # SEP's band (top 520 > 498) so the SEP->cmtr edge is not a mis-read jog.
+    # Syndicate Server — the control plane that drives sandbox/org lifecycle.
+    # It is an EC2 host IN the SEP account (870325637521, instance tagged
+    # "syndicate-server", see compute.json) → drawn INSIDE the account boundary
+    # with the EC2 service icon (compute_instance). Task-4 (2026-10-23): the
+    # deprecated external "Syndicate task manager"/Jenkins (EPM-CMTR) is gone;
+    # the real control plane is this server inside SEP (owner feedback 2026-10-21).
+    # FEAT-003: one EC2 hosts TWO components (Education Extension + Syndi);
+    # caption names both. Never split into two nodes; stays inside the account.
+    # Two-line caption so the (Education Extension + Syndi) line stays narrow
+    # enough that its caption band clears marker 5 (keycloak->SEP) — a single
+    # 45-char line widened the caption under marker 5 (marker-label-collision).
+    Node("syndicate", "Syndicate Server&#10;(Education Extension + Syndi)", SEP_X, 620,
+         render=aws_renderer("compute_instance")),
+    # Sandbox fleets — the multi-cloud (AWS / Azure / GCP) sandbox accounts the
+    # Syndicate Server PROVISIONS and CLEANS UP. Role `sandbox_multicloud`
+    # (same composite asset as 09), OUTSIDE the SEP account boundary (they are
+    # separate sandbox accounts, not SEP-account resources). Drawn right-below
+    # the Syndicate Server so the provision/cleanup edge is a short clean run.
+    Node("sandbox", "Sandbox fleets (3 clouds)", SANDBOX_X, 800,
+         render=aws_renderer("sandbox_multicloud")),
+    # External systems (OUTSIDE the boundary, right column).
     Node("atlas", "MongoDB Atlas (eu-central-1)", EXT_X, 120,
          render=aws_renderer("mongodb_atlas")),
-    # Syndicate Server is an EC2 host → the EC2 service icon (compute_instance).
-    # External (different account) but naming the real resource type is correct
-    # and Icon-Fidelity clean (owner feedback 2026-10-17 e).
-    Node("syndicate", "Syndicate Server", EXT_X, 300,
-         render=aws_renderer("compute_instance")),
-    # EPM-CMTR literally IS an AWS account (088595288622) → the AWS Organizations
-    # Account resource icon (peer_account), not a neutral box. Stays OUTSIDE the
-    # SEP account boundary — it is a different account (owner feedback c).
-    Node("cmtr", "EPM-CMTR (088595288622)", EXT_X, 520,
-         render=aws_renderer("peer_account")),
-    # License Manager → the real AWS License Manager service icon (new
-    # license_manager role, Management & Governance family) (owner feedback g).
+    # License Manager → a VENDOR-NEUTRAL license/certificate glyph (FIX 1,
+    # 2026-10-21). SEP's "License Manager" is an EPAM licensing service (account
+    # 652063929809), NOT the AWS License Manager service — so it must not carry
+    # the AWS License Manager icon (an Icon-Fidelity look-alike). It now renders
+    # the grayscale `license_neutral` certificate-with-seal mark, consistent with
+    # how MongoDB / DIAL are handled (neutral / own-brand, never a fake AWS glyph).
     Node("lm", "License Manager", EXT_X, 690,
-         render=aws_renderer("license_manager")),
+         render=aws_renderer("license_neutral")),
     # AI (Bedrock / DIAL) → the Amazon Bedrock icon (llm_platform). Label keeps
     # the DIAL mention (owner feedback f).
     Node("ai", "AI (Bedrock / DIAL)", EXT_X, 860,
          render=aws_renderer("llm_platform")),
 ]
 
-# AWS Account boundary — wraps ONLY the SEP platform node.
-# SEP at (440, 420), footprint bottom 420+78+30(label)=528.
-# top strip = 60 (caption + pad); left/right/bottom pad = 30.
+# AWS Account boundary — wraps the SEP platform node AND the Syndicate Server
+# (the in-account control plane). SEP at (440, 420); syndicate at (440, 620),
+# footprint bottom 620+78+30(label)=728. top strip = 60 (caption + pad);
+# left/right pad ~50 so the caption fits; bottom pad 30 clears the label band.
 account = Boundary(
     id="boundary-account",
     label="SEP — AWS 870325637521 / eu-central-1",
     x=390,
     y=350,
     w=ICON_SIZE + 2 * 50,   # 178: left/right pad ~50 so caption fits
-    h=528 - 350 + 40,       # bottom pad clears the label band
+    h=728 - 350 + 30,       # 408: bottom pad clears the syndicate label band
     style=resolve_container("boundary", "aws")["style_string"],
     kind="account",
 )
@@ -176,13 +211,13 @@ account = Boundary(
 GAP = 700  # vertical corridor x between account (right ~568) and externals (860)
 
 edges = [
-    # 1 Student -> edge (UI + LMS launch). Owner feedback (a): leave Student from
-    # its RIGHT-CENTRE cleanly, with NO bend at all. Student icon 40..118 x,
-    # 160..238 y → right-centre (1.0,0.5) = (118, 199). Enter the edge's LEFT
-    # face at the SAME y (199) — edge icon 130..208 y, so entryY=(199-130)/78
-    # ≈ 0.885 — making e1 one perfectly straight horizontal segment (no jog,
-    # no corridor points), which is exactly "exit from the middle of Student".
-    Edge("e1", "student", "edge", "1", exit=(1.0, 0.5), entry=(0.0, 0.885)),
+    # 1 Student -> WAF (the external request path hits the CloudFront WAF first).
+    # WAF now fronts CloudFront in the drawn path (WAF added wave-12), so the
+    # student request enters at the WAF and is relayed to CloudFront by e11.
+    # Student icon 40..118 x, 160..238 y → right-centre (1.0,0.5) = (118, 199).
+    # Enter the WAF's LEFT face at the SAME y (199) — WAF icon 240..318, y130..208,
+    # so entryY=(199-130)/78 ≈ 0.885 — one straight horizontal segment, no bend.
+    Edge("e1", "student", "waf", "1", exit=(1.0, 0.5), entry=(0.0, 0.885)),
     # 2 edge -> SEP: edge bottom-centre -> straight vertical drop into SEP top
     #    (edge node is directly above SEP, so this is a single straight segment)
     Edge("e2", "edge", "sep", "2", exit=(0.5, 1.0), entry=(0.5, 0.0)),
@@ -195,53 +230,138 @@ edges = [
     # 5 Keycloak -> SEP (SSO token validation): keycloak right -> SEP left-bottom
     Edge("e5", "keycloak", "sep", "5", exit=(1.0, 0.3), entry=(0.0, 0.85),
          points=[(320, 753), (320, 486)]),
-    # --- SEP outgoing to externals: 3 on the RIGHT face, 2 on the BOTTOM face
-    # 6 SEP -> MongoDB Atlas (data, over peering): right -> atlas left
+    # --- SEP outgoing: 3 on the RIGHT face (atlas, lm, ai), 1 on the BOTTOM
+    #     face to the in-account Syndicate Server.
+    # 6 SEP -> MongoDB Atlas (data, over peering): right -> atlas left (rises
+    #    in the outer corridor x=GAP=700)
     Edge("e6", "sep", "atlas", "6", exit=(1.0, 0.3), entry=(0.0, 0.5),
          points=[(GAP, 443), (GAP, 159)]),
-    # 7 SEP ⇄ Syndicate Server (SQS): one edge annotated request/response
-    #    (sandbox lifecycle + support out; results back) — right -> syndicate left
-    Edge("e7", "sep", "syndicate", "7", exit=(1.0, 0.6), entry=(0.0, 0.4),
-         points=[(GAP + 40, 467), (GAP + 40, 324)]),
-    # 8 SEP -> EPM-CMTR (task verification SRE/CMTM/KTM, over peering):
-    #    right -> cmtr left
-    Edge("e8", "sep", "cmtr", "8", exit=(1.0, 0.85), entry=(0.0, 0.5),
-         points=[(GAP + 80, 486), (GAP + 80, 559)]),
-    # 9 SEP -> License Manager (license sync) — draft-assumption (BOTTOM face)
-    Edge("e9", "sep", "lm", "9", dashed=True, exit=(0.35, 1.0), entry=(0.0, 0.3),
-         points=[(467, 650), (GAP - 40, 650), (GAP - 40, 709)]),
-    # 10 SEP -> AI (Bedrock / DIAL) (BOTTOM face)
-    Edge("e10", "sep", "ai", "10", exit=(0.65, 1.0), entry=(0.0, 0.5),
-         points=[(491, 830), (GAP - 80, 830), (GAP - 80, 899)]),
+    # 7 SEP ⇄ Syndicate Server (SQS, in-account control plane): SEP bottom ->
+    #    syndicate top, a short straight vertical drop inside the account (the
+    #    opaque caption background masks the own-label crossing; z-order safe).
+    Edge("e7", "sep", "syndicate", "7", exit=(0.5, 1.0), entry=(0.5, 0.0)),
+    # --- e8/e9 nest crossing-free on SEP's right face (Task-5 uncross) ---
+    #     Both targets sit in the external column at x=860 (lm higher at y690,
+    #     ai lower at y860), so each edge drops in its own corridor and then
+    #     runs right to x=860. For the two runs to NOT cross, the edge to the
+    #     HIGHER target takes the OUTER corridor and exits HIGHER on the face,
+    #     while the edge to the LOWER target takes the INNER corridor and exits
+    #     LOWER — the runs nest. (The original pinned the higher target through
+    #     the righter corridor AND the lower through the lefter corridor, which
+    #     inverted them because both must still reach the shared x=860 column,
+    #     so their right-runs crossed the opposite vertical; this re-pin fixes
+    #     it against the FINAL node layout after the Task-4 move.) Every leg is
+    #     axis-aligned; exit right, enter left.
+    # --- e8/e9 corridors moved OUTSIDE the account right edge (690) so neither
+    #     marker anchor rides a container border (FEAT-002 ITEM A / FEAT-001
+    #     marker-on-container-border: e9's old x=620 vertical crossed the account
+    #     bottom border y=758 inside its x-extent 390..690, so marker 9's numeral
+    #     sat on the box edge — the owner's "9 наїхала на box account" finding).
+    #     Both corridors now sit right of x=690 and NEST so their right-runs do
+    #     not cross: the LOWER target (ai) takes the OUTER corridor x=720 and runs
+    #     along the lower y=900; the HIGHER target (lm) takes the INNER corridor
+    #     x=760 and runs along y=730. The inner vertical (x=760, y 460..730) never
+    #     reaches the outer's lower run, and the outer vertical (x=720) sits left
+    #     of the inner's horizontal start (x=760), so the two legs are disjoint.
+    # 8 License Manager -> SEP (owner step 21, CONFIRMED via ESM 5fe731e5):
+    #    License Manager sends to the SEP sep-lm-synchronization-queue, which an
+    #    event-source mapping relays to the se-management-api-handler Lambda, so
+    #    LM is the SOURCE and SEP the target. The edge is flipped lm->sep and
+    #    re-pinned contract-legal: exit lm BOTTOM (0.5,1.0)=(899,768), drop to a
+    #    floor lane y=940, run left (clear of the account x390..568) to x=370,
+    #    rise in the x=370 left lane (left of the account border 390, a fresh
+    #    corridor distinct from e3@360/e4@340/e5@320), then enter SEP's LEFT face
+    #    at y~436. Every leg is axis-aligned; the only crossing is with e10's
+    #    floor loop, within the flow crossing cap. No collision with e6's x=700
+    #    corridor (sep->atlas).
+    Edge("e8", "lm", "sep", "8", dashed=True, exit=(0.5, 1.0), entry=(0.0, 0.2),
+         points=[(899, 940), (370, 940), (370, 436)]),
+    # 9 SEP -> AI (Bedrock / DIAL) — LOWER target, OUTER corridor x=720. Exit SEP
+    #    right at y=480 (band 0.769); run to x=720; drop to y=900; enter ai left
+    #    (ai icon 860..938 → ~0.51). Corridor x=720 is 30px right of the account
+    #    border (690), so marker 9's midpoint anchor (~720, 659) is clear of every
+    #    border.
+    Edge("e9", "sep", "ai", "9", exit=(1.0, 0.769), entry=(0.0, 0.513),
+         points=[(720, 480), (720, 900)]),
+    # 10 SEP -> LMS (LTI grade passback / Assignment-and-Grade Services): SEP
+    #    returns task results to the LMS so the learner's course grade updates.
+    #    A return edge to the bottom-left external LMS. Exits SEP right (contract
+    #    legal), runs down the right gap INSIDE its own account, exits the account
+    #    bottom once, loops along the canvas floor (below the AI row) and up the
+    #    far-left margin, entering LMS on its LEFT face. The route stays clear of
+    #    e4 (LMS->SEP, which lives on the x=340 left corridor) and never re-enters
+    #    the account interior after leaving it.
+    #    wave-10 B3 (owner: "9 та 10 поміняти місцями точку виходу"): e9 (SEP->AI,
+    #    lower-RIGHT) keeps the RIGHT-face exit; e10 (SEP->LMS, lower-LEFT) now
+    #    exits the BOTTOM face LEFT-of-centre (0.3, left of e7's bottom-centre at
+    #    0.5) and runs LEFT immediately, so the two no longer share the right face
+    #    and cross. The drop is assigned by TARGET DIRECTION: the leftward return
+    #    (LMS) takes a dedicated LEFT corridor x=300 (left of every incoming
+    #    corridor e3@360/e4@340/e5@320 and of the account border 390), while the
+    #    rightward target (AI) keeps the right corridor x=730 — the two runs now
+    #    diverge from the SEP node with no crossing. Exit bottom-left -> short
+    #    drop to y=520 (above the Syndicate Server at y620) -> left across y=520
+    #    (clears the server, which starts at x440) -> down x=300 to the floor ->
+    #    up the far-left margin into LMS's LEFT face. Every leg axis-aligned.
+    Edge("e10", "sep", "lms", "10", exit=(0.3, 1.0), entry=(0.0, 0.5),
+         points=[(463, 520), (300, 520), (300, 970), (30, 970), (30, 599)]),
+    # 11 WAF -> CloudFront (WAF fronts/protects CloudFront; the inspected request
+    #    is relayed to the CDN). WAF icon 240..318, y130..208; CloudFront icon
+    #    440..518, y130..208 (same row). Exit WAF right-centre (1.0,0.5)=(318,169),
+    #    enter CloudFront left-centre (0.0,0.5)=(440,169) — one straight
+    #    horizontal segment, nothing between the two icons.
+    Edge("e11", "waf", "edge", "11", exit=(1.0, 0.5), entry=(0.0, 0.5)),
+    # 12 Syndicate Server -> Sandbox fleets (provision + cleanup, control). The
+    #    Syndicate Server (x=440 y=620, icon 440..518 y620..698) is INSIDE the
+    #    account; sandbox (x=600 y=800) is OUTSIDE it. Exit syndicate RIGHT
+    #    (1.0,0.5)=(518,659), run right to x=639 (sandbox top-centre column;
+    #    crosses the account right border at x=568 legitimately as it leaves the
+    #    account, stays left of e9's x=720 corridor so no crossing), then drop
+    #    to sandbox TOP (0.5,0.0)=(639,800). Dashed = lifecycle control plane.
+    Edge("e12", "syndicate", "sandbox", "12", dashed=True,
+         exit=(1.0, 0.5), entry=(0.5, 0.0),
+         points=[(639, 659), (639, 800)]),
 ]
 
 flow_lines = [
     "Flow",
-    "1. Student opens Syndicate UI / LMS launch via the edge",
-    "2. Edge (CloudFront) serves the UI and forwards API calls to SEP",
+    "1. Student request enters via the CloudFront WAF (Syndicate UI / LMS launch)",
+    "2. Edge (CloudFront) serves the UI and forwards API calls to SEP (se-ui-api REST)",
     "3. Operator drives SEP via the management API / CLI",
     "4. LMS launches SEP via LTI 1.0/1.1",
     "5. Keycloak validates the corporate SSO token for SEP",
     "6. SEP reads/writes application data in MongoDB Atlas (over VPC peering)",
-    "7. SEP ⇄ Syndicate Server over SQS: sandbox lifecycle + support out, results back",
-    "8. SEP submits task verification to EPM-CMTR (SRE/CMTM/KTM, over peering)",
-    "9. SEP license sync to License Manager [draft-assumption]",
-    "10. SEP calls AI providers (Bedrock / DIAL) for Syndi / Angry EdA",
+    "7. SEP ⇄ Syndicate Server over SQS: sandbox/org lifecycle (the in-account control plane)",
+    "8. License Manager -> SEP (sep-lm-synchronization-queue -> se-management-api-handler)",
+    "9. SEP calls AI providers (Bedrock / DIAL) for Syndi / Angry EdA",
+    "10. SEP returns task results to the LMS over LTI grade passback (AGS)",
+    "11. WAF (syndicate_education_cloudfront_waf, global) relays to CloudFront",
+    "12. Syndicate Server provisions and cleans up the multi-cloud sandbox fleets",
 ]
 
-# Legend: only the boundaries actually drawn (legend_lines_for, WS11/C10 — this
-# diagram draws the SEP account box but NO VPC, so no "Inner boundary" line) plus
-# the draft-assumption callout term documented.
-legend_lines = list(legend_lines_for([account])) + [
+# Legend: standard lines + the draft-assumption callout term documented +
+# the two new context nodes (WAF global/edge, multi-cloud sandbox fleets).
+legend_lines = list(STANDARD_LEGEND_LINES) + [
     "callout 'draft-assumption' = unconfirmed path, first-draft assumption",
+    "WAF = syndicate_education_cloudfront_waf (global, fronts CloudFront)",
+    "Sandbox fleets = multi-cloud sandbox accounts (AWS/Azure/GCP), provisioned + cleaned by the Syndicate Server",
 ]
 
-title = "aws SEP context — 870325637521 / eu-central-1 | 2026-10-17 | v6"
+title = "aws SEP context — 870325637521 / eu-central-1 | 2026-10-28 | v14"
 
+# Below-body Flow/Legend (Mode B, 1.10.12): a right-margin legend past this
+# diagram's wide external column + long captions pushed the natural canvas width
+# so the mandatory flow upscale rendered the PNG ~1608px — over the 1600px flow
+# budget (the legend furniture, not any node, was the width driver). Placing the
+# Flow/Legend as one block BELOW the body, left-aligned with it, makes the body
+# (~1000px) the width driver instead, so the raster fits the flow budget. The
+# body bottom is the e10 floor loop at y=970; the block sits at y=1010 (one grid
+# step clear) and the page grows taller, which a flow diagram does not budget.
 # Right-margin Flow/Legend: past the external column + its wide captions.
-# External captions are long ("MongoDB Atlas (eu-central-1)"), so clear them.
 legend_x = EXT_X + ICON_SIZE + 200   # 1138
 legend_w = 300
+legend_y_flow = 60
+legend_y_legend = 460
 
 drawio = build_diagram(
     diagram_id="aws-context",
@@ -252,12 +372,13 @@ drawio = build_diagram(
     edges=edges,
     flow_lines=flow_lines,
     legend_x=legend_x,
-    legend_y_flow=60,
-    legend_y_legend=460,
+    legend_y_flow=legend_y_flow,
+    legend_y_legend=legend_y_legend,
     legend_w=legend_w,
     legend_lines=legend_lines,
     page_w=legend_x + legend_w + 60,
     page_h=1020,
+    skin=NATIVE_SKIN,
 )
 
 OUT.write_text(drawio, encoding="utf-8")

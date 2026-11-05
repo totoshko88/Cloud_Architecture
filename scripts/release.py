@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import importlib.util
 import os
 import re
 import shlex
@@ -221,7 +222,9 @@ def _gate_steps(fast: bool) -> List[Tuple[str, List[str]]]:
     for d in drawios:
         steps.append((f"edge alignment {d}", [py, "scripts/orthogonalise_drawio.py", "--check", d]))
     if not fast:
-        steps.append(("test suite", [py, "-m", "pytest", "-q"]))
+        # 1.13.0: run the suite in parallel when pytest-xdist is installed.
+        xdist = ["-n", "auto"] if importlib.util.find_spec("xdist") is not None else []
+        steps.append(("test suite", [py, "-m", "pytest", "-q", *xdist]))
     return steps
 
 

@@ -308,7 +308,8 @@ def _canvas_width(source: Path) -> float:
     linter and layout engine use. A page with no vertices yields 0.0.
     """
     from rule_engine.drawio_model import DrawioParseError, absolute_origin, parse_drawio
-    from rule_engine.geometry import _CAPTION_TEXT_CHAR_W, caption_lines
+    from rule_engine.geometry import caption_lines
+    from rule_engine.text_metrics import CAPTION_CHAR_W as _CAPTION_TEXT_CHAR_W
 
     try:
         pages = parse_drawio(source.read_bytes(), path=str(source))
@@ -379,20 +380,59 @@ def _canvas_height(source: Path) -> float:
         for cell in page.cells.values():
             if not cell.vertex or cell.geom is None:
                 continue
-            _x, y = absolute_origin(page, cell.id)
+            ax, y = absolute_origin(page, cell.id)
             h = cell.geom.h or 0.0
             top, bottom = y, y + h
             style = cell.style_map
-            longest = max((len(ln) for ln in caption_lines(cell.label)), default=0)
+            lines = caption_lines(cell.label)
+            longest = max((len(ln) for ln in lines), default=0)
             if longest and style.get("verticalLabelPosition") == "bottom":
-                # A bottom caption renders one label band below the icon box.
-                bottom = y + h + LABEL_BAND
+                # 1.13.0 phase 3 (item 13): a bottom caption renders ONE label
+                # band per wrapped line below the icon, not a single fixed band.
+                # A two-line member name (SEP 12) overran the fixed estimate, so
+                # the height was underestimated and the PNG came out taller than
+                # the budget. One band per line matches the horizontal estimate.
+                bottom = y + h + LABEL_BAND * max(1, len(lines))
             if not seen:
                 min_top = top
                 seen = True
             max_bottom = max(max_bottom, bottom)
             min_top = min(min_top, top)
+        # 1.13.0 phase 3 (item 13): edge waypoints and contact points extend the
+        # canvas too — a return-bus lane below the lowest icon, or a top corridor
+        # above it, is drawn but carried on an EDGE, not a vertex, so the
+        # vertex-only estimate missed it (SEP 12). Include every absolute edge
+        # point (waypoints + resolved contacts).
+        for p in _edge_points(page, absolute_origin):
+            if not seen:
+                min_top = p
+                seen = True
+            max_bottom = max(max_bottom, p)
+            min_top = min(min_top, p)
     return max_bottom - min_top
+
+
+def _edge_points(page, absolute_origin) -> "List[float]":
+    """Absolute Y coordinates of every edge waypoint on ``page`` (1.13.0 item 13).
+
+    Each edge's ``mxGeometry`` carries interior ``<mxPoint>`` waypoints (and,
+    when pinned, source/target points) in PAGE coordinates — the builder emits
+    absolute model coordinates — so a return-bus lane or a top corridor drawn on
+    an edge is covered. Contact points that live only as exit/entry fractions on
+    the attached node are already covered by that node's box."""
+    ys: List[float] = []
+    for cell in page.cells.values():
+        if cell.vertex or cell.geom is None:
+            continue
+        for pt in getattr(cell.geom, "points", ()) or ():
+            if pt is not None and pt[1] is not None:
+                ys.append(float(pt[1]))
+        src_pt = getattr(cell.geom, "source_point", None)
+        tgt_pt = getattr(cell.geom, "target_point", None)
+        for pt in (src_pt, tgt_pt):
+            if pt is not None and pt[1] is not None:
+                ys.append(float(pt[1]))
+    return ys
 
 
 def compute_scale(
@@ -590,7 +630,16 @@ def export_one(
             if actual_px > budget_px:
                 corrected = scale * (budget_px - 1) / actual_px
                 if corrected >= MIN_EXPORT_SCALE and corrected < scale:
-                    _run_export(corrected)
+                    scale = corrected
+                    _run_export(scale)
+            # 1.13.0 phase 3 (item 13b): the size budget feeds the scale. The
+            # byte size is only known AFTER rendering, so a PNG that overran its
+            # class BYTE budget (SEP 12 at 527KB over the 500KB flow budget) is
+            # re-exported ONCE or twice at a scale reduced by the area ratio
+            # ``sqrt(budget/size)`` with a 5% margin, down to the legibility
+            # floor. Fires ONLY for an over-budget PNG, so every within-budget
+            # golden exports once at the unchanged scale and stays byte-identical.
+            scale = _fit_size_budget(source, out_png, scale, dclass_w, _run_export)
     finally:
         if tmp_dir is not None:
             shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -609,6 +658,38 @@ def _format_scale(scale: float) -> str:
     if math.isclose(scale, round(scale)):
         return str(int(round(scale)))
     return f"{scale:.3f}"
+
+
+def _fit_size_budget(
+    source: Path, out_png: Path, scale: float, dclass: str, run_export,
+    max_retries: int = 2,
+) -> float:
+    """Re-export ``out_png`` at a smaller scale until it is within its class
+    BYTE budget, or the floor / retry cap is reached (1.13.0 phase 3, item 13b).
+
+    The byte size is known only after a render, so a PNG over the class budget
+    (`MAX_SIZE_BYTES` flow / `LANDSCAPE_MAX_SIZE_BYTES` landscape) is re-exported
+    at ``scale * sqrt(budget / size) * 0.95`` (the file size grows roughly with
+    the pixel AREA, so the square-root targets the budget with a 5% margin),
+    bounded below by :data:`MIN_EXPORT_SCALE` and at most ``max_retries`` times.
+    Returns the final scale. A within-budget PNG is untouched (no re-export), so
+    a golden that already fits stays byte-identical."""
+    from rule_engine.raster_gate import MAX_SIZE_BYTES, LANDSCAPE_MAX_SIZE_BYTES
+
+    budget = LANDSCAPE_MAX_SIZE_BYTES if dclass == "landscape" else MAX_SIZE_BYTES
+    for _ in range(max_retries):
+        try:
+            size = out_png.stat().st_size
+        except OSError:
+            return scale
+        if size <= budget:
+            return scale
+        corrected = scale * math.sqrt(budget / size) * 0.95
+        if corrected >= scale or corrected < MIN_EXPORT_SCALE:
+            return scale  # cannot reduce further without going below the floor
+        scale = corrected
+        run_export(scale)
+    return scale
 
 
 def _png_width(png: Path) -> int:

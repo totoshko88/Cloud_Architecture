@@ -230,6 +230,7 @@ def _load_builder(name: str):
     return module
 
 
+@pytest.mark.sep
 def test_08_variant_draws_peering_boundary_to_boundary_no_proxy():
     import os
     from rule_engine.icon_resolver import _load_mapping_cached

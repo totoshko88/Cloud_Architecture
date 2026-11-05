@@ -603,7 +603,7 @@ def measure_file(path: Path) -> List[Metrics]:
 # Output
 # --------------------------------------------------------------------------- #
 
-HEADER = ("| diagram | class | N/E | bbox | page | util | ler_out | ler_in | X | Xav | back "
+HEADER = ("| diagram | class | N/E | bbox | page | util | ler_out | ler_in | X | Xav | Xraw | back "
           "| own | vis | col | capovf | undrawn | comp/orph | sib same/raw |")
 RULE = "|" + "---|" * 19
 

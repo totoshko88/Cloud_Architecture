@@ -121,16 +121,35 @@ class NodeSpec:
     #: row when the band is wider than the Region), instead of being routed
     #: through the vertical ``_REGIONAL_COLS`` column logic. ``"account-south"``
     #: places the band BELOW the Region inside the Account (used for a CI/CD
-    #: strip). ``None`` (default) keeps the pre-1.13.0 columnar placement, so
-    #: every shipped golden is byte-identical. Only meaningful on a region-direct
-    #: node of a North–South diagram; ignored otherwise. Coordinate-free: it
-    #: names a placement class, never geometry.
+    #: strip). ``"north"`` places the band ABOVE the VPC but still INSIDE the
+    #: Region (the edge / entry tiers). ``"account-north"`` (1.13.0, feedback F)
+    #: places the band ABOVE the Region box and inside the Account — a TRUE
+    #: account-level global EDGE band (CloudFront / WAF / Route 53 at the cloud
+    #: edge, outside the Region), reserved above the Region regardless of which
+    #: external actor / on-premises lanes are occupied (the fix for the
+    #: ``global-in-region`` case). ``None`` (default) keeps the pre-1.13.0
+    #: columnar placement, so every shipped golden is byte-identical. Only
+    #: meaningful on a region-direct node of a North–South diagram; ignored
+    #: otherwise. Coordinate-free: it names a placement class, never geometry.
     band: Optional[str] = None
     #: 1.13.0 (regional-band): the 0-indexed band ROW a ``band``-placed node
     #: sits on before wrapping (its ``slot`` orders it left→right within the
     #: row). ``0`` (default) ⇒ the first band row. Coordinate-free: it names a
     #: row index within the band, never geometry.
     band_row: int = 0
+    #: 1.13.0 (L2): optional **external-fan exit-face hint** for a node sitting
+    #: at a container's edge (a Syndicate Server at the VPC top-right, a Lambda
+    #: whose reply crosses to a bottom-left external store). The directional
+    #: contract exits every edge from the source's RIGHT (or bottom, for a
+    #: mostly-below target), which rakes a boundary-corner node's external fan
+    #: back ACROSS the account to reach bands drawn at the top / left of the
+    #: canvas (``knee-through`` / ``edge-crossing-excess`` → BLOCKED). This hint
+    #: forces the exit face for the node's edges WHOSE TARGET IS EXTERNAL (outside
+    #: every cloud boundary): ``"up"`` → top-centre, ``"left"`` → left-centre,
+    #: ``"right"`` → right-centre (the contract default, a no-op). An edge to an
+    #: in-cloud target is UNAFFECTED, and ``None`` (default) is byte-identical to
+    #: every pre-1.13.0 spec. Coordinate-free: it names a face, never geometry.
+    exit_face: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -208,6 +227,18 @@ class ContainerSpec:
     #: VPC. Coordinate-free. ``None`` (default) → the diagram's primary provider,
     #: so every existing spec is byte-identical.
     provider: Optional[str] = None
+    #: Opt this peer container into **till-content** sizing (1.13.0 L6). By
+    #: default a peer container (an AZ or VPC with a region-sibling of the same
+    #: kind) is widened by ``_equalize_peer_widths`` to the WIDER peer's size so
+    #: the pair reads as one mirror-symmetric stack. When its content is far
+    #: narrower than its sibling's (an asymmetric SEP account: one AZ holds a
+    #: wide service row, the other a single node) that widening leaves hundreds
+    #: of px of dead-space (``container-dead-space``). ``fit_content=True`` keeps
+    #: this box sized to its OWN content + padding instead, and excludes it from
+    #: setting the pair target — so the sibling is not dragged wider either.
+    #: ``False`` (default) keeps the equalized, mirror-symmetric behaviour, so
+    #: every existing spec is byte-identical.
+    fit_content: bool = False
 
 
 @dataclass(frozen=True)
@@ -301,7 +332,18 @@ class DiagramSpec:
     #: column right); ``"right"`` puts the regional column first, so a flow that
     #: runs from regional services into the VPC (API Gateway → RDS) reads left to
     #: right. ``"auto"`` (default) means ``"left"`` unless the automatic ordering
-    #: finds that ``"right"`` removes back-edges. Not a coordinate.
+    #: finds that ``"right"`` removes back-edges.
+    #:
+    #: 1.13.0 (L1): ``"right-keep-regional-left"`` is ``"right"`` for a region
+    #: whose regional services span MORE than one column. Plain ``"right"``
+    #: inserts the VPC block right after the feeder column and pushes every
+    #: regional column beyond the feeder past the block, splitting a multi-column
+    #: compute spine around the VPC box (an ``edge-routing`` /
+    #: ``container-padding`` / ``edge-crossing-excess`` ERROR on a dense SEP
+    #: account). This value anchors the VPC block to the right of the region's
+    #: RIGHTMOST column instead, so the inner AND outer regional columns stay
+    #: together left of the VPC block and the spine is not split. Not a
+    #: coordinate.
     vpc_side: str = "auto"
     #: 1.11.0 WS2: optional **logical groups** for a flow diagram — a tuple of
     #: ``(label, (member_node_id, ...))`` pairs. Each draws one light-grey box

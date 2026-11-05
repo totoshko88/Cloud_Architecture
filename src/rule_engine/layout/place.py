@@ -31,9 +31,11 @@ from dataclasses import replace
 try:  # package-relative import when used as ``rule_engine.layout.place``
     from ..diagram_layout import CONTAINER_PAD, GRID, ICON_SIZE, COL_STEP, ROW_STEP
     from ..geometry import (
-        Box, LABEL_BAND, CONTAINER_LABEL_BAND, _CAPTION_TEXT_CHAR_W, _CONTAINER_LABEL_INSET, caption_lines,
+        Box, LABEL_BAND, CONTAINER_LABEL_BAND, caption_lines,
         container_caption_need,
     )
+    from ..text_metrics import CAPTION_CHAR_W as _CAPTION_TEXT_CHAR_W
+    from ..text_metrics import UNKNOWN_STYLE_CAPTION_INSET as _CONTAINER_LABEL_INSET
     from .model import DiagramSpec
     from .base import (
         SpecError,
@@ -48,6 +50,7 @@ try:  # package-relative import when used as ``rule_engine.layout.place``
         _place_base,
         _region_secondary_offset,
         _region_primary_rebase,
+        _region_band_offsets,
         _extent,
         _with_extent,
         _container_axes,
@@ -61,9 +64,11 @@ try:  # package-relative import when used as ``rule_engine.layout.place``
 except ImportError:  # pragma: no cover - fallback for flat-module execution
     from diagram_layout import CONTAINER_PAD, GRID, ICON_SIZE, COL_STEP, ROW_STEP  # type: ignore[no-redef]
     from geometry import (  # type: ignore[no-redef]
-        Box, LABEL_BAND, CONTAINER_LABEL_BAND, _CAPTION_TEXT_CHAR_W, _CONTAINER_LABEL_INSET, caption_lines,
+        Box, LABEL_BAND, CONTAINER_LABEL_BAND, caption_lines,
         container_caption_need,
     )
+    from text_metrics import CAPTION_CHAR_W as _CAPTION_TEXT_CHAR_W  # type: ignore[no-redef]
+    from text_metrics import UNKNOWN_STYLE_CAPTION_INSET as _CONTAINER_LABEL_INSET  # type: ignore[no-redef]
     from layout.model import DiagramSpec  # type: ignore[no-redef]
     from layout.base import (  # type: ignore[no-redef]
         SpecError,
@@ -78,6 +83,7 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
         _place_base,
         _region_secondary_offset,
         _region_primary_rebase,
+        _region_band_offsets,
         _extent,
         _with_extent,
         _container_axes,
@@ -521,35 +527,44 @@ def place_nodes(spec: DiagramSpec) -> Dict[str, Box]:
     # Pass 1: place everything with no region offset (region A/B/"" overlapping).
     base = _place_base(spec, base_x, base_y)
 
-    # Pass 2: translate region B off along the secondary axis by the
-    # content-derived step, so peers sit side-by-side and never overlap. Theme 45:
-    # also lift region B along the PRIMARY (tier) axis so its topmost tier is
-    # level with region A's — a no-op (delta 0) when the peers share lanes (every
-    # symmetric HA golden), and the fix for a disjoint-lane peer (k8s ns-data)
-    # that would otherwise land diagonally below A and bloat the outer envelope.
+    # Pass 2: translate every peer region band (``b``, ``c``, ``d``, …) off
+    # along the secondary axis by its cumulative content-derived step, so all
+    # peers sit side-by-side and never overlap. Theme 45: also lift each band
+    # along the PRIMARY (tier) axis so its topmost tier is level with region A's
+    # — a no-op (delta 0) when the peers share lanes (every symmetric HA golden),
+    # and the fix for a disjoint-lane peer (k8s ns-data) that would otherwise
+    # land diagonally below A and bloat the outer envelope.
+    #
+    # 1.13.0 (N-region): ``_region_band_offsets`` generalises the two-region
+    # ``_region_secondary_offset`` / ``_region_primary_rebase`` to any number of
+    # bands, and reduces to IDENTICAL math for N=2 (band ``b`` = region ``a``'s
+    # extent + gap, lift = ``top(a) - top(b)``), so every shipped a/b golden is
+    # byte-unchanged. Region ``a`` (and account-level ``""`` nodes) get (0, 0).
     secondary = _secondary_axis(spec.axis)
     primary = "y" if spec.axis == "north-south" else "x"
-    offset = _region_secondary_offset(spec, base)
-    primary_lift = _region_primary_rebase(spec, base)
+    band_offsets = _region_band_offsets(spec, base)
 
     placed: Dict[str, Box] = {}
     for node in spec.nodes:
         box = base[node.id]
-        if node.region == "b":
+        off, lift = band_offsets.get(node.region, (0, 0))
+        if off:
             low, size = _extent(box, secondary)
-            box = _with_extent(box, secondary, _snap(low + offset), size)
-            if primary_lift:
-                plo, psize = _extent(box, primary)
-                box = _with_extent(box, primary, _snap(plo + primary_lift), psize)
+            box = _with_extent(box, secondary, _snap(low + off), size)
+        if lift:
+            plo, psize = _extent(box, primary)
+            box = _with_extent(box, primary, _snap(plo + lift), psize)
         placed[node.id] = box
 
     # Compact flow only: centre each account-level ("") node over the SECONDARY
     # span of the region blocks, so a DNS that fans to both regions sits above
     # their midpoint rather than hugging region A's column (the summary
     # reference's top-centred DNS). Scoped to compact so the landscape edge row
-    # — which the reference pins at the top-left — is unchanged.
+    # — which the reference pins at the top-left — is unchanged. Spans ALL peer
+    # bands (1.13.0), so a front door over three/four namespaces centres on the
+    # whole row; for N=2 the span is region a+b exactly as before.
     if spec.compact:
-        region_boxes = [placed[n.id] for n in spec.nodes if n.region in ("a", "b")]
+        region_boxes = [placed[n.id] for n in spec.nodes if n.region]
         acct_nodes = [n for n in spec.nodes if n.region == ""]
         if region_boxes and acct_nodes:
             lo = min(_extent(b, secondary)[0] for b in region_boxes)

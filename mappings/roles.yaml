@@ -148,6 +148,14 @@ roles:
     gcp_category: "Databases"
     oci: "nosql"
 
+  # Amazon Neptune — graph database, Databases family (blue #527FFF).
+  # Feedback: IHTC. Resolves to the official glyph on every pack.
+  neptune:
+    aws: "Neptune"
+    azure: "Cosmos DB"
+    gcp_category: "Databases"
+    oci: "nosql"
+
   # AWS Identity and Access Management — Security family (red)
   iam:
     aws: "Identity and Access Management"
@@ -385,6 +393,18 @@ roles:
     azure: "Key Vaults"
     gcp_category: "Security Identity"
     oci: "vault"
+  # AWS Certificate Manager — Security & Identity family. Feedback: Philips
+  # landscape. `certificate_manager` is an alias.
+  acm:
+    aws: "Certificate Manager"
+    azure: "App Service Certificates"
+    gcp_category: "Security Identity"
+    oci: "certificates"
+  certificate_manager:
+    aws: "Certificate Manager"
+    azure: "App Service Certificates"
+    gcp_category: "Security Identity"
+    oci: "certificates"
   # Amazon GuardDuty — Security & Identity (red)
   guardduty:
     aws: "GuardDuty"
@@ -403,6 +423,18 @@ roles:
     azure: "Synapse Analytics"
     gcp_category: "Data Analytics"
     oci: "data-flow"
+  # Amazon OpenSearch Service — search / analytics, Analytics family
+  # (purple #8C4FFF). Feedback: LSEG. `elasticsearch_service` is an alias.
+  opensearch:
+    aws: "OpenSearch Service"
+    azure: "Cognitive Search"
+    gcp_category: "Data Analytics"
+    oci: "opensearch"
+  elasticsearch_service:
+    aws: "OpenSearch Service"
+    azure: "Cognitive Search"
+    gcp_category: "Data Analytics"
+    oci: "opensearch"
   # AWS Glue — Analytics (purple)
   glue:
     aws: "Glue"

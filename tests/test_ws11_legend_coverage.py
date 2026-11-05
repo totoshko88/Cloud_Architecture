@@ -19,6 +19,8 @@ Covered here:
 """
 from __future__ import annotations
 
+import pytest
+
 import importlib.util
 from pathlib import Path
 
@@ -131,7 +133,7 @@ def _lint_rule(xml: str, tmp_path, name: str):
             if f["rule"] == "legend-boundary-coverage"]
 
 
-def _account_only_xml(legend_lines):
+def _account_only_xml(legend_lines, kind="account"):
     icon = dl.builtin_icon(
         "shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;"
         "fillColor=#ED7100;strokeColor=#ffffff;aspect=fixed;html=1"
@@ -142,7 +144,7 @@ def _account_only_xml(legend_lines):
                           x=60, y=60, w=200, h=200,
                           style="rounded=0;dashed=1;fillColor=none;strokeColor=#CD2264;"
                                 "fontColor=#CD2264;verticalAlign=top;align=left",
-                          kind="account")
+                          kind=kind)
     node = dl.Node("n", "n", 120, 120, render=icon)
     return dl.build_diagram(
         diagram_id="t", diagram_name="t",
@@ -153,7 +155,10 @@ def _account_only_xml(legend_lines):
 
 
 def test_lint_flags_an_undrawn_inner_boundary(tmp_path):
-    xml = _account_only_xml(list(dl.STANDARD_LEGEND_LINES))
+    # A boundary with no declared kind: build_diagram passes the explicit
+    # legend through unchanged (1.13.0 filters it only when kinds are declared),
+    # so the raw undrawn inner line reaches the canvas for the lint rule.
+    xml = _account_only_xml(list(dl.STANDARD_LEGEND_LINES), kind="")
     hits = _lint_rule(xml, tmp_path, "raw")
     assert len(hits) == 1 and hits[0]["severity"] == "WARNING"
     assert hits[0]["reason"] == "legend-names-undrawn-boundary"
@@ -173,25 +178,73 @@ def test_lint_is_silent_once_the_inner_line_is_dropped(tmp_path):
 
 def _geo_of_script(name: str):
     import os
+    import shutil
+    import tempfile
     from rule_engine.icon_resolver import _load_mapping_cached
-    path = _FIXTURES / name
     cwd = os.getcwd()
-    os.chdir(_FIXTURES.parent)   # SEP scripts resolve assets relative to the root
-    _load_mapping_cached.cache_clear()
-    try:
-        spec = importlib.util.spec_from_file_location(path.stem + "_ws11", path)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)  # build_diagram runs at import
-    finally:
-        os.chdir(cwd)
+    # The 01 / 04 builders write their .drawio into the cwd at import. Run them
+    # in a temporary copy of the fixture root (assets + mappings resolve
+    # relative to it), so a crashed or killed worker can never leave a
+    # committed fixture overwritten (1.13.0).
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp) / "sep"
+        shutil.copytree(_FIXTURES.parent, root,
+                        ignore=shutil.ignore_patterns("*.png", "__pycache__", "*.drawio"))
+        path = root / "scripts" / name
+        os.chdir(root)
         _load_mapping_cached.cache_clear()
+        try:
+            spec = importlib.util.spec_from_file_location(path.stem + "_ws11", path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)  # build_diagram runs at import
+        finally:
+            os.chdir(cwd)
+            _load_mapping_cached.cache_clear()
     return geo.build_geometry(parse_drawio(module.drawio, path=name + ".drawio")[0]), module
 
 
+def test_build_diagram_filters_an_explicit_legend_by_drawn_boundaries():
+    """1.13.0: an explicit STANDARD_LEGEND_LINES on an account-only canvas (the
+    SEP 01 / 04 builders) loses only the undrawn inner line."""
+    xml = _account_only_xml(list(dl.STANDARD_LEGEND_LINES))
+    assert _OUTER in xml and _INNER not in xml
+
+
+def test_build_diagram_logs_the_dropped_legend_line(caplog):
+    """1.13.0: the explicit-legend filter is not a silent rewrite."""
+    with caplog.at_level("WARNING", logger="rule_engine.diagram_layout"):
+        _account_only_xml(list(dl.STANDARD_LEGEND_LINES))
+    dropped = [r.getMessage() for r in caplog.records
+               if "dropped a Legend line" in r.getMessage()]
+    assert dropped and _INNER in dropped[0]
+
+
+def test_build_diagram_keeps_an_explicit_legend_without_an_inner_line(caplog):
+    lines = [line for line in dl.STANDARD_LEGEND_LINES if line != _INNER]
+    with caplog.at_level("WARNING", logger="rule_engine.diagram_layout"):
+        xml = _account_only_xml(lines)
+    assert _OUTER in xml
+    assert not [r for r in caplog.records if "dropped a Legend line" in r.getMessage()]
+
+
+def _drawn_legend(xml: str, name: str):
+    """The Legend lines lint reads (``Artifact.legend_lines``) from ``xml``."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        path = Path(tmp) / f"{name}.drawio"
+        path.write_text(xml, encoding="utf-8")
+        return [line for art in parse_artifacts(str(path)) for line in (art.legend_lines or ())]
+
+
+@pytest.mark.slow
+@pytest.mark.sep
 def test_sep_01_and_04_do_not_list_an_undrawn_inner_boundary():
+    # The builders still pass STANDARD_LEGEND_LINES explicitly; the Legend the
+    # engine DRAWS (what lint reads) must not name the undrawn inner boundary.
     for name in ("build_01_sep_context.py", "build_04_flow_lms_launch.py"):
         g, module = _geo_of_script(name)
-        legend = list(module.legend_lines)
+        legend = _drawn_legend(module.drawio, name)
+        assert legend and legend[0] == "Legend", name
         offenders = geo.check_legend_boundary_coverage(g, legend)
         assert offenders == [], (name, offenders)
         # And the inner line is genuinely absent from the legend text.

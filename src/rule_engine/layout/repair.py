@@ -216,7 +216,8 @@ def _spec_container_id(cand: "PlacedDiagram", oid: object) -> object:
     return oid
 
 
-def _serialize_candidate(cand: "PlacedDiagram", labels: Optional[Dict[str, str]] = None) -> str:
+def _serialize_candidate(cand: "PlacedDiagram", labels: Optional[Dict[str, str]] = None,
+                         membership: Optional[Dict[str, str]] = None) -> str:
     """Serialize a candidate to ``.drawio`` text via ``build_diagram`` (stub icons).
 
     Builds the ``Node`` / ``Edge`` / ``Boundary`` objects ``build_diagram``
@@ -228,7 +229,10 @@ def _serialize_candidate(cand: "PlacedDiagram", labels: Optional[Dict[str, str]]
 
     ``labels`` (1.10.12 WS4) captions each stub node with its display label
     instead of its id, so the finishing passes (caption-safe re-routes, caption
-    wraps) see the real caption widths."""
+    wraps) see the real caption widths.
+    ``membership`` (FEAT-004) parents each node to its spec box
+    (``build_diagram(membership=)``), for the post-layout check; None (the
+    oracle) keeps the geometric tightest-box rule."""
     # 1.10.6: draw each container with the caption and style the skin will use
     # when the spec carries them, so the oracle and the scored solver see the
     # caption exactly where the linter will (``edge-crosses-container-label``).
@@ -252,9 +256,17 @@ def _serialize_candidate(cand: "PlacedDiagram", labels: Optional[Dict[str, str]]
         if (box := cand.containers.get(c.id)) is not None
     ]
     stub = _dl.builtin_icon(_STUB_ICON_STYLE)
+    # 1.13.0 (L2): carry each node's ``external`` flag into the oracle stub so
+    # ``build_diagram``/``overlay_suffix`` emits the ``external=1`` style token.
+    # The re-parsed geometry's ``node_styles`` then carries it, which is what
+    # ``check_edge_direction``'s external-fan exit exception reads — without it
+    # a forced top/left exit to an external target would be flagged in the
+    # oracle even though it is contract-legal. A non-external node emits nothing
+    # (byte-inert).
+    _external_of = {n.id: getattr(n, "external", False) for n in cand.spec.nodes}
     nodes = [
         _dl.Node(id=nid, label=(labels or {}).get(nid, nid), x=int(box.x), y=int(box.y),
-                 render=stub)
+                 render=stub, external=_external_of.get(nid, False))
         for nid, box in sorted(cand.nodes.items())
     ]
     edges = [
@@ -283,6 +295,9 @@ def _serialize_candidate(cand: "PlacedDiagram", labels: Optional[Dict[str, str]]
         # The oracle judges the geometry the engine routed; the Variant A
         # re-route is the shared builder's finishing pass on the real document.
         caption_safe=False,
+        # engine-routed candidate, not hand pins (1.13.0 phase 3 default)
+        pinned_ids=(),
+        **({"membership": membership} if membership is not None else {}),
     )
 
 
@@ -352,6 +367,32 @@ def _run_oracle(candidate: "PlacedDiagram") -> "OracleFindings":
     blocking = [f for f in all_findings if f[0] in _BLOCKING_RULES]
     fixable = [f for f in blocking if f[0] in _FIXABLE_RULES]
     return OracleFindings(blocking=blocking, fixable=fixable)
+
+
+#: Container kinds the padding repair may grow around a node the spec does
+#: not assign to them (1.13.0): the account envelope and the region.
+_AUTO_WRAP_KINDS = frozenset({"account", "region"})
+
+
+def _membership_or_none(candidate: "PlacedDiagram") -> Optional[Dict[str, str]]:
+    from .base import membership_from
+
+    try:
+        return membership_from(candidate.spec, candidate.nodes)
+    except (KeyError, ValueError):
+        return None
+
+
+def _may_wrap(candidate: "PlacedDiagram", member: Dict[str, str], nid: str, cid: str) -> bool:
+    """True when the padding repair may grow ``cid`` around node ``nid``: the
+    node is a spec member of ``cid`` (or of a box inside it), or ``cid`` is an
+    account / region (1.13.0)."""
+    from .base import container_chain
+
+    kind = next((c.kind for c in candidate.spec.containers if c.id == cid), None)
+    if kind is None or kind in _AUTO_WRAP_KINDS:
+        return True
+    return cid in container_chain(candidate.spec, member.get(nid, ""))
 
 
 def _grow_container(box: Box, step: int = GRID) -> Box:
@@ -456,17 +497,39 @@ def _repair(
     edges = list(candidate.edges)
     edge_by_id = {pe.spec.id: i for i, pe in enumerate(edges)}
 
+    member: Optional[Dict[str, str]] = None
+    applied = 0
+    skipped: List[object] = []
     for rule, payload in sorted(findings.fixable, key=lambda f: (f[0], repr(f[1]))):
         if rule == "container-padding":
             _node_id, ccid = payload  # type: ignore[misc]
             if ccid in containers:
+                if _node_id in candidate.nodes:
+                    if member is None:
+                        member = _membership_or_none(candidate)
+                    if member is not None and not _may_wrap(candidate, member, _node_id, ccid):
+                        # 1.13.0 (task item 13): growing a box around a node
+                        # the spec does not put in it makes the node a
+                        # geometric (and, in build_diagram, structural)
+                        # member. Only the account envelope / region may
+                        # absorb a non-member; any other box is left alone.
+                        skipped.append(payload)
+                        continue
                 containers[ccid] = _grow_container(containers[ccid])
+                applied += 1
         elif rule == "corridor-sharing":
             a, b = payload  # type: ignore[misc]
             later = max(a, b)  # deterministic: the higher edge id yields
             idx = edge_by_id.get(later)
             if idx is not None:
                 edges[idx] = _bump_edge_corridor(edges[idx])
+                applied += 1
+    if skipped and not applied:
+        raise LayoutError(
+            f"container-padding on {skipped[0]!r}: the node is not a spec member "
+            "of the container, so the repair loop will not grow the box around it "
+            "(declare its container, or re-slot it clear of the box)"
+        )
 
     return PlacedDiagram(
         spec=candidate.spec,

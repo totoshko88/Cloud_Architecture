@@ -168,25 +168,26 @@ def test_materialize_creates_a_vpc_peering_node_and_two_legs():
     assert legs["p1-a"].source == "lambda" and legs["p1-a"].target == "p1-pcx"
     assert legs["p1-b"].source == "p1-pcx" and legs["p1-b"].target == "peer"
     assert all(not e.peering for e in m.edges)
-    # The legs carry NO marker (empty): a peering leg is a bare line into the
-    # VPC Peering icon, documented in the Flow narrative — never a marker badge
-    # (the owner-flagged "empty black disc on peering legs" defect).
-    assert legs["p1-a"].marker == "" and legs["p1-b"].marker == ""
+    # 1.13.0 (task item 8): every leg is LABELLED so edge-label holds — leg
+    # -a keeps the edge's marker (else "peering"), leg -b is "peering" — and
+    # the word renders as a plain label, never a badge disc.
+    assert legs["p1-a"].marker == "peering" and legs["p1-b"].marker == "peering"
 
 
 def test_peering_legs_render_no_marker_badge_disc():
     """A materialized peering leg must draw NO marker badge at all — not an empty
     disc. With the native circle-badge skin an empty marker previously rendered a
     meaningless dark disc on each leg before/after the VPC Peering icon (the
-    owner-flagged visual defect). The serialized leg cells must therefore carry
-    an empty value and no badge ``<span>`` markup."""
+    owner-flagged visual defect). The serialized leg cells carry the plain
+    word ``peering`` (1.13.0, so ``edge-label`` holds) and no badge ``<span>``
+    markup."""
     import re
     xml = _serialize(_peering_spec(peering_as_node=True))
     for leg_id in ("p1-a", "p1-b"):
         cell = re.search(rf'<mxCell id="{leg_id}"[^>]*>', xml)
         assert cell is not None, f"{leg_id} leg not serialized"
         c = cell.group(0)
-        assert 'value=""' in c, f"{leg_id} should carry an empty value, got: {c}"
+        assert 'value="peering"' in c, f"{leg_id} should carry the plain word, got: {c}"
         # No badge markup (the disc span) leaked into the value.
         assert "span" not in c and "border-radius" not in c
 
@@ -199,8 +200,9 @@ def test_empty_marker_renders_nothing_even_with_badge_skin():
                   marker_badge="circle")
     assert _marker_value("", circle) == ""
     assert _marker_value("   ", circle) == ""
-    # A real numbered marker still gets its badge.
+    # A real numbered marker still gets its badge; a word never does (1.13.0).
     assert "span" in _marker_value("3", circle)
+    assert _marker_value("peering", circle) == "peering"
 
 
 def _icon_inside(nbox, cbox) -> bool:
@@ -361,13 +363,13 @@ def test_peering_without_label_is_backward_compatible():
 
 
 def test_peering_label_keeps_word_suppression_and_empty_markers():
-    """Adding a peering_label does not reintroduce the 'peering' word or a marker
-    badge: the two legs stay non-peering with empty markers."""
+    """Adding a peering_label does not reintroduce a marker badge: the two legs
+    stay non-peering, labelled with the plain word (1.13.0)."""
     m = materialize_peerings(_labelled_peering_spec("Atlas peering"))
     legs = {e.id: e for e in m.edges if e.id in ("p1-a", "p1-b")}
     assert len(legs) == 2
     assert all(not e.peering for e in legs.values())
-    assert all(e.marker == "" for e in legs.values())
+    assert all(e.marker == "peering" for e in legs.values())
 
 
 def test_peering_label_default_keeps_edgespec_byte_identical():

@@ -131,3 +131,8 @@ containers:
     style: "rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#333333;dashed=1;verticalAlign=top;fontColor=#333333;fontSize=12"
   network_boundary:
     style: "rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#666666;dashed=1;verticalAlign=top;fontColor=#666666;fontSize=12"
+  # 1.13.0 item 15d: neutral edge lane — grayscale dotted caption-only band, no
+  # fill, leaf. Groups the global/edge nodes drawn above the Environment.
+  edge_lane:
+    brand_hex: "#666666"
+    style: "rounded=0;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#999999;dashed=1;dashPattern=1 4;verticalAlign=top;align=left;fontColor=#666666;fontStyle=2;fontSize=12"

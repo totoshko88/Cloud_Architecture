@@ -476,13 +476,23 @@ def source_sha256(path: str | Path) -> str:
 def check_rasters(
     examples_dir: str | Path,
     repo_root: str | Path = REPO_ROOT,
+    files: Optional[Sequence[str | Path]] = None,
 ) -> List[RasterRef]:
     """Return a :class:`RasterRef` for every ``.drawio`` under ``examples_dir``.
 
     For each ``NN-topic.drawio`` the matching ``NN-topic.drawio.png`` is measured
     (width from the PNG header, size from the filesystem). A source with no
     exported PNG yields a ref with ``exists=False``.
+
+    ``files`` (1.13.0 phase 3, item 13c): when given, the scan is RESTRICTED to
+    the named ``.drawio`` paths (resolved absolute), so a single-diagram
+    regeneration loop can pass its gate while a sibling's raster is still stale.
+    A named file outside ``examples_dir`` is still checked. ``None`` (default)
+    scans the whole tree as before.
     """
+    wanted: Optional[set] = None
+    if files is not None:
+        wanted = {Path(f).resolve() for f in files}
     examples_dir = Path(examples_dir)
     repo_root = Path(repo_root)
     refs: List[RasterRef] = []
@@ -507,7 +517,11 @@ def check_rasters(
         _is_scratch_copy,
     )
     examples_root = Path(examples_dir)
-    for src in sorted(glob.glob(str(examples_dir / "**" / "*.drawio"), recursive=True)):
+    if wanted is not None:
+        sources = sorted(str(p) for p in wanted)
+    else:
+        sources = sorted(glob.glob(str(examples_dir / "**" / "*.drawio"), recursive=True))
+    for src in sources:
         base = os.path.basename(src)
         if _is_scratch_copy(base) or _is_reference_artifact(base):
             continue
@@ -578,7 +592,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     Usage::
 
-        python -m rule_engine.raster_gate [--examples DIR] [--repo-root DIR]
+        python -m rule_engine.raster_gate [--examples DIR] [--workspace-root DIR]
                                            [--allow-missing]
 
     Exit codes:
@@ -597,17 +611,36 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         prog="raster-gate",
         description="Enforce the exported .drawio.png width/size budget (D7).",
     )
-    default_root = _default_workspace_root()
-    parser.add_argument("--examples", default=str(default_root / "examples"))
-    parser.add_argument("--repo-root", default=str(default_root))
+    # 1.13.0: the root is the WORKSPACE (default: the current directory), never
+    # the package/repo checkout the engine was imported from. ``--repo-root`` is
+    # kept as a deprecated alias of ``--workspace-root``.
+    parser.add_argument(
+        "--workspace-root", "--repo-root", dest="workspace_root", default=None,
+        help="workspace root (default: the current directory); "
+             "--repo-root is a deprecated alias",
+    )
+    parser.add_argument(
+        "--examples", default=None,
+        help="tree to scan for .drawio sources (default: <root>/examples when "
+             "it exists, else <root> itself)",
+    )
     parser.add_argument(
         "--allow-missing",
         action="store_true",
         help="treat a .drawio with no exported .png as a skip, not a failure",
     )
+    parser.add_argument(
+        "--file", dest="files", action="append", default=None,
+        help="restrict the check to this .drawio (repeatable); other files' "
+             "stale rasters do not block (1.13.0, a single-diagram loop)",
+    )
     args = parser.parse_args(list(argv) if argv is not None else None)
+    root = Path(args.workspace_root) if args.workspace_root else Path.cwd()
+    if args.examples is None:
+        args.examples = str(root / "examples") if (root / "examples").is_dir() else str(root)
+    args.repo_root = str(root)
 
-    refs = check_rasters(args.examples, args.repo_root)
+    refs = check_rasters(args.examples, args.repo_root, files=args.files)
     if not refs:
         # No silent zero (R8.3): an empty run in CI means the gate was pointed
         # at the wrong tree or the examples were never generated — that is a

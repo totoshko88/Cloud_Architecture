@@ -196,6 +196,7 @@ def _serialise(spec: DiagramSpec, *, legacy: bool) -> str:
 # =========================================================================== #
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     "provider,kind,rel_path",
     _HA_EXAMPLES,
@@ -242,7 +243,11 @@ def _run_check(script: str) -> subprocess.CompletedProcess:
     )
 
 
-@pytest.mark.parametrize("script", _ALL_GENERATORS, ids=lambda s: s)
+@pytest.mark.parametrize(
+    "script",
+    [pytest.param(s, marks=pytest.mark.slow) if "_ha_" in s else s for s in _ALL_GENERATORS],
+    ids=lambda s: s,
+)
 def test_generator_check_reports_no_difference(script):
     """``generator --check`` reports no difference for every Shipped_Diagram with
     the solver off (R1.3). Exit 0 = fresh (no diff). A generator whose ``--check``
@@ -304,6 +309,7 @@ def test_legacy_layout_is_deterministic(spec_name, spec):
     )
 
 
+@pytest.mark.slow
 @pytest.mark.parametrize(
     "provider,kind,rel_path",
     _HA_EXAMPLES,

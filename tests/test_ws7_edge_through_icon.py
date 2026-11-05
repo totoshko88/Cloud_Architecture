@@ -46,12 +46,14 @@ def _lint(path):
 # --------------------------------------------------------------------------- #
 
 
+@pytest.mark.sep
 @pytest.mark.parametrize("path", [REPRO_SUB2, REPRO_V3], ids=lambda p: p.name)
 def test_repro_e8_is_knee_through_s3(path: Path) -> None:
     hits = geo.check_edge_routing(_geometry(path))
     assert ("e8", "knee-through-s3") in hits, hits
 
 
+@pytest.mark.sep
 def test_repro_e8_leg_lies_on_s3_top_border() -> None:
     """The defect is a ride, not an inset crossing: the 2px-inset test alone
     stays silent on the very leg the ride test catches."""
@@ -63,6 +65,7 @@ def test_repro_e8_leg_lies_on_s3_top_border() -> None:
     assert geo.segment_rides_box_border(*leg, s3)
 
 
+@pytest.mark.sep
 def test_repro_lints_edge_routing_error() -> None:
     hits = [f for f in _lint(REPRO_SUB2) if f["rule"] == "edge-routing"]
     assert hits, "edge-routing not reported on the WS7 repro"
@@ -112,7 +115,11 @@ def test_waypoint_free_edge_on_a_border_is_straight_through() -> None:
     assert geo.check_edge_routing(g) == [("e", "straight-through-n")]
 
 
-@pytest.mark.parametrize("path", CORPUS + SEP, ids=lambda p: Path(p).name)
+@pytest.mark.parametrize(
+    "path",
+    CORPUS + [pytest.param(p, marks=pytest.mark.sep) for p in SEP],
+    ids=lambda p: Path(p).name,
+)
 def test_no_border_ride_in_corpus_or_sep_fixtures(path: str) -> None:
     """Goldens and the SEP 01-09 fixtures stay free of icon crossings."""
     hits = [h for h in geo.check_edge_routing(_geometry(Path(path))) if "through-" in h[1]]

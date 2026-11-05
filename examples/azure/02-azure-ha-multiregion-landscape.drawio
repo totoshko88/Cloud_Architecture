@@ -19,7 +19,7 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="l2" value="2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.2564102564102564;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="dns" target="lb_b">
-          <mxGeometry relative="1" as="geometry">
+          <mxGeometry x="-0.6282" relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="730.00" y="160.00" />
               <mxPoint x="730.00" y="260.00" />
@@ -36,24 +36,24 @@
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="l13" value="13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.2564102564102564;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.2564102564102564;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="wafedge" target="cdn">
-          <mxGeometry relative="1" as="geometry">
+        <mxCell id="l13" value="13" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="wafedge" target="cdn">
+          <mxGeometry x="-0.2" relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="320.00" y="140.00" />
+              <mxPoint x="320.00" y="160.00" />
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="l14" value="14" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.2564102564102564;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="cdn" target="audit">
+        <mxCell id="l14" value="14" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.5128205128205128;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="cdn" target="audit">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="490.00" y="160.00" />
-              <mxPoint x="490.00" y="80.00" />
-              <mxPoint x="830.00" y="80.00" />
+              <mxPoint x="480.00" y="160.00" />
+              <mxPoint x="480.00" y="90.00" />
+              <mxPoint x="850.00" y="90.00" />
             </Array>
           </mxGeometry>
         </mxCell>
         <mxCell id="l15" value="15" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.2564102564102564;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.2564102564102564;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="1" source="cdn" target="lb_a">
-          <mxGeometry relative="1" as="geometry">
+          <mxGeometry x="0.1103" relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="470.00" y="140.00" />
               <mxPoint x="470.00" y="100.00" />
@@ -101,7 +101,7 @@
         </mxCell>
 
         <mxCell id="l3" value="3" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.7692307692307693;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="boundary-az-a1" source="lb_a" target="app_a1">
-          <mxGeometry relative="1" as="geometry">
+          <mxGeometry x="-0.6" relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="370.00" y="-100.00" />
               <mxPoint x="370.00" y="-10.00" />
@@ -110,7 +110,7 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="l4" value="4" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.7692307692307693;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="boundary-az-a2" source="lb_a" target="app_a2">
-          <mxGeometry relative="1" as="geometry">
+          <mxGeometry x="-0.4667" relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="350.00" y="-470.00" />
               <mxPoint x="350.00" y="-420.00" />
@@ -142,7 +142,7 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="l8" value="8" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.7692307692307693;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="boundary-az-a1" source="app_a1" target="obj_a">
-          <mxGeometry relative="1" as="geometry">
+          <mxGeometry x="-0.472" relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="160.00" y="120.00" />
               <mxPoint x="160.00" y="180.00" />
@@ -160,17 +160,18 @@
             </Array>
           </mxGeometry>
         </mxCell>
-        <mxCell id="l10" value="10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=1.0256410256410255;exitY=0.2564102564102564;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.2564102564102564;entryY=0.0;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="boundary-az-b1" source="db_a1" target="db_b1">
-          <mxGeometry relative="1" as="geometry">
+        <mxCell id="l10" value="10" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="boundary-az-b1" source="db_a1" target="db_b1">
+          <mxGeometry x="-0.6432" relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="-890.00" y="80.00" />
-              <mxPoint x="-890.00" y="40.00" />
-              <mxPoint x="490.00" y="40.00" />
+              <mxPoint x="-860.00" y="100.00" />
+              <mxPoint x="-860.00" y="50.00" />
+              <mxPoint x="440.00" y="50.00" />
+              <mxPoint x="440.00" y="100.00" />
             </Array>
           </mxGeometry>
         </mxCell>
         <mxCell id="l11" value="11" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="boundary-az-b1" source="obj_a" target="obj_b">
-          <mxGeometry relative="1" as="geometry">
+          <mxGeometry x="-0.6571" relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="-220.00" y="100.00" />
               <mxPoint x="-220.00" y="180.00" />
@@ -183,13 +184,13 @@
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="l17" value="17" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;dashed=1;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.5128205128205128;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="boundary-az-a1" source="api_a1" target="mon_a">
-          <mxGeometry relative="1" as="geometry" />
+          <mxGeometry x="-0.175" relative="1" as="geometry" />
         </mxCell>
         <mxCell id="l19" value="19" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.2564102564102564;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.2564102564102564;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="boundary-az-a2" source="app_a2" target="cache_a2">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
         <mxCell id="l20" value="20" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.7692307692307693;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="boundary-az-a2" source="app_a2" target="obj_a">
-          <mxGeometry relative="1" as="geometry">
+          <mxGeometry x="-0.6201" relative="1" as="geometry">
             <Array as="points">
               <mxPoint x="150.00" y="100.00" />
               <mxPoint x="150.00" y="180.00" />
@@ -232,7 +233,7 @@
         <mxCell id="sec_a" value="secrets-primary" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/security/Key_Vaults.svg" vertex="1" parent="boundary-region-a">
           <mxGeometry x="1030" y="800" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="db_a1" value="db-writer-az1" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/databases/SQL_Database.svg" vertex="1" parent="boundary-az-a1">
+        <mxCell id="db_a1" value="db-writer-az1" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/databases/SQL_Managed_Instance.svg" vertex="1" parent="boundary-az-a1">
           <mxGeometry x="470" y="60" width="78" height="78" as="geometry" />
         </mxCell>
         <mxCell id="obj_a" value="objstore-primary" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/storage/Storage_Accounts.svg" vertex="1" parent="boundary-region-a">
@@ -250,7 +251,7 @@
         <mxCell id="mon_a" value="observability-primary" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/compute/Function_Apps.svg" vertex="1" parent="boundary-region-a">
           <mxGeometry x="810" y="480" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="db_a2" value="db-standby-az2" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/databases/SQL_Database.svg" vertex="1" parent="boundary-az-a2">
+        <mxCell id="db_a2" value="db-standby-az2" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/databases/SQL_Managed_Instance.svg" vertex="1" parent="boundary-az-a2">
           <mxGeometry x="470" y="60" width="78" height="78" as="geometry" />
         </mxCell>
         <mxCell id="app_a2" value="app-az2" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/compute/Kubernetes_Services.svg" vertex="1" parent="boundary-az-a2">
@@ -265,16 +266,25 @@
         <mxCell id="lb_b" value="lb-passive" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/networking/Load_Balancers.svg" vertex="1" parent="boundary-vpc-b">
           <mxGeometry x="280" y="60" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="queue_b" value="queue-passive-standby" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/general/Service_Bus.svg;dashed=1;dashPattern=6 4;overlay=standby" vertex="1" parent="boundary-region-b">
+        <mxCell id="queue_b" value="queue-standby" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/general/Service_Bus.svg;dashed=1;dashPattern=6 4;overlay=standby" vertex="1" parent="boundary-region-b">
           <mxGeometry x="1030" y="480" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="fn_b" value="worker-passive-standby" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/compute/Function_Apps.svg;dashed=1;dashPattern=6 4;overlay=standby" vertex="1" parent="boundary-region-b">
+        <mxCell id="overlayring-queue_b" value="" style="rounded=1;arcSize=6;absoluteArcSize=1;fillColor=none;strokeColor=#545B64;strokeWidth=1.5;dashed=1;dashPattern=6 4;pointerEvents=0;editable=0;" vertex="1" parent="boundary-region-b">
+          <mxGeometry x="1026" y="476" width="86" height="86" as="geometry" />
+        </mxCell>
+        <mxCell id="fn_b" value="worker-standby" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/compute/Function_Apps.svg;dashed=1;dashPattern=6 4;overlay=standby" vertex="1" parent="boundary-region-b">
           <mxGeometry x="1030" y="640" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="sec_b" value="secrets-passive-standby" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/security/Key_Vaults.svg;dashed=1;dashPattern=6 4;overlay=standby" vertex="1" parent="boundary-region-b">
+        <mxCell id="overlayring-fn_b" value="" style="rounded=1;arcSize=6;absoluteArcSize=1;fillColor=none;strokeColor=#545B64;strokeWidth=1.5;dashed=1;dashPattern=6 4;pointerEvents=0;editable=0;" vertex="1" parent="boundary-region-b">
+          <mxGeometry x="1026" y="636" width="86" height="86" as="geometry" />
+        </mxCell>
+        <mxCell id="sec_b" value="secrets-standby" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/security/Key_Vaults.svg;dashed=1;dashPattern=6 4;overlay=standby" vertex="1" parent="boundary-region-b">
           <mxGeometry x="1030" y="800" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="db_b1" value="db-writer-az1" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/databases/SQL_Database.svg" vertex="1" parent="boundary-az-b1">
+        <mxCell id="overlayring-sec_b" value="" style="rounded=1;arcSize=6;absoluteArcSize=1;fillColor=none;strokeColor=#545B64;strokeWidth=1.5;dashed=1;dashPattern=6 4;pointerEvents=0;editable=0;" vertex="1" parent="boundary-region-b">
+          <mxGeometry x="1026" y="796" width="86" height="86" as="geometry" />
+        </mxCell>
+        <mxCell id="db_b1" value="db-writer-az1" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/databases/SQL_Managed_Instance.svg" vertex="1" parent="boundary-az-b1">
           <mxGeometry x="470" y="60" width="78" height="78" as="geometry" />
         </mxCell>
         <mxCell id="obj_b" value="objstore-passive" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/storage/Storage_Accounts.svg" vertex="1" parent="boundary-region-b">
@@ -286,23 +296,44 @@
         <mxCell id="api_b1" value="api-az1-standby" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/compute/Kubernetes_Services.svg;dashed=1;dashPattern=6 4;overlay=standby" vertex="1" parent="boundary-az-b1">
           <mxGeometry x="30" y="220" width="78" height="78" as="geometry" />
         </mxCell>
+        <mxCell id="overlayring-api_b1" value="" style="rounded=1;arcSize=6;absoluteArcSize=1;fillColor=none;strokeColor=#545B64;strokeWidth=1.5;dashed=1;dashPattern=6 4;pointerEvents=0;editable=0;" vertex="1" parent="boundary-az-b1">
+          <mxGeometry x="26" y="216" width="86" height="86" as="geometry" />
+        </mxCell>
         <mxCell id="cache_b1" value="cache-az1-standby" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/databases/Cache_Redis.svg;dashed=1;dashPattern=6 4;overlay=standby" vertex="1" parent="boundary-az-b1">
           <mxGeometry x="250" y="60" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="mon_b" value="observability-passive-standby" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/compute/Function_Apps.svg;dashed=1;dashPattern=6 4;overlay=standby" vertex="1" parent="boundary-region-b">
+        <mxCell id="overlayring-cache_b1" value="" style="rounded=1;arcSize=6;absoluteArcSize=1;fillColor=none;strokeColor=#545B64;strokeWidth=1.5;dashed=1;dashPattern=6 4;pointerEvents=0;editable=0;" vertex="1" parent="boundary-az-b1">
+          <mxGeometry x="246" y="56" width="86" height="86" as="geometry" />
+        </mxCell>
+        <mxCell id="mon_b" value="observability-standby" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/compute/Function_Apps.svg;dashed=1;dashPattern=6 4;overlay=standby" vertex="1" parent="boundary-region-b">
           <mxGeometry x="810" y="480" width="78" height="78" as="geometry" />
         </mxCell>
-        <mxCell id="db_b2" value="db-standby-az2-standby" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/databases/SQL_Database.svg;dashed=1;dashPattern=6 4;overlay=standby" vertex="1" parent="boundary-az-b2">
+        <mxCell id="overlayring-mon_b" value="" style="rounded=1;arcSize=6;absoluteArcSize=1;fillColor=none;strokeColor=#545B64;strokeWidth=1.5;dashed=1;dashPattern=6 4;pointerEvents=0;editable=0;" vertex="1" parent="boundary-region-b">
+          <mxGeometry x="806" y="476" width="86" height="86" as="geometry" />
+        </mxCell>
+        <mxCell id="db_b2" value="db-az2-standby" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/databases/SQL_Managed_Instance.svg;dashed=1;dashPattern=6 4;overlay=standby" vertex="1" parent="boundary-az-b2">
           <mxGeometry x="470" y="60" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="overlayring-db_b2" value="" style="rounded=1;arcSize=6;absoluteArcSize=1;fillColor=none;strokeColor=#545B64;strokeWidth=1.5;dashed=1;dashPattern=6 4;pointerEvents=0;editable=0;" vertex="1" parent="boundary-az-b2">
+          <mxGeometry x="466" y="56" width="86" height="86" as="geometry" />
         </mxCell>
         <mxCell id="app_b2" value="app-az2-standby" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/compute/Kubernetes_Services.svg;dashed=1;dashPattern=6 4;overlay=standby" vertex="1" parent="boundary-az-b2">
           <mxGeometry x="30" y="60" width="78" height="78" as="geometry" />
         </mxCell>
+        <mxCell id="overlayring-app_b2" value="" style="rounded=1;arcSize=6;absoluteArcSize=1;fillColor=none;strokeColor=#545B64;strokeWidth=1.5;dashed=1;dashPattern=6 4;pointerEvents=0;editable=0;" vertex="1" parent="boundary-az-b2">
+          <mxGeometry x="26" y="56" width="86" height="86" as="geometry" />
+        </mxCell>
         <mxCell id="api_b2" value="api-az2-standby" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/compute/Kubernetes_Services.svg;dashed=1;dashPattern=6 4;overlay=standby" vertex="1" parent="boundary-az-b2">
           <mxGeometry x="30" y="220" width="78" height="78" as="geometry" />
         </mxCell>
+        <mxCell id="overlayring-api_b2" value="" style="rounded=1;arcSize=6;absoluteArcSize=1;fillColor=none;strokeColor=#545B64;strokeWidth=1.5;dashed=1;dashPattern=6 4;pointerEvents=0;editable=0;" vertex="1" parent="boundary-az-b2">
+          <mxGeometry x="26" y="216" width="86" height="86" as="geometry" />
+        </mxCell>
         <mxCell id="cache_b2" value="cache-az2-standby" style="image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;labelBackgroundColor=#FFFFFF;image=img/lib/azure2/databases/Cache_Redis.svg;dashed=1;dashPattern=6 4;overlay=standby" vertex="1" parent="boundary-az-b2">
           <mxGeometry x="250" y="60" width="78" height="78" as="geometry" />
+        </mxCell>
+        <mxCell id="overlayring-cache_b2" value="" style="rounded=1;arcSize=6;absoluteArcSize=1;fillColor=none;strokeColor=#545B64;strokeWidth=1.5;dashed=1;dashPattern=6 4;pointerEvents=0;editable=0;" vertex="1" parent="boundary-az-b2">
+          <mxGeometry x="246" y="56" width="86" height="86" as="geometry" />
         </mxCell>
 
         <mxCell id="flow-legend" value="Flow&#10;1. DNS routes to the active region&#10;2. DNS holds the passive region on standby&#10;3. Primary LB to AZ-1 app&#10;4. Primary LB to AZ-2 app&#10;5. AZ-1 app to AZ-1 writer DB&#10;6. AZ-1 app to AZ-1 cache&#10;7. In-region standby DB replication (AZ-1 to AZ-2)&#10;8. AZ-1 app writes the regional object store&#10;9. Passive LB to AZ-1 app&#10;10. Cross-region DB replication (primary to passive)&#10;11. Cross-region object-store replication (CRR)&#10;12. Regional queue drives the worker (async)&#10;13. Edge WAF policy fronts the CDN&#10;14. CDN access logs to the audit bucket (async)&#10;15. CDN origin fetch to the primary LB&#10;16. AZ-1 app to the AZ-1 API tier&#10;17. API tier emits telemetry to observability (async)&#10;18. Primary worker reads the secrets store&#10;19. AZ-2 app to AZ-2 cache&#10;20. AZ-2 app writes the regional object store&#10;21. AZ-2 app to the AZ-2 API tier" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF;spacingLeft=10;spacingRight=10;spacingTop=10;spacingBottom=10" vertex="1" parent="1">

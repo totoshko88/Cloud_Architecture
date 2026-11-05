@@ -1,0 +1,73 @@
+---
+id: 04-flow-lms-launch-v8
+title: SEP LMS launch — LTI 1.0/1.1 launch and run management (data-flow)
+kb_namespace: cloud-architecture
+section: sep-architecture
+category: diagram
+status: draft
+updated: 2026-11-03
+owner: platform-engineering
+author: diagram-author
+next_review_date: 2027-04-21
+diagram_class: flow
+diagram_type: data-flow
+tags:
+  - sep
+  - aws
+  - lti
+  - lms
+  - data-flow
+  - eu-central-1
+related_docs:
+  - 01-sep-context.diagram.md
+  - 02-sep-summary.diagram.md
+change_log:
+  - date: 2026-10-17
+    note: v5 — icon fidelity pass. The Student in the LMS now uses the AWS General User resource icon (a human user) instead of a neutral box. Keycloak and MongoDB Atlas brand marks unchanged.
+  - date: 2026-10-21
+    note: v6 — regenerated on rule-engine 1.10.12 (title v5→v6). No content change; the upgraded engine re-laid-out the geometry. Icons and edges unchanged (04 has no License Manager or sandbox node, so the three owner fixes do not touch it).
+  - date: 2026-10-22
+    note: v7 — regenerated on rule-engine 1.11.0 pre-release with the native skin applied (grey edges #5A6B7B, light-grey Flow/Legend furniture #B3B3B3, dark #1A1A1A circle badge markers). Hand-pinned geometry byte-stable; no flow_groups (04 explicitly excluded); presentation-only change.
+
+  - date: 2026-10-23
+    note: >-
+      Seventh-wave sweep (1.11.0): rebuilt BYTE-IDENTICAL, regression-checked
+      clean under SYS-B/SYS-A. All gates 0 ERROR/CRITICAL. Version held.
+  - date: 2026-11-03
+    note: >-
+      v8 — rebuilt on rule-engine 1.13.0. Ingress now follows the canonical
+      path Student, LMS, WAF, CloudFront, ui-api (WAF is CloudFront-scoped).
+      Student and the LMS service are separate nodes and the grade passback
+      returns to the LMS over a return bus. lti-adapter reaches
+      management-api-handler through an SQS queue (dashed) because inventory
+      shows no direct invoke. Legend built via legend_lines_for; Flow and
+      Legend moved below the body (aspect ratio fixed).
+---
+
+# SEP LMS launch — LTI 1.0/1.1 launch and run management
+
+## Overview
+
+This is the runtime data-flow view of how a learner enters the Syndicate Education Platform (SEP) from a Learning Management System and how a run is managed, in the production AWS account 870325637521 in eu-central-1 (Frankfurt). It is a first-draft flow diagram, read left to right along the fixed lane order, and deliberately scoped to the launch and run-management path rather than the whole platform. The facts come from a strictly read-only inventory of the live production account and the architecture guide section on LTI launch, not from the application source: ui-api is a REST API Gateway with no gateway authorizer, lti-adapter and management-api-handler are Lambda functions, and MongoDB Atlas is the external application datastore reached over VPC peering. Nothing on the canvas is invented. The three external parties — the student in the LMS, Keycloak SSO, and MongoDB Atlas — are not AWS resources and are drawn outside the account boundary; Atlas carries MongoDB's own brand-green leaf, Keycloak its colorized Keycloak brand mark, and the student is now drawn with the AWS General User resource icon because it is a human user.
+
+## Main Content
+
+The flow has eleven numbered steps. A student opens a course in the LMS service (learn.epam.com or elearn.epam.com), which starts an LTI 1.0/1.1 launch. The launch enters through AWS WAF, which is CloudFront-scoped, then CloudFront, then ui-api, the REST API Gateway origin. Critically, ui-api carries no gateway authorizer: it routes the launch to lti-adapter, and all authorization happens inside that Lambda. lti-adapter validates the launch (OAuth fields, nonce, HMAC-SHA1 signature), validates the corporate identity token with Keycloak SSO, and reads and writes run, enrolment, and session state in MongoDB Atlas over VPC peering. Run coordination goes through an SQS queue that triggers management-api-handler; the inventory shows no direct invoke and the exact queue name is unconfirmed. management-api-handler writes to Atlas. The grade is returned to the LMS service, not the student, as a dashed asynchronous callback on a return bus above the flow.
+
+## Troubleshooting
+
+If a node looks wrong, remember the scope: this is the launch-and-run path, not the full platform, so socket-api, Batch, Bedrock, and S3 are intentionally absent — see the summary and landscape views for those. MongoDB Atlas is drawn with its real brand-green leaf, Keycloak with its colorized Keycloak brand mark, and the student in the LMS with the AWS General User resource icon (a human user). None of the three is a faked look-alike; where no faithful icon exists the engine keeps the honest representation rather than substituting a wrong glyph. The authorizer placement is deliberate and matters: ui-api has no gateway authorizer, so if you are tracing an auth failure, look inside lti-adapter, not at the gateway. The grade callback (step 11) leaves lti-adapter on its right face and rides a return bus over the edge row into the LMS service. If the raster looks oversized, confirm the flow export budget (width at or under 1600px). The 1.11.0 native skin is cosmetic only: grey edges, light-grey furniture, and dark badge-disc markers, with no coordinate changed.
+
+## Anti-patterns
+
+Do not place the student, Keycloak, or MongoDB Atlas inside the AWS Account boundary to tidy the edge crossings: only SEP's own cloud resources belong inside it, and an edge that crosses the boundary from an external party is correct. The student is a human user and so wears the AWS User resource icon even though it is external; Atlas wears MongoDB's own brand leaf and Keycloak its own Keycloak brand mark. Do not substitute a look-alike AWS service glyph for a non-AWS system — that misstates the architecture. Do not move the authorization to the gateway in the drawing to make it look conventional; ui-api has no authorizer and lti-adapter owns validation. The title cell encodes provider, workload, boundary, region, date, and version:
+
+```text
+aws SEP LMS launch — 870325637521 / eu-central-1 | 2026-11-03 | v8
+```
+
+Do not hand-edit the emitted `.drawio` coordinates; change the declaration in the build script and regenerate, then re-run the lint gate.
+
+## See Also
+
+This diagram is one of the mandatory triple: the drawing source 04-flow-lms-launch.drawio, its exported raster 04-flow-lms-launch.drawio.png, and this companion. It sits alongside the context view 01-sep-context, which shows SEP and all of its external systems at the widest C4 level, and the container-level summary 02-sep-summary, which collapses the whole request shape into nine representative nodes with its landscape counterpart. Use this flow when the question is specifically how an LMS launch moves end to end and how a run is coordinated; use the summary or landscape when the question is what is deployed. The authoritative facts behind every node and edge come from the live production inventory of account 870325637521 in eu-central-1 and the MongoDB Atlas EPM-EDAI-PROD snapshot that records the VPC peering link. The lane order, service-scope placement, neutral external representation, numbered flow legend, and class-aware lint severities this artifact follows are defined in the workspace steering directory.

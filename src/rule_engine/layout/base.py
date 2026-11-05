@@ -133,6 +133,12 @@ ROLE_SCOPE: Dict[str, str] = {
     "serverless_fn": "regional", "fn": "regional",
     "secrets_store": "regional", "sec": "regional",
     "llm_platform": "regional", "ecr": "regional",
+    # 1.13.0 feedback (A): three mapping-coverage roles. Neptune is a graph DB
+    # inside the network boundary; OpenSearch and ACM are regional managed
+    # services. Aliases carry the same scope.
+    "neptune": "network",
+    "opensearch": "regional", "elasticsearch_service": "regional",
+    "acm": "regional", "certificate_manager": "regional",
     # global / edge
     "cdn": "global", "dns": "global", "waf": "global",
 }
@@ -157,6 +163,43 @@ VPC_EDGE_ROLES: frozenset = frozenset({
     "transit_gateway",
     "egress_only_igw",
 })
+_PROVIDER_SCOPE_CACHE: Optional[Dict[str, Dict[str, str]]] = None
+
+
+def _provider_scope_table() -> Dict[str, Dict[str, str]]:
+    """``{provider: {role: 'network' | 'outside_vpc'}}`` from
+    ``profiles/service-scope.yaml`` (1.13.0), loaded once. A missing file yields
+    an empty table (no node is judged by role)."""
+    global _PROVIDER_SCOPE_CACHE
+    if _PROVIDER_SCOPE_CACHE is None:
+        import yaml
+        from rule_engine.constants import resolve_profile_file
+
+        table: Dict[str, Dict[str, str]] = {}
+        path = resolve_profile_file("service-scope.yaml")
+        if path.is_file():
+            raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+            for provider in sorted(raw):
+                rows = raw[provider] or {}
+                per: Dict[str, str] = {}
+                for scope in ("network", "outside_vpc"):
+                    for role in rows.get(scope) or ():
+                        per[str(role)] = scope
+                table[str(provider)] = per
+        _PROVIDER_SCOPE_CACHE = table
+    return _PROVIDER_SCOPE_CACHE
+
+
+def provider_role_scope(role: str, provider: str) -> Optional[str]:
+    """``'network'`` / ``'outside_vpc'`` for ``role`` on ``provider`` (1.13.0).
+
+    The provider-aware scope of ``profiles/service-scope.yaml`` (the
+    machine-readable Service Scope tables of provider-profiles.md). ``None`` when
+    the provider has no row (``generic`` / ``kubernetes``) or the role is not
+    listed — precision first: an unlisted role is never judged by role."""
+    return _provider_scope_table().get(provider, {}).get(role)
+
+
 def is_vpc_edge(role: str) -> bool:
     """Return True when ``role`` is a VPC-edge device (see :data:`VPC_EDGE_ROLES`).
 
@@ -188,6 +231,16 @@ def effective_scope(node) -> Optional[str]:
 #: account as disjoint siblings (``_wrap_external_bands``), never parented into a
 #: region container, so they are not in this nesting set.
 _FOREIGN_LEAF_KINDS: frozenset = frozenset({"namespace", "security_group"})
+
+#: The external band / leaf kinds that sit OUTSIDE the primary account as
+#: disjoint siblings (``_wrap_external_bands``). An ``external=True`` node whose
+#: declared container is one of these stays a MEMBER of the band (1.13.0 item 9,
+#: F14), so the band has children to size around; a cloud container on an
+#: external node is still ignored. ``edge_lane`` (item 15d) is the caption-only
+#: band for the global/edge nodes above the account.
+_EXTERNAL_BAND_KINDS: frozenset = frozenset(
+    {"peer_account", "external_cloud", "edge_lane"}
+)
 
 #: The container kinds a foreign leaf boundary may be parented to (Req 3.1/3.4).
 #: Two legitimate hosts:
@@ -237,21 +290,43 @@ def _validate_spec(spec: DiagramSpec) -> None:
             f"diagram {spec.diagram_id!r} declares unknown order "
             f"{spec.order!r}; order must be 'auto' or 'manual'"
         )
-    if getattr(spec, "vpc_side", "auto") not in ("auto", "left", "right"):
+    if getattr(spec, "vpc_side", "auto") not in (
+        "auto", "left", "right", "right-keep-regional-left"
+    ):
         raise SpecError(
             f"diagram {spec.diagram_id!r} declares unknown vpc_side "
-            f"{spec.vpc_side!r}; vpc_side must be 'auto', 'left' or 'right'"
+            f"{spec.vpc_side!r}; vpc_side must be 'auto', 'left', 'right' "
+            f"or 'right-keep-regional-left'"
         )
 
     node_ids = set()
-    seen_slots: dict[Tuple[str, str, int, int], str] = {}
+    # 1.13.0 (item 5a, F8): the placement key includes the node's leaf container
+    # for external peer / external-cloud boxes. Two peerings from one VPC to two
+    # single-node peer boxes materialize two pcx nodes that each take slot 0 of
+    # their own peer box (lane/region coincide because both peer boxes are drawn
+    # in the same external lane). They are NOT a duplicate slot — they live in
+    # different containers — so the key distinguishes them by container. The
+    # account envelope and shared (containerless / az / vpc) bands keep the bare
+    # (lane, region, slot, az_band) key so the existing per-band uniqueness is
+    # unchanged for every non-leaf node.
+    leaf_container_kinds = frozenset({"peer_account", "external_cloud"})
+
+    def _slot_container(n) -> str:
+        cid = n.container or ""
+        c = container_by_id.get(cid)
+        if c is not None and c.kind in leaf_container_kinds:
+            return cid
+        return ""
+
+    seen_slots: dict[Tuple[str, str, int, int, str], str] = {}
     for node in spec.nodes:
         if node.lane not in LANE_INDEX:
             raise SpecError(
                 f"node {node.id!r} declares unknown lane {node.lane!r}; "
                 f"lane must be one of {LANES}"
             )
-        key = (node.lane, node.region, node.slot, az_band[node.id])
+        key = (node.lane, node.region, node.slot, az_band[node.id],
+               _slot_container(node))
         if key in seen_slots:
             raise SpecError(
                 f"duplicate slot (lane={node.lane!r}, region={node.region!r}, "
@@ -267,6 +342,16 @@ def _validate_spec(spec: DiagramSpec) -> None:
             raise SpecError(
                 f"node {node.id!r} declares unknown scope {node.scope!r}; "
                 "scope override must be one of 'network', 'regional', 'global'"
+            )
+
+        # 1.13.0 (L2): external-fan exit-face hint must be a recognized face.
+        if getattr(node, "exit_face", None) is not None and node.exit_face not in (
+            "right", "up", "left",
+        ):
+            raise SpecError(
+                f"node {node.id!r} declares unknown exit_face "
+                f"{node.exit_face!r}; exit_face must be one of "
+                "'right', 'up', 'left'"
             )
 
         # Declared container membership must name a real, leaf, region-matching
@@ -1302,7 +1387,7 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
     # every spec that sets no ``band``.
     _band_nodes = {
         n.id: n.band for n in spec.nodes
-        if getattr(n, "band", None) in ("south", "account-south", "north")
+        if getattr(n, "band", None) in ("south", "account-south", "north", "account-north")
         and n.container is not None and kind_of.get(n.container) == "region"
     }
     region_direct = {
@@ -1571,6 +1656,7 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
         south_ids = [n.id for n in spec.nodes if _band_nodes.get(n.id) == "south"]
         acct_ids = [n.id for n in spec.nodes if _band_nodes.get(n.id) == "account-south"]
         north_ids = [n.id for n in spec.nodes if _band_nodes.get(n.id) == "north"]
+        acct_north_ids = [n.id for n in spec.nodes if _band_nodes.get(n.id) == "account-north"]
         slot_of = {n.id: (n.band_row, n.slot, n.id) for n in spec.nodes}
 
         def _lay_band(ids: List[str], y0: int) -> int:
@@ -1586,10 +1672,26 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
             col = 0
             row = 0
             bottom = y0
+            prev_band_row: Optional[int] = None
             for nid in ordered:
-                if col >= width_cols:
+                # 1.13.0 (feedback D, rev-i/rev-k): honour an explicit
+                # ``band_row`` change as a HARD row break — a node whose
+                # ``band_row`` differs from the previous one starts a fresh
+                # screen row even when the current row has not filled to
+                # ``width_cols``. This lets a small south group (e.g. a 2-member
+                # "Security & observability") get its OWN row instead of sharing
+                # row 0 with a wide regional group and wrapping awkwardly (the
+                # rev-k collision). Byte-inert for the pre-1.13.0 / default case:
+                # every existing south-band consumer leaves ``band_row=0`` on all
+                # members, so the band_row never changes and only the width-cols
+                # wrap fires, exactly as before. The width-cols wrap still applies
+                # WITHIN a band_row, so a row wider than the budget wraps too.
+                this_band_row = slot_of[nid][0]
+                if (prev_band_row is not None and this_band_row != prev_band_row) \
+                        or col >= width_cols:
                     row += 1
                     col = 0
+                prev_band_row = this_band_row
                 x = base_x + col * col_step()
                 y = y0 + row * (row_step() + LABEL_BAND)
                 band_xy[nid] = (x, y)
@@ -1621,6 +1723,26 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
         if acct_ids:
             start = max(south_bottom, region_bottom) + row_step()
             _lay_band(acct_ids, start)
+        if acct_north_ids:
+            # 1.13.0 (feedback F): a ``band="account-north"`` node is a TRUE
+            # account-level global EDGE band (CloudFront / WAF / Route 53) drawn
+            # as a horizontal row ABOVE the Region box and INSIDE the Account —
+            # the "cloud edge" tier that sits outside the Region boundary. Unlike
+            # ``band="north"`` (which rises above the VPC but stays INSIDE the
+            # Region), this clears the Region's own top chrome (its caption band +
+            # padding) so the row lands above the Region box top, and the Account
+            # is grown up to enclose it (sizing wraps it in the Account, like
+            # ``account-south`` below). This is the fix for the Philips/IHTC
+            # ``global-in-region`` case: an occupied external actor / on-premises
+            # lane could push the account-level edge ROW geometrically into the
+            # Region; a dedicated account-north band reserves the row above the
+            # Region regardless of which external lanes are occupied, because its
+            # y is anchored to the Region's own top (``banded_top`` minus the
+            # Region caption chrome), not to a lane index the external rows share.
+            region_top = banded_top
+            if any(c.kind == "region" for c in spec.containers):
+                region_top -= (CONTAINER_LABEL_BAND + CONTAINER_PAD)
+            _lay_band_up(acct_north_ids, region_top - row_step())
 
     # 1.10.6: a region of container-free nodes whose box reserves a caption lane
     # (``_top_lane_containers``) starts its rows one lane lower, so the box's top
@@ -1702,8 +1824,23 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
     # (one column step + two pads).
     # A pure per-region translation, so rows, sub-rows and the peer-region
     # mirror are unchanged. ``"left"`` / ``"auto"`` keep the default placement.
-    if (getattr(spec, "vpc_side", "auto") == "right" and spec.axis == "north-south"
+    #
+    # 1.13.0 (L1): ``vpc_side="right-keep-regional-left"`` — the same right-hand
+    # VPC column, but the WHOLE regional block (inner AND outer columns) stays
+    # together LEFT of the VPC block. Classic ``"right"`` inserts the network
+    # block right after the feeder column ``k`` and pushes every regional column
+    # with ``col > k`` rightward PAST the block, so a two-column region splits
+    # around the VPC box (regional nodes beyond the feeder jump right of it) →
+    # ``edge-routing`` / ``container-padding`` / ``edge-crossing-excess`` on a
+    # dense SEP account. Keeping the regional columns on one side anchors the
+    # band block to the right of the region's RIGHTMOST column instead of its
+    # feeder, and never shifts a regional column, so the compute spine is not
+    # split.
+    _right_modes = ("right", "right-keep-regional-left")
+    _vpc_side = getattr(spec, "vpc_side", "auto")
+    if (_vpc_side in _right_modes and spec.axis == "north-south"
             and regional_col):
+        _keep_regional_left = _vpc_side == "right-keep-regional-left"
         for region in sorted({n.region for n in spec.nodes if n.id in regional_col}):
             reg_ids = [n.id for n in spec.nodes
                        if n.region == region and n.id in regional_col
@@ -1719,15 +1856,23 @@ def _place_base(spec: DiagramSpec, base_x: int, base_y: int) -> Dict[str, Box]:
             # forward hop); regional columns beyond that column move right by
             # the network block's width. Columns up to it keep their x, so the
             # block stays under the account-level row that feeds it.
+            #
+            # In ``right-keep-regional-left`` the block is instead inserted
+            # right of the region's RIGHTMOST column, so no regional column is
+            # moved and the spine is not split.
             band_set = set(band_ids)
             feeders = [regional_col[e.source] for e in spec.edges
                        if e.source in reg_ids and e.target in band_set]
-            k = max(feeders) if feeders else max(regional_col[i] for i in reg_ids)
+            if _keep_regional_left:
+                k = max(regional_col[i] for i in reg_ids)
+            else:
+                k = max(feeders) if feeders else max(regional_col[i] for i in reg_ids)
             rcx = regional_col_x.get(region, 0)
             band_shift = (rcx + k + 1) * col_step() + 4 * CONTAINER_PAD
             tail_shift = (rcx + 1) * col_step() + 4 * CONTAINER_PAD
             moved = [(i, band_shift) for i in band_ids]
-            moved += [(i, tail_shift) for i in reg_ids if regional_col[i] > k]
+            if not _keep_regional_left:
+                moved += [(i, tail_shift) for i in reg_ids if regional_col[i] > k]
             moved += [(i, band_shift) for i in regional_abs_x
                       if any(n.id == i and n.region == region for n in spec.nodes)]
             for nid, dx in moved:
@@ -1797,6 +1942,76 @@ def _region_primary_rebase(spec: DiagramSpec, base: Dict[str, Box]) -> int:
     top_a = min(_extent(b, primary)[0] for b in a_boxes)
     top_b = min(_extent(b, primary)[0] for b in b_boxes)
     return _snap(top_a - top_b)
+
+
+def _region_band_offsets(
+    spec: DiagramSpec, base: Dict[str, Box]
+) -> Dict[str, Tuple[int, int]]:
+    """Return ``region token -> (secondary_offset, primary_lift)`` for N peer bands.
+
+    The generalisation (1.13.0) of the two-region placement
+    (:func:`_region_secondary_offset` + :func:`_region_primary_rebase`) to **any
+    number** of peer region bands (``a``, ``b``, ``c``, ``d``, …). Each non-empty
+    region token (account-level ``""`` nodes are not a band) is laid out as a
+    disjoint band beside the previous one, in sorted token order:
+
+    * **secondary_offset** — the running left edge of all preceding bands. Band 0
+      (``a``) is at ``0``; each later band starts one :data:`REGION_GAP` past the
+      secondary-axis footprint extent (icon + label band, so labels clear too) of
+      every band before it. This is the cumulative form of
+      :func:`_region_secondary_offset`, which computes exactly region ``a``'s
+      extent + gap — i.e. band ``b``'s offset for the N=2 case.
+    * **primary_lift** — ``top(region a) - top(this region)`` of the pre-offset
+      primary-axis extents, so a band whose lanes start lower than ``a`` is lifted
+      up to share ``a``'s top edge (Theme 45). Non-positive (a peer only lifts up,
+      never pushes down), and ``0`` whenever the band already shares ``a``'s top.
+      Identical to :func:`_region_primary_rebase` for each band.
+
+    **Golden safety (N=2 reduction).** For exactly two regions ``a``/``b`` this
+    yields ``{"a": (0, 0), "b": (_region_secondary_offset(spec, base),
+    _region_primary_rebase(spec, base))}`` by construction — region ``a``'s
+    extent+gap and ``top(a)-top(b)`` — so :func:`place_nodes` places a two-region
+    spec byte-for-byte as before and every shipped a/b golden is unchanged.
+
+    A pure function of the spec + base placement (determinism, Req 11.1); every
+    offset/lift is grid-snapped so ``check_grid_alignment`` stays clean.
+    """
+    secondary = _secondary_axis(spec.axis)
+    primary = "y" if spec.axis == "north-south" else "x"
+    regions = sorted({n.region for n in spec.nodes if n.region})
+    if not regions:
+        return {}
+
+    def _foot_extent(token: str) -> Tuple[float, float]:
+        boxes = [
+            base[n.id].footprint(LABEL_BAND)
+            for n in spec.nodes
+            if n.region == token
+        ]
+        lo = min(_extent(b, secondary)[0] for b in boxes)
+        hi = max(_extent(b, secondary)[0] + _extent(b, secondary)[1] for b in boxes)
+        return lo, hi
+
+    def _primary_top(token: str) -> float:
+        boxes = [base[n.id] for n in spec.nodes if n.region == token]
+        return min(_extent(b, primary)[0] for b in boxes)
+
+    top_first = _primary_top(regions[0])
+    gap = region_gap()
+    out: Dict[str, Tuple[int, int]] = {}
+    # ``secondary_offset`` is a DELTA added to each band node's own secondary low
+    # (place_nodes applies ``low + offset``), exactly as the two-region path did.
+    # Band k's delta is the cumulative ``sum(extent(j) + gap for j < k)`` of every
+    # band before it, so band k clears all its predecessors. Band 0 is 0; band 1
+    # is ``extent(a) + gap`` — byte-identical to ``_region_secondary_offset``.
+    cumulative: float = 0.0
+    for i, token in enumerate(regions):
+        lo, hi = _foot_extent(token)
+        sec = 0 if i == 0 else _snap(cumulative)
+        cumulative += (hi - lo) + gap
+        lift = _snap(top_first - _primary_top(token))
+        out[token] = (int(sec), int(lift))
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -1918,9 +2133,24 @@ def _assign_nodes_to_leaves(
     #    for SIZING it is wrapped by the Account (not the Region) — otherwise the
     #    Region box would grow down to enclose the CI/CD strip. ``band="south"``
     #    stays inside its declared Region (wrapped by it, as declared).
+    #    1.13.0 item 9 (F14): an ``external=True`` node whose declared
+    #    ``container`` is itself an EXTERNAL band kind (``peer_account`` /
+    #    ``external_cloud`` / ``edge_lane``) is a MEMBER of that external band —
+    #    it is already outside every cloud boundary, so keeping it assigned does
+    #    not pull it into the account; it gives the band children to size around
+    #    (the F14 ``has no children to size around`` SpecError). It is still
+    #    treated as external for scope judgement (item 15b) because it emits the
+    #    ``external=1`` token. A cloud ``container`` on an external node is still
+    #    ignored (the node is forced outside, as before).
+    kind_of_container = {c.id: c.kind for c in spec.containers}
     for n in spec.nodes:
-        if n.container is not None and not getattr(n, "external", False):
-            if (getattr(n, "band", None) == "account-south"
+        _is_external = getattr(n, "external", False)
+        _external_band = (
+            n.container is not None
+            and kind_of_container.get(n.container) in _EXTERNAL_BAND_KINDS
+        )
+        if n.container is not None and (not _is_external or _external_band):
+            if (getattr(n, "band", None) in ("account-south", "account-north")
                     and account_id is not None):
                 assignment[account_id].append(n.id)
             else:
@@ -1971,6 +2201,43 @@ def _assign_nodes_to_leaves(
         for nid in members:
             assignment[tier_to_leaf[getattr(box_of[nid], primary)]].append(nid)
     return assignment
+
+
+def membership_from(spec: DiagramSpec, nodes: Dict[str, Box]) -> Dict[str, str]:
+    """``{node_id: container_id}`` for every placed node — ``""`` for a node no
+    container owns (1.13.0, task item 13).
+
+    Membership is the SPEC's, never the geometry's: the container each node was
+    sized into by :func:`_assign_nodes_to_leaves` (its declared ``container``,
+    else the leaf / account fallback). A node no container owns (an actor, an
+    ``external`` node, a materialized peering) maps to ``""`` even when the
+    placement happens to draw it inside a box."""
+    present = tuple(n for n in spec.nodes if n.id in nodes)
+    sub = spec if len(present) == len(spec.nodes) else _replace_nodes(spec, present)
+    assignment = _assign_nodes_to_leaves(sub, nodes)
+    out: Dict[str, str] = {n.id: "" for n in present}
+    for c in spec.containers:
+        for nid in assignment.get(c.id, ()):
+            if nid in out and not out[nid]:
+                out[nid] = c.id
+    return out
+
+
+def _replace_nodes(spec: DiagramSpec, nodes: tuple) -> DiagramSpec:
+    from dataclasses import replace as _dc_replace
+
+    return _dc_replace(spec, nodes=nodes)
+
+
+def container_chain(spec: DiagramSpec, cid: str) -> Tuple[str, ...]:
+    """``cid`` and every ancestor container (declared ``parent`` links)."""
+    parent_of = {c.id: c.parent for c in spec.containers}
+    out: List[str] = []
+    cur: Optional[str] = cid or None
+    while cur and cur not in out:
+        out.append(cur)
+        cur = parent_of.get(cur)
+    return tuple(out)
 
 
 def _bbox(boxes: list) -> Tuple[float, float, float, float]:
@@ -2060,6 +2327,9 @@ def _equalize_peer_widths(boxes: Dict[str, Box], spec: DiagramSpec, axis: str) -
     kind_of = {c.id: c.kind for c in spec.containers}
     region_of = {c.id: c.region for c in spec.containers}
     parent_of = {c.id: c.parent for c in spec.containers}
+    #: L6 (1.13.0): peers opted into till-content sizing — excluded from both
+    #: the pair target and the widen step, so each keeps its own content width.
+    fit_content = {c.id for c in spec.containers if getattr(c, "fit_content", False)}
 
     # Group peers: same kind, and the same "role" within the region so az bands
     # pair by tier ordinal. Use (kind, ordinal-within-region-kind).
@@ -2079,22 +2349,39 @@ def _equalize_peer_widths(boxes: Dict[str, Box], spec: DiagramSpec, axis: str) -
     for peers in groups.values():
         if len(peers) < 2:
             continue
-        target = max(_extent(boxes[cid], axis)[1] for cid in peers)
+        # L6: the pair target is the widest peer that has NOT opted into
+        # till-content sizing, so a fit_content peer never drags its sibling
+        # wider. With every peer opted out there is no target — leave them all
+        # at their own content width.
+        eligible = [cid for cid in peers if cid not in fit_content]
+        if not eligible:
+            continue
+        target = max(_extent(boxes[cid], axis)[1] for cid in eligible)
         # Overall pair centre along the axis (mean of member centres).
         centres = [
             _extent(boxes[cid], axis)[0] + _extent(boxes[cid], axis)[1] / 2.0
             for cid in peers
         ]
         pair_centre = (min(centres) + max(centres)) / 2.0
+        # 1.13.0 (N-region): with THREE OR MORE peer bands, widening every band
+        # "outward from one shared centre" would push an inner band's low edge
+        # left into its left neighbour (the overlap the two-band mirror cannot
+        # produce). Instead widen each band symmetrically around ITS OWN centre,
+        # so it stays over its own content and the bands stay disjoint. For
+        # exactly two peers the branch below is unchanged (byte-identical mirror).
+        many = len([cid for cid in peers if cid not in fit_content]) > 2
         for cid in peers:
+            if cid in fit_content:
+                continue  # L6: keep this box at its own content width
             low, size = _extent(boxes[cid], axis)
             if size == target:
                 continue
             centre = low + size / 2.0
             grow = target - size
-            # Grow outward from the pair centre: a band left of centre keeps its
-            # right edge (moves its low edge out); right of centre keeps its low.
-            if centre <= pair_centre:
+            if many:
+                # Centre the widened box on its own content centre.
+                new_low = centre - target / 2.0
+            elif centre <= pair_centre:
                 new_low = low - grow  # keep right edge (low + size) fixed
             else:
                 new_low = low         # keep low edge fixed, extend outward

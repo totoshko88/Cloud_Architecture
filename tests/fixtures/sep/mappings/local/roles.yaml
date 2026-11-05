@@ -1,0 +1,60 @@
+# Workspace-local roles overlay (1.10.12).
+#
+# On engine 1.10.12 the resolver / icon-index builder read workspace-local role
+# additions ONLY from this file; an edit in the top-level mappings/roles.yaml is
+# inert (the engine warns "has no effect — move it to mappings/local/roles.yaml").
+# This file therefore carries every SEP role that is NOT bundled with the engine:
+#
+#   - license_neutral   FIX 1 (2026-10-21): the EPAM License Manager node on 01
+#                        and 09 is NOT the AWS License Manager service — it is an
+#                        EPAM licensing service (account 652063929809). It must
+#                        render with a VENDOR-NEUTRAL license/certificate glyph,
+#                        never the AWS License Manager icon (Icon-Fidelity). The
+#                        old `license_manager` role pointed at the real AWS glyph
+#                        and is retired (no SEP node uses it any more).
+#   - sandbox_multicloud FIX 3 (2026-10-21): the 09 "Sandbox fleets (3 clouds)"
+#                        node spans AWS + Azure + GCP, drawn as one cloud shape
+#                        enclosing the three provider marks (hand-authored
+#                        composite — the three official provider colours/marks,
+#                        the sanctioned tri-cloud fallback, not a look-alike).
+#   - dial               EPAM DIAL AI proxy brand mark (owner-supplied asset);
+#                        not a cloud service, so no provider pack ships it.
+#
+# `education` and `organizations` are now BUNDLED with 1.10.12, so they are NOT
+# repeated here — the workspace uses the bundled roles (same mortarboard asset
+# path; the bundled org-level Organizations service glyph).
+#
+# Each role carries no provider pack query (these are hand-authored / owner
+# assets), so the icon-index resolves them to the committed image path in
+# mappings/local/aws-icons.yaml (the per-provider overlay) on every provider.
+
+version: 1
+
+roles:
+
+  # Vendor-neutral license / certificate glyph (FIX 1). Grayscale document +
+  # wax-seal mark. NOT an AWS service icon. Hand-authored asset (no pack query),
+  # so it resolves to the committed image on every provider — same `asset:`
+  # mechanism the bundled `education` role uses.
+  license_neutral:
+    asset: "assets/vendor/custom/license-neutral.svg"
+    display_name: "License (vendor-neutral)"
+
+  # Multi-cloud sandbox fleet (FIX 3): one cloud shape with the AWS/Azure/GCP
+  # provider marks inside. Hand-authored composite asset.
+  sandbox_multicloud:
+    asset: "assets/vendor/custom/sandbox-3cloud.svg"
+    display_name: "Sandbox fleets (AWS / Azure / GCP)"
+
+  # EPAM DIAL AI proxy brand mark (owner-supplied). Not a cloud service.
+  dial:
+    asset: "assets/vendor/dial-brand/dial.svg"
+    display_name: "EPAM DIAL AI"
+
+  # Argo CD brand mark (owner-supplied asset argo-cd.png, 2026-10-22). The
+  # in-cluster GitOps controller on 11; not a cloud service, so no provider pack
+  # ships it. Same PNG-in-SVG wrapper convention as `dial` — resolves to the
+  # committed image on every provider via mappings/local/aws-icons.yaml.
+  argocd:
+    asset: "assets/vendor/custom/argocd.svg"
+    display_name: "Argo CD"

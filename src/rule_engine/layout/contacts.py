@@ -19,7 +19,7 @@ from their leaf modules, so it never participates in an import cycle.
 
 from __future__ import annotations
 
-from typing import Dict, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 try:  # package-relative import when used as ``rule_engine.layout.contacts``
     from ..diagram_layout import COL_STEP
@@ -155,6 +155,8 @@ def select_contacts(
     edge: EdgeSpec,
     placed: Dict[str, Box],
     allow_downward: Optional[Set[str]] = None,
+    exit_face: Optional[str] = None,
+    target_external: bool = False,
 ) -> Tuple[Contact, Contact]:
     """Return ``(exit, entry)`` contact points for ``edge`` via the ladder (Req 5).
 
@@ -215,6 +217,30 @@ def select_contacts(
     src = placed[edge.source]
     tgt = placed[edge.target]
     others = [b for nid, b in placed.items() if nid not in (edge.source, edge.target)]
+
+    # 1.13.0 (L2): external-fan exit-face override. When the source node carries
+    # an ``exit_face`` hint AND this edge's target is EXTERNAL (outside every
+    # cloud boundary), force the exit toward the external bands instead of the
+    # contract-default right/bottom, which would rake the fan back across the
+    # account. The entry is chosen contract-legally from the target's position
+    # (left/top faces). Applied ONLY for an external target, so an in-cloud edge
+    # from the same source keeps the normal ladder; ``exit_face=None`` is inert.
+    if exit_face is not None and target_external:
+        if exit_face == "up":
+            # Exit the top toward a band above/right; enter its LEFT face (the
+            # run rises then arrives horizontally into the band's left) — a
+            # contract-legal entry. A bottom-centre entry (arriving from below a
+            # band that sits above) is geometrically natural but forbidden by the
+            # directional contract, so the left face is used instead.
+            return (0.5, 0.0), (0.0, 0.5)
+        if exit_face == "left":
+            # Exit the left toward a band on the left; enter the band's TOP
+            # (a down-left run descends into it) — a contract-legal entry face,
+            # so no entry-side exception is needed. A right-face entry would be
+            # geometrically required to reach the left of a band sitting left of
+            # the source, which the directional contract forbids.
+            return (0.0, 0.5), (0.5, 0.0)
+        # exit_face == "right": the contract default; fall through to the ladder.
 
     directly_below = _box_directly_below(src, tgt, others)
     # A target in the SAME COLUMN and lower — even when an intermediate node
@@ -448,3 +474,51 @@ def spread_contacts(edges_on_side: list) -> list:
         (eid, _with_band(pt, side, band))
         for (eid, pt), band in zip(edges_on_side, bands)
     ]
+
+
+#: Bands a contact may take on one face, in the order a displaced duplicate
+#: tries them (FEAT-004): the centre, then the two quarters.
+_FREE_BANDS = (0.5, _UPPER_QUARTER, _LOWER_QUARTER)
+
+
+def separate_identical_contacts(
+    groups: Dict[Tuple[str, str], List[str]],
+    contacts: Dict[str, Contact],
+    entry: bool = False,
+) -> None:
+    """Guarantee distinct contact points per node face, in place (FEAT-004).
+
+    ``groups`` maps ``(node, face)`` to the edge ids on that face in priority
+    order; ``contacts`` maps edge id to its contact. The spreads above hand out
+    distinct bands, but later passes (the bottom-band rules, the straight-line
+    alignment) rewrite single bands, so two edges can end on the SAME point —
+    the ``exits-identical`` / ``entries-identical`` ERROR, one doubled line at
+    the glyph. Every later edge on an occupied band moves to the first free one
+    of :data:`_FREE_BANDS`; a face with no free band is left as is (it is
+    over-connected, which the spill / ``OverConnectedError`` own). Faces whose
+    contacts are already distinct are untouched."""
+    for (_node, face), eids in sorted(groups.items()):
+        if len(eids) < 2:
+            continue
+        band_of = (lambda pt: _entry_band(pt, face)) if entry else (
+            lambda pt: _band_of(pt, face))
+        taken: List[float] = []
+        for eid in eids:
+            band = round(band_of(contacts[eid]), 6)
+            if band not in taken:
+                taken.append(band)
+                continue
+            free = next((b for b in _FREE_BANDS if all(abs(b - t) >= MERGE_THRESHOLD
+                                                       for t in taken)), None)
+            if free is None:
+                taken.append(band)
+                continue
+            contacts[eid] = (_with_entry_band(contacts[eid], face, free) if entry
+                             else _with_band(contacts[eid], face, free))
+            taken.append(free)
+
+
+def _band_of(exit_pt: Contact, side: str) -> float:
+    """The along-face band coordinate of an exit on ``side``."""
+    fx, fy = exit_pt
+    return fx if side in ("bottom", "top") else fy

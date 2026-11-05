@@ -112,6 +112,7 @@ def build(skin: ExampleSkin) -> str:
         page_w=max(right, placed.legend_x + placed.legend_w) + _PAGE_MARGIN,
         page_h=bottom + _PAGE_MARGIN,
         skin=skin.skin,
+        pinned_ids=(),  # layout()-routed edges, none hand-pinned
     )
 
 

@@ -47,8 +47,9 @@ on that order, and nothing depends on unordered iteration.
 from __future__ import annotations
 
 import itertools
+from contextlib import contextmanager
 from dataclasses import replace
-from typing import Dict, FrozenSet, List, Optional, Sequence, Set, Tuple
+from typing import AbstractSet, Dict, FrozenSet, List, Optional, Sequence, Set, Tuple
 
 from rule_engine import caption_routing as _cr
 from rule_engine.caption_routing import CaptionPlan, Route
@@ -60,6 +61,7 @@ from rule_engine.geometry import (
     EdgeGeom,
     caption_lines,
     collapse_collinear,
+    collinear_edge_findings,
     collinear_edge_pairs,
     contact_faces,
     edge_polyline,
@@ -230,14 +232,49 @@ def _route_of(e: EdgeGeom) -> Route:
     return (tuple(e.exit), tuple(e.entry), tuple(tuple(p) for p in e.points))
 
 
+#: Rankings memoised for the duration of one planning run (FEAT-004): the
+#: joint search ranks the same member against the same geometry several times
+#: (SEP 02: 204 rankings, 137 distinct). None outside a run; a ranking cut
+#: short by a spent work budget is never stored.
+_RANK_MEMO: List[Optional[Dict[tuple, Tuple[DiagramGeometry, List[_cr.Cand]]]]] = [None]
+
+
 def _ranked(
     geo: DiagramGeometry, e: EdgeGeom, free: Sequence[str] = (), side: bool = True,
 ) -> List[_cr.Cand]:
     """Admissible candidate routes for ``e``, fewest crossings first.
-
     ``free`` edges are re-routed together with ``e``: they reserve no face slot
     and are not obstacles (the joint search counts them itself). ``side`` adds
     the WS2 side-corridor shapes to the face-swap family."""
+    memo = _RANK_MEMO[0]
+    if memo is None:
+        return _ranked_uncached(geo, e, free, side)
+    key = (id(geo), e.id, tuple(sorted(free)), side, _cr._CORRIDOR_START[0])
+    hit = memo.get(key)
+    if hit is None or hit[0] is not geo:
+        hit = (geo, _ranked_uncached(geo, e, free, side))
+        if not _cr.admissible_budget_spent():
+            memo[key] = hit
+    return list(hit[1])
+
+
+@contextmanager
+def ranking_memo():
+    """Memoise :func:`_ranked` for one planning run (the previous memo, if
+    any, is restored after)."""
+    prev = _RANK_MEMO[0]
+    _RANK_MEMO[0] = {}
+    try:
+        yield
+    finally:
+        _RANK_MEMO[0] = prev
+
+
+def _ranked_uncached(
+    geo: DiagramGeometry, e: EdgeGeom, free: Sequence[str], side: bool,
+) -> List[_cr.Cand]:
+    if _cr.admissible_budget_spent():
+        return []  # FEAT-004: no candidate could be admitted; skip the shapes
     view = _cr._without(geo, free) if free else geo
     polys = _cr._polylines(geo)
     skip = {e.id, *free}
@@ -253,6 +290,8 @@ def _ranked(
     out: List[_cr.Cand] = []
     seen: Set[tuple] = set()
     for order, (P, pf, Q, qf, pts) in enumerate(shapes):
+        if _cr.admissible_budget_spent():
+            break  # FEAT-004: the run's work budget is spent
         interior = _cr._normalised(P, pf, Q, qf, pts)
         poly = [tuple(P)] + interior + [tuple(Q)]
         key = (round(pf[0], 4), round(pf[1], 4), round(qf[0], 4), round(qf[1], 4),
@@ -279,14 +318,30 @@ def _ranked(
 # --------------------------------------------------------------------------- #
 
 
+def _end_to_end_merges(geo: DiagramGeometry) -> FrozenSet[Tuple[str, str]]:
+    """The ``end-to-end-merge`` collinear pairs (two edges sharing NO endpoint
+    whose facing ends read as one continuous line). Measured on the lint
+    (widened) basis, so it is independent of the trunk-exemption flag — a
+    genuine end-to-end merge is never a fan-out/fan-in trunk."""
+    return frozenset(
+        (a, b) for a, b, kind in collinear_edge_findings(geo)
+        if kind == "end-to-end-merge"
+    )
+
+
 class _Base:
-    """The diagram before a move: its score and its finding set."""
+    """The diagram before a move: its score and its finding set.
+
+    ``merges`` is the set of ``end-to-end-merge`` collinear pairs at this move's
+    start — crossing repair may re-use one but must never INTRODUCE a new one
+    (see :func:`_accept`)."""
 
     def __init__(self, geo: DiagramGeometry, collinear_cap: int):
         self.score = _cr._score(geo)
         errors, warnings = _cr._violations(geo)
         self.findings: FrozenSet = frozenset(errors) | frozenset(warnings)
         self.collinear_cap = collinear_cap
+        self.merges = _end_to_end_merges(geo)
 
 
 def _accept(trial: DiagramGeometry, base: _Base) -> Optional[_cr._Score]:
@@ -298,6 +353,17 @@ def _accept(trial: DiagramGeometry, base: _Base) -> Optional[_cr._Score]:
         return None
     if (sc.errors > b.errors or sc.warnings > b.warnings or sc.rails > b.rails
             or sc.collinear > base.collinear_cap or sc.own > b.own or sc.vis > b.vis):
+        return None
+    # 1.13.0 phase 3 (verify, SEP 03 e13/e4): the ``collinear`` COUNT cap let a
+    # move trade one plan pair for a DIFFERENT one while the total stayed flat.
+    # When the new pair is an ``end-to-end-merge`` — two unrelated edges reading
+    # as one continuous line, an ERROR on a landscape — the later collinear-shift
+    # pass cannot undo it from the boxed-in geometry. So crossing repair must
+    # never INTRODUCE an end-to-end merge absent from this move's start (it may
+    # still re-use one already there). Trunk / pass-through pairs, which the
+    # collinear-shift pass does clear, are unaffected, so SEP 08's trunk-related
+    # moves still apply.
+    if _end_to_end_merges(trial) - base.merges:
         return None
     errors, warnings = _cr._violations(trial)
     if (frozenset(errors) | frozenset(warnings)) - base.findings:
@@ -474,23 +540,60 @@ def _best_group(geo: DiagramGeometry, eids: Sequence[str], base: _Base) -> Optio
     segs = [[_cr._segs(c[2]) for c in lst] for lst in lists]
     n = len(members)
     pairs = list(itertools.combinations(range(n), 2))
+    # FEAT-004: the per-candidate terms the combination test reads (its own
+    # crossings, whether it keeps the route, its exit / entry face slots) are
+    # computed once per candidate, not once per combination. The test itself
+    # is unchanged (``_cr._distinct`` on the same slots), so the result is too.
+    xs = [[c[0][0] for c in lst] for lst in lists]
+    keeps = [[c[0][-1] == -1 for c in lst] for lst in lists]
+    slots = [[(_cr._face_slot(c[1][0], True), _cr._face_slot(c[1][1], False)) for c in lst]
+             for lst in lists]
+    ends = [((m.source, True), (m.target, False)) for m in members]
+    shared = {(p, q): [(ia, ib) for ia, a in enumerate(ends[p])
+                       for ib, b in enumerate(ends[q]) if a == b]
+              for p, q in pairs}
     combos = []
-    for idx in itertools.product(*(range(len(lst)) for lst in lists)):
-        picks = [lists[k][i] for k, i in enumerate(idx)]
-        if all(p[0][-1] == -1 for p in picks):
-            continue  # every member keeps its route: no move
-        x = sum(p[0][0] for p in picks)
-        if x >= cur:
-            continue
-        ok = True
-        for p, q in pairs:
-            x += _cr._cross_segs(segs[p][idx[p]], segs[q][idx[q]])
-            if (x >= cur or not _cr._distinct(picks[p][1], picks[q][1], members[p], members[q])
-                    or _cr._runs_collide(segs[p][idx[p]], segs[q][idx[q]])):
-                ok = False
-                break
-        if ok:
-            combos.append(((x, sum(p[0][1] for p in picks), [p[0][2:] for p in picks]), idx))
+    # Every combination in ``itertools.product`` order, pruned level by level:
+    # each term of a combination's crossing total (a member's own crossings,
+    # a pair's mutual crossings) is non-negative, so a partial total already
+    # at ``cur`` cannot finish below it, and a pair that clashes or collides
+    # rejects every completion. Each pair is judged once both of its members
+    # are chosen; the kept combinations and their totals are exactly those of
+    # the flat product test.
+    last = n - 1
+    idx: List[int] = []
+
+    def pair_ok(level: int, i: int, x: int) -> Optional[int]:
+        for p in range(level):
+            j = idx[p]
+            if any(_cr._slots_clash(slots[p][j][ia], slots[level][i][ib])
+                   for ia, ib in shared[(p, level)]):
+                return None
+            x += _cr._cross_segs(segs[p][j], segs[level][i])
+            if x >= cur or _cr._runs_collide(segs[p][j], segs[level][i]):
+                return None
+        return x
+
+    def extend(level: int, x: int) -> None:
+        for i in range(len(lists[level])):
+            nx = x + xs[level][i]
+            if nx >= cur:
+                continue
+            nx = pair_ok(level, i, nx)
+            if nx is None:
+                continue
+            if level < last:
+                idx.append(i)
+                extend(level + 1, nx)
+                idx.pop()
+                continue
+            full = tuple(idx) + (i,)
+            if all(keeps[k][j] for k, j in enumerate(full)):
+                continue  # every member keeps its route: no move
+            picks = [lists[k][j] for k, j in enumerate(full)]
+            combos.append(((nx, sum(p[0][1] for p in picks), [p[0][2:] for p in picks]), full))
+
+    extend(0, 0)
     combos.sort(key=lambda c: c[0])
     best: Optional[Move] = None
     for _, idx in combos[:_ORACLE_BUDGET]:
@@ -569,10 +672,26 @@ def _best_joint(geo: DiagramGeometry, a: str, b: str, base: _Base) -> Optional[M
 # --------------------------------------------------------------------------- #
 
 
-def plan_crossing_repair_geo(geo: DiagramGeometry) -> Tuple[CaptionPlan, DiagramGeometry]:
+def plan_crossing_repair_geo(
+    geo: DiagramGeometry, frozen: AbstractSet[str] = frozenset(),
+) -> Tuple[CaptionPlan, DiagramGeometry]:
     """Plan re-routes so every crossing a legal face / corridor change can
     remove without adding a finding is removed. Returns the plan and the
-    geometry it produces; ``geo`` is not modified."""
+    geometry it produces; ``geo`` is not modified.
+
+    ``frozen`` (1.13.0): edge ids never moved (they remain obstacles); a
+    move that would re-route one is rejected."""
+    with ranking_memo():
+        return _plan_crossing_repair_geo(geo, frozenset(frozen))
+
+
+def _plan_crossing_repair_geo(
+    geo: DiagramGeometry, frozen: FrozenSet[str],
+) -> Tuple[CaptionPlan, DiagramGeometry]:
+    def ok(m: Optional[Move]) -> Optional[Move]:
+        if m is None or not frozen or not (set(m[0]) & frozen):
+            return m
+        return None
     work = replace(geo, edges=list(geo.edges), containers=dict(geo.containers),
                    text_boxes=dict(geo.text_boxes))
     routes: Dict[str, Route] = {}
@@ -598,15 +717,19 @@ def plan_crossing_repair_geo(geo: DiagramGeometry) -> Tuple[CaptionPlan, Diagram
             # node route to swap, so the crossing-repair pass never reroutes it.
             if not is_node_edge(work, ea) or not is_node_edge(work, eb):
                 continue
+            if a in frozen and b in frozen:
+                continue  # 1.13.0: both routes are hand-pinned
             key = (a, b, len(routes))
             if key in tried:
                 continue
             tried.add(key)
             base = _Base(work, cap)
             found = None
-            for move in (lambda: _swap_moves(work, a, b, base),
-                         lambda: _better(_best_single(work, a, base), _best_single(work, b, base)),
-                         lambda: _best_joint(work, a, b, base)):
+            for move in (lambda: ok(_swap_moves(work, a, b, base)),
+                         lambda: _better(
+                             None if a in frozen else ok(_best_single(work, a, base)),
+                             None if b in frozen else ok(_best_single(work, b, base))),
+                         lambda: ok(_best_joint(work, a, b, base))):
                 found = move()
                 if found is not None:
                     break

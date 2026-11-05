@@ -287,7 +287,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
     Usage::
 
-        python -m rule_engine.asset_paths_guard [--mappings DIR] [--repo-root DIR]
+        python -m rule_engine.asset_paths_guard [--mappings DIR] [--workspace-root DIR]
 
     Exit codes:
       0  all declared icon paths exist, or the asset root is absent (skipped).
@@ -305,7 +305,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     parser.add_argument("--mappings", default=None,
                         help="mappings dir to check (default: the bundled mappings "
                         "merged with mappings/local/ overlays)")
-    parser.add_argument("--repo-root", default=str(default_root))
+    # 1.13.0: ``--workspace-root`` is the flag name every gate accepts;
+    # ``--repo-root`` stays as an alias.
+    parser.add_argument("--workspace-root", "--repo-root", dest="repo_root",
+                        default=str(default_root),
+                        help="workspace root (default: the current workspace); "
+                        "--repo-root is an alias")
     args = parser.parse_args(list(argv) if argv is not None else None)
 
     mappings_dir = (

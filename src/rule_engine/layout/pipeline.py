@@ -67,10 +67,12 @@ try:  # package-relative import when used as ``rule_engine.layout.pipeline``
         spread_entries,
         spread_contacts,
         spill_over_connected_faces,
+        separate_identical_contacts,
     )
     from .place import place_nodes, size_containers, centre_block_in_vpc, lift_subject_over_external_lane, place_and_size
     from .routers import (
         classify_edge,
+        CoincidentNodesError,
         _contact_point,
         _grid_contact,
         _free_left_corridor_x,
@@ -84,7 +86,7 @@ try:  # package-relative import when used as ``rule_engine.layout.pipeline``
         route_edge,
         nudge_off_container_borders,
     )
-    from .base import TITLE_BAND, _snap, col_step, resolve_spacing, _spacing_scope
+    from .base import SpecError, TITLE_BAND, _snap, col_step, resolve_spacing, _spacing_scope
     from .repair import (
         MAX_REPAIR_ITERS,
         LayoutError,
@@ -114,10 +116,12 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
         spread_entries,
         spread_contacts,
         spill_over_connected_faces,
+        separate_identical_contacts,
     )
     from layout.place import place_nodes, size_containers, centre_block_in_vpc, lift_subject_over_external_lane, place_and_size  # type: ignore[no-redef]
     from layout.routers import (  # type: ignore[no-redef]
         classify_edge,
+        CoincidentNodesError,
         _contact_point,
         _grid_contact,
         _free_left_corridor_x,
@@ -131,7 +135,7 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
         route_edge,
         nudge_off_container_borders,
     )
-    from layout.base import TITLE_BAND, _snap, col_step, resolve_spacing, _spacing_scope  # type: ignore[no-redef]
+    from layout.base import SpecError, TITLE_BAND, _snap, col_step, resolve_spacing, _spacing_scope  # type: ignore[no-redef]
     from layout.repair import (  # type: ignore[no-redef]
         MAX_REPAIR_ITERS,
         LayoutError,
@@ -195,8 +199,21 @@ def _global_contacts(
 
     exits: Dict[str, Contact] = {}
     entries: Dict[str, Contact] = {}
+    # 1.13.0 (L2): thread each source node's external-fan exit-face hint
+    # (NodeSpec.exit_face) and whether the edge's target is external
+    # (NodeSpec.external, double-encoded as the external=1 style token the
+    # directional-contract lint reads). The override in select_contacts fires
+    # only when BOTH are set, so an exit_face-free spec is byte-identical.
+    _exit_face_of: Dict[str, Optional[str]] = {
+        n.id: getattr(n, "exit_face", None) for n in spec.nodes
+    }
+    _external_ids = {n.id for n in spec.nodes if getattr(n, "external", False)}
     for edge in spec.edges:
-        ex, en = select_contacts(edge, placed, allow_downward)
+        ex, en = select_contacts(
+            edge, placed, allow_downward,
+            exit_face=_exit_face_of.get(edge.source),
+            target_external=edge.target in _external_ids,
+        )
         exits[edge.id] = ex
         entries[edge.id] = en
 
@@ -698,6 +715,7 @@ def _global_contacts(
         if taken_left:
             continue                              # left band occupied → keep spread band
         exits[eid] = (_UPPER_QUARTER, exits[eid][1])  # bottom-LEFT band (0.25)
+    _variant_a_bottom_bands(spec, placed, exits, order_of, _mk)
 
     # 2b4. Monotone exit bands on the RIGHT face (v1.6.0), replacing the old
     #     Rule H. Rule H had the right idea — "a run rising into an above-row
@@ -761,6 +779,18 @@ def _global_contacts(
     #     to the entry's band when the source's right face does — the spread
     #     siblings keep their bands, so no stub crosses another.
     _align_straight_contacts(spec, placed, exits, entries)
+    # 2b6. Distinct contacts per face (FEAT-004, 1.13.0): the band rules above
+    #     rewrite single bands after the spreads, so two edges can end on the
+    #     SAME point of one face (``exits-identical`` / ``entries-identical``, a
+    #     lint ERROR and a ``rule_violations`` error). The later edge (marker
+    #     order) moves to the first free band; distinct faces are untouched.
+    exit_groups: Dict[Tuple[str, str], List[str]] = {}
+    entry_groups: Dict[Tuple[str, str], List[str]] = {}
+    for edge in sorted(spec.edges, key=lambda e: (_mk(e.id), order_of[e.id])):
+        exit_groups.setdefault((edge.source, _exit_side(exits[edge.id])), []).append(edge.id)
+        entry_groups.setdefault((edge.target, _entry_face(entries[edge.id])), []).append(edge.id)
+    separate_identical_contacts(exit_groups, exits)
+    separate_identical_contacts(entry_groups, entries, entry=True)
 
     # 2c. Snap every contact FRACTION so its absolute point lands on the grid
     #     (icon centre 0.5 → x0+39 is off-grid; a grid-snapped waypoint would
@@ -772,6 +802,58 @@ def _global_contacts(
         entries[edge.id] = _grid_contact(placed[edge.target], entries[edge.id])
 
     return exits, entries, lane_sides
+
+
+def _variant_a_bottom_bands(
+    spec: DiagramSpec,
+    placed: Dict[str, "Box"],
+    exits: Dict[str, Contact],
+    order_of: Dict[str, int],
+    marker_key,
+) -> None:
+    """Variant A on the bottom face (FEAT-004, 1.13.0), in place.
+
+    A source whose caption sits under its icon (every node with a non-empty
+    label) must not fan out of its bottom on side bands (0.25 / 0.75): each
+    such stub crosses the name. A bottom exit whose target lies to the right
+    (or below-right) of the source moves to the RIGHT face while that face has
+    room (at most :data:`MAX_SIDE_EXITS`; step 2b4 hands out the right-face
+    bands), farthest-right target first. A lone bottom exit left after that
+    takes the bottom CENTRE, a straight drop the caption-safe pass may still
+    re-route. Two or more bottom exits that cannot move (an overloaded source:
+    the right face is full) keep their distinct bands, since two stubs on one
+    point is the worse defect (``exits-identical``)."""
+    labels = dict(getattr(spec, "node_labels", ()) or ())
+    by_src: Dict[str, Dict[str, List[str]]] = {}
+    for edge in spec.edges:
+        side = _exit_side(exits[edge.id])
+        if side in ("right", "bottom"):
+            by_src.setdefault(edge.source, {"right": [], "bottom": []})[side].append(edge.id)
+    target_of = {e.id: e.target for e in spec.edges}
+    for src_id in sorted(by_src):
+        faces = by_src[src_id]
+        bottom = faces["bottom"]
+        if not bottom or not labels.get(src_id, src_id):
+            continue
+        if len(bottom) == 1 and abs(exits[bottom[0]][0] - 0.5) < 1e-9:
+            continue  # a lone centred drop: no side band to remove
+        src = placed[src_id]
+        cx = src.x + src.w / 2.0
+
+        def _dx(eid: str) -> float:
+            t = placed[target_of[eid]]
+            return (t.x + t.w / 2.0) - cx
+
+        movable = sorted((eid for eid in bottom if _dx(eid) > 1.0),
+                         key=lambda eid: (-_dx(eid), marker_key(eid), order_of[eid]))
+        for eid in movable:
+            if len(faces["right"]) >= MAX_SIDE_EXITS:
+                break
+            exits[eid] = (1.0, 0.5)
+            faces["right"].append(eid)
+            bottom.remove(eid)
+        if len(bottom) == 1:
+            exits[bottom[0]] = _with_band(exits[bottom[0]], "bottom", 0.5)
 
 
 def _align_straight_contacts(
@@ -1250,8 +1332,12 @@ def layout(
                 # back-edges or crossings and no more of either
                 # (``order="manual"`` skips it).
                 from .ordering import order_and_place as _order_and_place
-                return _order_and_place(
-                    spec, lambda s: _solve_placement(s, strict=strict))
+                from .postcheck import with_postcheck as _with_postcheck
+                # FEAT-004: the lint-only ERROR rules run once on the finished
+                # diagram (never inside the solver loop, whose nested layout()
+                # calls take the ``_placement=False`` path below).
+                return _with_postcheck(_with_scope_membership(_order_and_place(
+                    spec, lambda s: _solve_placement(s, strict=strict)), strict=strict))
             # Inner scored route path (the placement loop's per-variant step, and the
             # 1.8.0 route-only path): no placement search, just place → size → centre
             # → scored solve → repair.
@@ -1261,6 +1347,66 @@ def layout(
                 f"layout({spec.diagram_id!r}) has an over-connected node — the "
                 f"diagram must be split or re-laned: {exc}"
             ) from exc
+        except CoincidentNodesError as exc:
+            # 1.13.0 phase 3 item 19 (F11): two edge endpoints resolved to the
+            # SAME placed position (dx == dy == 0) — a spec authoring mistake the
+            # duplicate-slot key did not catch (the SEP 08 IGW at slot 9 landing
+            # on the public-subnet EC2). Re-raise as a SpecError the author can
+            # act on, rather than letting an internal routing error surface.
+            raise SpecError(
+                f"{exc}; give one a different slot or sub"
+            ) from exc
+
+
+def scope_membership_warnings(placed: "PlacedDiagram") -> Tuple[str, ...]:
+    """``scope-membership`` findings (1.13.0, task item 13): a node that
+    declares no ``container`` but whose icon box the placement drew fully
+    inside a container it is not a member of (:func:`membership_of`). The
+    builder parents nodes by spec membership, so such a node reads as inside
+    a box it does not belong to; lint (``geometric-containment``) reports it."""
+    from .base import container_chain, membership_from
+
+    member = membership_from(placed.spec, placed.nodes)
+    out: List[str] = []
+    for n in placed.spec.nodes:
+        if n.container is not None or n.id not in placed.nodes:
+            continue
+        b = placed.nodes[n.id]
+        chain = set(container_chain(placed.spec, member.get(n.id, "")))
+        for c in placed.spec.containers:
+            box = placed.containers.get(c.id)
+            if box is None or c.id in chain:
+                continue
+            if (box.x <= b.x and box.y <= b.y
+                    and b.x + b.w <= box.x + box.w and b.y + b.h <= box.y + box.h):
+                out.append(f"scope-membership: {n.id} inside {c.id} but not declared a member")
+    return tuple(out)
+
+
+def _with_scope_membership(placed: "PlacedDiagram", *, strict: bool = False) -> "PlacedDiagram":
+    """``placed`` with :func:`scope_membership_warnings` appended to its
+    ``layout_warnings`` (a no-op, same object, when there are none). Under
+    ``strict=True`` a finding is a :class:`SpecError` (no shipped golden
+    trips it)."""
+    extra = scope_membership_warnings(placed)
+    if not extra:
+        return placed
+    if strict:
+        raise SpecError(
+            f"layout({placed.spec.diagram_id!r}): " + "; ".join(extra)
+            + " — declare the node's container, or slot it clear of the box"
+        )
+    return replace(placed, layout_warnings=tuple(placed.layout_warnings) + extra)
+
+
+def membership_of(placed: "PlacedDiagram") -> Dict[str, str]:
+    """``{node_id: container_id}`` (``""`` for the root layer) from the spec:
+    each node's declared container, else the container placement sized it into
+    (1.13.0). Pass it to ``build_diagram(membership=...)`` so a node is parented
+    to the box the spec puts it in, never to a box it merely overlaps."""
+    from .base import membership_from
+
+    return membership_from(placed.spec, placed.nodes)
 
 
 def _annotate_edge_regions(spec: DiagramSpec) -> DiagramSpec:
@@ -1299,16 +1445,43 @@ def _route_container_edges(
     diagram carries ``full_spec`` so downstream (serialize / lint / reconcile)
     sees every edge, container ones included."""
     from .routers import container_edge_contacts, route_container_edge
+    from .contacts import separate_identical_contacts
 
     boxes: Dict[str, "Box"] = dict(placed.nodes)
     boxes.update(placed.containers)
 
+    # First pass: pick each boundary edge's exit/entry contacts independently.
+    present = [e for e in container_edges
+               if boxes.get(e.source) is not None and boxes.get(e.target) is not None]
+    exits: Dict[str, Contact] = {}
+    entries: Dict[str, Contact] = {}
+    for e in present:
+        exit_pt, entry_pt = container_edge_contacts(boxes[e.source], boxes[e.target])
+        exits[e.id] = exit_pt
+        entries[e.id] = entry_pt
+
+    # 1.13.0 (item 5b, F9): two boundary edges leaving one container face (two
+    # VPC→peer peerings) both get ``(0.5, 1.0)`` from
+    # ``container_edge_contacts`` — the ``exits-identical`` / ``entries-identical``
+    # ERROR. ``separate_identical_contacts`` (the same spread the node-edge path
+    # uses in step 2b6) moves the later edge to a free band on the same face.
+    # Group by (endpoint id, face) so only edges sharing a container face are
+    # separated; node-endpoint edges that share a face with a container edge are
+    # grouped under the same box key too.
+    exit_groups: Dict[Tuple[str, str], List[str]] = {}
+    entry_groups: Dict[Tuple[str, str], List[str]] = {}
+    for e in present:
+        for face in contact_faces(*exits[e.id]):
+            exit_groups.setdefault((e.source, face), []).append(e.id)
+        for face in contact_faces(*entries[e.id]):
+            entry_groups.setdefault((e.target, face), []).append(e.id)
+    separate_identical_contacts(exit_groups, exits)
+    separate_identical_contacts(entry_groups, entries, entry=True)
+
     routed: Dict[str, PlacedEdge] = {}
-    for e in container_edges:
-        src, tgt = boxes.get(e.source), boxes.get(e.target)
-        if src is None or tgt is None:  # a dropped node (degraded) — skip it
-            continue
-        exit_pt, entry_pt = container_edge_contacts(src, tgt)
+    for e in present:
+        src, tgt = boxes[e.source], boxes[e.target]
+        exit_pt, entry_pt = exits[e.id], entries[e.id]
         pts = route_container_edge(src, tgt, exit_pt, entry_pt)
         pts = orthogonalise_route(
             _contact_point(src, exit_pt),
@@ -1583,9 +1756,18 @@ def _degraded_finish(
     ``layout_warnings`` (``"<rule>: <payload>"``, in the oracle's stable order),
     so the caller can surface them (1.10.7, M3). The oracle-guarded finishing
     passes are skipped: each keeps its change only on an oracle-clean diagram,
-    which this one is not."""
-    warnings = tuple(f"{rule}: {payload!r}" for rule, payload in findings.blocking)
-    return replace(_normalise_origin(candidate, margins), layout_warnings=warnings)
+    which this one is not.
+
+    1.13.0 phase 3 item 16: the warnings are re-validated on the FINAL
+    normalised geometry, so ``layout_warnings`` lists only findings the returned
+    diagram actually carries — not a finding a rejected candidate had that a
+    later repair/normalisation already cleared (the 12 ``container-padding:
+    ('p-apigw', 'trust-box')`` noise on a result the linter passes clean)."""
+    normalised = _normalise_origin(candidate, margins)
+    final = _run_oracle(normalised)
+    warnings = tuple(f"{rule}: {payload!r}" for rule, payload in final.blocking)
+    return replace(normalised, layout_warnings=warnings,
+                   degraded=bool(final.blocking))
 
 
 def _finish(

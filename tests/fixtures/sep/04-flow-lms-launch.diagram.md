@@ -1,14 +1,14 @@
 ---
-id: 04-flow-lms-launch-v5
+id: 04-flow-lms-launch-v7
 title: SEP LMS launch — LTI 1.0/1.1 launch and run management (data-flow)
 kb_namespace: cloud-architecture
 section: sep-architecture
 category: diagram
 status: draft
-updated: 2026-10-17
+updated: 2026-10-23
 owner: platform-engineering
 author: diagram-author
-next_review_date: 2027-04-17
+next_review_date: 2027-04-21
 diagram_class: flow
 diagram_type: data-flow
 tags:
@@ -24,6 +24,15 @@ related_docs:
 change_log:
   - date: 2026-10-17
     note: v5 — icon fidelity pass. The Student in the LMS now uses the AWS General User resource icon (a human user) instead of a neutral box. Keycloak and MongoDB Atlas brand marks unchanged.
+  - date: 2026-10-21
+    note: v6 — regenerated on rule-engine 1.10.12 (title v5→v6). No content change; the upgraded engine re-laid-out the geometry. Icons and edges unchanged (04 has no License Manager or sandbox node, so the three owner fixes do not touch it).
+  - date: 2026-10-22
+    note: v7 — regenerated on rule-engine 1.11.0 pre-release with the native skin applied (grey edges #5A6B7B, light-grey Flow/Legend furniture #B3B3B3, dark #1A1A1A circle badge markers). Hand-pinned geometry byte-stable; no flow_groups (04 explicitly excluded); presentation-only change.
+
+  - date: 2026-10-23
+    note: >-
+      Seventh-wave sweep (1.11.0): rebuilt BYTE-IDENTICAL, regression-checked
+      clean under SYS-B/SYS-A. All gates 0 ERROR/CRITICAL. Version held.
 ---
 
 # SEP LMS launch — LTI 1.0/1.1 launch and run management
@@ -38,14 +47,14 @@ The flow has seven numbered steps. A student in the LMS (learn.epam.com or elear
 
 ## Troubleshooting
 
-If a node looks wrong, remember the scope: this is the launch-and-run path, not the full platform, so socket-api, SQS, Batch, Bedrock, and S3 are intentionally absent — see the summary and landscape views for those. MongoDB Atlas is drawn with its real brand-green leaf, Keycloak with its colorized Keycloak brand mark, and the student in the LMS with the AWS General User resource icon (a human user). None of the three is a faked look-alike; where no faithful icon exists the engine keeps the honest representation rather than substituting a wrong glyph. The authorizer placement is deliberate and matters: ui-api has no gateway authorizer, so if you are tracing an auth failure, look inside lti-adapter, not at the gateway. The grade callback (step 7) is a back-edge to an external actor and leaves lti-adapter on its left face to clear the management-api-handler icon directly below it; that is the honest route, not a routing mistake. If the raster looks oversized, confirm the flow export budget (width at or under 1600px).
+If a node looks wrong, remember the scope: this is the launch-and-run path, not the full platform, so socket-api, SQS, Batch, Bedrock, and S3 are intentionally absent — see the summary and landscape views for those. MongoDB Atlas is drawn with its real brand-green leaf, Keycloak with its colorized Keycloak brand mark, and the student in the LMS with the AWS General User resource icon (a human user). None of the three is a faked look-alike; where no faithful icon exists the engine keeps the honest representation rather than substituting a wrong glyph. The authorizer placement is deliberate and matters: ui-api has no gateway authorizer, so if you are tracing an auth failure, look inside lti-adapter, not at the gateway. The grade callback (step 7) is a back-edge to an external actor and leaves lti-adapter on its left face to clear the management-api-handler icon directly below it; that is the honest route, not a routing mistake. If the raster looks oversized, confirm the flow export budget (width at or under 1600px). The 1.11.0 native skin is cosmetic only: grey edges, light-grey furniture, and dark badge-disc markers, with no coordinate changed.
 
 ## Anti-patterns
 
 Do not place the student, Keycloak, or MongoDB Atlas inside the AWS Account boundary to tidy the edge crossings: only SEP's own cloud resources belong inside it, and an edge that crosses the boundary from an external party is correct. The student is a human user and so wears the AWS User resource icon even though it is external; Atlas wears MongoDB's own brand leaf and Keycloak its own Keycloak brand mark. Do not substitute a look-alike AWS service glyph for a non-AWS system — that misstates the architecture. Do not move the authorization to the gateway in the drawing to make it look conventional; ui-api has no authorizer and lti-adapter owns validation. The title cell encodes provider, workload, boundary, region, date, and version:
 
 ```text
-aws SEP LMS launch — 870325637521 / eu-central-1 | 2026-10-17 | v5
+aws SEP LMS launch — 870325637521 / eu-central-1 | 2026-10-22 | v7
 ```
 
 Do not hand-edit the emitted `.drawio` coordinates; change the declaration in the build script and regenerate, then re-run the lint gate.

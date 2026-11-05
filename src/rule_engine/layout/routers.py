@@ -80,6 +80,20 @@ class UnclassifiableEdgeError(ValueError):
     and the source/target geometry so the gap is actionable."""
 
 
+class CoincidentNodesError(UnclassifiableEdgeError):
+    """An edge whose two endpoints occupy the SAME placed position (1.13.0 phase
+    3 item 19, F11).
+
+    A subtype of :class:`UnclassifiableEdgeError` for the ``dx == dy == 0`` case:
+    the edge is not an unknown route *class*, its two nodes simply coincide
+    (lane/region/slot/sub resolved to one point via some path the duplicate-slot
+    key did not catch — the SEP 08 IGW at slot 9 that landed on the public-subnet
+    EC2). ``layout()`` catches this subtype and re-raises it as a
+    :class:`~rule_engine.layout.base.SpecError` naming both nodes, so the author
+    gets "give one a different slot / sub" rather than an internal routing error.
+    """
+
+
 def _same_row(a: Box, b: Box) -> bool:
     """True when two boxes share a row (equal top edge)."""
     return a.y == b.y
@@ -171,6 +185,17 @@ def classify_edge(edge: EdgeSpec, placed: Dict[str, Box]) -> str:
     if dy != 0 and dx >= 0:
         return "spine"
 
+    # 1.13.0 phase 3 item 19: dx == dy == 0 means the two endpoints occupy the
+    # same placed position (lane/region/slot/sub coincide via some path the
+    # duplicate-slot key did not catch — the SEP 08 IGW at slot 9 that landed on
+    # the public-subnet EC2). That is a spec authoring mistake, not an
+    # unroutable edge class; the caller re-raises it as a SpecError naming both
+    # nodes. The dedicated subtype lets the caller catch exactly this case.
+    if dx == 0 and dy == 0:
+        raise CoincidentNodesError(
+            f"edge {edge.id!r}: nodes {edge.source!r} and {edge.target!r} "
+            f"occupy the same position (lane/region/slot/sub coincide)"
+        )
     raise UnclassifiableEdgeError(
         f"edge {edge.id!r} ({edge.source!r}->{edge.target!r}) matches no known "
         f"edge class (dx={dx}, dy={dy}); classes are {EDGE_KINDS}"
@@ -676,6 +701,7 @@ def route_fan_out_row(
     obstacles: List[Box],
     containers: Optional[Dict[str, Box]] = None,
     lane_above: Optional[bool] = None,
+    lift_over: bool = False,
 ) -> List[Point]:
     """Route a ``fan-out-row`` edge in its own off-row lane (Req 7.4).
 
@@ -705,13 +731,55 @@ def route_fan_out_row(
     the normal fan-out — across below the row, up into the target's left face.
     The drawn polyline therefore starts by going *down* from the pinned bottom
     contact, so the stored ``exit`` matches where the polyline actually begins
-    (no exit/route mismatch)."""
+    (no exit/route mismatch).
+
+    Shape (LIFT-OVER — the up-climb branch, 1.13.0 L3): ``lift_over`` routes the
+    one branch of a single-hub fan-out whose target sits a row or more ABOVE the
+    source. Its rise, laid amongst the descending siblings' nested turn columns,
+    otherwise cuts their left-approach legs — the single-hub N-way fan-out
+    crossing the finishing crossing-repair pass cannot clear (ENGINE-TODO L3).
+    The lift-over exits right, steps into the gap column right of the source (the
+    same ``step_x`` gap every fan-out step-out shares, which sits LEFT of every
+    sibling's turn column), climbs that column to a lane ABOVE every node in the
+    run's x-span, runs across that clear lane, and drops into the target's left
+    face at its approach column. Rise left of the fan, cross above it: the climb
+    never meets a descending sibling's corridor. Offered only as a scored
+    :data:`~rule_engine.layout.variants.RoutePlan.LIFT_OVER` variant, so the
+    solver commits it only when ``route_cost`` scores strictly fewer crossings
+    (rule-based stays rank 0), keeping every shipped golden byte-identical."""
     src = obstacle_box(edge.source, obstacles)
     tgt = obstacle_box(edge.target, obstacles)
     others = _relevant_obstacles(edge, obstacles)
 
     entry = _contact_point(tgt, entry_pt)
     exit_abs = _contact_point(src, exit_pt)
+
+    if lift_over:
+        # The clear lane sits above every node whose x-span overlaps the run —
+        # the whole fan, not just the climb target.
+        x_lo = min(src.x, tgt.x)
+        x_hi = max(src.right, tgt.right)
+        top = min(src.y, tgt.y)
+        for b in obstacles:
+            if b.right < x_lo or b.x > x_hi:
+                continue
+            top = min(top, b.y)
+        lane_y = _snap(top - 2 * GRID)
+        # Step into the shared gap column right of the source (left of every
+        # sibling turn column), climb to the clear lane, run across, and drop
+        # into the target's left face at its approach column.
+        step_x = _gap_column_x(allocator, src, edge.id)
+        turn_x = _snap(tgt.x - (col_step() - ICON_SIZE) // 2)
+        waypoints = [
+            (step_x, _snap(exit_abs[1])),   # step out to the gap column
+            (step_x, lane_y),               # climb to the clear lane
+            (turn_x, lane_y),               # run across above the whole fan
+            (turn_x, _snap(entry[1])),      # drop into the target's left face
+        ]
+        waypoints = _dedupe_axis_collapse(waypoints, waypoints[0])
+        route = [exit_abs] + waypoints + [entry]
+        route = _detour_clockwise_if_blocked(route, others)
+        return _interior_waypoints(route)
 
     # Level-run shortcut (wave-4 ITEM 4b): a fan-out-row edge whose right-face
     # exit and left-face entry already resolve to the SAME absolute y, and whose
@@ -2218,6 +2286,7 @@ def route_edge(
     corridor_y: Optional[float] = None,
     turn_near_target: bool = False,
     bus: Optional[str] = None,
+    lift_over: bool = False,
 ) -> List[Point]:
     """Classify ``edge`` and dispatch to the matching ``route_<kind>`` router.
 
@@ -2254,7 +2323,8 @@ def route_edge(
         )
     if kind == "fan-out-row":
         return ROUTERS[kind](
-            edge, exit_pt, entry_pt, allocator, obstacles, containers, lane_above
+            edge, exit_pt, entry_pt, allocator, obstacles, containers, lane_above,
+            lift_over,
         )
     if kind == "spine":
         return ROUTERS[kind](edge, exit_pt, entry_pt, allocator, obstacles, containers)
@@ -2414,10 +2484,10 @@ def _dedupe_axis_collapse(waypoints: List[Point], first: Point) -> List[Point]:
 
 #: Tolerance + minimum-run length for the border-clearance nudge. Kept in step
 #: with ``geometry._BORDER_RIDE_TOL`` / ``_BORDER_RIDE_MIN_LEN`` (the lint gate
-#: this pass keeps clean): a grid-aligned corridor landing within 4px of a
-#: non-grid-aligned border is nudged, but only when the leg is a long run
-#: (>= one STAIR_STEP), not a short entry/exit stub crossing the border.
-_BORDER_CLEAR_TOL = 4.0
+#: this pass keeps clean): a corridor landing strictly closer than one grid step
+#: to a border (1.13.0; 4px before) is nudged, but only when the leg is a long
+#: run (>= one STAIR_STEP), not a short entry/exit stub crossing the border.
+_BORDER_CLEAR_TOL = GRID - 0.5
 _BORDER_CLEAR_MIN_LEN = STAIR_STEP
 
 
@@ -2475,9 +2545,14 @@ def nudge_off_container_borders(
                         continue
                     for edge_x, inward in ((c.x, +1), (c.right, -1)):
                         if abs(x0 - edge_x) <= _BORDER_CLEAR_TOL:
-                            new_x = _snap(edge_x - inward * GRID)
+                            # 1.13.0: a leg already on the INSIDE of the
+                            # border steps further inside, so a route between
+                            # two members never leaves its box; one on or
+                            # outside the border steps out into the gap.
+                            way = inward if (x0 - edge_x) * inward > 0 else -inward
+                            new_x = _snap(edge_x + way * GRID)
                             if abs(new_x - edge_x) < GRID:
-                                new_x = _snap(edge_x - inward * 2 * GRID)
+                                new_x = _snap(edge_x + way * 2 * GRID)
                             # Move both ends of THIS vertical leg (i and its
                             # axis-sharing neighbour j) that are interior.
                             for k in (i, j):
@@ -2488,9 +2563,10 @@ def nudge_off_container_borders(
                         continue
                     for edge_y, inward in ((c.y, +1), (c.bottom, -1)):
                         if abs(y0 - edge_y) <= _BORDER_CLEAR_TOL:
-                            new_y = _snap(edge_y - inward * GRID)
+                            way = inward if (y0 - edge_y) * inward > 0 else -inward
+                            new_y = _snap(edge_y + way * GRID)
                             if abs(new_y - edge_y) < GRID:
-                                new_y = _snap(edge_y - inward * 2 * GRID)
+                                new_y = _snap(edge_y + way * 2 * GRID)
                             for k in (i, j):
                                 if _movable(k) and abs(poly[k][1] - y0) < 1:
                                     poly[k][1] = new_y

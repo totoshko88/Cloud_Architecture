@@ -9,7 +9,7 @@ backend-path = ["."]
 
 [project]
 name = "rule-engine"
-version = "1.12.0"
+version = "1.13.0"
 description = "Diagram & Inventory Rule Engine — a cloud-agnostic Kiro project for deterministic diagram and inventory generation."
 readme = "README.md"
 # The engine supports Python 3.11 through 3.14 (the CI test matrix, task 21.5).
@@ -31,6 +31,8 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "hypothesis>=6.100",
+    # 1.13.0: parallel test runs (`pytest -n auto`, `make test`).
+    "pytest-xdist>=3.5",
 ]
 
 [project.scripts]
@@ -128,3 +130,7 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = [
+    "slow: test longer than 60 s (deselect with -m 'not slow')",
+    "sep: SEP regression fixtures (tests/fixtures/sep)",
+]

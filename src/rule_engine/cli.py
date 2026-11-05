@@ -46,6 +46,7 @@ Exit codes
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import os
 import re
@@ -169,6 +170,100 @@ def _companion_path(path: str) -> str:
     return os.path.splitext(path)[0] + ".diagram.md"
 
 
+#: The on-canvas pointer a ``flow_steps='document'`` Flow index carries
+#: (``diagram_layout.document_flow_index``, 1.13.0): the steps live in the
+#: companion's ``## Flow`` section.
+_FLOW_COMPANION_POINTER = "see companion"
+_MD_HEADING_RE = re.compile(r"^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$")
+_MD_FLOW_STEP_RE = re.compile(r"^\s*\d+\s*[.)]\s*\S")
+
+
+def _markdown_flow_steps(path: str, whole_file: bool = False) -> Optional[List[str]]:
+    """The numbered ``N.`` / ``N)`` lines of a Markdown file's ``## Flow``
+    section (until the next heading), or ``None`` when the file or the section
+    is absent. ``whole_file``: a sibling ``.flow.md`` with no ``Flow`` heading
+    contributes every numbered line (1.13.0)."""
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            _block, body = _kb_validator.split_frontmatter(fh.read())
+    except OSError:
+        return None
+    steps: List[str] = []
+    in_section = found = False
+    for line in body.splitlines():
+        m = _MD_HEADING_RE.match(line)
+        if m:
+            if in_section:
+                break
+            if m.group(2).strip().casefold() == _FLOW_HEADING:
+                in_section = found = True
+            continue
+        if in_section and _MD_FLOW_STEP_RE.match(line):
+            steps.append(line.strip())
+    if found:
+        return steps
+    if whole_file:
+        return [ln.strip() for ln in body.splitlines() if _MD_FLOW_STEP_RE.match(ln)] or None
+    return None
+
+
+_PROSE_MARKER_RES = (
+    re.compile(r"\(\s*(\d{1,3})\s*\)"),
+    re.compile(r"\bmarkers?\s+(\d{1,3})\b", re.IGNORECASE),
+    re.compile(r"\bstep\s+(\d{1,3})\b", re.IGNORECASE),
+    re.compile(r"\bflow\s+(\d{1,3})\b", re.IGNORECASE),
+)
+
+
+def _companion_cited_markers(path: str) -> Optional[List[int]]:
+    """Marker numbers the companion PROSE cites (1.13.0 phase 3,
+    ``companion-marker-ref``): ``(10)``, ``marker 7``, ``step 3``, ``flow 2``,
+    outside the ``## Flow`` section, fenced code, inline backticks and the
+    frontmatter. ``None`` when there is no companion."""
+    comp = _companion_path(path)
+    if not os.path.isfile(comp):
+        return None
+    try:
+        with open(comp, "r", encoding="utf-8") as fh:
+            _block, body = _kb_validator.split_frontmatter(fh.read())
+    except OSError:
+        return None
+    cited: List[int] = []
+    in_flow = in_fence = False
+    for line in body.splitlines():
+        if line.lstrip().startswith(("```", "~~~")):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        m = _MD_HEADING_RE.match(line)
+        if m:
+            in_flow = m.group(2).strip().casefold() == _FLOW_HEADING
+            continue
+        if in_flow:
+            continue
+        text = re.sub(r"`[^`]*`", " ", line)
+        for rx in _PROSE_MARKER_RES:
+            for mm in rx.finditer(text):
+                if mm.start() == 0 and rx is _PROSE_MARKER_RES[0]:  # list prefix
+                    continue
+                cited.append(int(mm.group(1)))
+    return sorted(set(cited))
+
+
+def _flow_steps_from_companion(path: str) -> Optional[List[str]]:
+    """Flow steps for a diagram whose Flow is not on canvas (1.13.0): the
+    companion ``<base>.diagram.md`` ``## Flow`` section, else a sibling
+    ``<base>.flow.md``. ``None`` when neither carries any step."""
+    steps = _markdown_flow_steps(_companion_path(path))
+    if not steps:
+        base = path[: -len(".drawio")] if path.endswith(".drawio") else os.path.splitext(path)[0]
+        steps = _markdown_flow_steps(base + ".flow.md", whole_file=True)
+    return steps or None
+
+
 def _load_companion_frontmatter(
     companion: str,
 ) -> Tuple[Optional[Dict[str, Any]], bool]:
@@ -277,6 +372,7 @@ def _parse_drawio_page(path: str, page: Page, text: str) -> Artifact:
                 source=cell.source or "",
                 target=cell.target or "",
                 label=cell.label or None,
+                id=str(cid),
             ))
             # Record broken endpoints (R1.10): a missing source/target, or one
             # that names a cell id absent from the page.
@@ -293,7 +389,9 @@ def _parse_drawio_page(path: str, page: Page, text: str) -> Artifact:
             continue
         if cid in boundary_ids:
             continue
-        if (cid or "").startswith(("flowgroup-", "bandgroup-")):
+        if (cid or "").startswith(("flowgroup-", "bandgroup-", "overlayring-")):
+            # 1.13.0: an ``overlayring-*`` cell is the visible outline of a
+            # standby / supporting / unconfirmed node, not a node.
             # 1.11.0 WS2 flow-group box / 1.13.0 band-group box: a decorative
             # context box behind the member nodes (``flow_group_cells`` /
             # ``band_group_cells``), not a service node. It must not
@@ -340,6 +438,20 @@ def _parse_drawio_page(path: str, page: Page, text: str) -> Artifact:
     # rather than silently defaulting to ``flow`` (design §2 / R2.5).
     companion = _companion_path(path)
     fm, companion_parse_failed = _load_companion_frontmatter(companion)
+
+    # 1.13.0: a ``flow_steps='document'`` diagram draws only an index Flow cell
+    # pointing at the companion; a diagram with no Flow cell may keep its steps
+    # there too. Read them so flow-legend / flow-step-undrawn judge the real
+    # steps, and record where they came from.
+    flow_source = "canvas"
+    _pointer = any(_FLOW_COMPANION_POINTER in ln.casefold() for ln in flow_legend_lines)
+    if not flow_legend_lines or _pointer:
+        _steps = _flow_steps_from_companion(path)
+        if _steps:
+            flow_legend_lines = ["Flow"] + _steps
+            flow_source = "companion"
+        else:
+            flow_source = "missing"
     diagram_class = "flow"
     summary_of = None
     detailed_view = None
@@ -424,6 +536,8 @@ def _parse_drawio_page(path: str, page: Page, text: str) -> Artifact:
         overlay_markers=overlay_markers,
         legend_overlay_terms=legend_overlay_terms,
         flow_legend_lines=flow_legend_lines,
+        flow_source=flow_source,
+        companion_cited_markers=_companion_cited_markers(path),
     )
 
 
@@ -731,6 +845,18 @@ _EXCLUDED_MD_BASENAMES = {
 }
 
 
+#: Directories whose Markdown is never a generated KB document (1.13.0): a
+#: ``scripts/README-13.md`` describes a builder, it is not a KB page.
+_NON_KB_MD_DIRS = {"scripts"}
+
+#: Basename globs (lowercased) of hand-authored working notes that are not KB
+#: documents (1.13.0): inventory delta notes and per-topic READMEs.
+_NON_KB_MD_GLOBS = ("delta-*.md", "readme-*.md")
+
+#: The workspace-root ignore file read by :func:`discover_artifacts` (1.13.0).
+LINTIGNORE_NAME = ".lintignore"
+
+
 def _is_generated_markdown(path: str) -> bool:
     """Return True when a Markdown file is an engine-generated KB document.
 
@@ -749,6 +875,16 @@ def _is_generated_markdown(path: str) -> bool:
     base = os.path.basename(path).lower()
     if base.endswith(".diagram.md"):
         return True
+    # 1.13.0: Markdown under a ``scripts`` directory, and DELTA-*/README-*
+    # working notes, are hand-authored, not generated KB documents. A note
+    # inside an ``inventory-*`` snapshot keeps the KB contract (never exempt).
+    if _in_inventory_folder(path):
+        return base not in _EXCLUDED_MD_BASENAMES
+    parents = [p.lower() for p in os.path.normpath(path).split(os.sep)[:-1]]
+    if any(p in _NON_KB_MD_DIRS for p in parents):
+        return False
+    if any(fnmatch.fnmatch(base, pat) for pat in _NON_KB_MD_GLOBS):
+        return False
     return base not in _EXCLUDED_MD_BASENAMES
 
 
@@ -898,6 +1034,46 @@ def _is_reference_artifact(name: str) -> bool:
     return stem.endswith("-reference")
 
 
+def _load_lintignore(workspace_root: str) -> List[str]:
+    """Read ``<workspace_root>/.lintignore`` (1.13.0): one glob per line.
+
+    Globs are ``fnmatch`` patterns relative to the root in POSIX form; ``#``
+    starts a comment line and blank lines are ignored. A missing or unreadable
+    file yields no patterns.
+    """
+    path = os.path.join(workspace_root, LINTIGNORE_NAME)
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+    except OSError:
+        return []
+    patterns: List[str] = []
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        patterns.append(line.lstrip("/").replace("\\", "/"))
+    return patterns
+
+
+def _lintignored(rel: str, is_dir: bool, patterns: Sequence[str]) -> bool:
+    """True when the root-relative ``rel`` path matches a ``.lintignore`` glob.
+
+    A pattern with a trailing ``/`` matches a directory (and so everything
+    under it, since discovery prunes the directory); any other pattern matches
+    a file or a directory path.
+    """
+    rel = rel.replace(os.sep, "/")
+    for pat in patterns:
+        if pat.endswith("/"):
+            if is_dir and fnmatch.fnmatch(rel, pat.rstrip("/")):
+                return True
+            continue
+        if fnmatch.fnmatch(rel, pat):
+            return True
+    return False
+
+
 def discover_artifacts(workspace_root: str) -> List[str]:
     """Return the sorted list of lintable ``.drawio``/Markdown/Snapshot files.
 
@@ -910,10 +1086,23 @@ def discover_artifacts(workspace_root: str) -> List[str]:
     are neither linted nor regenerated).
     """
     found: List[str] = []
+    ignore = _load_lintignore(workspace_root)
     for dirpath, dirnames, filenames in os.walk(workspace_root):
-        dirnames[:] = [d for d in dirnames if d not in _EXCLUDED_DIRS]
+        rel_dir = os.path.relpath(dirpath, workspace_root)
+        rel_dir = "" if rel_dir == "." else rel_dir
+
+        def _rel(name: str) -> str:
+            return os.path.join(rel_dir, name) if rel_dir else name
+
+        dirnames[:] = [
+            d for d in dirnames
+            if d not in _EXCLUDED_DIRS
+            and not (ignore and _lintignored(_rel(d), True, ignore))
+        ]
         for name in filenames:
             if _is_scratch_copy(name) or _is_reference_artifact(name):
+                continue
+            if ignore and _lintignored(_rel(name), False, ignore):
                 continue
             low = name.lower()
             full = os.path.join(dirpath, name)

@@ -80,7 +80,17 @@ def test_generator_script_and_examples_exist(gen: Generator):
         assert (EXAMPLES / ex).is_file(), f"missing committed example examples/{ex}"
 
 
-@pytest.mark.parametrize("gen", GENERATORS, ids=lambda g: g.script)
+# 1.13.0: the four HA generators take about a minute each; mark them slow.
+_FRESH_PARAMS = [
+    pytest.param(g, marks=pytest.mark.slow) if "_ha_" in g.script else g
+    for g in GENERATORS
+]
+
+
+@pytest.mark.parametrize(
+    "gen", _FRESH_PARAMS,
+    ids=lambda g: g.script,
+)
 def test_generator_output_is_fresh(gen: Generator):
     """``--check`` exits 0: the committed examples match the generator."""
     result = run_script(gen.script, "--check", *gen.extra_args)
