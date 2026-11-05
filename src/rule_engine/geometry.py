@@ -4477,9 +4477,32 @@ def check_text_label_on_container_border(
     tol = clearance - AXIS_EPS
     out: List[Tuple[str, str]] = []
     boxes = text_label_boxes(geo)
+    edge_by_id = {e.id: e for e in geo.edges}
+
+    def _crosses_container(eid: str, cid: str) -> bool:
+        """True when the edge legitimately enters/leaves container ``cid`` — one
+        of its endpoints is that container itself, or a node drawn inside it. A
+        label near the face the edge crosses by design (a peering leg exiting the
+        VPC bottom border) is expected, not a ride, so that container is exempt;
+        only an UNRELATED border (F3's `peering` label along the account frame it
+        never touches) is flagged."""
+        e = edge_by_id.get(eid)
+        if e is None:
+            return False
+        c = geo.containers.get(cid)
+        for end in (e.source, e.target):
+            if end == cid:
+                return True
+            nb = geo.nodes.get(end)
+            if nb is not None and c is not None and _box_inside(nb, c):
+                return True
+        return False
+
     for eid in sorted(boxes):
         b = boxes[eid]
         for cid in sorted(geo.containers):
+            if _crosses_container(eid, cid):
+                continue
             c = geo.containers[cid]
             # vertical borders: judged over the box's y-span
             if b.bottom >= c.y - clearance and b.y <= c.bottom + clearance:

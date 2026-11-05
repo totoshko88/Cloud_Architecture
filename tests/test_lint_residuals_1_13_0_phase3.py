@@ -64,16 +64,18 @@ def test_edge_label_clean_when_every_leg_labelled():
 # --- 2. text edge label on a container border -----------------------------
 
 def _geo_text_label_at(mid_x: float) -> DiagramGeometry:
-    """A straight edge labelled 'peering' whose midpoint lands at ``mid_x`` on
-    y=400; a container whose right edge sits at x=600 so the label rides it when
-    ``mid_x≈600``."""
+    """A straight edge labelled 'peering' whose midpoint lands on y=140 at the
+    TOP border of an UNRELATED account box (neither endpoint inside it) — the F3
+    shape: the label rides a frame the edge never touches. The two nodes sit
+    above the account; the account's top edge is at y=140."""
     g = DiagramGeometry(
         nodes={
-            "a": Box("a", 400, 361, 78, 78),   # right face x=478
-            "b": Box("b", 722, 361, 78, 78),   # left face x=722
+            "a": Box("a", 400, 101, 78, 78),   # right face x=478, above the account
+            "b": Box("b", 722, 101, 78, 78),   # left face x=722
         },
         containers={
-            "boundary-account": Box("boundary-account", 60, 120, 540, 560),  # right=600
+            # top edge at y=140, spanning the label's x; neither a nor b is inside.
+            "boundary-account": Box("boundary-account", 60, 140, 900, 400),
         },
         edges=[
             EdgeGeom(id="e", source="a", target="b", orthogonal=True,
@@ -86,15 +88,39 @@ def _geo_text_label_at(mid_x: float) -> DiagramGeometry:
 def test_text_label_box_centred_on_midpoint():
     g = _geo_text_label_at(600)
     box = text_label_boxes(g)["e"]
-    # midpoint of the single straight segment is x=600, y=400.
+    # midpoint of the single straight segment is x=600, y=140.
     assert abs((box.x + box.right) / 2.0 - 600.0) < 0.5
-    assert abs((box.y + box.bottom) / 2.0 - 400.0) < 0.5
+    assert abs((box.y + box.bottom) / 2.0 - 140.0) < 0.5
 
 
 def test_text_label_on_container_border_is_flagged():
     g = _geo_text_label_at(600)
     findings = check_text_label_on_container_border(g)
-    assert ("e", "boundary-account.right") in findings
+    assert ("e", "boundary-account.top") in findings
+
+
+def test_text_label_on_border_exempt_when_edge_crosses_that_container():
+    # A label near the border of a container the edge legitimately enters/leaves
+    # (a peering leg exiting the VPC) is NOT flagged — only an unrelated frame is.
+    # Same label geometry as the flagged case, but the account now ENCLOSES node
+    # 'a' (its top is above a), so the edge crosses the account border by design.
+    g = DiagramGeometry(
+        nodes={
+            "a": Box("a", 400, 101, 78, 78),
+            "b": Box("b", 722, 101, 78, 78),
+        },
+        containers={
+            # top edge at y=140 (rides the label), but node 'a' is a member
+            # (drawn inside) — exempt.
+            "boundary-account": Box("boundary-account", 60, 60, 900, 480),
+        },
+        edges=[
+            EdgeGeom(id="e", source="a", target="b", orthogonal=True,
+                     exit=(1.0, 0.5), entry=(0.0, 0.5), points=[], label="peering"),
+        ],
+    )
+    # node 'a' is inside the account (y 101 within 60..540) -> exempt
+    assert check_text_label_on_container_border(g) == []
 
 
 def test_numeric_marker_is_not_a_text_label():

@@ -255,6 +255,13 @@ _OVERLAY_SHAPE = {
     # distinct from standby/supporting. First-class so ``overlay-legend-coverage``
     # is satisfied by the standard Legend line below instead of a WARNING.
     "unconfirmed": "dashed=1;dashPattern=8 8",
+    # 1.13.0 phase 3 item 18: a node with NO KNOWN CALLER — a truthfully
+    # disconnected cluster whose upstream caller is not in inventory (03's
+    # strapi-alb / ECS / RDS). A dotted-dashed outline, distinct from the others.
+    # ``graph-islands`` and ``node-connectivity`` exempt any overlay-marked node
+    # (``geo.overlay_nodes``), so this term is the sanctioned declaration of why
+    # a cluster has no inbound edge — the honest alternative to a fabricated one.
+    "no-known-caller": "dashed=1;dashPattern=1 2",
 }
 
 #: The standard Legend line for each overlay term a builder can emit
@@ -264,6 +271,7 @@ OVERLAY_LEGEND_LINES = {
     "standby": "standby = passive peer (dashed outline); edges mirror the active side",
     "supporting": "supporting = ops / observability service (dotted outline); not a data-flow step",
     "unconfirmed": "unconfirmed = tentative / not yet confirmed (dashed outline, [?]); verify before relying on it",
+    "no-known-caller": "no known caller = upstream caller not in inventory (dotted-dashed outline); the cluster's inbound edge is unknown, not missing",
 }
 
 
@@ -337,13 +345,27 @@ def _overlay_labelled(nodes: Sequence["Node"]) -> List["Node"]:
     return out
 
 
-def overlay_legend_lines(nodes: Sequence["Node"]) -> Tuple[str, ...]:
-    """The standard Legend lines for the overlay terms ``nodes`` carry, in
-    first-use order (1.10.12 WS5). A term with no standard line is left to the
-    builder's own Legend text."""
+def overlay_legend_lines(
+    nodes: Sequence["Node"], edges: Sequence["Edge"] = ()
+) -> Tuple[str, ...]:
+    """The standard Legend lines for the overlay terms ``nodes`` (and ``edges``)
+    carry, in first-use order (1.10.12 WS5; edges 1.13.0 phase 3 item 18). A term
+    with no standard line is left to the builder's own Legend text.
+
+    Nodes are scanned first, then edges, so a builder that marks an edge
+    ``unconfirmed=True`` (an inventory-unbacked relationship) gets the standard
+    ``unconfirmed`` Legend line automatically — which is what
+    ``overlay-legend-coverage`` requires once the edge carries the
+    ``overlay=unconfirmed`` style token. An edge with no overlay contributes
+    nothing, so the default ``edges=()`` is byte-identical."""
     out: List[str] = []
     for n in nodes:
         line = OVERLAY_LEGEND_LINES.get(n.overlay or "")
+        if line and line not in out:
+            out.append(line)
+    for e in edges:
+        term = "unconfirmed" if getattr(e, "unconfirmed", False) else ""
+        line = OVERLAY_LEGEND_LINES.get(term)
         if line and line not in out:
             out.append(line)
     return tuple(out)
@@ -405,6 +427,18 @@ class Edge:
     #: the spec (never a numeric flow step), so it never enters the flow-marker
     #: hygiene passes.
     peering: bool = False
+    #: 1.13.0 phase 3 item 18: an UNCONFIRMED / inventory-unbacked relationship —
+    #: an edge the author drew from reasoning, not from an inventoried fact (the
+    #: 11 SQS consumer, the 09 e21 assumption). Rendered dashed with the
+    #: ``overlay=unconfirmed`` style token (the same machine-readable channel a
+    #: node overlay uses, so ``overlay-legend-coverage`` requires the standard
+    #: ``unconfirmed`` Legend line) — the meaning is double-encoded as the dashed
+    #: line + the overlay token + the Legend entry. The numeric marker VALUE is
+    #: left unchanged (not suffixed with ``[?]``), so the flow-marker hygiene and
+    #: ``flow-legend`` checks that key on ``label.strip().isdigit()`` still see a
+    #: plain numeric marker. ``False`` emits NOTHING, so a pre-item-18 edge is
+    #: byte-identical.
+    unconfirmed: bool = False
     exit: Tuple[float, float] = (1.0, 0.5)
     entry: Tuple[float, float] = (0.0, 0.5)
     # Explicit routing waypoints (model coords) so parallel runs never share a
@@ -1597,7 +1631,14 @@ def edge_cell(e: Edge, parent: str = "1", origin: Tuple[float, float] = (0, 0),
     ``skin``: when it carries ``edge_stroke`` a ``strokeColor=<hex>`` token is
     appended; ``None`` / an unset ``edge_stroke`` emits NO colour token — the
     exact 1.10.12 byte output (draw.io default black)."""
-    dash = "dashed=1;" if (e.dashed or e.peering) else ""
+    dash = "dashed=1;" if (e.dashed or e.peering or e.unconfirmed) else ""
+    # 1.13.0 phase 3 item 18: an unconfirmed edge carries the machine-readable
+    # overlay token the linter reads (overlay-legend-coverage) plus a long-gap
+    # dash pattern distinct from a plain dashed edge; appended LAST so it never
+    # reorders the existing tokens (a non-unconfirmed edge is byte-identical).
+    unconfirmed_tok = (
+        f"dashPattern=8 8;overlay=unconfirmed;" if e.unconfirmed else ""
+    )
     ex, ey = e.exit
     nx, ny = e.entry
     if e.peering:
@@ -1619,7 +1660,7 @@ def edge_cell(e: Edge, parent: str = "1", origin: Tuple[float, float] = (0, 0),
         stroke = f"strokeColor={skin.edge_stroke};"
     style = (
         f"edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;{heads}"
-        f"strokeWidth={EDGE_STROKE_WIDTH};{dash}{stroke}"
+        f"strokeWidth={EDGE_STROKE_WIDTH};{dash}{unconfirmed_tok}{stroke}"
         f"exitX={ex};exitY={ey};exitDx=0;exitDy=0;exitPerimeter=0;"
         f"entryX={nx};entryY={ny};entryDx=0;entryDy=0;"
         "fontSize=12;fontStyle=1"
