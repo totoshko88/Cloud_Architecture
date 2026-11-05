@@ -78,10 +78,10 @@
           </mxGeometry>
         </mxCell>
         <mxCell id="e7" value="7" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=open;endFill=0;strokeWidth=1.5;exitX=1.0256410256410255;exitY=0.5128205128205128;exitDx=0;exitDy=0;exitPerimeter=0;entryX=0.0;entryY=0.7692307692307693;entryDx=0;entryDy=0;fontSize=12;fontStyle=1" edge="1" parent="boundary-region-a" source="hub" target="sql">
-          <mxGeometry x="-0.5742" relative="1" as="geometry">
+          <mxGeometry x="-0.5672" relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="900.00" y="260.00" />
-              <mxPoint x="900.00" y="490.00" />
+              <mxPoint x="890.00" y="260.00" />
+              <mxPoint x="890.00" y="490.00" />
               <mxPoint x="20.00" y="490.00" />
               <mxPoint x="20.00" y="440.00" />
             </Array>
