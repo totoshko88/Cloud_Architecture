@@ -80,6 +80,20 @@ class UnclassifiableEdgeError(ValueError):
     and the source/target geometry so the gap is actionable."""
 
 
+class CoincidentNodesError(UnclassifiableEdgeError):
+    """An edge whose two endpoints occupy the SAME placed position (1.13.0 phase
+    3 item 19, F11).
+
+    A subtype of :class:`UnclassifiableEdgeError` for the ``dx == dy == 0`` case:
+    the edge is not an unknown route *class*, its two nodes simply coincide
+    (lane/region/slot/sub resolved to one point via some path the duplicate-slot
+    key did not catch — the SEP 08 IGW at slot 9 that landed on the public-subnet
+    EC2). ``layout()`` catches this subtype and re-raises it as a
+    :class:`~rule_engine.layout.base.SpecError` naming both nodes, so the author
+    gets "give one a different slot / sub" rather than an internal routing error.
+    """
+
+
 def _same_row(a: Box, b: Box) -> bool:
     """True when two boxes share a row (equal top edge)."""
     return a.y == b.y
@@ -171,6 +185,17 @@ def classify_edge(edge: EdgeSpec, placed: Dict[str, Box]) -> str:
     if dy != 0 and dx >= 0:
         return "spine"
 
+    # 1.13.0 phase 3 item 19: dx == dy == 0 means the two endpoints occupy the
+    # same placed position (lane/region/slot/sub coincide via some path the
+    # duplicate-slot key did not catch — the SEP 08 IGW at slot 9 that landed on
+    # the public-subnet EC2). That is a spec authoring mistake, not an
+    # unroutable edge class; the caller re-raises it as a SpecError naming both
+    # nodes. The dedicated subtype lets the caller catch exactly this case.
+    if dx == 0 and dy == 0:
+        raise CoincidentNodesError(
+            f"edge {edge.id!r}: nodes {edge.source!r} and {edge.target!r} "
+            f"occupy the same position (lane/region/slot/sub coincide)"
+        )
     raise UnclassifiableEdgeError(
         f"edge {edge.id!r} ({edge.source!r}->{edge.target!r}) matches no known "
         f"edge class (dx={dx}, dy={dy}); classes are {EDGE_KINDS}"

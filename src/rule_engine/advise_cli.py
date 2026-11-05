@@ -201,11 +201,65 @@ def advise(spec: DiagramSpec) -> dict:
     from rule_engine.layout import layout
 
     if spec.order == "manual":
+        placed = layout(spec)
         return {"diagram_id": spec.diagram_id, "order": "manual",
-                "report": ["auto-order: skipped (order: manual)"]}
+                "report": ["auto-order: skipped (order: manual)"],
+                "entry_face_suggestions": entry_face_suggestions(placed)}
     placed = layout(spec)
     return {"diagram_id": spec.diagram_id, "order": spec.order,
-            "report": list(placed.order_report)}
+            "report": list(placed.order_report),
+            "entry_face_suggestions": entry_face_suggestions(placed)}
+
+
+def entry_face_suggestions(placed) -> List[dict]:
+    """Propose the alternative legal entry face for each ``end-to-end-merge``
+    collinear pair (1.13.0 phase 3 item 19).
+
+    When two unrelated edges' legs merge end to end into one line
+    (``collinear-edges end-to-end-merge``, an ERROR), the lint names the pair but
+    gives no fix. The spec has no per-edge entry-face field, so this is advisory:
+    for the later-id edge of each merged pair it reports the edge, its current
+    entry face, and the alternative legal entry face (``top`` ⇄ ``left``), with a
+    hint to pin a different ``slot`` / ``sub`` or a top-entry route — the fix that
+    broke the SEP 09 e12/e26 merge. Returns ``[]`` when nothing merges."""
+    from rule_engine import geometry as _geo
+    from rule_engine.drawio_model import parse_drawio
+    from rule_engine.layout.repair import _serialize_candidate
+
+    try:
+        xml = _serialize_candidate(placed)
+        geo = _geo.build_geometry(parse_drawio(xml, path="<advise>.drawio")[0])
+    except Exception:  # pragma: no cover - advisory, never fatal
+        return []
+    findings = _geo.collinear_edge_findings(geo)
+    merges = [(a, b) for a, b, kind in findings if kind == "end-to-end-merge"]
+    if not merges:
+        return []
+    by_id = {e.id: e for e in geo.edges}
+    out: List[dict] = []
+    for a, b in merges:
+        later = max(a, b)  # deterministic: the later-id edge is the one to move
+        e = by_id.get(later)
+        if e is None:
+            continue
+        # The edge's entry face from its pinned entry contact.
+        ex, ey = (e.entry if getattr(e, "entry", None) else (0.0, 0.5))
+        if ey <= 0.0:
+            cur, alt = "top", "left"
+        elif ex <= 0.0:
+            cur, alt = "left", "top"
+        else:
+            cur, alt = "left", "top"  # default assumption for an unpinned entry
+        out.append({
+            "edge": later,
+            "pair": sorted((a, b)),
+            "from_face": cur,
+            "to_face": alt,
+            "hint": (f"move edge {later!r} to a {alt}-face entry (pin a different "
+                     f"slot / sub on its target, or a {alt}-entry route) to break "
+                     f"the end-to-end merge with {min(a, b)!r}"),
+        })
+    return out
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
@@ -253,6 +307,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             print(f"{rec['source']} [{rec['diagram_id']}]")
             for line in rec["report"]:
                 print(f"  {line}")
+            for s in rec.get("entry_face_suggestions", ()):
+                print(f"  end-to-end-merge {s['pair']}: {s['hint']}")
     return 0
 
 

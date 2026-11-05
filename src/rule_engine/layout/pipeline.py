@@ -72,6 +72,7 @@ try:  # package-relative import when used as ``rule_engine.layout.pipeline``
     from .place import place_nodes, size_containers, centre_block_in_vpc, lift_subject_over_external_lane, place_and_size
     from .routers import (
         classify_edge,
+        CoincidentNodesError,
         _contact_point,
         _grid_contact,
         _free_left_corridor_x,
@@ -120,6 +121,7 @@ except ImportError:  # pragma: no cover - fallback for flat-module execution
     from layout.place import place_nodes, size_containers, centre_block_in_vpc, lift_subject_over_external_lane, place_and_size  # type: ignore[no-redef]
     from layout.routers import (  # type: ignore[no-redef]
         classify_edge,
+        CoincidentNodesError,
         _contact_point,
         _grid_contact,
         _free_left_corridor_x,
@@ -1344,6 +1346,15 @@ def layout(
             raise LayoutError(
                 f"layout({spec.diagram_id!r}) has an over-connected node — the "
                 f"diagram must be split or re-laned: {exc}"
+            ) from exc
+        except CoincidentNodesError as exc:
+            # 1.13.0 phase 3 item 19 (F11): two edge endpoints resolved to the
+            # SAME placed position (dx == dy == 0) — a spec authoring mistake the
+            # duplicate-slot key did not catch (the SEP 08 IGW at slot 9 landing
+            # on the public-subnet EC2). Re-raise as a SpecError the author can
+            # act on, rather than letting an internal routing error surface.
+            raise SpecError(
+                f"{exc}; give one a different slot or sub"
             ) from exc
 
 
