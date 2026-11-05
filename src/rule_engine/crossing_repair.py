@@ -61,6 +61,7 @@ from rule_engine.geometry import (
     EdgeGeom,
     caption_lines,
     collapse_collinear,
+    collinear_edge_findings,
     collinear_edge_pairs,
     contact_faces,
     edge_polyline,
@@ -317,14 +318,30 @@ def _ranked_uncached(
 # --------------------------------------------------------------------------- #
 
 
+def _end_to_end_merges(geo: DiagramGeometry) -> FrozenSet[Tuple[str, str]]:
+    """The ``end-to-end-merge`` collinear pairs (two edges sharing NO endpoint
+    whose facing ends read as one continuous line). Measured on the lint
+    (widened) basis, so it is independent of the trunk-exemption flag — a
+    genuine end-to-end merge is never a fan-out/fan-in trunk."""
+    return frozenset(
+        (a, b) for a, b, kind in collinear_edge_findings(geo)
+        if kind == "end-to-end-merge"
+    )
+
+
 class _Base:
-    """The diagram before a move: its score and its finding set."""
+    """The diagram before a move: its score and its finding set.
+
+    ``merges`` is the set of ``end-to-end-merge`` collinear pairs at this move's
+    start — crossing repair may re-use one but must never INTRODUCE a new one
+    (see :func:`_accept`)."""
 
     def __init__(self, geo: DiagramGeometry, collinear_cap: int):
         self.score = _cr._score(geo)
         errors, warnings = _cr._violations(geo)
         self.findings: FrozenSet = frozenset(errors) | frozenset(warnings)
         self.collinear_cap = collinear_cap
+        self.merges = _end_to_end_merges(geo)
 
 
 def _accept(trial: DiagramGeometry, base: _Base) -> Optional[_cr._Score]:
@@ -336,6 +353,17 @@ def _accept(trial: DiagramGeometry, base: _Base) -> Optional[_cr._Score]:
         return None
     if (sc.errors > b.errors or sc.warnings > b.warnings or sc.rails > b.rails
             or sc.collinear > base.collinear_cap or sc.own > b.own or sc.vis > b.vis):
+        return None
+    # 1.13.0 phase 3 (verify, SEP 03 e13/e4): the ``collinear`` COUNT cap let a
+    # move trade one plan pair for a DIFFERENT one while the total stayed flat.
+    # When the new pair is an ``end-to-end-merge`` — two unrelated edges reading
+    # as one continuous line, an ERROR on a landscape — the later collinear-shift
+    # pass cannot undo it from the boxed-in geometry. So crossing repair must
+    # never INTRODUCE an end-to-end merge absent from this move's start (it may
+    # still re-use one already there). Trunk / pass-through pairs, which the
+    # collinear-shift pass does clear, are unaffected, so SEP 08's trunk-related
+    # moves still apply.
+    if _end_to_end_merges(trial) - base.merges:
         return None
     errors, warnings = _cr._violations(trial)
     if (frozenset(errors) | frozenset(warnings)) - base.findings:

@@ -41,8 +41,10 @@ def _two_legs(x_left, x_right):
     """A one-edge polyline with two vertical legs bracketing the caption."""
     n1 = dl.Node("a", "", 100, 600, None, None, None, None, False)
     n2 = dl.Node("c", "", 490, 980, None, None, None, None, False)
-    e = dl.Edge("e", "a", "c", "classic", False, False, (0.5, 0.5), (0.5, 0.5),
-                ((x_left, 940), (x_left, 760), (x_right, 760), (x_right, 940)))
+    e = dl.Edge("e", "a", "c", "classic", dashed=False, exit=(0.5, 0.5),
+                entry=(0.5, 0.5),
+                points=((x_left, 940), (x_left, 760),
+                        (x_right, 760), (x_right, 940)))
     return [n1, n2], [e]
 
 
