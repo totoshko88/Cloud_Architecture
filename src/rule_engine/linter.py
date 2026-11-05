@@ -294,6 +294,14 @@ RULE_MARKER_LABEL_COLLISION = "marker-label-collision"
 #                                Lint-only (NOT in rule_violations / the solver
 #                                oracle), like the other marker-* rules.
 RULE_MARKER_ON_CONTAINER_BORDER = "marker-on-container-border"
+# 1.13.0 phase 3 item 16. The caption sibling of marker-on-container-border
+# (box border), marker-label-collision (node caption) and marker-on-icon (node
+# glyph):
+#   marker-on-container-caption — a numbered flow-marker whose rendered anchor
+#                                 falls inside a Boundary container's left-
+#                                 aligned caption text; WARNING, ERROR on a
+#                                 network / component / flow diagram. Lint-only.
+RULE_MARKER_ON_CONTAINER_CAPTION = "marker-on-container-caption"
 # 1.10.12 WS3 (C7). A crossing a single legal face swap removes:
 #   edge-crossing-avoidable — one edge re-routed onto another legal exit/entry
 #                             face pair (exit right/bottom, entry left/top)
@@ -2911,6 +2919,26 @@ def _check_marker_on_container_border(a: Artifact):
                    severity=sev)
 
 
+def _check_marker_on_container_caption(a: Artifact):
+    """marker-on-container-caption: a numbered flow-marker renders inside a
+    Boundary container's left-aligned caption text and overprints the account /
+    VPC / subnet name (1.13.0 phase 3 item 16). The caption sibling of
+    marker-on-container-border (box border), marker-label-collision (node
+    caption) and marker-on-icon (node glyph). offenders = the marker edge and
+    the container id. ERROR on a network / component / flow diagram, WARNING
+    otherwise."""
+    geo = _geometry_of(a)
+    if geo is None:
+        return False
+    from rule_engine import geometry as _geo
+    findings = _geo.check_marker_on_container_caption(geo)
+    if not findings:
+        return False
+    sev = Severity.ERROR if _is_network_component_or_flow(a) else None
+    return RuleHit(offenders=_offender_ids(findings),
+                   reason="marker-on-container-caption", severity=sev)
+
+
 def _check_marker_on_group_border(a: Artifact):
     """marker-on-group-border: a numbered flow-marker renders within
     ``MARKER_BORDER_CLEARANCE`` of a decorative ``flowgroup-*`` / ``bandgroup-*``
@@ -3174,6 +3202,14 @@ RULES: Tuple[Tuple[RuleSpec, Callable[[Artifact], _PredicateResult]], ...] = (
     (
         RuleSpec(RULE_MARKER_ON_CONTAINER_BORDER, Severity.WARNING),
         _check_marker_on_container_border,
+    ),
+    # marker-on-container-caption (1.13.0 phase 3 item 16): a flow-marker on a
+    # Boundary container's caption text. Lint-only, sibling of
+    # marker-on-container-border; severity escalated by the hit on a
+    # network / component / flow diagram.
+    (
+        RuleSpec(RULE_MARKER_ON_CONTAINER_CAPTION, Severity.WARNING),
+        _check_marker_on_container_caption,
     ),
     # edge-crossing-excess: WARNING above ceil(0.25 x E) on both classes; the
     # 1.10.7 landscape hard cap (> 0.5 x E) is an ERROR carried by the hit's own

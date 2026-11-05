@@ -308,12 +308,30 @@ def overlay_ring_cell(n: "Node", parent: str = "1", origin: Tuple[float, float] 
 _STANDBY_SUFFIX = "-standby"
 
 
+def _already_standby_labelled(label: str) -> bool:
+    """``True`` when ``label`` already names the standby channel, so the suffix
+    must not be appended again (1.13.0 phase 3 item 16).
+
+    Covers the hyphenated suffix the builder emits (``RDS-standby``) AND a label
+    an author wrote with the word spelled out (``RDS standby`` → must stay
+    ``RDS standby``, not become ``RDS standby-standby``). The last
+    whitespace/hyphen-delimited token is compared case-insensitively.
+    """
+    tail = label.rstrip()
+    if tail.lower().endswith(_STANDBY_SUFFIX):
+        return True
+    # Last word (split on whitespace OR hyphen) equals ``standby``.
+    last = tail.replace("-", " ").split()
+    return bool(last) and last[-1].lower() == "standby"
+
+
 def _overlay_labelled(nodes: Sequence["Node"]) -> List["Node"]:
     """``nodes`` with ``-standby`` appended to every ``standby`` node whose
-    label does not already end with it (1.13.0). Idempotent."""
+    label does not already name the standby channel (1.13.0). Idempotent, and
+    does not double a label the author already wrote as ``… standby``."""
     out: List[Node] = []
     for n in nodes:
-        if n.overlay == "standby" and not n.label.rstrip().endswith(_STANDBY_SUFFIX):
+        if n.overlay == "standby" and not _already_standby_labelled(n.label):
             n = replace(n, label=n.label.rstrip() + _STANDBY_SUFFIX)
         out.append(n)
     return out

@@ -4508,6 +4508,37 @@ def check_marker_on_container_border(
     return _markers_on_borders(geo, geo.containers, clearance)
 
 
+def check_marker_on_container_caption(geo: DiagramGeometry) -> List[Tuple[str, str]]:
+    """Return ``(edge_id, container_id)`` for flow-markers drawn on a Boundary
+    container's caption text (1.13.0 phase 3 item 16).
+
+    The caption sibling of :func:`check_marker_on_container_border` (on a box
+    border), :func:`check_marker_label_collision` (on a node caption) and
+    :func:`check_marker_icon_collision` (on a node glyph): a numbered marker
+    whose rendered anchor (:func:`marker_anchors`) falls inside a container's
+    left-aligned caption band — as wide as the caption TEXT
+    (:func:`container_caption_geom`), inclusive with :data:`AXIS_EPS` — prints
+    the step number across the account / VPC / subnet name (10's marker 4 on
+    the "private-app 1a" caption, marker 9 on the Atlas peer caption). Every
+    container is checked. Lint-only — **not** part of :func:`rule_violations`
+    (the solver oracle), like the other ``marker-*`` rules."""
+    out: List[Tuple[str, str]] = []
+    for eid, (px, py) in sorted(marker_anchors(geo).items()):
+        for cid in sorted(geo.containers):
+            c = geo.containers[cid]
+            cap, _extent = container_caption_geom(
+                geo.container_labels.get(cid, ""),
+                geo.container_styles.get(cid),
+                c,
+            )
+            if (
+                cap.x - AXIS_EPS <= px <= cap.right + AXIS_EPS
+                and cap.y - AXIS_EPS <= py <= cap.bottom + AXIS_EPS
+            ):
+                out.append((eid, cid))
+    return sorted(set(out))
+
+
 def _edge_polylines(geo: DiagramGeometry) -> Dict[str, List[Point]]:
     """Return ``{edge_id: [exit, *waypoints, entry]}`` for every resolved edge.
 
@@ -4746,6 +4777,27 @@ def resolve_marker_collisions(
                 return False
         return True
 
+    # 1.13.0 phase 3 item 16: container caption rectangles, so a marker is not
+    # slid ONTO an account / VPC / subnet caption (the same box
+    # :func:`check_marker_on_container_caption` flags). Precomputed once.
+    caption_boxes: List[Box] = []
+    for cid in sorted(geo.containers):
+        c = geo.containers[cid]
+        cap, _ext = container_caption_geom(
+            geo.container_labels.get(cid, ""), geo.container_styles.get(cid), c,
+        )
+        caption_boxes.append(cap)
+
+    def on_container_caption(p: Point) -> bool:
+        """True when ``p`` falls inside a Boundary container's caption text box
+        (the same box :func:`check_marker_on_container_caption` flags). A marker
+        is never slid onto a container caption (1.13.0 phase 3 item 16)."""
+        return any(
+            b.x - AXIS_EPS <= p[0] <= b.right + AXIS_EPS
+            and b.y - AXIS_EPS <= p[1] <= b.bottom + AXIS_EPS
+            for b in caption_boxes
+        )
+
     def on_container_border(p: Point) -> bool:
         """True when ``p`` lies within ``clearance`` of any Boundary container
         border (the same predicate :func:`check_marker_on_container_border`
@@ -4791,7 +4843,8 @@ def resolve_marker_collisions(
                     continue
                 if _dist_to_foreign_edges(p, eid, polys)[0] < clearance - AXIS_EPS:
                     continue
-                if not clear_of_markers(eid, p) or in_box(p) or on_container_border(p):
+                if (not clear_of_markers(eid, p) or in_box(p)
+                        or on_container_border(p) or on_container_caption(p)):
                     continue
                 chosen = cand
                 break
@@ -4839,7 +4892,7 @@ def resolve_marker_collisions(
             pos[eid] = cand
             p = anchor_of(eid)
             pos[eid] = start
-            if p is None or on_container_border(p):
+            if p is None or on_container_border(p) or on_container_caption(p):
                 continue
             if _dist_to_foreign_edges(p, eid, polys)[0] < clearance - AXIS_EPS:
                 continue
@@ -4847,6 +4900,47 @@ def resolve_marker_collisions(
                 continue
             pos[eid] = cand
             break
+
+    # Phase 4 — slide a marker off a Boundary container CAPTION (1.13.0 phase 3
+    # item 16). A marker whose anchor lands inside an account / VPC / subnet
+    # caption text box prints the step number across the name (10's marker 4 on
+    # "private-app 1a", marker 9 on the Atlas peer caption). Same mechanics as
+    # phase 3: slide along its own edge, nearest first, accepting the first spot
+    # that clears every caption AND every border, foreign segment, marker and
+    # node box. When none qualifies the marker stays put and
+    # ``marker-on-container-caption`` reports it. Lint-only rule, so this is the
+    # engine's own remedy.
+    for eid in ids:
+        here = anchor_of(eid)
+        if here is None or not on_container_caption(here):
+            continue
+        start = pos[eid]
+        tried: set = set()
+        for k in range(1, int(2 * _MARKER_SLIDE_LIMIT / step) + 2):
+            placed = False
+            for s in (-1.0, 1.0):
+                c = round(start + s * k * step, 6)
+                if abs(c) > _MARKER_SLIDE_LIMIT + 1e-9:
+                    c = round(s * _MARKER_SLIDE_LIMIT, 6)
+                    if (c - start) * s <= 0:
+                        continue
+                if c in tried:
+                    continue
+                tried.add(c)
+                pos[eid] = c
+                p = anchor_of(eid)
+                pos[eid] = start
+                if p is None or on_container_caption(p) or on_container_border(p):
+                    continue
+                if _dist_to_foreign_edges(p, eid, polys)[0] < clearance - AXIS_EPS:
+                    continue
+                if not clear_of_markers(eid, p) or in_box(p):
+                    continue
+                pos[eid] = c
+                placed = True
+                break
+            if placed:
+                break
 
     return {
         eid: round(pos[eid], 4)

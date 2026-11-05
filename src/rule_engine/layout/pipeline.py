@@ -1745,9 +1745,18 @@ def _degraded_finish(
     ``layout_warnings`` (``"<rule>: <payload>"``, in the oracle's stable order),
     so the caller can surface them (1.10.7, M3). The oracle-guarded finishing
     passes are skipped: each keeps its change only on an oracle-clean diagram,
-    which this one is not."""
-    warnings = tuple(f"{rule}: {payload!r}" for rule, payload in findings.blocking)
-    return replace(_normalise_origin(candidate, margins), layout_warnings=warnings)
+    which this one is not.
+
+    1.13.0 phase 3 item 16: the warnings are re-validated on the FINAL
+    normalised geometry, so ``layout_warnings`` lists only findings the returned
+    diagram actually carries — not a finding a rejected candidate had that a
+    later repair/normalisation already cleared (the 12 ``container-padding:
+    ('p-apigw', 'trust-box')`` noise on a result the linter passes clean)."""
+    normalised = _normalise_origin(candidate, margins)
+    final = _run_oracle(normalised)
+    warnings = tuple(f"{rule}: {payload!r}" for rule, payload in final.blocking)
+    return replace(normalised, layout_warnings=warnings,
+                   degraded=bool(final.blocking))
 
 
 def _finish(
