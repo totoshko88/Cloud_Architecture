@@ -37,7 +37,13 @@ def _spec():
     return DiagramSpec(
         diagram_id="g", diagram_name="g", axis="left-right",
         nodes=(
-            NodeSpec(id="agent", role="lambda", lane="workers", region="", slot=0),
+            # serverless_fn is the canonical role in mappings/roles.yaml +
+            # the committed icon-index.json, so it resolves WITHOUT the fetched
+            # vendor packs. The old alias "lambda" resolves only from the AWS
+            # pack, so these tests failed in the asset-less CI `test` job
+            # (DrawError: no icon for role 'lambda'). The service node here is
+            # incidental — the feature under test is role="annotation".
+            NodeSpec(id="agent", role="serverless_fn", lane="workers", region="", slot=0),
             NodeSpec(id="guardrails", role="annotation", lane="platform",
                      region="", slot=0),
         ),
