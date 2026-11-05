@@ -857,7 +857,29 @@ def _check_legend_boundary_coverage(a: Artifact):
     if geo is None:
         return False
     from rule_engine import geometry as _geo
-    offenders = _geo.check_legend_boundary_coverage(geo, a.legend_lines)
+    from rule_engine import icon_resolver
+
+    # 1.13.0 phase 3 item 17 (F5): also flag a Legend naming Region / AZ / Subnet
+    # that is not drawn. Precision-first: classify the drawn container kinds from
+    # the provider mapping (the same recognition container-style uses); only when
+    # that classification is available do we judge the named-level lines. A C4 /
+    # unrecognised-style diagram leaves drawn_kinds = None and only the
+    # structural outer/inner check runs (unchanged).
+    drawn_kinds = None
+    if not _is_c4_diagram(a) and getattr(geo, "container_styles", None):
+        providers = _container_style_providers(a)
+        mappings: Dict[str, Mapping[str, Any]] = {}
+        for provider in providers:
+            try:
+                mappings[provider] = icon_resolver.load_mapping(provider).get("containers") or {}
+            except icon_resolver.IconResolverError:
+                continue
+        if mappings:
+            kinds: set = set()
+            for style in geo.container_styles.values():
+                kinds |= _geo.classify_container_kinds(style, providers, mappings)
+            drawn_kinds = kinds
+    offenders = _geo.check_legend_boundary_coverage(geo, a.legend_lines, drawn_kinds)
     if not offenders:
         return False
     return RuleHit(offenders=tuple(offenders), reason="legend-names-undrawn-boundary")
@@ -2910,7 +2932,12 @@ def _check_marker_on_container_border(a: Artifact):
     if geo is None:
         return False
     from rule_engine import geometry as _geo
-    findings = _geo.check_marker_on_container_border(geo)
+    # 1.13.0 phase 3 item 17 (F3): a NON-numeric text edge label on the border is
+    # reported under the same rule as a numeric flow-marker (08's `peering` leg
+    # label printed on the account border).
+    findings = (_geo.check_marker_on_container_border(geo)
+                + _geo.check_text_label_on_container_border(geo))
+    findings = sorted(set(findings))
     if not findings:
         return False
     # ITEM C: ERROR on a network / component / flow diagram, WARNING otherwise.

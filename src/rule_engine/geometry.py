@@ -3458,7 +3458,8 @@ def _container_nesting(geo: DiagramGeometry) -> Tuple[bool, bool]:
 
 
 def check_legend_boundary_coverage(
-    geo: DiagramGeometry, legend_lines: Sequence[str]
+    geo: DiagramGeometry, legend_lines: Sequence[str],
+    drawn_kinds: Optional[Set[str]] = None,
 ) -> List[str]:
     """Return the Legend boundary lines that name a boundary NOT drawn (WS11, C10).
 
@@ -3469,24 +3470,59 @@ def check_legend_boundary_coverage(
     account-only context diagram — describes something the reader cannot find
     (SEP 01/04 before this fix). The mirror holds for ``Outer boundary``.
 
-    Pure, provider-neutral and structural: the drawn boundaries are read from
-    the nesting of the parsed container boxes (:func:`_container_nesting`), and a
-    legend line is an outer/inner-boundary line when its text before ``=``,
-    casefolded and stripped, starts with ``outer boundary`` / ``inner
-    boundary``. Returns the offending legend line(s), empty when the Legend is
-    consistent with what is drawn. WARNING in the ruleset."""
+    The outer/inner check is pure, provider-neutral and structural: the drawn
+    boundaries are read from the nesting of the parsed container boxes
+    (:func:`_container_nesting`), and a legend line is an outer/inner-boundary
+    line when its text before ``=``, casefolded and stripped, starts with
+    ``outer boundary`` / ``inner boundary``.
+
+    1.13.0 phase 3 item 17 (F5): when ``drawn_kinds`` is supplied (the set of
+    container KIND names actually drawn, classified by the caller against the
+    provider mapping via :func:`classify_container_kinds`), a Legend line that
+    NAMES a Region / Availability Zone / Subnet which is not among the drawn
+    kinds is also flagged — the 08 pre-fix Legend "Account > Region > VPC" with
+    no Region box on the canvas. This half is precision-first: it runs only when
+    the caller could classify the drawn containers (``drawn_kinds is not None``);
+    an unrecognised-style diagram passes ``None`` and only the outer/inner check
+    runs (unchanged). Returns the offending legend line(s), empty when the
+    Legend is consistent with what is drawn. WARNING in the ruleset."""
     if not legend_lines:
         return []
     has_outer, has_inner = _container_nesting(geo)
     out: List[str] = []
+    # Named-kind phrases → the container kind(s) that satisfy them. A line
+    # mentioning the word anywhere (not only before ``=``) is enough: a reader
+    # scanning the Legend expects to find that level drawn.
+    _KIND_WORDS = (
+        ("availability zone", {"availability_domain", "az"}),
+        (" az ", {"availability_domain", "az"}),
+        ("region", {"region"}),
+        ("subnet", {"subnet", "public_subnet"}),
+    )
     for raw in legend_lines:
         line = str(raw).strip()
         head = line.split("=", 1)[0].strip().casefold()
         if head.startswith("outer boundary") and not has_outer:
             out.append(line)
-        elif head.startswith("inner boundary") and not has_inner:
+            continue
+        if head.startswith("inner boundary") and not has_inner:
             out.append(line)
-    return out
+            continue
+        if drawn_kinds is None:
+            continue
+        low = f" {line.casefold()} "
+        for phrase, kinds in _KIND_WORDS:
+            if phrase in low and not (kinds & drawn_kinds):
+                out.append(line)
+                break
+    # Preserve first-seen order, de-duplicated.
+    seen: Set[str] = set()
+    ordered: List[str] = []
+    for line in out:
+        if line not in seen:
+            seen.add(line)
+            ordered.append(line)
+    return ordered
 
 
 # --------------------------------------------------------------------------- #
@@ -4382,6 +4418,82 @@ def marker_anchors(geo: DiagramGeometry) -> Dict[str, Point]:
         if anchor is not None:
             out[e.id] = anchor
     return out
+
+
+def _text_label_edges(geo: DiagramGeometry) -> List[EdgeGeom]:
+    """Edges carrying a NON-numeric, non-empty text label (1.13.0 phase 3 item
+    17), in stable id order. A numeric flow-marker is handled by
+    :func:`_marker_edges`; this is its text sibling (a ``peering`` leg label, a
+    descriptive edge label)."""
+    return sorted(
+        (e for e in geo.edges
+         if e.label.strip() and not e.label.strip().isdigit()),
+        key=lambda e: e.id,
+    )
+
+
+def text_label_boxes(geo: DiagramGeometry) -> Dict[str, Box]:
+    """Return ``{edge_id: label Box}`` for every text-labelled edge (1.13.0
+    phase 3 item 17).
+
+    draw.io draws an edge's text label as a box CENTRED on the label anchor
+    (the leg midpoint for an unpinned label, :func:`marker_anchor`); its width
+    is the text estimate (:func:`_tm.caption_text_width` at 7.0px/char) and its
+    height one caption line. Used by :func:`check_text_label_on_container_border`
+    (a text label riding a container frame — F3's ``peering`` leg on the account
+    border) with a rectangle-vs-line test, the text sibling of the numeric
+    :func:`check_marker_on_container_border`."""
+    out: Dict[str, Box] = {}
+    for e in _text_label_edges(geo):
+        contacts = _edge_contacts(geo, e)
+        if contacts is None:
+            continue
+        poly = [contacts[0]] + [tuple(p) for p in e.points] + [contacts[1]]
+        anchor = marker_anchor(poly, e.label_pos)
+        if anchor is None:
+            continue
+        w = max(_tm.caption_text_width(e.label.strip()), float(GRID))
+        h = CAPTION_LINE_H
+        out[e.id] = Box(e.id, anchor[0] - w / 2.0, anchor[1] - h / 2.0, w, h)
+    return out
+
+
+def check_text_label_on_container_border(
+    geo: DiagramGeometry, clearance: float = MARKER_BORDER_CLEARANCE
+) -> List[Tuple[str, str]]:
+    """Return ``(edge_id, "<container>.<side>")`` for a NON-numeric text edge
+    label drawn on a Boundary container border (1.13.0 phase 3 item 17, F3).
+
+    The text sibling of :func:`check_marker_on_container_border` (which covers
+    numeric flow-markers only): a descriptive or ``peering`` leg label whose
+    centred text box (:func:`text_label_boxes`) comes within ``clearance`` of a
+    container's left / right / top / bottom border — and overlaps that border's
+    extent along its axis — overprints the account / VPC frame (08's ``peering``
+    leg label printed exactly on the account border). A rectangle-vs-line test:
+    a vertical border (left / right) is judged only when the box's y-span meets
+    the border's y-extent, a horizontal one only within its x-extent. Every
+    container is checked; sorted and de-duplicated. Lint-only — reported under
+    the same ``marker-on-container-border`` rule as the numeric case."""
+    tol = clearance - AXIS_EPS
+    out: List[Tuple[str, str]] = []
+    boxes = text_label_boxes(geo)
+    for eid in sorted(boxes):
+        b = boxes[eid]
+        for cid in sorted(geo.containers):
+            c = geo.containers[cid]
+            # vertical borders: judged over the box's y-span
+            if b.bottom >= c.y - clearance and b.y <= c.bottom + clearance:
+                if min(abs(b.x - c.x), abs(b.right - c.x)) < tol or (b.x - tol <= c.x <= b.right + tol):
+                    out.append((eid, f"{cid}.left"))
+                elif min(abs(b.x - c.right), abs(b.right - c.right)) < tol or (b.x - tol <= c.right <= b.right + tol):
+                    out.append((eid, f"{cid}.right"))
+            # horizontal borders: judged over the box's x-span
+            if b.right >= c.x - clearance and b.x <= c.right + clearance:
+                if min(abs(b.y - c.y), abs(b.bottom - c.y)) < tol or (b.y - tol <= c.y <= b.bottom + tol):
+                    out.append((eid, f"{cid}.top"))
+                elif min(abs(b.y - c.bottom), abs(b.bottom - c.bottom)) < tol or (b.y - tol <= c.bottom <= b.bottom + tol):
+                    out.append((eid, f"{cid}.bottom"))
+    return sorted(set(out))
 
 
 def check_marker_collision(
