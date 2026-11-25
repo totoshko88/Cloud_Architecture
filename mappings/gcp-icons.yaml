@@ -62,6 +62,7 @@ resources:
     icon_provenance: category
     brand_hex: "#4285F4"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg"
+    badge: SM  # 1.14.0: shares its glyph with another role
   managed_k8s:
     icon_id: gcp-core.gke
     icon_provenance: product
@@ -89,26 +90,31 @@ resources:
     icon_provenance: category
     brand_hex: "#4285F4"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg"
+    badge: LB  # 1.14.0: shares its glyph with another role
   cdn:
     icon_id: gcp-category.cdn
     icon_provenance: category
     brand_hex: "#4285F4"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg"
+    badge: CDN  # 1.14.0: shares its glyph with another role
   dns:
     icon_id: gcp-category.dns
     icon_provenance: category
     brand_hex: "#4285F4"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg"
+    badge: DNS  # 1.14.0: shares its glyph with another role
   iam:
     icon_id: gcp-category.iam
     icon_provenance: category
     brand_hex: "#4285F4"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg"
+    badge: IAM  # 1.14.0: shares its glyph with another role
   waf:
     icon_id: gcp-category.waf
     icon_provenance: category
     brand_hex: "#4285F4"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg"
+    badge: CA  # 1.14.0: shares its glyph with another role
 
   # --- 1.11.0 WS6: network diagram-type roles (extended roles only; not in
   # constants.RESOURCE_TYPES). GCP ships no flagship glyph for these, so they
@@ -119,26 +125,31 @@ resources:
     icon_provenance: category
     brand_hex: "#4285F4"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg"
+    badge: NCC  # 1.14.0: shares its glyph with another role
   vpn_gateway:
     icon_id: gcp-category.vpn_gateway
     icon_provenance: category
     brand_hex: "#4285F4"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg"
+    badge: VPN  # 1.14.0: shares its glyph with another role
   direct_connect:
     icon_id: gcp-category.direct_connect
     icon_provenance: category
     brand_hex: "#4285F4"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg"
+    badge: IC  # 1.14.0: shares its glyph with another role
   route_table:
     icon_id: gcp-category.route_table
     icon_provenance: category
     brand_hex: "#4285F4"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Networking/SVG/Networking-512-color-rgb.svg"
+    badge: RT  # 1.14.0: shares its glyph with another role
   network_firewall:
     icon_id: gcp-category.network_firewall
     icon_provenance: category
     brand_hex: "#4285F4"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg"
+    badge: FW  # 1.14.0: shares its glyph with another role
   # --- 1.11.0 WS7 access diagram type: principal / policy / resource ---
   # GCP ships a minimal icon set, so the access roles fall back to the
   # Security Identity CATEGORY glyph (the documented pattern — many roles to one
@@ -148,26 +159,31 @@ resources:
     icon_provenance: category
     brand_hex: "#4285F4"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg"
+    badge: PR  # 1.14.0: shares its glyph with another role
   policy:
     icon_id: gcp-category.policy
     icon_provenance: category
     brand_hex: "#4285F4"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg"
+    badge: POL  # 1.14.0: shares its glyph with another role
   resource:
     icon_id: gcp-category.resource
     icon_provenance: category
     brand_hex: "#4285F4"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Security Identity/SVG/SecurityIdentity-512-color.svg"
+    badge: RES  # 1.14.0: shares its glyph with another role
   cache:
     icon_id: gcp-category.cache
     icon_provenance: category
     brand_hex: "#4285F4"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Databases/SVG/Databases-512-color.svg"
+    badge: MEM  # 1.14.0: shares its glyph with another role
   dynamodb:
     icon_id: gcp-category.dynamodb
     icon_provenance: category
     brand_hex: "#4285F4"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/gcp-category/Category Icons/Databases/SVG/Databases-512-color.svg"
+    badge: FS  # 1.14.0: shares its glyph with another role
   ecr:
     icon_id: gcp-category.ecr
     icon_provenance: category

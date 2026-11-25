@@ -596,7 +596,7 @@ def test_title_versioned_clean_on_a_full_title():
 
 def test_overlay_legend_coverage_fires_on_an_undocumented_marker():
     """An overlay marker not present as a whole token in the Legend lines is a
-    WARNING, and the uncovered term is the offender (R1.12)."""
+    an ERROR since 1.14.0 (was WARNING), and the uncovered term is the offender (R1.12)."""
     art = _clean_diagram(
         overlay_markers=["standby", "observability-overlay"],
         legend_overlay_terms=["standby"],  # only standby is documented
@@ -604,7 +604,7 @@ def test_overlay_legend_coverage_fires_on_an_undocumented_marker():
     result = lint(art)
     assert RULE_OVERLAY_LEGEND_COVERAGE in _rules(result)
     f = _finding(result, RULE_OVERLAY_LEGEND_COVERAGE)
-    assert f["severity"] == Severity.WARNING.value
+    assert f["severity"] == Severity.ERROR.value
     assert f["offenders"] == ["observability-overlay"]
 
 

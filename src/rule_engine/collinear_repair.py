@@ -45,6 +45,7 @@ from rule_engine.caption_routing import CaptionPlan, Route
 from rule_engine.geometry import (
     Box,
     DiagramGeometry,
+    collinear_edge_findings,
     collinear_edge_pairs,
     is_node_edge,
 )
@@ -71,10 +72,17 @@ def collinear_pairs(geo: DiagramGeometry) -> List[Tuple[str, str]]:
 # --------------------------------------------------------------------------- #
 
 
+def _cross_source_pairs(geo: DiagramGeometry) -> int:
+    """How many collinear pairs are a ``cross-source-overlap`` (an ERROR)."""
+    return sum(1 for _a, _b, k in collinear_edge_findings(geo)
+               if k == "cross-source-overlap")
+
+
 class _Base:
     """The diagram before a move: its score and its finding set."""
 
     def __init__(self, geo: DiagramGeometry, collinear_cap: int):
+        self.geo = geo
         self.score = _cr._score(geo)
         errors, warnings = _cr._violations(geo)
         self.findings: FrozenSet = frozenset(errors) | frozenset(warnings)
@@ -88,7 +96,14 @@ def _accept(trial: DiagramGeometry, base: _Base) -> Optional[_cr._Score]:
     b = base.score
     if sc.collinear >= b.collinear:
         return None
-    if (sc.errors > b.errors or sc.warnings > b.warnings or sc.crossings > b.crossings
+    # 1.14.0 (RE-FB-003): a ``cross-source-overlap`` is an ERROR, a crossing is
+    # not, so each such pair a move removes buys one extra crossing, never past
+    # the landscape hard cap (0.5 x E, ``edge-crossing-excess``).
+    removed = max(0, _cross_source_pairs(base.geo) - _cross_source_pairs(trial))
+    allowed = b.crossings
+    if removed and 2 * (sc.crossings) <= len(trial.edges):
+        allowed = b.crossings + removed
+    if (sc.errors > b.errors or sc.warnings > b.warnings or sc.crossings > allowed
             or sc.rails > b.rails or sc.own > b.own or sc.vis > b.vis):
         return None
     errors, warnings = _cr._violations(trial)
@@ -121,13 +136,48 @@ def _better(a: Optional[Move], b: Optional[Move]) -> Optional[Move]:
     return b if kb < ka else a
 
 
+#: 1.14.0 (RE-FB-003): signed lane offsets (px, grid multiples) tried when a
+#: candidate keeps the colliding line: the same faces with the stub lane moved.
+_LANE_SHIFTS = (20, -20, 40, -40)
+def _lane_variants(route: Route) -> List[Route]:
+    """``route`` with its first / last corridor lane moved by each of
+    :data:`_LANE_SHIFTS` (the same faces and contacts, so the directional
+    contract is untouched). The first two (last two) interior points that share
+    an x (a vertical lane) move in x, or share a y (a horizontal lane) move in
+    y. The full oracle in :func:`_accept` still decides whether the move is
+    legal, so an illegal shift is simply rejected."""
+    pf, qf, pts = route
+    pts = tuple(pts)
+    out: List[Route] = []
+    if len(pts) < 2:
+        return out
+    for lo, hi in ((0, 2), (len(pts) - 2, len(pts))):
+        a, b = pts[lo], pts[lo + 1]
+        for d in _LANE_SHIFTS:
+            if abs(a[0] - b[0]) < 1e-6:
+                na, nb = (a[0] + d, a[1]), (b[0] + d, b[1])
+            elif abs(a[1] - b[1]) < 1e-6:
+                na, nb = (a[0], a[1] + d), (b[0], b[1] + d)
+            else:
+                continue
+            new = pts[:lo] + (na, nb) + pts[hi:]
+            out.append((pf, qf, new))
+    return out
 def _best_single(geo: DiagramGeometry, eid: str, base: _Base) -> Optional[Move]:
     """Re-route ``eid`` onto any admissible legal route (face swap, side
-    corridor, return bus) that lowers the collinear-pair count the most."""
+    corridor, return bus) that lowers the collinear-pair count the most. Since
+    1.14.0 the best candidates are also tried with their corridor lane moved
+    (:func:`_lane_variants`), the only fix when every face choice keeps the
+    colliding stub lane (RE-FB-003)."""
     e = _xr._edge(geo, eid)
     best: Optional[Move] = None
-    for cand in _xr._ranked(geo, e)[:_ORACLE_BUDGET]:
+    cands = _xr._ranked(geo, e)[:_ORACLE_BUDGET]
+    for cand in cands:
         best = _better(best, _try(geo, eid, cand[1], cand[3], base))
+    if best is None:
+        for cand in cands[:4]:
+            for route in _lane_variants(cand[1]):
+                best = _better(best, _try(geo, eid, route, cand[3], base))
     return best
 
 

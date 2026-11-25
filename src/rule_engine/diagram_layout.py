@@ -236,6 +236,17 @@ class Node:
     #: case exempts an ``external=1`` node that sits OUTSIDE the account. ``False``
     #: emits NOTHING, so a pre-ITEM-B golden carries no token.
     external: bool = False
+    #: 1.14.0 (RE-FB-002): the node's diagram role (``mappings/roles.yaml``).
+    #: ``build_diagram`` keeps it only when another role of the same glyph
+    #: family (``glyph_family`` in ``mappings/<provider>-icons.yaml``) shares
+    #: the canvas; it is then emitted as a ``role=<name>`` style token, and the
+    #: mapping's ``badge`` is drawn on the icon (:func:`role_badge_cell`), so
+    #: two look-alike glyphs never rely on their captions alone. ``None`` (and a
+    #: role with no look-alike on the canvas) emits NOTHING (byte-inert).
+    role: Optional[str] = None
+    #: 1.14.0: an explicit role badge (``GR``, ``KB``), overriding the mapping.
+    #: A non-empty badge is always drawn, look-alike or not.
+    badge: Optional[str] = None
 
 
 # Visual encoding of an overlay marker. diagram-standards → *Icon Fidelity*
@@ -262,7 +273,31 @@ _OVERLAY_SHAPE = {
     # (``geo.overlay_nodes``), so this term is the sanctioned declaration of why
     # a cluster has no inbound edge — the honest alternative to a fabricated one.
     "no-known-caller": "dashed=1;dashPattern=1 2",
+    # 1.14.0 (RE-FB-001): the two FINDINGS terms of the canonical vocabulary
+    # (diagram-standards → *Overlay Vocabulary*). Before 1.14.0 they had no
+    # entry, so ``overlay_ring_cell`` drew NOTHING for them while the Legend
+    # still claimed a red dashed box: a missing guardrail looked deployed.
+    "spec-required-not-deployed": "dashed=1;dashPattern=6 3",
+    "observability-overlay": "dashed=0",
 }
+
+#: Ring stroke per overlay term (1.14.0). A term not listed uses the neutral
+#: :data:`OVERLAY_RING_STROKE`. The finding terms carry the vocabulary colour
+#: (red ``#D64550`` / blue ``#0062AD``), always double-encoded with the dash
+#: pattern and the Legend line, so the meaning never rides on colour alone.
+_OVERLAY_RING_COLOUR = {
+    "spec-required-not-deployed": "#D64550",
+    "observability-overlay": "#0062AD",
+}
+#: Ring stroke width per overlay term (1.14.0); default 1.5. A finding ring is
+#: heavier so it reads at a glance and in grayscale.
+_OVERLAY_RING_WIDTH = {
+    "spec-required-not-deployed": 2.5,
+    "observability-overlay": 2.5,
+}
+
+#: Every overlay term the engine renders (a ring cell + a standard Legend line).
+OVERLAY_TERMS = frozenset(_OVERLAY_SHAPE)
 
 #: The standard Legend line for each overlay term a builder can emit
 #: (:func:`overlay_legend_lines`). Each names the term as a whole token, which
@@ -272,6 +307,8 @@ OVERLAY_LEGEND_LINES = {
     "supporting": "supporting = ops / observability service (dotted outline); not a data-flow step",
     "unconfirmed": "unconfirmed = tentative / not yet confirmed (dashed outline, [?]); verify before relying on it",
     "no-known-caller": "no known caller = upstream caller not in inventory (dotted-dashed outline); the cluster's inbound edge is unknown, not missing",
+    "spec-required-not-deployed": "spec-required-not-deployed = required by the spec, not deployed (red dashed outline)",
+    "observability-overlay": "observability-overlay = observability finding (blue solid outline)",
 }
 
 
@@ -297,9 +334,12 @@ def overlay_ring_cell(n: "Node", parent: str = "1", origin: Tuple[float, float] 
 
     pad = OVERLAY_RING_PAD
     x, y = n.x - origin[0] - pad, n.y - origin[1] - pad
+    term = n.overlay or ""
+    colour = _OVERLAY_RING_COLOUR.get(term, OVERLAY_RING_STROKE)
+    width = _OVERLAY_RING_WIDTH.get(term, 1.5)
     style = (
         "rounded=1;arcSize=6;absoluteArcSize=1;fillColor=none;"
-        f"strokeColor={OVERLAY_RING_STROKE};strokeWidth=1.5;{shape};"
+        f"strokeColor={colour};strokeWidth={width:g};{shape};"
         "pointerEvents=0;editable=0;"
     )
     return (
@@ -309,6 +349,82 @@ def overlay_ring_cell(n: "Node", parent: str = "1", origin: Tuple[float, float] 
         f'height="{ICON_SIZE + 2 * pad}" as="geometry" />\n'
         "        </mxCell>\n"
     )
+
+
+#: Role badge geometry (1.14.0, RE-FB-002): a small tag inside the icon's
+#: top-right corner. Height 18 holds one 12px line; width grows per character.
+ROLE_BADGE_H = 18
+_ROLE_BADGE_CHAR_W = 8
+_ROLE_BADGE_INSET = 2
+
+
+def role_badge_cell(n: "Node", parent: str = "1", origin: Tuple[float, float] = (0, 0)) -> str:
+    """The ``rolebadge-<id>`` cell tagging ``n`` with its role badge (``""``
+    when the node carries no badge). An opaque white tag with a dark border and
+    bold 12px text (contrast 16:1) drawn ON TOP of the icon's top-right corner:
+    additive, never a recolour of the pack glyph. Every parser skips it by its
+    id prefix (``constants.ROLE_BADGE_PREFIX``): it is not a node, not a text
+    box and not a boundary."""
+    badge = (n.badge or "").strip()
+    if not badge:
+        return ""
+    from rule_engine.constants import ROLE_BADGE_PREFIX
+
+    w = max(22, _ROLE_BADGE_CHAR_W * len(badge) + 8)
+    x = n.x - origin[0] + ICON_SIZE - w - _ROLE_BADGE_INSET
+    y = n.y - origin[1] + _ROLE_BADGE_INSET
+    style = (
+        "rounded=1;arcSize=20;whiteSpace=nowrap;html=1;fillColor=#FFFFFF;"
+        "strokeColor=#16191F;strokeWidth=1;fontColor=#16191F;fontSize=12;"
+        "fontStyle=1;align=center;verticalAlign=middle;spacing=0;"
+        "pointerEvents=0;editable=0;"
+    )
+    return (
+        f'        <mxCell id="{ROLE_BADGE_PREFIX}{n.id}" value="{_xml_escape(badge)}" '
+        f'style="{style}" vertex="1" parent="{parent}">\n'
+        f'          <mxGeometry x="{x:g}" y="{y:g}" width="{w}" height="{ROLE_BADGE_H}" '
+        'as="geometry" />\n'
+        "        </mxCell>\n"
+    )
+
+
+def _title_provider(title: str) -> Optional[str]:
+    """The provider the title names as its first token, else ``None``."""
+    from rule_engine.constants import PROVIDERS
+
+    tok = (title or "").strip().split(" ", 1)[0].casefold()
+    return tok if tok in PROVIDERS else None
+
+
+def _resolve_role_badges(nodes: Sequence["Node"], title: str) -> List["Node"]:
+    """Keep ``Node.role`` and fill ``Node.badge`` for every node whose glyph
+    family has another role on this canvas (1.14.0, RE-FB-002); clear the role
+    of every other node so it emits no token. An explicit ``Node.badge`` is
+    kept. Byte-inert when no node carries a role."""
+    if not any(n.role for n in nodes):
+        return list(nodes)
+    from rule_engine.icon_resolver import role_glyph
+
+    provider = _title_provider(title)
+    info = {}
+    if provider:
+        for n in nodes:
+            if n.role and n.role not in info:
+                info[n.role] = role_glyph(n.role, provider)
+    roles_by_family: Dict[str, set] = {}
+    for n in nodes:
+        g = info.get(n.role) if n.role else None
+        if g and g["family"]:
+            roles_by_family.setdefault(g["family"], set()).add(n.role)
+    out: List[Node] = []
+    for n in nodes:
+        g = info.get(n.role) if n.role else None
+        shared = bool(g and len(roles_by_family.get(g["family"], ())) > 1)
+        if shared:
+            out.append(replace(n, badge=n.badge or g["badge"] or None))
+        else:
+            out.append(replace(n, role=None))
+    return out
 
 
 #: The label channel of the ``standby`` overlay (diagram-standards: dashed
@@ -383,6 +499,11 @@ def overlay_suffix(node: "Node") -> str:
     if node.overlay:
         shape = _OVERLAY_SHAPE.get(node.overlay, "dashed=1")
         out = f";{shape};overlay={node.overlay}"
+    if node.role:
+        # 1.14.0 (RE-FB-002): only set by ``build_diagram`` for a node whose
+        # glyph family has another role on the canvas (``indistinguishable-
+        # role-glyphs`` reads it); otherwise cleared, so no token is emitted.
+        out += f";role={node.role}"
     if node.label_bg:
         # Set by ``build_diagram`` for a node whose caption an edge drawn beneath
         # it crosses: the caption is painted on the local background so the line
@@ -2113,6 +2234,8 @@ def build_diagram(
     # 1.13.0: the ``standby`` label channel (``-standby`` suffix) is applied
     # before anything measures a caption.
     nodes = _overlay_labelled(nodes)
+    # 1.14.0 (RE-FB-002): role tokens + badges for look-alike glyphs.
+    nodes = _resolve_role_badges(nodes, title)
     # 1.13.0 phase 3 (item 7b): wrap a node label whose single-line caption is
     # wider than the boundary it sits in onto up to ``node_caption_wrap`` lines,
     # so a long member name does not print across its container's border without
@@ -2599,6 +2722,8 @@ def _assemble_document(
 ) -> str:
     """Emit the ``.drawio`` document for already-routed edges (no hygiene)."""
     nodes = _overlay_labelled(nodes)
+    # 1.14.0 (RE-FB-002): role tokens + badges for look-alike glyphs.
+    nodes = _resolve_role_badges(nodes, title)
     parts: List[str] = []
     parts.append(
         f'<mxfile host="app.diagrams.net" agent="rule-engine golden-example" version="24.0.0">\n'
@@ -2669,12 +2794,14 @@ def _assemble_document(
         if hb is None:
             parts.append(_render_node(n, "1"))
             parts.append(overlay_ring_cell(n))
+            parts.append(role_badge_cell(n))
         else:
             host_id, hx, hy = hb
             rel = replace(n, x=n.x - hx, y=n.y - hy)
             parts.append(_render_node(rel, host_id))
             # 1.13.0: the overlay's visible shape channel (a ring cell).
             parts.append(overlay_ring_cell(n, host_id, (hx, hy)))
+            parts.append(role_badge_cell(n, host_id, (hx, hy)))
     parts.append("\n")
     # Size each text box from its content plus uniform padding so no line is
     # clipped or abuts the border. Height: one 12px line ~= 16px of leading, plus
@@ -2917,6 +3044,7 @@ __all__ = [
     "title_cell", "boundary_cell", "edge_cell", "text_cell",
     "legend_lines_for", "build_diagram", "caption_safe_plan",
     "fit_boundary_captions",
-    "OVERLAY_LEGEND_LINES", "overlay_legend_lines", "overlay_ring_cell",
+    "OVERLAY_LEGEND_LINES", "OVERLAY_TERMS", "overlay_legend_lines", "overlay_ring_cell",
+    "role_badge_cell",
     "document_flow_index", "flow_companion_section", "DOCUMENT_MARKER_LEGEND_LINE",
 ]

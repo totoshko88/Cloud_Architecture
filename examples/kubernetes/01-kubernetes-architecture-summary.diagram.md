@@ -33,9 +33,9 @@ question: how does a request move end-to-end through a cluster. An external
 client enters at the ingress Service in the app namespace, which routes it to the
 app Service and its Deployment; the Deployment then calls the data namespace,
 whose Service backs a StatefulSet persisted by a PersistentVolumeClaim. A single
-control-plane node, the API server, sits in a kube-system namespace band marked
-as a supporting service so the reader sees the control plane without it cluttering
-the request path. The summary stays at eight nodes, well under the twelve-node
+control-plane node, the API server, sits in a kube-system namespace band and
+admits the Deployment, so the reader sees the control plane next to the request
+path it governs. The summary stays at eight nodes, well under the twelve-node
 flow cap, and cross-links its full as-built via `detailed_view`. This is the v2
 re-baseline, richer than the earlier five-node line.
 
@@ -44,13 +44,13 @@ re-baseline, richer than the earlier five-node line.
 Three namespaces are drawn as disjoint peer bands inside the Cluster envelope:
 app (region a) with the ingress Service, app Service and Deployment; data
 (region b) with the Service, StatefulSet and PersistentVolumeClaim; and
-kube-system (region c) with the supporting API server. Numbered flow markers one
+kube-system (region c) with the API server. Numbered flow markers one
 through six trace the primary path — client to ingress Service, ingress Service
 to app Service, app Service to Deployment, Deployment to the data Service, data
 Service to the StatefulSet, StatefulSet to its PersistentVolumeClaim — and marker
-seven shows the API server admitting the Deployment. The API server carries the
-`supporting` overlay, a dotted outline documented in the Legend, so it is exempt
-from the connectivity rules and reads as an ops concern rather than a flow step.
+seven shows the API server admitting the Deployment. The API server is a real
+step of the flow, so it carries no overlay; the `supporting` overlay is used only
+on the paired landscape, where the control-plane components carry no edge.
 Every node uses an official Kubernetes Icons Set glyph resolved through
 `mappings/kubernetes-icons.yaml`, and each namespace box uses the profile's
 Kubernetes-blue container style.
@@ -62,9 +62,9 @@ nodes — move the extra detail into the paired landscape as-built rather than
 growing the summary. An `orphan-landscape` finding never applies here, since that
 rule is landscape-only. A `frontmatter` CRITICAL names the offending key: keep
 all twelve required keys present and non-empty, plus the `diagram_class: flow`
-marker and the `detailed_view` cross-link. If `overlay-legend-coverage` fires on
-`supporting`, the Legend lost its supporting line — the generator appends it to
-the auto-derived Legend, so keep that wiring. If `companion-doc` fires, the
+marker and the `detailed_view` cross-link. If `overlay-rendered` fires on
+`supporting`, the Legend defines an overlay no node carries — the summary marks no
+node `supporting`, so keep that line out of its Legend. If `companion-doc` fires, the
 `.drawio` stem and this file's stem have diverged — keep them identical. If a
 namespace box is drawn with a solid fill it stops being recognised as a boundary
 container, so its children lose membership — keep the namespace style

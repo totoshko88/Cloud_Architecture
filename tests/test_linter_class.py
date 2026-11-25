@@ -7,7 +7,7 @@ These tests pin the class-branching contract introduced in v1.3.0:
 - ``orphan-landscape`` (ERROR) requires every ``landscape`` diagram to declare a
   ``summary_of`` cross-link to its flow summary.
 - ``container-padding`` is raised from WARNING to ERROR for ``landscape``.
-- ``overlay-legend-coverage`` (WARNING) fires when a declared overlay marker is
+- ``overlay-legend-coverage`` (ERROR since 1.14.0) fires when a declared overlay marker is
   not covered by the Legend.
 - Every legacy ``flow`` behaviour is unchanged (regression guard).
 
@@ -153,7 +153,7 @@ def test_flow_is_never_orphan():
 # ---------------------------------------------------------------------------
 
 
-def test_uncovered_overlay_marker_is_warning():
+def test_uncovered_overlay_marker_is_error():
     result = lint(
         Artifact(
             kind="diagram",
@@ -164,9 +164,9 @@ def test_uncovered_overlay_marker_is_warning():
             legend_overlay_terms=[],
         )
     )
-    assert _sev(result, "overlay-legend-coverage") == Severity.WARNING.value
-    # A WARNING never blocks publication on its own.
-    assert result["eligible_for_publication"] is True
+    # 1.14.0: an undocumented overlay is an ERROR and blocks publication.
+    assert _sev(result, "overlay-legend-coverage") == Severity.ERROR.value
+    assert result["eligible_for_publication"] is False
 
 
 def test_covered_overlay_marker_is_clean():

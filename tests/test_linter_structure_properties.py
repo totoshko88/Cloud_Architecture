@@ -666,7 +666,7 @@ def test_property_6b_overlay_coverage_is_whole_token_matching(
     assert len(findings) == 1
     finding = findings[0]
     assert set(finding["offenders"]) == set(expected_offenders)
-    assert finding["severity"] == Severity.WARNING.value
+    assert finding["severity"] == Severity.ERROR.value
 
 
 # =========================================================================== #

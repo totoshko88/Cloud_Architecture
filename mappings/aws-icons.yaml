@@ -65,6 +65,7 @@ resources:
   llm_platform:              # Amazon Bedrock (service)
     icon_id: aws.bedrock
     icon_provenance: service
+    glyph_family: bedrock      # 1.14.0: reads as one glyph with the Bedrock roles below
     brand_hex: "#01A88D"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Artificial-Intelligence/48/Arch_Amazon-Bedrock_48.svg"
 
@@ -185,18 +186,24 @@ resources:
   bedrock_agentcore:         # Amazon Bedrock AgentCore (service)
     icon_id: aws.bedrock_agentcore
     icon_provenance: service
+    glyph_family: bedrock      # near-identical to the base Bedrock glyph at 48px
+    badge: AC
     brand_hex: "#01A88D"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Artificial-Intelligence/48/Arch_Amazon-Bedrock-AgentCore_48.svg"
 
   bedrock_guardrails:        # Bedrock Guardrails (uses base Bedrock icon)
     icon_id: aws.bedrock
-    icon_provenance: service
+    icon_provenance: shared    # no dedicated glyph in pack 07312026
+    glyph_family: bedrock
+    badge: GR
     brand_hex: "#01A88D"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Artificial-Intelligence/48/Arch_Amazon-Bedrock_48.svg"
 
   bedrock_kb:                # Bedrock Knowledge Base (uses base Bedrock icon)
     icon_id: aws.bedrock
-    icon_provenance: service
+    icon_provenance: shared    # no dedicated glyph in pack 07312026
+    glyph_family: bedrock
+    badge: KB
     brand_hex: "#01A88D"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Architecture-Service-Icons_07312026/Arch_Artificial-Intelligence/48/Arch_Amazon-Bedrock_48.svg"
 
@@ -301,12 +308,14 @@ resources:
     icon_provenance: resource
     brand_hex: "#232F3E"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_General-Icons/Res_48_Light/Res_Client_48_Light.svg"
+    badge: SaaS  # 1.14.0: shares its glyph with another role
 
   on_prem_app:               # Traditional on-prem application, NO brand mark (General Server glyph)
     icon_id: aws.res.server
     icon_provenance: resource
     brand_hex: "#232F3E"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_General-Icons/Res_48_Light/Res_Server_48_Light.svg"
+    badge: APP  # 1.14.0: shares its glyph with another role
 
   # Egress-only IGW — IPv6 outbound-only VPC edge (F7). AWS ships NO dedicated
   # egress-only IGW icon; this uses the IGW-family glyph (closest official) and
@@ -318,6 +327,7 @@ resources:
     icon_provenance: resource
     brand_hex: "#8C4FFF"
     style: "image;html=1;aspect=fixed;points=[];align=center;verticalLabelPosition=bottom;verticalAlign=top;fontSize=12;image=assets/vendor/aws-icons/Resource-Icons_07312026/Res_Networking-Content-Delivery/Res_Amazon-VPC_Internet-Gateway_48.svg"
+    badge: EO  # 1.14.0: shares its glyph with another role
 
   # --- Compute / registry services (Theme 5) ---
   batch:                     # AWS Batch (service, Compute family — orange)

@@ -27,7 +27,7 @@ import copy
 import re
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import yaml
 
@@ -250,6 +250,44 @@ def resolve_icon(resource_type: str, provider: str) -> Dict[str, str]:
         "brand_hex": brand_hex,
         "icon_source": icon_source,
     }
+
+
+def glyph_key_of_style(style: str) -> str:
+    """The glyph a draw.io style draws (1.14.0, RE-FB-002): the ``iconRef``
+    (an inlined asset keeps its source path there), else the ``image`` path,
+    else the aws4 ``resIcon``. ``""`` when the style names none. An inline
+    ``data:`` image without ``iconRef`` is not a key (nothing names it)."""
+    found: Dict[str, str] = {}
+    for m in re.finditer(r"(?:^|;)(iconRef|image|resIcon)=([^;]+)", style or ""):
+        found.setdefault(m.group(1), m.group(2).strip())
+    for k in ("iconRef", "image", "resIcon"):
+        v = found.get(k, "")
+        if v and not v.startswith("data:"):
+            return v
+    return ""
+
+
+def role_glyph(role: str, provider: str) -> Optional[Dict[str, str]]:
+    """``{"glyph", "family", "badge"}`` for ``role`` under ``provider`` (1.14.0,
+    RE-FB-002), or ``None`` when the role is not in the provider's mapping.
+
+    ``glyph`` is the drawn glyph (:func:`glyph_key_of_style`); ``family`` the
+    mapping's optional ``glyph_family`` (glyphs that read as one at 48px, e.g.
+    Bedrock and Bedrock AgentCore), else the glyph itself; ``badge`` the
+    optional short role tag (``GR``, ``KB``) drawn on the node when another
+    role of the same family shares the canvas. Never raises on a bad provider:
+    a canvas whose provider is unknown simply gets no badges."""
+    try:
+        data = _load_mapping_cached(provider)
+    except AssetSourceError:
+        return None
+    entry = (data.get("resources") or {}).get(role)
+    if not isinstance(entry, dict):
+        return None
+    glyph = glyph_key_of_style(str(entry.get("style") or ""))
+    family = str(entry.get("glyph_family") or "").strip() or glyph
+    badge = str(entry.get("badge") or "").strip()
+    return {"glyph": glyph, "family": family, "badge": badge}
 
 
 def resolve_container(kind: str, provider: str) -> Dict[str, str]:

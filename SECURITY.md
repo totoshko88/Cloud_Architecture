@@ -7,8 +7,8 @@ latest released minor version. Older versions are not patched retroactively.
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.13.x  | :white_check_mark: |
-| < 1.13  | :x:                |
+| 1.14.x  | :white_check_mark: |
+| < 1.14  | :x:                |
 
 ## Reporting a Vulnerability
 

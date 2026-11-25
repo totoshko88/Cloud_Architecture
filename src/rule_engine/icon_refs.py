@@ -64,7 +64,7 @@ from rule_engine.azure2_shapes import (
 )
 from rule_engine.constants import (
     is_boundary_container_style as _is_boundary_style,
-    is_overlay_ring as _is_overlay_ring,
+    is_node_decoration as _is_overlay_ring,
     is_text_cell_style as _is_text_style,
     resolve_bundled_dir,
 )

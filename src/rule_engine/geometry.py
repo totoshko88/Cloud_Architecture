@@ -47,7 +47,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, 
 from rule_engine.constants import ROOT_LAYER_ID as _ROOT_LAYER_ID
 from rule_engine.constants import is_boundary_container_style as _is_boundary_style
 from rule_engine.constants import is_text_cell_style as _is_text_style
-from rule_engine.constants import OVERLAY_RING_PREFIX as _OVERLAY_RING_PREFIX
+from rule_engine.constants import NODE_DECORATION_PREFIXES as _OVERLAY_RING_PREFIX
 
 # The single `.drawio` parser (honest-gates R1). ``build_geometry`` now consumes
 # a parsed :class:`~rule_engine.drawio_model.Page` rather than re-reading the XML
@@ -1467,8 +1467,16 @@ COLLINEAR_MIN_LEN = 2 * GRID
 COLLINEAR_GAP = 120.0
 
 
+#: 1.14.0 (RE-FB-003): minimum OVERLAP length (px) of two parallel legs of edges
+#: sharing no endpoint node before the pair is a ``cross-source-overlap``.
+CROSS_SOURCE_OVERLAP_MIN = 10.0
 #: Reason priority when one pair of edges shows several collinear kinds.
-_COLLINEAR_KIND_RANK = {"end-to-end-merge": 0, "pass-through-illusion": 1, "collinear": 2}
+_COLLINEAR_KIND_RANK = {
+    "end-to-end-merge": 0,
+    "cross-source-overlap": 1,
+    "pass-through-illusion": 2,
+    "collinear": 3,
+}
 
 
 def _same_face_trunk(ea, eb, shared) -> bool:
@@ -1574,6 +1582,11 @@ def collinear_edge_findings(
                     continue
                 if not shared:
                     kind = "end-to-end-merge"
+            elif not shared and -gap >= CROSS_SOURCE_OVERLAP_MIN:
+                # 1.14.0 (RE-FB-003): legs of edges with a different source AND
+                # a different target that physically share a stretch of one
+                # line: the reader cannot tell which source feeds which target.
+                kind = "cross-source-overlap"
             key = tuple(sorted((a[0], b[0])))
             prev = found.get(key)  # type: ignore[arg-type]
             if prev is None or _COLLINEAR_KIND_RANK[kind] < _COLLINEAR_KIND_RANK[prev]:

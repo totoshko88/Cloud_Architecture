@@ -58,7 +58,9 @@ every applicable rule against every artifact.
 | `access-aggregation` | An access diagram (companion `diagram_type` resolves to `TypeProfile.lint_profile == access`) whose drawn node count exceeds the access profile's `node_cap` (default 12) — it was not collapsed into a small `principal → policy → resource` graph. Only an access diagram is evaluated; every other diagram is unaffected. Raised to ERROR for `landscape`. | WARNING/ERROR | diagram-standards Diagram Class / R7 AC3 |
 | `data-classification` | A dataflow diagram (companion `diagram_type` resolves to `TypeProfile.lint_profile == dataflow`) names a data store flagged as PII (`pii`/`personal`/`gdpr`/`pci`/`phi`/`sensitive`/`ccpa`) with no classification marker (`encrypted`/`classified`/`confidential`/`restricted`/`tokenized`/`anonymized`/`redacted`/`public-data`). Only a dataflow diagram is evaluated; every other diagram is unaffected. Raised to ERROR for `landscape`. | WARNING/ERROR | diagram-standards Diagram Class / R8 AC3 |
 | `orphan-landscape` | A `landscape`-class diagram declares no valid `summary_of` cross-link to a `flow` summary. | ERROR | diagram-standards Diagram Class |
-| `overlay-legend-coverage` | A diagram carries an overlay marker (findings/state vocabulary) whose term does not appear as a whole token in a Legend line. | WARNING | diagram-standards Overlay Vocabulary / R1 AC12 |
+| `overlay-legend-coverage` | A diagram carries an overlay marker (findings/state vocabulary) whose term does not appear as a whole token in a Legend line. **ERROR since 1.14.0** (was WARNING): a marker the Legend does not explain is a reader-facing defect. | ERROR | diagram-standards Overlay Vocabulary / R1 AC12 |
+| `overlay-rendered` | The Legend and the canvas disagree about an overlay (1.14.0, RE-FB-001): the Legend **defines** a shaped overlay term (a line where the term is one whole side of an `=`, e.g. `Dashed red = spec-required-not-deployed` or `standby = passive peer`) that no cell carries (reason `legend-overlay-not-drawn`, offenders = the terms), or a node carries a shaped overlay term (`standby`, `supporting`, `unconfirmed`, `no-known-caller`, `spec-required-not-deployed`, `observability-overlay`) with no `overlayring-<id>` cell (reason `overlay-not-rendered`, offenders `<node>:<term>`). A term only mentioned in prose is not a definition. | ERROR | diagram-standards Overlay Vocabulary |
+| `indistinguishable-role-glyphs` | Two or more **different** roles on one canvas draw the same glyph, or near-identical ones (the mapping's `glyph_family`), and at least two of those roles carry no role badge (`rolebadge-<id>`), so only their captions separate them (1.14.0, RE-FB-002). Judged from the `role=<name>` token `build_diagram` emits for a role whose family has another role on the canvas; one unbadged role per family reads by elimination and is allowed. Reason `look-alike-glyphs`; offenders `<family>:<role>(<nodes>)`, one per family. | WARNING | asset-packs Role badges / diagram-standards Icon Fidelity |
 | `exit-thirds` | A node fans out **more than three** edges on one side, or two same-side exits sit closer than ~⅕ of the side (they merge into one doubled line). **Raised to ERROR** when two exits share the **exact same** contact point (identical `exitX` and `exitY`, reason `<side>-exits-identical(...)`, reported first; 1.13.0 implements the escalation). | WARNING/ERROR | diagram-standards Label-safe exits |
 | `entry-thirds` | **More than three** edges arrive on one target face, or two arrivals on one face sit closer than ~⅕ of the face (they stack on one contact point — the entry-side mirror of `exit-thirds`). Raised to ERROR for `landscape`; two arrivals on the **exact same** contact point (reason `<face>-entries-identical(...)`, 1.13.0) are an ERROR on **both** classes. | WARNING/ERROR | diagram-standards Label-safe exits |
 | `container-overlap` | Two sibling (non-nested) Boundary/Network-Boundary containers overlap. Raised to ERROR for `landscape`. | WARNING/ERROR | diagram-standards Container Nesting |
@@ -87,7 +89,7 @@ every applicable rule against every artifact.
 | `marker-on-container-border` | A numbered flow-marker's rendered anchor falls strictly closer than `MARKER_BORDER_CLEARANCE` = 16px (the 10px badge radius + 6px; 1.13.0, one grid step before) to a Boundary container's left / right / top / bottom border — and within that border's extent along its axis — so the number overprints the account / VPC frame (reason `marker-on-border`). The container-border sibling of `marker-label-collision` (a marker on a node caption) and `marker-on-icon` (a marker on a node glyph); modelled on `edge-on-container-border` (a marker point, not a long leg, rides the border). **1.13.0 phase 3 item 17 (F3):** a NON-numeric **text** edge label (a `peering` leg label, a descriptive label) that rides a border is reported under the same rule — its centred text box (`geometry.text_label_boxes`, width = 7.0px/char) vs the border (a rectangle-vs-line test), via `geometry.check_text_label_on_container_border` (08's `peering` leg label printed exactly on the account border). offenders = the marker/label edge and the `<container>.<side>`. Lint-only (NOT in `rule_violations` / the solver oracle). New in FEAT-001. **1.11.0 ITEM C:** **ERROR** on a network / component / flow diagram, **WARNING** on a landscape inventory / other classes. | WARNING/ERROR | diagram-standards Numbered Flow Legend / Edge Routing (a long vertical never coincides with a container border) |
 | `edge-crossing-excess` | The diagram's edge-crossing count exceeds a per-diagram cap proportional to the edge count (`ceil(0.25 × E)`), reason `crossings-over-cap:X/E`. **Hard cap (1.10.7):** on a `landscape`, more than `0.5 × E` crossings is an **ERROR** (reason `crossings-over-hard-cap:X/E`) — the routing has collapsed. offenders = the crossing edge-id pairs. Uses the same crossing detection `route_cost` minimises. | WARNING/ERROR | diagram-standards Edge Routing (minimise crossings) / edge-hygiene 1.10.5 B2 |
 | `edge-crossing-avoidable` | A crossing that a **single legal face swap** removes: one edge of a crossing pair, re-routed onto another legal exit/entry face pair (exit right, or bottom from a source with no caption; entry left/top) with a stub + one-lane route, lowers the crossing count **without adding a routing finding** (no icon, caption, text box, foreign container or container caption crossed; no shared corridor, border ride, detour hook; no new oracle finding). Reason `avoidable:<removed>/<crossings>`; offenders = the edges whose swap removes it. The same test (`crossing_repair.avoidable_crossings`) the engine's final crossing-repair pass and the `Xav` metric use. New in 1.10.12 (WS3). | WARNING | diagram-standards Edge Routing (crossing-aware contact selection) |
-| `collinear-edges` | Two **unrelated** edges whose parallel legs (each at least two grid steps long) sit **under two grid steps apart** with overlapping extents, so the two lines read as **one** (the one-line illusion, defect C5). A sanctioned **fan-out / fan-in trunk** — both edges LEAVE (or both ENTER) a shared node — is exempt whether or not the legs meet at a point: **1.13.0 phase 3 (item 11, F16)** the exemption also covers two same-source (same-target) legs on **one face** held apart on distinct bands by `exit-thirds` / `entry-thirds` (so they run parallel but never share a contact), e.g. the 08 IGW fan-out, NAT fan-in, RDS fan-in and CloudFront origins. A gap a node icon visibly terminates is exempt too. **Kinds (1.13.0, `geometry.collinear_edge_findings`):** `end-to-end-merge` — two edges sharing no endpoint whose legs do not overlap but whose facing ends are within `COLLINEAR_GAP` (two lines reading as ONE continuous edge), an **ERROR on `landscape`** carried on its own hit; `pass-through-illusion` — an in-edge and an out-edge meeting at the node on one line (the flow reads as passing straight through); `collinear` — the rest. Reason `<kind>:<pairs>` per kind; offenders = the two edge ids of each pair. The same pairs (`geometry.collinear_edge_pairs`) the `col` metric and the engine's collinear-shift pass (`collinear_repair`) use, so what lint flags is what the engine tries to separate. New in 1.10.12 (WS8). | WARNING/ERROR | diagram-standards Edge Routing (one edge per corridor) |
+| `collinear-edges` | Two **unrelated** edges whose parallel legs (each at least two grid steps long) sit **under two grid steps apart** with overlapping extents, so the two lines read as **one** (the one-line illusion, defect C5). A sanctioned **fan-out / fan-in trunk** — both edges LEAVE (or both ENTER) a shared node — is exempt whether or not the legs meet at a point: **1.13.0 phase 3 (item 11, F16)** the exemption also covers two same-source (same-target) legs on **one face** held apart on distinct bands by `exit-thirds` / `entry-thirds` (so they run parallel but never share a contact), e.g. the 08 IGW fan-out, NAT fan-in, RDS fan-in and CloudFront origins. A gap a node icon visibly terminates is exempt too. **Kinds (1.13.0, `geometry.collinear_edge_findings`):** `end-to-end-merge` — two edges sharing no endpoint whose legs do not overlap but whose facing ends are within `COLLINEAR_GAP` (two lines reading as ONE continuous edge), an **ERROR on `landscape`** carried on its own hit; `cross-source-overlap` (1.14.0, RE-FB-003) — two edges with a **different source AND a different target** whose parallel legs overlap by at least `CROSS_SOURCE_OVERLAP_MIN` (10px) on one line, so the reader cannot tell which source feeds which target, an **ERROR on both classes**; `pass-through-illusion` — an in-edge and an out-edge meeting at the node on one line (the flow reads as passing straight through); `collinear` — the rest. Reason `<kind>:<pairs>` per kind; offenders = the two edge ids of each pair. The same pairs (`geometry.collinear_edge_pairs`) the `col` metric and the engine's collinear-shift pass (`collinear_repair`) use, so what lint flags is what the engine tries to separate. New in 1.10.12 (WS8). | WARNING/ERROR | diagram-standards Edge Routing (one edge per corridor) |
 | `marker-on-group-border` | A numbered flow-marker's rendered anchor falls strictly closer than `MARKER_BORDER_CLEARANCE` (16px) to the frame of a decorative `flowgroup-*` / `bandgroup-*` box (reason `marker-on-group-border`; offenders = the marker edge and `<group>.<side>`). The group sibling of `marker-on-container-border`; the engine's marker slide (`resolve_marker_collisions` phase 3) clears group frames too. New in 1.13.0. | WARNING | diagram-standards Numbered Flow Legend |
 | `marker-on-container-caption` | A numbered flow-marker's rendered anchor falls inside a Boundary container's left-aligned caption text box (`container_caption_geom`, inclusive with `AXIS_EPS`), so the step number overprints the account / VPC / subnet name (10's marker 4 on the `private-app 1a` caption, marker 9 on the Atlas peer caption). The caption sibling of `marker-on-container-border` (box border), `marker-label-collision` (node caption) and `marker-on-icon` (node glyph). offenders = the marker edge and the container id. Lint-only (NOT in `rule_violations` / the solver oracle), like the other `marker-*` rules. The engine's marker slide (`resolve_marker_collisions` phase 4) moves such a marker off the caption, and phases 2–3 never slide a marker ONTO one. New in 1.13.0 phase 3 item 16. **ERROR** on a network / component / flow diagram, **WARNING** on a landscape inventory / other classes. | WARNING/ERROR | diagram-standards Numbered Flow Legend / provider-profiles Per-Provider Container Conventions |
 | `companion-marker-ref` | The companion prose (outside `## Flow`, fenced code and backticks) cites a marker number (`(10)`, `marker 7`, `step 3`, `flow 2`) that is neither a Flow step nor an edge label. Only judged when the diagram has numeric markers. Reason `unknown-marker:<n,...>`; offenders `marker-<n>`. New in 1.13.0 (phase 3). | WARNING | diagram-standards Numbered Flow Legend |
@@ -445,8 +447,27 @@ every applicable rule against every artifact.
   state — for example "spec-required-not-deployed" (red dashed box),
   "observability-overlay" (blue stroke), or change markers. When an overlay
   marker is used, the Legend must document it; an overlay marker not covered by
-  the Legend is a WARNING. Diagrams that carry no overlay markers are
-  unaffected.
+  the Legend is an **ERROR since 1.14.0** (was a WARNING). Diagrams that carry
+  no overlay markers are unaffected.
+- **`overlay-rendered` (ERROR)** — *New in 1.14.0 (RE-FB-001).* The mirror of
+  `overlay-legend-coverage`. Before 1.14.0 the `spec-required-not-deployed`
+  term had no shape entry, so `build_diagram` drew no ring for it while the
+  Legend still read `Dashed red = spec-required-not-deployed`; a missing
+  guardrail looked like a deployed service and every gate passed. The engine now
+  draws a red (`#D64550`) dashed ring for `spec-required-not-deployed` and a blue
+  (`#0062AD`) solid ring for `observability-overlay`, both 2.5pt and always
+  double-encoded with a standard Legend line. The rule reports a Legend that
+  defines a shaped term no cell carries (`legend-overlay-not-drawn`) and a
+  marked node with no `overlayring-<id>` cell (`overlay-not-rendered`).
+- **`indistinguishable-role-glyphs` (WARNING)** — *New in 1.14.0 (RE-FB-002).*
+  AWS pack 07312026 ships no Guardrails or Knowledge Bases glyph, so
+  `bedrock_guardrails` and `bedrock_kb` draw the base Bedrock icon, and
+  AgentCore's own icon is near-identical at 48px. A mapping entry may declare
+  `glyph_family` (glyphs that read as one) and `badge` (a short tag such as
+  `GR` / `KB`). When two roles of one family share a canvas, `build_diagram`
+  emits `role=<name>` on each and draws the badge (`rolebadge-<id>`, an opaque
+  white tag in the icon's top-right corner, bold 12px). The rule reports a
+  family where two or more roles are still unbadged.
 - **`container-overlap` (WARNING/ERROR)** — *Geometry-enforced from the parsed
   `.drawio` model.* Two boundary containers may **nest** (Account ⊃ Region ⊃
   Availability Zone) but two **sibling** boundaries — neither containing the
@@ -657,7 +678,15 @@ every applicable rule against every artifact.
   of one node meeting at a shared point on one line; before 1.13.0 exempt as a
   "trunk junction" — the exemption now needs both edges to leave, or both to
   enter, the shared node), `collinear` (the rest). One kind per pair, the most
-  severe.
+  severe. **1.14.0 (RE-FB-003):** `cross-source-overlap` — legs of two edges
+  that share NO endpoint node overlapping by at least 10px
+  (`geometry.CROSS_SOURCE_OVERLAP_MIN`) — is an **ERROR on both classes**: the
+  FIUB 02 landscape's `slack → alb_ai` and `devhooks → waf` shared x=140, so
+  the reader could not tell which actor fed the ALB. A fan-out / fan-in (shared
+  source or target) keeps its exemption or WARNING. The engine's collinear-shift
+  pass now also tries each candidate with its first / last corridor lane moved
+  by one or two grid steps, and may trade one extra crossing for each
+  cross-source pair it removes, never past the landscape hard cap (0.5 x E).
 - **`collinear-edges` (WARNING)** — *New in 1.10.12 (WS8, C5).
   Geometry-enforced.* Two **unrelated** edges whose parallel legs sit on (or
   within two grid steps of) the same grid line with overlapping extents read
@@ -897,7 +926,7 @@ keeps its exact behavior.
 | `edge-direction` | WARNING | **ERROR** (directional contract is strict) |
 | `edge-float` | WARNING | **ERROR** (every edge must pin its contact points) |
 | `entry-thirds` | WARNING | **ERROR** (arrivals on one face must stay distinct) |
-| `collinear-edges` | WARNING | WARNING; **ERROR** for `end-to-end-merge` (two unrelated edges reading as one line) |
+| `collinear-edges` | WARNING; **ERROR** for `cross-source-overlap` (1.14.0) | WARNING; **ERROR** for `end-to-end-merge` and `cross-source-overlap` |
 | `edge-endpoint` | WARNING | **ERROR** (a dense as-built must resolve every endpoint) |
 | `access-aggregation` | WARNING | **ERROR** (an un-aggregated as-built access view is a harder failure) |
 | `data-classification` | WARNING | **ERROR** (an unclassified PII store on a dataflow as-built is a harder failure) |
@@ -912,7 +941,8 @@ keeps its exact behavior.
 | `legend-placement` | WARNING; **ERROR** for `overlaps-node-*` | WARNING; **ERROR** for `overlaps-node-*` |
 | `container-caption-overflow` | WARNING; **ERROR** for `caption-overprints-node` | WARNING; **ERROR** for `caption-overprints-node` |
 | numbered flow markers | expected | optional (a landscape has no single path) |
-| `overlay-legend-coverage` | WARNING when overlay markers are used | WARNING when overlay markers are used |
+| `overlay-legend-coverage` | **ERROR** when an overlay marker is undocumented (1.14.0) | **ERROR** when an overlay marker is undocumented (1.14.0) |
+| `overlay-rendered` | **ERROR** (1.14.0) | **ERROR** (1.14.0) |
 | raster budget (export guidance) | ≤ 1600px / < 500KB | ≤ 3600px / < 2MB (a wide as-built stays legible) |
 
 Rules:
