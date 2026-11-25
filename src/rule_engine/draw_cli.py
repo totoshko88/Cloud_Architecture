@@ -391,6 +391,9 @@ def _nodes_from(placed: PlacedDiagram, renderers: Dict[str, Any]) -> List[Node]:
             overlay=overlay_of[n.id],
             scope=scope_of[n.id],
             external=external_of[n.id],
+            # 1.14.0 (RE-FB-002): ``build_diagram`` keeps it (role token +
+            # badge) only for a glyph family shared by two roles on the canvas.
+            role=role_of[n.id],
         )
         for n in placed.spec.nodes
         if n.id in placed.nodes

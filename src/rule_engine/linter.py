@@ -182,6 +182,10 @@ RULE_NODE_OVERLAP = "node-overlap"
 RULE_ARROW_STYLE = "arrow-style"
 RULE_ORPHAN_LANDSCAPE = "orphan-landscape"
 RULE_OVERLAY_LEGEND_COVERAGE = "overlay-legend-coverage"
+# overlay-rendered (1.14.0, RE-FB-001): Legend and canvas disagree about an overlay.
+RULE_OVERLAY_RENDERED = "overlay-rendered"
+# indistinguishable-role-glyphs (1.14.0, RE-FB-002): look-alike glyphs, no badge.
+RULE_INDISTINGUISHABLE_ROLE_GLYPHS = "indistinguishable-role-glyphs"
 RULE_CONTAINER_OVERLAP = "container-overlap"
 RULE_EDGE_DIRECTION = "edge-direction"
 RULE_TEXT_PADDING = "text-padding"
@@ -617,6 +621,15 @@ class Artifact:
     # marker is not covered by the legend.
     overlay_markers: Sequence[str] = field(default_factory=list)
     legend_overlay_terms: Sequence[str] = field(default_factory=list)
+    # overlay-rendered (1.14.0, RE-FB-001). ``legend_declared_overlays``: the
+    # shaped overlay terms the Legend DEFINES (``<term> = …`` / ``… = <term>``);
+    # ``unrendered_overlays``: node ids carrying a shaped overlay term with no
+    # ``overlayring-<id>`` cell. None means "not parsed" (skip).
+    legend_declared_overlays: Optional[Sequence[str]] = None
+    unrendered_overlays: Optional[Sequence[str]] = None
+    # indistinguishable-role-glyphs (1.14.0, RE-FB-002): one entry per glyph
+    # family where two or more different roles draw without a role badge.
+    indistinguishable_roles: Optional[Sequence[str]] = None
     # Text-box padding (v1.3.x). ``text_padding_offenders`` lists the styles of
     # any ``text;`` cell missing uniform inner padding (spacing* tokens); a
     # non-empty list trips ``text-padding``. None means "not parsed" (skip).
@@ -2682,6 +2695,52 @@ def _check_overlay_legend_coverage(a: Artifact):
     return RuleHit(offenders=tuple(offenders), reason="undocumented-overlay")
 
 
+def _check_indistinguishable_role_glyphs(a: Artifact):
+    """indistinguishable-role-glyphs: two or more different roles on one canvas
+    draw the same (or a near-identical, per the mapping's ``glyph_family``)
+    glyph with no role badge to tell them apart (WARNING, both classes; 1.14.0,
+    RE-FB-002). Bedrock, Bedrock Guardrails and Bedrock Knowledge Bases all
+    draw the base Bedrock glyph in AWS pack 07312026, so only their captions
+    separate them. ``build_diagram`` draws the mapping's ``badge`` on such a
+    node; this rule reports a family where that still leaves two roles
+    unbadged. offenders = ``<family>:<role>(<nodes>)|…`` per family."""
+    if not _is_diagram(a) or not a.indistinguishable_roles:
+        return False
+    return RuleHit(offenders=tuple(a.indistinguishable_roles), reason="look-alike-glyphs")
+
+
+def _check_overlay_rendered(a: Artifact):
+    """overlay-rendered: the Legend and the canvas disagree about an overlay
+    (ERROR, both classes; 1.14.0, RE-FB-001).
+
+    Two reasons:
+
+    * ``legend-overlay-not-drawn`` — the Legend DEFINES a shaped overlay term
+      (``Dashed red = spec-required-not-deployed``) but no cell on the canvas
+      carries it. The diagram claims a marker the reader cannot find, so a
+      missing guardrail reads as a deployed service.
+    * ``overlay-not-rendered`` — a node carries a shaped overlay term
+      (``overlay=<term>``) but has no ``overlayring-<id>`` cell, so the shape
+      channel the Legend describes is not drawn.
+
+    The reverse direction (a drawn overlay missing from the Legend) is
+    ``overlay-legend-coverage``. offenders = the terms / ``<node>:<term>``."""
+    if not _is_diagram(a):
+        return False
+    hits: List[RuleHit] = []
+    declared = a.legend_declared_overlays
+    if declared:
+        drawn = {str(m).strip().casefold() for m in a.overlay_markers}
+        missing = [t for t in declared if str(t).casefold() not in drawn]
+        if missing:
+            hits.append(RuleHit(offenders=tuple(missing), reason="legend-overlay-not-drawn"))
+    if a.unrendered_overlays:
+        hits.append(RuleHit(offenders=tuple(a.unrendered_overlays), reason="overlay-not-rendered"))
+    if not hits:
+        return False
+    return hits[0] if len(hits) == 1 else hits
+
+
 # ---------------------------------------------------------------------------
 # New rules (honest-gates 1.7.0, task 10.2)
 # ---------------------------------------------------------------------------
@@ -2875,8 +2934,18 @@ def _check_collinear_edges(a: Artifact):
     # ``end-to-end-merge`` (two unrelated edges reading as ONE continuous line)
     # is an ERROR on a landscape, carried on its own hit.
     merge = [f for f in findings if f[2] == "end-to-end-merge"]
-    rest = [f for f in findings if f[2] != "end-to-end-merge"]
+    cross = [f for f in findings if f[2] == "cross-source-overlap"]
+    rest = [f for f in findings
+            if f[2] not in ("end-to-end-merge", "cross-source-overlap")]
     hits: List[RuleHit] = []
+    if cross:
+        # 1.14.0 (RE-FB-003): two edges with a different source AND target that
+        # share a stretch of one line make the feeding source ambiguous: ERROR.
+        hits.append(RuleHit(
+            offenders=tuple(eid for a_, b_, _k in cross for eid in (a_, b_)),
+            reason=f"cross-source-overlap:{len(cross)}",
+            severity=Severity.ERROR,
+        ))
     if merge:
         hits.append(RuleHit(
             offenders=tuple(eid for a_, b_, _k in merge for eid in (a_, b_)),
@@ -3203,9 +3272,14 @@ RULES: Tuple[Tuple[RuleSpec, Callable[[Artifact], _PredicateResult]], ...] = (
     (RuleSpec(RULE_EDGE_APPROACH, Severity.WARNING), _check_edge_approach),
     (RuleSpec(RULE_ORPHAN_LANDSCAPE, Severity.ERROR), _check_orphan_landscape),
     (
-        RuleSpec(RULE_OVERLAY_LEGEND_COVERAGE, Severity.WARNING),
+        # 1.14.0 (RE-FB-001): an undocumented overlay is an ERROR — the reader
+        # sees a marker the Legend does not explain.
+        RuleSpec(RULE_OVERLAY_LEGEND_COVERAGE, Severity.ERROR),
         _check_overlay_legend_coverage,
     ),
+    (RuleSpec(RULE_OVERLAY_RENDERED, Severity.ERROR), _check_overlay_rendered),
+    (RuleSpec(RULE_INDISTINGUISHABLE_ROLE_GLYPHS, Severity.WARNING),
+     _check_indistinguishable_role_glyphs),
     # honest-gates 1.7.0 (task 10.2). ``source-format`` is an ERROR: draw.io is
     # the only publishable diagram source (D1). ``edge-endpoint`` is WARNING for
     # flow, ERROR for landscape (a dense as-built must resolve every endpoint).
@@ -3531,6 +3605,8 @@ __all__ = [
     "RULE_MERMAID_TYPE",
     "RULE_ORPHAN_LANDSCAPE",
     "RULE_OVERLAY_LEGEND_COVERAGE",
+    "RULE_OVERLAY_RENDERED",
+    "RULE_INDISTINGUISHABLE_ROLE_GLYPHS",
     "RULE_CONTAINER_OVERLAP",
     "RULE_EDGE_DIRECTION",
     "RULE_TEXT_PADDING",

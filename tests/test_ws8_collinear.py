@@ -241,6 +241,11 @@ def test_sep_collinear_pairs_stay_within_measured_bounds(script):
     assert len(_collinear(on)) <= len(_collinear(off)), script
     if must_reduce:
         assert len(_collinear(on)) < len(_collinear(off)) or not _collinear(off), script
-    # WS8 must not buy the separation with a crossing or a back-edge.
-    assert _crossings(on) <= _crossings(off), script
+    # WS8 must not buy the separation with a crossing or a back-edge, except
+    # (1.14.0, RE-FB-003) one crossing per ``cross-source-overlap`` pair it
+    # removes: that pair is an ERROR, a crossing is not.
+    def _cross_src(g):
+        return sum(1 for *_p, k in geo.collinear_edge_findings(g) if k == "cross-source-overlap")
+    budget = max(0, _cross_src(off) - _cross_src(on))
+    assert _crossings(on) <= _crossings(off) + budget, script
     assert _back_edges(on) <= _back_edges(off), script

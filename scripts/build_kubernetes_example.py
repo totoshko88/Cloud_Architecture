@@ -112,9 +112,8 @@ def summary_spec() -> DS:
             ES(id="e4", source="deploy", target="data-svc", marker="4", kind_hint="cross-region"),
             ES(id="e5", source="data-svc", target="sts", marker="5"),
             ES(id="e6", source="sts", target="pvc", marker="6"),
-            # The supporting api-server admits the Deployment (light edge; the
-            # overlay already exempts it from connectivity, but an edge reads
-            # better and keeps the control plane related to the workload).
+            # The api-server admits the Deployment (a real step, e7), which
+            # keeps the control plane related to the workload.
             ES(id="e7", source="api", target="deploy", marker="7"),
         ),
         containers=(
@@ -330,7 +329,9 @@ def main(argv=None) -> int:
     args = ap.parse_args(argv)
 
     supporting = (OVERLAY_LEGEND_LINES["supporting"],)
-    summary_xml = _build(summary_spec(), extra_legend=supporting)
+    # 1.14.0 (overlay-rendered): the summary marks no node ``supporting`` (its
+    # api-server is a real step, e7), so its Legend must not define the term.
+    summary_xml = _build(summary_spec())
     landscape_xml = _build(landscape_spec(), extra_legend=supporting)
 
     if args.stdout_summary:

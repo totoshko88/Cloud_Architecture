@@ -105,8 +105,8 @@
         <mxCell id="flow-legend" value="Flow&#10;1. External client enters via the ingress Service&#10;2. Ingress Service routes to the app Service&#10;3. App Service to the Deployment&#10;4. App Deployment calls the data Service&#10;5. Data Service to the StatefulSet&#10;6. StatefulSet persists to its PersistentVolumeClaim&#10;7. API server admits the Deployment" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF;spacingLeft=10;spacingRight=10;spacingTop=10;spacingBottom=10" vertex="1" parent="1">
           <mxGeometry x="1740" y="120" width="280" height="180" as="geometry" />
         </mxCell>
-        <mxCell id="legend" value="Legend&#10;Solid line = primary flow&#10;Dashed line = asynchronous / event-driven flow&#10;Red = blocked / missing / disabled&#10;🆕 = new in version N&#10;🔄 = changed in version N&#10;Outer boundary = stack Boundary (captioned; provider style)&#10;Numbered markers (1..N) = ordered data flow steps; see Flow list&#10;supporting = ops / observability service (dotted outline); not a data-flow step" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF;spacingLeft=10;spacingRight=10;spacingTop=10;spacingBottom=10" vertex="1" parent="1">
-          <mxGeometry x="1740" y="360" width="280" height="212" as="geometry" />
+        <mxCell id="legend" value="Legend&#10;Solid line = primary flow&#10;Dashed line = asynchronous / event-driven flow&#10;Red = blocked / missing / disabled&#10;🆕 = new in version N&#10;🔄 = changed in version N&#10;Outer boundary = stack Boundary (captioned; provider style)&#10;Numbered markers (1..N) = ordered data flow steps; see Flow list" style="text;html=1;align=left;verticalAlign=top;fontSize=12;whiteSpace=wrap;strokeColor=#000000;fillColor=#FFFFFF;spacingLeft=10;spacingRight=10;spacingTop=10;spacingBottom=10" vertex="1" parent="1">
+          <mxGeometry x="1740" y="360" width="280" height="180" as="geometry" />
         </mxCell>
       </root>
     </mxGraphModel>

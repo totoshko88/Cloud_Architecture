@@ -316,6 +316,20 @@ def is_overlay_ring(cell_id: str) -> bool:
     return (cell_id or "").startswith(OVERLAY_RING_PREFIX)
 
 
+#: Id prefix of the role badge cell ``build_diagram`` draws on a look-alike
+#: glyph (1.14.0, RE-FB-002). Like the overlay ring it decorates a node and is
+#: never a node, a text box, a Boundary container or a service vertex.
+ROLE_BADGE_PREFIX = "rolebadge-"
+
+#: Every node-decoration id prefix every parser skips.
+NODE_DECORATION_PREFIXES = (OVERLAY_RING_PREFIX, ROLE_BADGE_PREFIX)
+
+
+def is_node_decoration(cell_id: str) -> bool:
+    """True for a cell that decorates a node (an overlay ring or a role badge)."""
+    return (cell_id or "").startswith(NODE_DECORATION_PREFIXES)
+
+
 def is_boundary_container_style(cell_id: str, style: str) -> bool:
     """Return True when a vertex is a Boundary / Network-Boundary container.
 
@@ -345,7 +359,7 @@ def is_boundary_container_style(cell_id: str, style: str) -> bool:
     A group cell is therefore a boundary only when it names a ``group_`` /
     ``grIcon=`` container icon.
     """
-    if is_overlay_ring(cell_id):
+    if is_node_decoration(cell_id):
         # 1.13.0: an overlay ring is a dashed borderless rectangle by design,
         # but it outlines a node; it is never a Boundary.
         return False

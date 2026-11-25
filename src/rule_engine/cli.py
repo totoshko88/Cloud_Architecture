@@ -153,6 +153,81 @@ def _icon_descriptor_for_style(style: str) -> Dict[str, Any]:
 _FLOW_HEADING = "flow"
 _LEGEND_HEADING = "legend"
 
+_TERM_TOKENS = re.compile(r"[A-Za-z0-9_\-]+")
+
+
+def _legend_defined_terms(legend_lines: Sequence[str], terms) -> List[str]:
+    """The overlay ``terms`` a Legend DEFINES (1.14.0, RE-FB-001), in order.
+
+    A term is defined by a line that binds it with ``=`` as the whole of one
+    side: ``standby = passive peer`` or ``Dashed red =
+    spec-required-not-deployed`` (the right side is read up to a ``(`` / ``;`` /
+    ``,``). A term used as a word in prose or inside a description
+    (``callout 'x' = unconfirmed path``) is not a definition, so the rule never
+    claims an overlay the author did not declare."""
+    wanted = {str(t).casefold() for t in terms}
+    out: List[str] = []
+    for line in legend_lines:
+        parts = str(line).split("=")
+        if len(parts) < 2:
+            continue
+        for left, right in zip(parts, parts[1:]):
+            # The term must be the WHOLE side: ``standby = passive peer`` or
+            # ``Dashed red = spec-required-not-deployed (L-19)``. A term used as
+            # a word inside a description (``callout = unconfirmed path``) is
+            # not a definition.
+            lt = _TERM_TOKENS.findall(left)
+            rt = _TERM_TOKENS.findall(re.split(r"[(;,]", right, 1)[0])
+            for side in (lt, rt):
+                t = side[0].casefold() if len(side) == 1 else ""
+                if t in wanted and t not in out:
+                    out.append(t)
+    return out
+
+
+def _indistinguishable_roles(cells: Dict[str, Any], title: str) -> List[str]:
+    """Look-alike glyph groups a reader cannot tell apart (1.14.0, RE-FB-002).
+
+    Nodes carry ``role=<name>`` (emitted by ``build_diagram`` for a role whose
+    glyph family has another role on the canvas). Per glyph family (the
+    mapping's ``glyph_family``, else the drawn glyph) the nodes that carry NO
+    ``rolebadge-<id>`` cell must all be one role: one unbadged role reads by
+    elimination, two do not. Returns one ``<family>:<role>(<node>,…)|…`` entry
+    per offending family, sorted. A canvas whose title names no single provider
+    falls back to grouping by the drawn glyph."""
+    from rule_engine.constants import PROVIDERS, ROLE_BADGE_PREFIX, is_node_decoration
+    from rule_engine.icon_resolver import glyph_key_of_style, role_glyph
+
+    tok = (title or "").strip().split(" ", 1)[0].casefold()
+    provider = tok if tok in PROVIDERS else None
+    badged = {str(c)[len(ROLE_BADGE_PREFIX):] for c in cells
+              if str(c).startswith(ROLE_BADGE_PREFIX)}
+    groups: Dict[str, Dict[str, List[str]]] = {}
+    for cid, cell in cells.items():
+        if not getattr(cell, "vertex", False) or is_node_decoration(str(cid)):
+            continue
+        role = cell.style_map.get("role")
+        if not role:
+            continue
+        info = role_glyph(role, provider) if provider else None
+        family = (info or {}).get("family") or glyph_key_of_style(cell.style)
+        if not family:
+            continue
+        groups.setdefault(family, {}).setdefault(role, []).append(str(cid))
+    out: List[str] = []
+    for family in sorted(groups):
+        roles = groups[family]
+        if len(roles) < 2:
+            continue
+        unbadged = {r: [n for n in ids if n not in badged] for r, ids in roles.items()}
+        unbadged = {r: ids for r, ids in unbadged.items() if ids}
+        if len(unbadged) < 2:
+            continue
+        fam = family.rsplit("/", 1)[-1]
+        body = "|".join(f"{r}({','.join(sorted(ids))})" for r, ids in sorted(unbadged.items()))
+        out.append(f"{fam}:{body}")
+    return out
+
 
 def _first_nonempty_line(cell: "Any") -> str:
     """Return the first non-empty rendered line of a parsed cell, casefolded."""
@@ -389,7 +464,7 @@ def _parse_drawio_page(path: str, page: Page, text: str) -> Artifact:
             continue
         if cid in boundary_ids:
             continue
-        if (cid or "").startswith(("flowgroup-", "bandgroup-", "overlayring-")):
+        if (cid or "").startswith(("flowgroup-", "bandgroup-", "overlayring-", "rolebadge-")):
             # 1.13.0: an ``overlayring-*`` cell is the visible outline of a
             # standby / supporting / unconfirmed node, not a node.
             # 1.11.0 WS2 flow-group box / 1.13.0 band-group box: a decorative
@@ -494,6 +569,22 @@ def _parse_drawio_page(path: str, page: Page, text: str) -> Artifact:
         for term in set(overlay_markers):
             if term.casefold() in legend_tokens:
                 legend_overlay_terms.append(term)
+    # overlay-rendered (1.14.0, RE-FB-001): which shaped overlay terms the
+    # Legend defines, and which marked nodes lack their visible ring cell.
+    legend_declared_overlays: Optional[List[str]] = None
+    unrendered_overlays: List[str] = []
+    from rule_engine.constants import OVERLAY_RING_PREFIX as _RING
+    from rule_engine.diagram_layout import OVERLAY_TERMS as _SHAPED
+
+    if legend_lines is not None:
+        legend_declared_overlays = _legend_defined_terms(legend_lines, _SHAPED)
+    indistinguishable_roles = _indistinguishable_roles(cells, title_cell or "")
+    ring_ids = {cid for cid in cells if str(cid).startswith(_RING)}
+    for cid, cell in cells.items():
+        term = cell.style_map.get("overlay")
+        if term in _SHAPED and not str(cid).startswith(_RING):
+            if f"{_RING}{cid}" not in ring_ids:
+                unrendered_overlays.append(f"{cid}:{term}")
 
     parse_errors: List[str] = []
     if companion_parse_failed:
@@ -535,6 +626,9 @@ def _parse_drawio_page(path: str, page: Page, text: str) -> Artifact:
         detailed_view=detailed_view,
         overlay_markers=overlay_markers,
         legend_overlay_terms=legend_overlay_terms,
+        legend_declared_overlays=legend_declared_overlays,
+        unrendered_overlays=unrendered_overlays,
+        indistinguishable_roles=indistinguishable_roles,
         flow_legend_lines=flow_legend_lines,
         flow_source=flow_source,
         companion_cited_markers=_companion_cited_markers(path),

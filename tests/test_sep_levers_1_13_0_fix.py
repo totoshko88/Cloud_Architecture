@@ -210,7 +210,10 @@ def test_l2_sep09_exit_face_up_adds_no_blocker_within_bounds(tmp_path):
 #: ``collinear-edges`` even though they never meet at one point (phase 1 had
 #: them at 3). The residual pair ``e13 / e8-a`` is a genuine collinear (not a
 #: trunk) and stays flagged.
-L5_BOUND = {"X": 1, "own": 1, "col": 1}
+#: 1.14.0 (RE-FB-003): that residual pair is a ``cross-source-overlap`` (an
+#: ERROR); the collinear-shift pass now moves e13's lane and pays one crossing
+#: for it, so X 1 -> 2 and col 1 -> 0.
+L5_BOUND = {"X": 2, "own": 1, "col": 0}
 #: Blocking findings of the synced 08 that the lever does not touch: the CICD
 #: and NAT captions run outside peer-ext / the VPC (caption-outside-container).
 L5_BUILDER_BLOCKING = {("container-padding", "caption-outside-container")}

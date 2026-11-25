@@ -193,6 +193,10 @@ Every reader — `icon_resolver.resolve_icon`, `build_icon_index` (the `icon-ind
 
 A glyph with no vendor source is authored in this repository and shipped inside the package (`rule_engine/engine_assets/`), never fetched. The first is the provider-neutral **`education`** role — a grayscale CC0 mortarboard (`engine_assets/education/mortarboard.svg`) declared on every profile and in `roles.yaml` (`asset:`, `source: bundled` in the index). Mappings keep the canonical path `assets/vendor/education/mortarboard.svg`; `engine_assets.locate_asset` resolves it to the workspace file when one exists, else the bundled copy, in the diagram embedder, the raster inliner and the asset-path guard. Both inliners take the image MIME from the file **bytes** (`engine_assets.sniff_mime`), so a PNG brand mark is inlined as `image/png` without an SVG wrapper. The AWS **`organizations`** role (`Arch_AWS-Organizations_48.svg`) is the org-level service glyph, distinct from the single-account `peer_account` glyph.
 
+### Shared and near-identical glyphs (`glyph_family`, `badge`, 1.14.0)
+
+A mapping entry may carry two optional keys. `glyph_family` names a group of glyphs that read as one at 48px (AWS `llm_platform`, `bedrock_agentcore`, `bedrock_guardrails` and `bedrock_kb` are family `bedrock`); without it the family is the drawn glyph itself, so two roles mapped to one SVG are always one family. `badge` is a short role tag (2–4 characters) that `build_diagram` draws on the node when another role of the same family shares the canvas. A role that has no dedicated glyph in the pack is marked `icon_provenance: shared`. Leave the base role of a family unbadged: one unbadged role reads by elimination. The `indistinguishable-role-glyphs` lint rule (WARNING) reports a canvas where two roles of one family still draw unbadged.
+
 ### Anti-patterns
 
 - Do **not** hand-write a `shape=mxgraph.<lib>.<guess>` id and hope it resolves; an unknown stencil renders as an empty box (`icon-resolved` ERROR). Verify the id exists, or fall back to an official asset.
